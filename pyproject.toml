@@ -1,0 +1,12 @@
+[project]
+name = "driverless-agi"
+version = "0.1.0"
+requires-python = ">=3.11"
+dependencies = ["openai", "pyyaml", "python-dotenv", "streamlit>=1.35.0", "streamlit-autorefresh>=0.0.1"]
+
+[project.scripts]
+dagi = "main:main"
+
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.backends.legacy:build"

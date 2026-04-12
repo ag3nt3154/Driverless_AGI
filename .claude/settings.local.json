@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "WebFetch(domain:mariozechner.at)",
+      "WebFetch(domain:github.com)",
+      "Bash(conda run:*)"
+    ]
+  }
+}

@@ -1,0 +1,6 @@
+# Copy to config.yaml and fill in your values.
+# config.yaml is gitignored.
+
+model: gpt-4o
+base_url: https://api.openai.com/v1
+max_iterations: 20
