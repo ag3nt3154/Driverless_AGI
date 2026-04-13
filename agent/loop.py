@@ -1,5 +1,4 @@
 import json
-import os
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable
@@ -8,13 +7,6 @@ import openai
 
 from agent.registry import ToolRegistry
 from agent.session import SessionTracker, ToolCallRecord
-
-def _resolve_api_key() -> str:
-    key = os.environ.get("OPENROUTER_API_KEY") or os.environ.get("OPENAI_API_KEY")
-    if not key:
-        raise EnvironmentError("Set OPENROUTER_API_KEY or OPENAI_API_KEY in your environment")
-    return key
-
 
 DEFAULT_SYSTEM_PROMPT = """\
 You are an expert coding assistant. You help users with coding tasks by reading files, executing commands, editing code, and writing new files.
@@ -44,7 +36,7 @@ Documentation:
 class AgentConfig:
     model: str = "gpt-4o"
     base_url: str = "https://api.openai.com/v1"
-    api_key: str = field(default_factory=lambda: _resolve_api_key())
+    api_key: str = ""  # always set by agent.config_loader.resolve_model_config
     max_iterations: int = 20
     system_prompt: str = DEFAULT_SYSTEM_PROMPT
     thread_id: str | None = None
@@ -147,6 +139,9 @@ class AgentLoop:
 
                 # Interleave: each tool call is immediately followed by its result.
                 # First call carries the assistant's text content; subsequent ones get None.
+                if message.content:
+                    self.callbacks.on_assistant_text(message.content)
+
                 first = True
                 for tc in message.tool_calls:
                     self._messages.append({

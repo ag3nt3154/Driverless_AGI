@@ -11,11 +11,14 @@ import threading
 from datetime import datetime
 from pathlib import Path
 
+import markdown as md_lib
+
 import streamlit as st
 import yaml
 from dotenv import load_dotenv
 from streamlit_autorefresh import st_autorefresh
 
+from agent.config_loader import load_raw_config, list_model_ids, resolve_model_config, save_config
 from agent.loop import AgentCallbacks, AgentConfig, AgentLoop
 from agent.registry import registry
 import agent.tools  # noqa: F401 — registers tools as side-effect
@@ -349,29 +352,53 @@ button[kind="secondary"]:hover {
     transform: scale(0.98) !important;
 }
 
+/* ── Layout Lock (anti-shake) ── */
+[data-testid="stMainBlockContainer"] {
+    height: calc(100vh - 80px) !important;
+    overflow-y: auto !important;
+    overflow-x: hidden !important;
+    scroll-behavior: smooth !important;
+    overflow-anchor: auto !important;
+    padding-bottom: 20px !important;
+}
+
+/* Stick the chat input to the bottom of the scroll container */
+[data-testid="stBottom"],
+[data-testid="stChatInputContainer"],
+[data-testid="stChatInput"] {
+    position: sticky !important;
+    bottom: 0 !important;
+    z-index: 50 !important;
+    background: #F2F2F7 !important;
+    padding-bottom: 8px !important;
+}
+
+/* ── Stop button — compact circle icon ── */
+[data-testid="column"]:last-child [data-testid="stButton"] > button {
+    padding: 6px 10px !important;
+    min-height: unset !important;
+    border-radius: 50% !important;
+    aspect-ratio: 1 !important;
+    line-height: 1 !important;
+    font-size: 0.75rem !important;
+}
+
+/* ── Message meta — fade in on hover ── */
+.msg-meta {
+    opacity: 0;
+    transition: opacity 300ms ease !important;
+}
+.user-bubble-shell:hover + .msg-meta,
+.assistant-bubble-shell:hover + .msg-meta,
+.msg-meta:hover {
+    opacity: 1 !important;
+}
+
 </style>
 """)
 
 
 # ─── Helpers ──────────────────────────────────────────────────────────────────
-
-def _load_config() -> AgentConfig:
-    cfg_path = Path("config.yaml")
-    overrides: dict = {}
-    if cfg_path.exists():
-        overrides = yaml.safe_load(cfg_path.read_text(encoding="utf-8")) or {}
-    return AgentConfig(
-        model=overrides.get("model", "gpt-4o"),
-        base_url=overrides.get("base_url", "https://api.openai.com/v1"),
-        max_iterations=overrides.get("max_iterations", 20),
-    )
-
-
-def _save_config(model: str, base_url: str, max_iter: int) -> None:
-    Path("config.yaml").write_text(
-        yaml.dump({"model": model, "base_url": base_url, "max_iterations": max_iter}),
-        encoding="utf-8",
-    )
 
 
 def _session_title(messages: list) -> str:
@@ -536,10 +563,11 @@ def _init_state() -> None:
     st.session_state.total_output_tok  = 0
     st.session_state.total_cost        = 0.0
     st.session_state.current_iter      = 0
-    st.session_state.max_iter          = _load_config().max_iterations
+    st.session_state.max_iter          = resolve_model_config().max_iterations
     st.session_state.history_sessions  = load_history_sessions()
     st.session_state.current_thread_id = None
     st.session_state.stop_event        = threading.Event()
+    st.session_state.show_debug        = False
 
 
 _init_state()
@@ -626,7 +654,7 @@ def start_agent_thread(task: str) -> None:
         on_reasoning=lambda t: q.put({"type": "reasoning", "text": t}),
     )
 
-    cfg = _load_config()
+    cfg = resolve_model_config()
     cfg.thread_id = st.session_state.get("current_thread_id")
     prior = st.session_state.conversation_msgs or None
     loop = AgentLoop(cfg, registry, callbacks, initial_messages=prior)
@@ -817,15 +845,16 @@ def render_message(msg: dict) -> None:
     elif role == "assistant":
         with st.container():
             render_reasoning_expander(msg.get("reasoning"))
-            if msg.get("api_snapshot") is not None:
+            if msg.get("api_snapshot") is not None and st.session_state.get("show_debug", False):
                 render_payload_expander(msg["api_snapshot"], st.session_state.get("system_parts", []))
             render_tool_calls_expander(tool_calls)
             for tc in tool_calls:
                 render_tool_call(tc)
-            st.markdown('<div class="assistant-bubble-shell"><div class="assistant-bubble">', unsafe_allow_html=True)
-            if content:
-                st.markdown(content)
-            st.markdown("</div></div>", unsafe_allow_html=True)
+            content_html = md_lib.markdown(content, extensions=["fenced_code", "tables"]) if content else ""
+            st.markdown(
+                f'<div class="assistant-bubble-shell"><div class="assistant-bubble">{content_html}</div></div>',
+                unsafe_allow_html=True,
+            )
             tok_info = ""
             if msg.get("input_tokens") or msg.get("output_tokens"):
                 tok_info = f" · {msg.get('input_tokens',0)}↑ {msg.get('output_tokens',0)}↓"
@@ -857,13 +886,27 @@ with st.sidebar:
     with col2:
         with st.popover("⚙", use_container_width=True):
             st.markdown("**Settings**")
-            cfg = _load_config()
-            new_model    = st.text_input("Model", value=cfg.model, key="cfg_model")
-            new_base_url = st.text_input("Base URL", value=cfg.base_url, key="cfg_base_url")
+            raw_cfg      = load_raw_config()
+            catalog      = raw_cfg.get("models", {})
+            model_ids    = list_model_ids()
+            current_id   = raw_cfg.get("default_model", model_ids[0] if model_ids else "")
+            cfg          = resolve_model_config()
+            selected_id  = st.selectbox(
+                "Model",
+                options=model_ids,
+                format_func=lambda mid: catalog[mid].get("name", mid),
+                index=model_ids.index(current_id) if current_id in model_ids else 0,
+                key="cfg_model",
+            )
             new_max_iter = st.number_input("Max iterations", value=cfg.max_iterations,
                                            min_value=1, max_value=200, key="cfg_max_iter")
+            st.session_state.show_debug = st.toggle(
+                "Debug: show API payload",
+                value=st.session_state.get("show_debug", False),
+                key="cfg_debug",
+            )
             if st.button("Save", key="cfg_save"):
-                _save_config(new_model, new_base_url, int(new_max_iter))
+                save_config(default_model=selected_id, max_iterations=int(new_max_iter))
                 st.session_state.max_iter = int(new_max_iter)
                 st.success("Saved.")
 
@@ -878,16 +921,10 @@ with st.sidebar:
     max_i   = st.session_state.max_iter
 
     st.markdown(
-        f'<div class="stat-box"><div class="stat-box-inner">'
-        f'<div class="stat-label">Tokens</div>'
-        f'<div class="stat-val">↑ {in_tok:,} &nbsp; ↓ {out_tok:,}</div>'
-        f'</div></div>',
-        unsafe_allow_html=True,
-    )
-    st.markdown(
-        f'<div class="stat-box"><div class="stat-box-inner">'
-        f'<div class="stat-label">Cost</div>'
-        f'<div class="stat-val">${cost:.5f}</div>'
+        f'<div class="stat-box"><div class="stat-box-inner" style="display:flex;gap:24px;align-items:center;">'
+        f'<div><div class="stat-label">Tokens</div><div class="stat-val">↑ {in_tok:,} &nbsp; ↓ {out_tok:,}</div></div>'
+        f'<div style="width:1px;background:rgba(60,60,67,0.1);align-self:stretch;"></div>'
+        f'<div><div class="stat-label">Cost</div><div class="stat-val">${cost:.5f}</div></div>'
         f'</div></div>',
         unsafe_allow_html=True,
     )
@@ -954,7 +991,7 @@ with chat_container:
         render_message(msg)
 
 # Input row
-input_col, stop_col = st.columns([8, 1])
+input_col, stop_col = st.columns([12, 1])
 with input_col:
     user_input = st.chat_input(
         "Message dagi…",
@@ -962,8 +999,6 @@ with input_col:
         key="chat_input",
     )
 with stop_col:
-    # Vertical alignment hack via empty space
-    st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
     if st.session_state.agent_running:
         if st.button("■ Stop", use_container_width=True, type="secondary"):
             st.session_state.stop_event.set()

@@ -1,6 +1,37 @@
 # Copy to config.yaml and fill in your values.
 # config.yaml is gitignored.
+#
+# Each model entry:
+#   name        — human-readable label shown in the UI
+#   model       — model string sent verbatim to the API
+#   api_url     — provider base URL
+#   api_key_env — name of the env var in .env that holds the API key
 
-model: gpt-4o
-base_url: https://api.openai.com/v1
+default_model: gpt-4o-openai
+
 max_iterations: 20
+
+models:
+  gpt-4o-openai:
+    name: "GPT-4o (OpenAI)"
+    model: "gpt-4o"
+    api_url: "https://api.openai.com/v1"
+    api_key_env: "OPENAI_API_KEY"
+
+  gpt-4o-mini-openai:
+    name: "GPT-4o Mini (OpenAI)"
+    model: "gpt-4o-mini"
+    api_url: "https://api.openai.com/v1"
+    api_key_env: "OPENAI_API_KEY"
+
+  claude-sonnet-openrouter:
+    name: "Claude Sonnet 4.6 (OpenRouter)"
+    model: "anthropic/claude-sonnet-4-6"
+    api_url: "https://openrouter.ai/api/v1"
+    api_key_env: "OPENROUTER_API_KEY"
+
+  claude-opus-openrouter:
+    name: "Claude Opus 4.6 (OpenRouter)"
+    model: "anthropic/claude-opus-4-6"
+    api_url: "https://openrouter.ai/api/v1"
+    api_key_env: "OPENROUTER_API_KEY"

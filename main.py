@@ -1,13 +1,12 @@
 import argparse
 import sys
-from pathlib import Path
 
 from dotenv import load_dotenv
-import yaml
 
-load_dotenv()  # populate os.environ from .env before AgentConfig reads OPENAI_API_KEY
+load_dotenv()  # populate os.environ from .env before config_loader reads API keys
 
-from agent.loop import AgentConfig, AgentLoop
+from agent.config_loader import resolve_model_config
+from agent.loop import AgentLoop
 from agent.registry import registry
 import agent.tools  # noqa: F401 — side-effect: registers all tools
 
@@ -15,20 +14,17 @@ import agent.tools  # noqa: F401 — side-effect: registers all tools
 def main():
     parser = argparse.ArgumentParser(description="Driverless AGI coding agent")
     parser.add_argument("task", nargs="?", help="Task to run (reads from stdin if omitted)")
-    parser.add_argument("--model", help="Model to use")
-    parser.add_argument("--base-url", dest="base_url", help="API base URL")
+    parser.add_argument("--model", help="Model ID from config.yaml (e.g. gpt-4o-openai)")
+    parser.add_argument("--base-url", dest="base_url", help="[deprecated] URL is now set per-model in config.yaml")
     parser.add_argument("--max-iter", dest="max_iter", type=int, help="Max iterations")
     args = parser.parse_args()
 
-    yaml_cfg: dict = {}
-    if Path("config.yaml").exists():
-        yaml_cfg = yaml.safe_load(Path("config.yaml").read_text()) or {}
+    if args.base_url:
+        print("Warning: --base-url is deprecated. Configure the URL in config.yaml under models.", file=sys.stderr)
 
-    config = AgentConfig(
-        model=args.model or yaml_cfg.get("model", "gpt-4o"),
-        base_url=args.base_url or yaml_cfg.get("base_url", "https://api.openai.com/v1"),
-        max_iterations=args.max_iter or yaml_cfg.get("max_iterations", 20),
-    )
+    config = resolve_model_config(model_id=args.model)
+    if args.max_iter:
+        config.max_iterations = args.max_iter
 
     task = args.task or sys.stdin.read().strip()
     if not task:

@@ -1,8 +1,5 @@
 # Agents
 
-## Project
-Driverless AGI — a minimal self-hosted coding agent harness.
-
 ## Architecture
 ```
 agent/
