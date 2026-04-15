@@ -8,6 +8,40 @@ import openai
 from agent.registry import ToolRegistry
 from agent.session import SessionTracker, ToolCallRecord
 
+
+# ── Compaction helpers ────────────────────────────────────────────────────────
+
+def _estimate_tokens(msg: dict) -> int:
+    """Rough token estimate for a single message (1 token ≈ 4 chars)."""
+    text = ""
+    if msg.get("content"):
+        text += str(msg["content"])
+    for tc in msg.get("tool_calls") or []:
+        text += str(tc.get("function", {}).get("arguments", ""))
+    return max(len(text) // 4, 4)
+
+
+def _format_messages_for_summary(messages: list[dict]) -> str:
+    """Render a message slice as human-readable text for the summarizer."""
+    lines = []
+    for msg in messages:
+        role = msg.get("role", "unknown").upper()
+        if role == "ASSISTANT":
+            content = msg.get("content") or ""
+            tool_calls = msg.get("tool_calls") or []
+            if content:
+                lines.append(f"[ASSISTANT]: {content}")
+            for tc in tool_calls:
+                fn = tc.get("function", {})
+                lines.append(f"[TOOL CALL {fn.get('name', '')}]: {fn.get('arguments', '')}")
+        elif role == "TOOL":
+            lines.append(
+                f"[TOOL RESULT tool_call_id={msg.get('tool_call_id', '')}]: {msg.get('content', '')}"
+            )
+        elif role == "USER":
+            lines.append(f"[USER]: {msg.get('content', '')}")
+    return "\n".join(lines)
+
 DEFAULT_SYSTEM_PROMPT = """\
 You are an expert coding assistant. You help users with coding tasks by reading files, executing commands, editing code, and writing new files.
 
@@ -40,6 +74,10 @@ class AgentConfig:
     max_iterations: int = 20
     system_prompt: str = DEFAULT_SYSTEM_PROMPT
     thread_id: str | None = None
+    # Compaction (Pi-style)
+    context_window: int = 128_000     # model's hard token limit
+    reserve_tokens: int = 16_384      # headroom for summary response + next reply
+    keep_recent_tokens: int = 20_000  # tail kept verbatim (token budget)
 
 
 @dataclass
@@ -55,6 +93,7 @@ class AgentCallbacks:
     on_error:          Callable[[Exception], None]              = field(default=lambda e: None)
     on_api_call:       Callable[[list], None]                   = field(default=lambda msgs: None)
     on_reasoning:      Callable[[str], None]                    = field(default=lambda text: None)
+    on_compaction:     Callable[[int, int], None]               = field(default=lambda kept, removed: None)
 
 
 def _load_md(*filenames: str) -> str:
@@ -99,6 +138,110 @@ class AgentLoop:
         self.registry = registry
         self.tracker = SessionTracker(model=config.model, thread_id=config.thread_id)
         self.tracker.record_system(system)
+
+    def _compact_context(self) -> None:
+        """Pi-style context compaction.
+
+        Summarises the 'middle' of self._messages (everything older than the
+        keep_recent_tokens tail) into a single cumulative summary message.
+        Respects the OpenAI assistant/tool pairing invariant and supports
+        progressive re-summarisation when a prior summary already exists.
+        """
+        msgs = self._messages
+        head_end = 1  # index immediately after the system message (always [0])
+
+        # ── B. Detect existing summary (progressive distillation) ─────────────
+        prior_summary: str | None = None
+        search_start = head_end
+        if (
+            len(msgs) > 1
+            and msgs[1].get("role") == "user"
+            and str(msgs[1].get("content", "")).startswith("[CONTEXT SUMMARY")
+        ):
+            prior_summary = str(msgs[1]["content"])
+            search_start = 2  # skip the old summary when scanning safe cuts
+
+        # ── C. Find safe cut points ────────────────────────────────────────────
+        # A safe cut is between a closed tool result (or plain assistant turn)
+        # and the next message. Never split an assistant/tool pair.
+        safe_cuts: list[int] = []
+        for i in range(search_start + 1, len(msgs)):
+            prev = msgs[i - 1]
+            if prev.get("role") == "tool":
+                safe_cuts.append(i)
+            elif prev.get("role") == "assistant" and not prev.get("tool_calls"):
+                safe_cuts.append(i)
+
+        if not safe_cuts:
+            return  # no safe boundary yet; nothing to compact
+
+        # ── D. Token-based tail boundary ──────────────────────────────────────
+        accumulated = 0
+        tail_start = len(msgs)
+        for i in range(len(msgs) - 1, search_start - 1, -1):
+            accumulated += _estimate_tokens(msgs[i])
+            if accumulated >= self.config.keep_recent_tokens:
+                tail_start = i
+                break
+
+        # ── E. Snap to nearest safe cut point at-or-before tail_start ─────────
+        valid_cuts = [c for c in safe_cuts if c <= tail_start]
+        if not valid_cuts:
+            return  # entire history fits in the tail; nothing to compact
+        tail_start = valid_cuts[-1]
+
+        # ── F. Slice the middle to be summarised ──────────────────────────────
+        middle = msgs[head_end:tail_start]
+        if not middle:
+            return
+
+        # ── G. Build summarisation prompt ─────────────────────────────────────
+        prior_section = (
+            f"\n\n=== PRIOR SUMMARY (carry this forward) ===\n{prior_summary}"
+            if prior_summary
+            else ""
+        )
+        summarisation_messages = [
+            {
+                "role": "system",
+                "content": (
+                    "You are a precise technical summariser. "
+                    "Compress the conversation history into a single cumulative summary. "
+                    "Preserve every file path, tool call, result, decision, error, and "
+                    "resolution. End with a '### Files Read/Modified' section listing "
+                    "every file path mentioned. Output ONLY the summary — no preamble."
+                ),
+            },
+            {
+                "role": "user",
+                "content": (
+                    "Produce a cumulative summary of the following conversation segment."
+                    + prior_section
+                    + "\n\n=== NEW CONVERSATION SEGMENT ===\n"
+                    + _format_messages_for_summary(middle)
+                    + "\n=== END ==="
+                ),
+            },
+        ]
+
+        summary_response = self.client.chat.completions.create(
+            model=self.config.model,
+            messages=summarisation_messages,
+        )
+        summary_text = summary_response.choices[0].message.content or "(no summary)"
+
+        # ── H. Build replacement message (role=user avoids pairing invariant) ──
+        summary_message = {
+            "role": "user",
+            "content": "[CONTEXT SUMMARY — prior conversation compacted]\n\n" + summary_text,
+        }
+
+        # ── I. Mutate in place ────────────────────────────────────────────────
+        removed_count = len(middle)
+        self._messages[head_end:tail_start] = [summary_message]
+
+        # ── J. Notify observers ───────────────────────────────────────────────
+        self.callbacks.on_compaction(len(self._messages), removed_count)
 
     def run(self, task: str) -> str:
         self._messages.append({"role": "user", "content": task})
@@ -183,6 +326,16 @@ class AgentLoop:
                     getattr(response.usage, "completion_tokens", 0) or 0,
                     getattr(response.usage, "cost", None),
                 )
+
+                # ── Compaction trigger ────────────────────────────────────────
+                _prompt_tok = getattr(response.usage, "prompt_tokens", 0) or 0
+                if (
+                    self.config.context_window > 0
+                    and _prompt_tok > 0
+                    and _prompt_tok > self.config.context_window - self.config.reserve_tokens
+                ):
+                    self._compact_context()
+                # ─────────────────────────────────────────────────────────────
 
         except Exception as e:
             self.callbacks.on_error(e)

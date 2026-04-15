@@ -174,6 +174,25 @@ def make_callbacks(state: "AppState") -> AgentCallbacks:
                 update_reasoning(view, text)
         _schedule(_update)
 
+    # ── on_compaction ─────────────────────────────────────────────────────────
+    def on_compaction(messages_kept: int, messages_removed: int) -> None:
+        def _update():
+            if state.chat_column is None:
+                return
+            from nicegui import ui
+            with state.chat_column:
+                ui.html(
+                    f'<div style="text-align:center;font-size:0.72rem;'
+                    f'color:rgba(100,116,139,0.55);padding:6px 0;'
+                    f'border-top:1px dashed rgba(100,116,139,0.2);'
+                    f'border-bottom:1px dashed rgba(100,116,139,0.2);margin:4px 0;">'
+                    f'Context compacted — {messages_removed} messages summarized, '
+                    f'{messages_kept} kept'
+                    f'</div>'
+                )
+            _scroll_to_bottom(state)
+        _schedule(_update)
+
     return AgentCallbacks(
         on_tool_start=on_tool_start,
         on_tool_end=on_tool_end,
@@ -184,6 +203,7 @@ def make_callbacks(state: "AppState") -> AgentCallbacks:
         on_error=on_error,
         on_api_call=on_api_call,
         on_reasoning=on_reasoning,
+        on_compaction=on_compaction,
     )
 
 

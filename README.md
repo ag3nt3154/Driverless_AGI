@@ -1,113 +1,134 @@
 # Driverless AGI
 
-A minimal, self-hosted coding agent harness. Give it a task, it plans, executes tools, reads results, and iterates until it's done — or until it hits the iteration limit and tells you what it managed.
-
-No black box. No magic. Every piece is yours to read, tweak, and extend.
+A minimal, self-hosted coding agent. Give it a task — it plans, calls tools, reads results, and iterates until done. Ships with a Rich interactive CLI, a Streamlit web UI, and a NiceGUI web UI. Supports any OpenAI-compatible API, automatic context compaction for long sessions, and full session logging with cost tracking.
 
 ---
 
 ## How It Works
 
-The agent runs a tight loop:
+```
+Plan → Act → Observe → Repeat
+```
 
-1. **Plan** — The model decides on a step based on the task and prior results
+1. **Plan** — The model decides the next step based on the task and prior results
 2. **Act** — It calls a tool (`read`, `write`, `edit`, or `bash`)
 3. **Observe** — It reads the tool's output
 4. **Repeat** — Until the task is complete or `max_iterations` is hit
 
-Tools are defined as classes inheriting from `BaseTool` and register themselves on import. Add a new one by dropping it in `agent/tools.py`.
+When the conversation exceeds the model's context window, **Pi-style context compaction** kicks in — the middle of the history is summarized and replaced, preserving the system prompt and recent messages. This lets the agent handle arbitrarily long tasks without crashing.
 
 ---
 
 ## Setup
 
-### 1. Clone / navigate to the project
-
 ```bash
 cd Driverless_AGI
+cp config.example.yaml config.yaml   # edit with your model preferences
 ```
 
-### 2. Create a `.env` file
+Create a `.env` file with your API keys:
 
 ```env
 OPENAI_API_KEY=sk-...
+OPENROUTER_API_KEY=sk-or-...
 ```
 
-Other providers (OpenRouter, etc.) have their own key env vars — see [Configuration](#configuration).
-
-### 3. Install dependencies
+Install:
 
 ```bash
-pip install -r requirements.txt
+pip install -e .
 ```
-
-### 4. Configure models (optional)
-
-Edit `config.yaml` to select which model to use and configure API endpoints. A default model and several preconfigured options are included.
 
 ---
 
 ## Usage
 
-### Run a task
+### Single-Shot CLI (`main.py`)
 
-**Argument:**
+Runs one task and exits. Uses argparse.
+
 ```bash
 python main.py "Fix the off-by-one error in processor.py"
+python main.py --model gpt-4o-openai --max-iter 50 "your task"
+echo "Add type hints to agent/" | python main.py
 ```
 
-**Stdin:**
+| Flag | Description |
+|------|-------------|
+| `--model` | Model ID from `config.yaml` |
+| `--max-iter` | Override max iterations |
+
+### Interactive CLI (`cli.py`)
+
+Multi-turn REPL with Rich rendering, live spinners, and tool call panels. Uses typer.
+
 ```bash
-echo "Add type hints to all functions in agent/" | python main.py
+python cli.py                          # start REPL
+python cli.py "one-shot task"          # single task then REPL
+python cli.py -m claude-opus-openrouter -v "task"
 ```
 
-**Select a model:**
+| Flag | Description |
+|------|-------------|
+| `--model` / `-m` | Model ID from `config.yaml` |
+| `--verbose` / `-v` | Show full tool input/output |
+| `--sync` | Disable threaded mode (no spinner) |
+
+Exit with `q`, `exit`, or `quit`. Conversation history carries across turns.
+
+### Web UI — Streamlit (`app.py`)
+
 ```bash
-python main.py --model gpt-4o-openai "your task"
+streamlit run app.py
 ```
 
-**Set max iterations:**
+Full-featured chat interface with model selector, live tool cards, session history, cost tracking, and an API debug panel.
+
+### Web UI — NiceGUI (`nicegui_app/`)
+
 ```bash
-python main.py --max-iter 50 "your task"
+python -m nicegui_app.main
 ```
+
+Alternative web interface with the same feature set: model/iteration controls, collapsible tool cards, session history with continuation, iteration progress bar, and export.
 
 ---
 
 ## Configuration
 
-`config.yaml` controls runtime behavior:
+`config.yaml` controls runtime behavior. Copy `config.example.yaml` to get started.
 
 ```yaml
-default_model: minimax-openrouter   # used if --model isn't passed
-max_iterations: 20                  # hard cap on loop iterations
+default_model: gpt-4o-openai        # used if --model isn't passed
+max_iterations: 20                   # hard cap on loop iterations
 
 models:
   gpt-4o-openai:
-    api_key_env: OPENAI_API_KEY      # name of env var holding the key
-    api_url: https://api.openai.com/v1
-    model: gpt-4o                   # actual model ID
-    name: GPT-4o (OpenAI)           # display name
+    name: "GPT-4o (OpenAI)"          # display name
+    model: "gpt-4o"                  # model ID sent to API
+    api_url: "https://api.openai.com/v1"
+    api_key_env: "OPENAI_API_KEY"    # env var holding the key
 
   claude-opus-openrouter:
-    api_key_env: OPENROUTER_API_KEY
-    api_url: https://openrouter.ai/api/v1
-    model: anthropic/claude-opus-4-6
-    name: Claude Opus 4.6 (OpenRouter)
+    name: "Claude Opus 4.6 (OpenRouter)"
+    model: "anthropic/claude-opus-4-6"
+    api_url: "https://openrouter.ai/api/v1"
+    api_key_env: "OPENROUTER_API_KEY"
 ```
 
-### Adding a new model
+### Per-Model Overrides
 
-Add a new entry under `models`:
+Any model entry can override compaction thresholds (defaults shown):
 
 ```yaml
   my-model:
-    api_key_env: MY_API_KEY
-    api_url: https://my-provider.com/v1
-    model: provider/model-id
-    name: My Model (Provider)
+    model: "provider/model-id"
+    api_url: "https://..."
+    api_key_env: "MY_API_KEY"
+    context_window: 128000       # model's hard token limit
+    reserve_tokens: 16384        # headroom for next reply
+    keep_recent_tokens: 20000    # recent tail kept verbatim
 ```
-
-Set `default_model: my-model` to use it by default.
 
 ---
 
@@ -115,19 +136,32 @@ Set `default_model: my-model` to use it by default.
 
 ```
 Driverless_AGI/
-├── main.py              # CLI entry point
-├── config.yaml          # Model and runtime config
-├── .env                 # API keys (gitignored)
-├── soul.md             # Agent personality (me)
-├── agents.md           # Agent context / system prompt base
+├── main.py                # Single-shot CLI (argparse)
+├── cli.py                 # Interactive CLI / REPL (typer + rich)
+├── app.py                 # Streamlit web UI
+├── config.yaml            # Runtime config (gitignored)
+├── config.example.yaml    # Config template
+├── .env                   # API keys (gitignored)
+├── SOUL.md                # Agent personality
+├── AGENTS.md              # Project context prepended to system prompt
 │
-└── agent/
-    ├── base_tool.py    # BaseTool ABC — inherit to add tools
-    ├── registry.py     # ToolRegistry singleton
-    ├── tools.py         # read, write, edit, bash
-    ├── loop.py          # AgentLoop + AgentConfig
-    ├── config_loader.py # Resolves model config
-    └── session.py       # SessionTracker — logs to logs/
+├── agent/
+│   ├── base_tool.py       # BaseTool ABC
+│   ├── registry.py        # ToolRegistry singleton
+│   ├── tools.py           # read, write, edit, bash
+│   ├── loop.py            # AgentLoop, AgentConfig, AgentCallbacks
+│   ├── config_loader.py   # Resolves model config from YAML
+│   └── session.py         # SessionTracker — JSONL logs
+│
+├── nicegui_app/           # NiceGUI web UI
+│   ├── main.py            # App entry point
+│   ├── callbacks.py       # Agent → UI bridge (thread-safe)
+│   ├── state.py           # App state
+│   ├── history.py         # Session history loader
+│   ├── components/        # Sidebar, chat message, tool card
+│   └── styles/theme.css   # Soft-structuralism CSS
+│
+└── logs/                  # Session JSONL files
 ```
 
 ### Tools
@@ -144,7 +178,7 @@ Driverless_AGI/
 1. Create a class inheriting from `BaseTool`
 2. Define `name`, `description`, and `_parameters` (JSON Schema)
 3. Implement `run(self, ...)` — receives parsed args as kwargs
-4. Register it at the bottom of `agent/tools.py`:
+4. Register at the bottom of `agent/tools.py`:
 
 ```python
 class MyTool(BaseTool):
@@ -169,24 +203,32 @@ registry.register(MyTool())
 ## Session Logs
 
 Every run is logged to `logs/session_<timestamp>.jsonl`. Entries include:
-- Message history with token counts and cost
-- Tool call start/end events with inputs/outputs
-- Session summary on finish
 
-Logs are append-only. Rotate or clean as needed.
+- Message history with token counts and cost estimates
+- Tool call start/end events with inputs/outputs
+- Session summary with totals on finish
+
+The web UIs can load past sessions and continue them. Logs are append-only.
 
 ---
 
-## Custom Agent Identity
+## Agent Identity
 
-`soul.md` defines the agent's personality and tone — that's me. Edit it to create a different agent character. `agents.md` provides project context prepended to every session.
+`SOUL.md` defines the agent's personality. `AGENTS.md` provides project context. Both are prepended to the system prompt.
 
 ---
 
 ## Dependencies
 
-- `openai` — API client
-- `python-dotenv` — `.env` loading
-- `pyyaml` — config parsing
+Core (from `pyproject.toml`):
 
-See `requirements.txt` for pinned versions.
+- `openai` — API client (any OpenAI-compatible endpoint)
+- `pyyaml` — config parsing
+- `python-dotenv` — `.env` loading
+- `nicegui` — NiceGUI web UI
+- `markdown` — markdown rendering
+
+Additional (used by CLI and Streamlit UI, install separately if needed):
+
+- `typer` + `rich` — interactive CLI
+- `streamlit` + `streamlit-autorefresh` — Streamlit web UI

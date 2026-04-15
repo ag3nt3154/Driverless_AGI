@@ -144,10 +144,6 @@ class SessionTracker:
                 f"{name}\u00d7{count}" for name, count in tool_call_counts.items()
             )
         print(f"[dagi] session saved \u2192 {self._path}", file=sys.stderr)
-        print(
-            f"[dagi] tokens  in={total_in}  out={total_out}{cost_str}{tools_str}",
-            file=sys.stderr,
-        )
 
     # ---------------------------------------------------------------- internal
 

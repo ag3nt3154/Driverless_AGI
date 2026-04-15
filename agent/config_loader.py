@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import os
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 
 import yaml
@@ -22,6 +23,13 @@ import yaml
 # Imported here to avoid a circular import — config_loader must not import AgentLoop.
 # AgentConfig is a plain dataclass with no side effects.
 from agent.loop import AgentConfig
+
+
+@dataclass
+class CliConfig:
+    """CLI-specific settings loaded from the top-level `cli:` key in config.yaml."""
+    threading: str = "threaded"  # "threaded" | "sync"
+    verbose: bool = False
 
 _CONFIG_PATH = Path("config.yaml")
 
@@ -32,6 +40,25 @@ _FALLBACK_ENTRY: dict = {
     "api_url": "https://api.openai.com/v1",
     "api_key_env": "OPENAI_API_KEY",
 }
+
+
+def get_model_display_name(model_id: str | None = None) -> str:
+    """Return the human-readable name for a model ID (falls back to the raw model string)."""
+    raw = load_raw_config()
+    catalog: dict = raw.get("models", {})
+    chosen_id = model_id or raw.get("default_model") or _FALLBACK_MODEL_ID
+    entry = catalog.get(chosen_id, _FALLBACK_ENTRY)
+    return entry.get("name", chosen_id or "unknown")
+
+
+def load_cli_config() -> CliConfig:
+    """Return CLI settings from the `cli:` section of config.yaml, with safe defaults."""
+    raw = load_raw_config()
+    cli = raw.get("cli", {}) or {}
+    return CliConfig(
+        threading=cli.get("threading", "threaded"),
+        verbose=bool(cli.get("verbose", False)),
+    )
 
 
 def load_raw_config() -> dict:
@@ -84,11 +111,19 @@ def resolve_model_config(model_id: str | None = None) -> AgentConfig:
             file=sys.stderr,
         )
 
+    # Per-model overrides take precedence (different models have different limits)
+    context_window     = entry.get("context_window")      or raw.get("context_window",      128_000)
+    reserve_tokens     = entry.get("reserve_tokens")      or raw.get("reserve_tokens",       16_384)
+    keep_recent_tokens = entry.get("keep_recent_tokens")  or raw.get("keep_recent_tokens",   20_000)
+
     return AgentConfig(
         model=entry["model"],
         base_url=entry["api_url"],
         api_key=api_key,
         max_iterations=raw.get("max_iterations", 20),
+        context_window=int(context_window),
+        reserve_tokens=int(reserve_tokens),
+        keep_recent_tokens=int(keep_recent_tokens),
     )
 
 
