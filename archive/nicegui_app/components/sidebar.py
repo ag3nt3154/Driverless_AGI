@@ -14,7 +14,7 @@ from agent.config_loader import (
 )
 
 if TYPE_CHECKING:
-    from nicegui_app.state import AppState
+    from archive.nicegui_app.state import AppState
 
 
 def render_sidebar(state: "AppState", on_new_chat: Callable, on_load_session: Callable) -> None:

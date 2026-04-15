@@ -16,6 +16,7 @@ import textwrap
 from concurrent.futures import ThreadPoolExecutor
 from typing import Optional
 
+import openai
 import typer
 from rich.console import Console
 from rich.live import Live
@@ -35,7 +36,7 @@ from agent.config_loader import (
     load_cli_config,
     resolve_model_config,
 )
-from agent.loop import AgentCallbacks, AgentLoop
+from agent.loop import AgentCallbacks, AgentLoop, compact_context, CompactionResult
 from agent.registry import registry
 import agent.tools  # noqa: F401 — registers all tools
 
@@ -344,6 +345,94 @@ def _run_task(
     return loop._messages
 
 
+# ── Slash commands ─────────────────────────────────────────────────────────────
+
+_SLASH_COMMANDS: dict[str, str] = {
+    "/help":    "Show this list of commands",
+    "/exit":    "Exit the session (same as exit/quit/q)",
+    "/compact": "Force-compact conversation context into a summary",
+    "/tools":   "List all registered agent tools",
+}
+
+_EXIT_SENTINEL = object()  # returned by /exit handler to signal the REPL to break
+
+
+def _cmd_help() -> None:
+    table = Table(title="Slash Commands", border_style="dim", padding=(0, 1))
+    table.add_column("Command", style="bold cyan")
+    table.add_column("Description", style="dim")
+    for cmd, desc in _SLASH_COMMANDS.items():
+        table.add_row(cmd, desc)
+    console.print(table)
+
+
+def _cmd_tools() -> None:
+    tools = registry.list_tools()
+    table = Table(title="Registered Tools", border_style="dim", padding=(0, 1))
+    table.add_column("Name", style="bold green")
+    table.add_column("Description", style="dim")
+    for name, desc in tools:
+        table.add_row(name, desc)
+    console.print(table)
+
+
+def _cmd_compact(
+    conversation_msgs: list,
+    model_id: str | None,
+    stats: _Stats,
+) -> None:
+    if len(conversation_msgs) < 3:
+        console.print("[dim]Nothing to compact — conversation is too short.[/dim]")
+        return
+
+    config = resolve_model_config(model_id)
+    client = openai.OpenAI(api_key=config.api_key, base_url=config.base_url)
+
+    def _on_compaction(kept: int, removed: int) -> None:
+        console.print(
+            f"[yellow]⚡ Context compacted — removed {removed} messages, kept {kept}[/yellow]"
+        )
+
+    result = compact_context(
+        conversation_msgs, config, client,
+        force=True,
+        on_compaction=_on_compaction,
+    )
+
+    if result.did_compact:
+        stats.update_tokens(
+            result.summary_input_tokens,
+            result.summary_output_tokens,
+            result.summary_cost,
+        )
+    else:
+        console.print("[dim]Nothing to compact.[/dim]")
+
+
+def _handle_slash_command(
+    raw: str,
+    conversation_msgs: list,
+    model_id: str | None,
+    stats: _Stats,
+) -> object | None:
+    """Dispatch a slash command. Returns _EXIT_SENTINEL to signal REPL exit."""
+    parts = raw.split(maxsplit=1)
+    cmd = parts[0].lower()
+
+    if cmd == "/exit":
+        return _EXIT_SENTINEL
+    elif cmd == "/help":
+        _cmd_help()
+    elif cmd == "/compact":
+        _cmd_compact(conversation_msgs, model_id, stats)
+    elif cmd == "/tools":
+        _cmd_tools()
+    else:
+        console.print(f"[red]Unknown command:[/red] {cmd}")
+        console.print("[dim]Type [bold]/help[/bold] to see available commands.[/dim]")
+    return None
+
+
 # ── Typer command ─────────────────────────────────────────────────────────────
 
 @app.command()
@@ -371,7 +460,8 @@ def run(
     console.print(
         Panel(
             "[bold cyan]Driverless AGI[/bold cyan]  [dim]— agentic coding assistant[/dim]\n"
-            "[dim]Type [bold]exit[/bold] or [bold]quit[/bold] to leave · "
+            "[dim]Type [bold]/help[/bold] for commands · "
+            "[bold]exit[/bold] or [bold]/exit[/bold] to leave · "
             "[bold]Ctrl-C[/bold] to interrupt[/dim]",
             border_style="cyan",
             padding=(0, 2),
@@ -399,6 +489,15 @@ def run(
                 continue
             if user_input.lower() in ("exit", "quit", "q"):
                 break
+            # ── Slash commands ──────────────────────────────────────────
+            if user_input.startswith("/"):
+                result = _handle_slash_command(
+                    user_input, conversation_msgs, model, stats,
+                )
+                if result is _EXIT_SENTINEL:
+                    break
+                continue
+            # ────────────────────────────────────────────────────────────
             run_one(user_input)
 
     console.print("\n[dim]Goodbye.[/dim]")

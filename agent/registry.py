@@ -13,6 +13,10 @@ class ToolRegistry:
     def get_openai_tools_list(self) -> list[dict]:
         return [t.schema() for t in self._tools.values()]
 
+    def list_tools(self) -> list[tuple[str, str]]:
+        """Return ``[(name, description), ...]`` for every registered tool."""
+        return [(t.name, t.description) for t in self._tools.values()]
+
     def dispatch(self, name: str, kwargs: dict) -> str | list:
         if name not in self._tools:
             return f"Error: unknown tool '{name}'"
