@@ -116,11 +116,15 @@ def resolve_model_config(model_id: str | None = None) -> AgentConfig:
     reserve_tokens     = entry.get("reserve_tokens")      or raw.get("reserve_tokens",       16_384)
     keep_recent_tokens = entry.get("keep_recent_tokens")  or raw.get("keep_recent_tokens",   20_000)
 
+    # Per-model thinking effort override, falling back to global
+    thinking = entry.get("thinking") or raw.get("thinking", "none") or "none"
+
     return AgentConfig(
         model=entry["model"],
         base_url=entry["api_url"],
         api_key=api_key,
         max_iterations=raw.get("max_iterations", 20),
+        thinking=str(thinking).lower(),
         context_window=int(context_window),
         reserve_tokens=int(reserve_tokens),
         keep_recent_tokens=int(keep_recent_tokens),

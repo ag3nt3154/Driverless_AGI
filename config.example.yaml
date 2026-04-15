@@ -9,6 +9,14 @@
 
 default_model: gpt-4o-openai
 
+# Reasoning / thinking effort for models that support it.
+# Values: none | low | medium | high
+# "none" disables thinking. low/medium/high map to the provider's reasoning effort.
+# For models with binary thinking (on/off), any value other than "none" enables it.
+# Note: higher thinking effort increases token usage and cost.
+# Can also be set per-model (see commented example below).
+thinking: none
+
 max_iterations: 20
 
 models:
@@ -35,3 +43,11 @@ models:
     model: "anthropic/claude-opus-4-6"
     api_url: "https://openrouter.ai/api/v1"
     api_key_env: "OPENROUTER_API_KEY"
+
+  # Example: per-model thinking override (overrides global `thinking:` above)
+  # qwen3-30b-openrouter:
+  #   name: "Qwen3 30B (OpenRouter)"
+  #   model: "qwen/qwen3-30b-a3b"
+  #   api_url: "https://openrouter.ai/api/v1"
+  #   api_key_env: "OPENROUTER_API_KEY"
+  #   thinking: high

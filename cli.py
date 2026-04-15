@@ -73,12 +73,14 @@ class _Stats:
     def __init__(self) -> None:
         self.input_tok = 0
         self.output_tok = 0
+        self.thinking_tok = 0
         self.cost: float | None = None
         self.tool_counts: dict[str, int] = {}
 
-    def update_tokens(self, inp: int, out: int, cost: float | None) -> None:
-        self.input_tok = inp
-        self.output_tok = out
+    def update_tokens(self, inp: int, out: int, cost: float | None, thinking: int = 0) -> None:
+        self.input_tok    += inp
+        self.output_tok   += out
+        self.thinking_tok += thinking
         if cost is not None:
             self.cost = (self.cost or 0.0) + cost
 
@@ -87,7 +89,11 @@ class _Stats:
 
     def footer(self, model_name: str) -> str:
         parts = [model_name]
-        parts.append(f"in {self.input_tok:,}  out {self.output_tok:,}")
+        tok_seg = f"in {self.input_tok:,}"
+        if self.thinking_tok > 0:
+            tok_seg += f"  think {self.thinking_tok:,}"
+        tok_seg += f"  out {self.output_tok:,}"
+        parts.append(tok_seg)
         if self.cost is not None:
             parts.append(f"${self.cost:.5f}")
         return "  ·  ".join(parts)
@@ -131,8 +137,8 @@ def _make_sync_callbacks(
         if text.strip():
             console.print(Markdown(text))
 
-    def on_token_update(inp: int, out: int, cost: float | None) -> None:
-        stats.update_tokens(inp, out, cost)
+    def on_token_update(inp: int, out: int, cost: float | None, thinking: int = 0) -> None:
+        stats.update_tokens(inp, out, cost, thinking)
 
     def on_compaction(kept: int, removed: int) -> None:
         console.print(
@@ -141,7 +147,15 @@ def _make_sync_callbacks(
 
     def on_reasoning(text: str) -> None:
         if text.strip():
-            console.print(f"[dim italic]{textwrap.shorten(text, 300)}[/dim italic]")
+            console.print(
+                Panel(
+                    f"[dim italic]{text}[/dim italic]",
+                    title="[dim bold]🧠 Thinking[/dim bold]",
+                    title_align="left",
+                    border_style="dim",
+                    padding=(0, 1),
+                )
+            )
 
     def on_error(exc: Exception) -> None:
         console.print_exception()
@@ -181,7 +195,7 @@ def _make_threaded_callbacks(q: queue.Queue, stats: _Stats) -> AgentCallbacks:
         on_tool_start     = lambda n, d, a: put(_EVT_TOOL_START, n, d, a),
         on_tool_end       = lambda n, r:    put(_EVT_TOOL_END, n, r),
         on_assistant_text = lambda t:       put(_EVT_ASSISTANT, t),
-        on_token_update   = lambda i, o, c: put(_EVT_TOKENS, i, o, c),
+        on_token_update   = lambda i, o, c, t=0: put(_EVT_TOKENS, i, o, c, t),
         on_compaction     = lambda k, r:    put(_EVT_COMPACTION, k, r),
         on_reasoning      = lambda t:       put(_EVT_REASONING, t),
         on_error          = lambda e:       put(_EVT_ERROR, str(e)),
@@ -250,8 +264,9 @@ def _render_queue(
                     console.print(Markdown(text))
 
             elif tag == _EVT_TOKENS:
-                inp, out, cost = payload
-                stats.update_tokens(inp, out, cost)
+                inp, out, cost = payload[0], payload[1], payload[2]
+                thinking = payload[3] if len(payload) > 3 else 0
+                stats.update_tokens(inp, out, cost, thinking)
 
             elif tag == _EVT_COMPACTION:
                 kept, removed = payload
@@ -262,7 +277,15 @@ def _render_queue(
             elif tag == _EVT_REASONING:
                 text = payload[0]
                 if text.strip():
-                    console.print(f"[dim italic]{textwrap.shorten(text, 300)}[/dim italic]")
+                    console.print(
+                        Panel(
+                            f"[dim italic]{text}[/dim italic]",
+                            title="[dim bold]🧠 Thinking[/dim bold]",
+                            title_align="left",
+                            border_style="dim",
+                            padding=(0, 1),
+                        )
+                    )
 
             elif tag == _EVT_ERROR:
                 err_msg = payload[0] if payload and payload[0] else "Unknown error"

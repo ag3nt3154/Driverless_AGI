@@ -74,6 +74,7 @@ class AgentConfig:
     max_iterations: int = 20
     system_prompt: str = DEFAULT_SYSTEM_PROMPT
     thread_id: str | None = None
+    thinking: str = "none"  # "none" | "low" | "medium" | "high"
     # Compaction (Pi-style)
     context_window: int = 128_000     # model's hard token limit
     reserve_tokens: int = 16_384      # headroom for summary response + next reply
@@ -87,13 +88,22 @@ class AgentCallbacks:
     on_tool_start:     Callable[[str, str, str], None]          = field(default=lambda n, d, a: None)
     on_tool_end:       Callable[[str, str], None]               = field(default=lambda n, r: None)
     on_assistant_text: Callable[[str], None]                    = field(default=lambda t: None)
-    on_token_update:   Callable[[int, int, float | None], None] = field(default=lambda i, o, c: None)
+    on_token_update:   Callable[[int, int, float | None, int], None] = field(default=lambda i, o, c, t: None)
     on_iteration:      Callable[[int, int], None]               = field(default=lambda cur, mx: None)
     on_done:           Callable[[str], None]                    = field(default=lambda r: None)
     on_error:          Callable[[Exception], None]              = field(default=lambda e: None)
     on_api_call:       Callable[[list], None]                   = field(default=lambda msgs: None)
     on_reasoning:      Callable[[str], None]                    = field(default=lambda text: None)
     on_compaction:     Callable[[int, int], None]               = field(default=lambda kept, removed: None)
+
+
+def _extract_reasoning(message) -> str:
+    """Get reasoning text from the response message, trying SDK attr then model_extra."""
+    text = getattr(message, "reasoning_content", None) or ""
+    if not text:
+        extras = getattr(message, "model_extra", None) or {}
+        text = extras.get("reasoning", "")
+    return text or ""
 
 
 def _load_md(*filenames: str) -> str:
@@ -136,6 +146,10 @@ class AgentLoop:
         self.client = openai.OpenAI(api_key=config.api_key, base_url=config.base_url)
         self.config = config
         self.registry = registry
+        # Build the extra_body for reasoning/thinking (OpenRouter extension)
+        self._reasoning_extra: dict = {}
+        if config.thinking and config.thinking.lower() != "none":
+            self._reasoning_extra = {"reasoning": {"effort": config.thinking.lower()}}
         self.tracker = SessionTracker(model=config.model, thread_id=config.thread_id)
         self.tracker.record_system(system)
 
@@ -257,9 +271,10 @@ class AgentLoop:
                     messages=self._messages,
                     tools=self.registry.get_openai_tools_list(),
                     parallel_tool_calls=False,
+                    **(dict(extra_body=self._reasoning_extra) if self._reasoning_extra else {}),
                 )
                 message = response.choices[0].message
-                _reasoning = getattr(message, "reasoning_content", None) or ""
+                _reasoning = _extract_reasoning(message)
                 if _reasoning:
                     self.callbacks.on_reasoning(_reasoning)
 
@@ -270,10 +285,15 @@ class AgentLoop:
                     self._messages.append({"role": "assistant", "content": message.content})
                     result = message.content or ""
                     self.callbacks.on_assistant_text(result)
+                    _thinking_tok = (
+                        getattr(getattr(response.usage, "completion_tokens_details", None), "reasoning_tokens", None)
+                        or 0
+                    )
                     self.callbacks.on_token_update(
                         getattr(response.usage, "prompt_tokens", 0) or 0,
                         getattr(response.usage, "completion_tokens", 0) or 0,
                         getattr(response.usage, "cost", None),
+                        _thinking_tok,
                     )
                     self.tracker.record_assistant(message.content, response.usage, tool_records)
                     self.tracker.finish(raw_messages=self._messages)
@@ -321,10 +341,15 @@ class AgentLoop:
                     )
 
                 self.tracker.record_assistant(message.content, response.usage, tool_records)
+                _thinking_tok = (
+                    getattr(getattr(response.usage, "completion_tokens_details", None), "reasoning_tokens", None)
+                    or 0
+                )
                 self.callbacks.on_token_update(
                     getattr(response.usage, "prompt_tokens", 0) or 0,
                     getattr(response.usage, "completion_tokens", 0) or 0,
                     getattr(response.usage, "cost", None),
+                    _thinking_tok,
                 )
 
                 # ── Compaction trigger ────────────────────────────────────────
@@ -349,13 +374,24 @@ class AgentLoop:
         response = self.client.chat.completions.create(
             model=self.config.model,
             messages=self._messages,
+            **(dict(extra_body=self._reasoning_extra) if self._reasoning_extra else {}),
         )
         _final_msg = response.choices[0].message
-        _final_reasoning = getattr(_final_msg, "reasoning_content", None) or ""
+        _final_reasoning = _extract_reasoning(_final_msg)
         if _final_reasoning:
             self.callbacks.on_reasoning(_final_reasoning)
         final = _final_msg.content or ""
         self.tracker.record_assistant(final, response.usage, [])
         self.tracker.finish(raw_messages=self._messages)
+        _thinking_tok = (
+            getattr(getattr(response.usage, "completion_tokens_details", None), "reasoning_tokens", None)
+            or 0
+        )
+        self.callbacks.on_token_update(
+            getattr(response.usage, "prompt_tokens", 0) or 0,
+            getattr(response.usage, "completion_tokens", 0) or 0,
+            getattr(response.usage, "cost", None),
+            _thinking_tok,
+        )
         self.callbacks.on_done(final)
         return final

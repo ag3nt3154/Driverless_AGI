@@ -130,6 +130,32 @@ Any model entry can override compaction thresholds (defaults shown):
     keep_recent_tokens: 20000    # recent tail kept verbatim
 ```
 
+### Thinking / Reasoning
+
+Models that support extended thinking (e.g. Qwen3, DeepSeek-R1) can be configured with the `thinking` key. Values: `none` (default), `low`, `medium`, `high`.
+
+Set it globally:
+
+```yaml
+thinking: high
+```
+
+Or per-model (overrides the global setting):
+
+```yaml
+models:
+  qwen3-30b-openrouter:
+    model: "qwen/qwen3-30b-a3b"
+    api_url: "https://openrouter.ai/api/v1"
+    api_key_env: "OPENROUTER_API_KEY"
+    thinking: high      # only this model reasons; others stay at the global value
+```
+
+When reasoning is active:
+- A **🧠 Thinking** panel appears in the CLI showing the model's chain-of-thought
+- The footer displays reasoning tokens: `in 14,234  think 1,456  out 890`
+- When `thinking: none`, no thinking panel or token count is shown
+
 ---
 
 ## Architecture
