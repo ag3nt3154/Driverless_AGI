@@ -7,20 +7,37 @@ import openai
 
 from agent.registry import ToolRegistry
 from agent.session import SessionTracker, ToolCallRecord
-from agent.skills import SkillLoader, format_skills_for_prompt
+from agent.skills import Skill, SkillLoader
 from tools.compact import CompactTool, CompactionResult
+
+
+def _format_tools_and_skills(registry: ToolRegistry, skills: list[Skill]) -> str:
+    """Generate a unified tools + skills section for the system prompt."""
+    lines = ["## Available Tools", ""]
+    for name, description in registry.list_tools():
+        lines.append(f"- **{name}**: {description}")
+
+    if skills:
+        lines += [
+            "",
+            "## Available Skills",
+            "",
+            "Skills are detailed guidance documents for specific workflows. "
+            "Invoke the `skill` tool autonomously whenever a task matches a skill's "
+            "purpose — do not wait for the user to ask.",
+            "",
+        ]
+        for s in sorted(skills, key=lambda x: x.name):
+            desc = f" — {s.description}" if s.description else ""
+            lines.append(f"- **{s.name}**{desc}")
+
+    return "\n".join(lines)
+
 
 DEFAULT_SYSTEM_PROMPT = """\
 You are an expert coding assistant. You help users with coding tasks by reading files, executing commands, editing code, and writing new files.
 
-Available tools:
-- read: Read file contents (relative to the project root)
-- write: Create or overwrite files (relative to the project root)
-- edit: Make surgical edits to files (relative to the project root)
-- bash: Execute commands within the project directory
-- grep: Search file contents by regex or literal pattern
-- find: Discover files by glob pattern
-- skill: Load a named skill document for detailed guidance
+{tools_and_skills}
 
 Guidelines:
 - Use grep and find instead of bash for searching/discovering files
@@ -108,7 +125,11 @@ class AgentLoop:
 
         # ── Build system prompt ───────────────────────────────────────────
         readme_path = (dagi_root / "README.md").resolve()
-        prompt = config.system_prompt.format(readme_path=readme_path)
+        tools_and_skills_section = _format_tools_and_skills(self.registry, self.skills)
+        prompt = config.system_prompt.format(
+            readme_path=readme_path,
+            tools_and_skills=tools_and_skills_section,
+        )
 
         # Load preamble: dagi root soul/agents, then project .dagi/AGENTS.md
         preamble_parts: list[str] = []
@@ -123,8 +144,7 @@ class AgentLoop:
                 preamble_parts.append(text)
         preamble = "\n\n---\n\n".join(preamble_parts)
 
-        skills_section = format_skills_for_prompt(self.skills)
-        sections = [s for s in [preamble, prompt, skills_section] if s]
+        sections = [s for s in [preamble, prompt] if s]
         system = "\n\n---\n\n".join(sections)
 
         # Project context line appended to system prompt
@@ -137,8 +157,6 @@ class AgentLoop:
             if p.exists():
                 self.system_parts.append({"label": label, "content": p.read_text(encoding="utf-8").strip()})
         self.system_parts.append({"label": "System Prompt", "content": prompt})
-        if skills_section:
-            self.system_parts.append({"label": "Skills", "content": skills_section})
 
         if initial_messages:
             # multi-turn: continue from existing conversation history

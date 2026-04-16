@@ -12,16 +12,16 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from agent.loop import AgentCallbacks
-from nicegui_app.components.chat_message import (
+from archive.nicegui_app.components.chat_message import (
     update_assistant_content,
     update_meta_label,
     update_reasoning,
 )
-from nicegui_app.components.sidebar import refresh_iteration, refresh_sidebar_stats
-from nicegui_app.components.tool_card import render_tool_card, update_tool_card
+from archive.nicegui_app.components.sidebar import refresh_iteration, refresh_sidebar_stats
+from archive.nicegui_app.components.tool_card import render_tool_card, update_tool_card
 
 if TYPE_CHECKING:
-    from nicegui_app.state import AppState
+    from archive.nicegui_app.state import AppState
 
 
 def make_callbacks(state: "AppState") -> AgentCallbacks:
@@ -129,7 +129,7 @@ def make_callbacks(state: "AppState") -> AgentCallbacks:
             if state.export_row:
                 state.export_row.set_visibility(True)
             # Reload session history to include the newly saved session
-            from nicegui_app.history import load_history_sessions
+            from archive.nicegui_app.history import load_history_sessions
             from nicegui.background_tasks import create as _create_bg
             # Kick off async reload; history refresh needs io_bound
             import asyncio
@@ -210,7 +210,7 @@ def make_callbacks(state: "AppState") -> AgentCallbacks:
 async def _reload_history_async(state: "AppState") -> None:
     """Async wrapper to reload history without blocking the event loop."""
     from nicegui import run
-    from nicegui_app.history import load_history_sessions
+    from archive.nicegui_app.history import load_history_sessions
 
     # Import here to avoid circular import at module load time
     sessions = await run.io_bound(load_history_sessions)
@@ -222,7 +222,7 @@ async def _reload_history_async(state: "AppState") -> None:
     if state.history_column:
         state.history_column.clear()
         with state.history_column:
-            from nicegui_app.components.sidebar import _render_history_buttons
+            from archive.nicegui_app.components.sidebar import _render_history_buttons
             _render_history_buttons(state, state._on_load_session)  # type: ignore[attr-defined]
 
 

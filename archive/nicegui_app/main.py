@@ -18,18 +18,18 @@ from agent.loop import AgentLoop
 from agent.registry import registry
 import agent.tools  # noqa: F401 — registers tools as side-effect
 
-from nicegui_app.callbacks import make_callbacks
-from nicegui_app.components.chat_message import (
+from archive.nicegui_app.callbacks import make_callbacks
+from archive.nicegui_app.components.chat_message import (
     render_assistant_message_shell,
     render_static_assistant_message,
     render_user_message,
 )
-from nicegui_app.components.sidebar import (
+from archive.nicegui_app.components.sidebar import (
     refresh_history,
     render_sidebar,
 )
-from nicegui_app.history import apply_session_to_state, load_history_sessions
-from nicegui_app.state import AppState
+from archive.nicegui_app.history import apply_session_to_state, load_history_sessions
+from archive.nicegui_app.state import AppState
 
 load_dotenv()
 
@@ -248,7 +248,7 @@ def _handle_new_chat() -> None:
     state.stop_event.clear()
 
     # Reset sidebar widgets
-    from nicegui_app.components.sidebar import refresh_sidebar_stats
+    from archive.nicegui_app.components.sidebar import refresh_sidebar_stats
     refresh_sidebar_stats(state)
     if state.iter_row:
         state.iter_row.set_visibility(False)
@@ -286,7 +286,7 @@ async def _handle_load_session(sess: dict, thread_id: str) -> None:
         )
 
     # Update sidebar stats
-    from nicegui_app.components.sidebar import refresh_sidebar_stats
+    from archive.nicegui_app.components.sidebar import refresh_sidebar_stats
     refresh_sidebar_stats(state)
     if state.export_row:
         state.export_row.set_visibility(True)
