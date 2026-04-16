@@ -1,6 +1,7 @@
 from pathlib import Path
 
 from agent.base_tool import BaseTool
+from tools._path_guard import validate_path
 
 
 class WriteTool(BaseTool):
@@ -18,13 +19,15 @@ class WriteTool(BaseTool):
         "required": ["path", "content"],
     }
 
-    def __init__(self, cwd: Path = Path(".")):
+    def __init__(self, cwd: Path = Path("."), allowed_roots: list[Path] | None = None):
         self.cwd = cwd
+        self.allowed_roots = allowed_roots or [cwd]
 
     def run(self, path: str, content: str) -> str:
         p = Path(path)
         if not p.is_absolute():
             p = self.cwd / p
+        p = validate_path(p, self.allowed_roots)
         p.parent.mkdir(parents=True, exist_ok=True)
         p.write_text(content, encoding="utf-8")
         return f"Written {len(content)} characters to {p}"

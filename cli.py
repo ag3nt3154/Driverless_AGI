@@ -13,6 +13,7 @@ from __future__ import annotations
 import queue
 import sys
 import textwrap
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Optional
@@ -90,7 +91,7 @@ class _Stats:
     def record_tool(self, name: str) -> None:
         self.tool_counts[name] = self.tool_counts.get(name, 0) + 1
 
-    def footer(self, model_name: str) -> str:
+    def footer(self, model_name: str, cwd: Path | None = None) -> str:
         parts = [model_name]
         tok_seg = f"in {self.input_tok:,}"
         if self.thinking_tok > 0:
@@ -99,13 +100,20 @@ class _Stats:
         parts.append(tok_seg)
         if self.cost is not None:
             parts.append(f"${self.cost:.5f}")
+        if cwd is not None:
+            try:
+                display = "~/" + str(cwd.relative_to(Path.home()))
+            except ValueError:
+                display = str(cwd)
+            parts.append(display)
         return "  ·  ".join(parts)
 
 
 # ── Sync callbacks (fire directly on the agent thread) ───────────────────────
 
 def _make_sync_callbacks(
-    stats: _Stats, model_name: str, verbose: bool
+    stats: _Stats, model_name: str, verbose: bool,
+    get_cwd: Callable[[], Path],
 ) -> AgentCallbacks:
     def on_tool_start(name: str, _desc: str, args: str) -> None:
         col = _colour(name)
@@ -164,7 +172,7 @@ def _make_sync_callbacks(
         console.print_exception()
 
     def on_done(_result: str) -> None:
-        console.print(f"[dim]{stats.footer(model_name)}[/dim]")
+        console.print(f"[dim]{stats.footer(model_name, cwd=get_cwd())}[/dim]")
 
     return AgentCallbacks(
         on_tool_start=on_tool_start,
@@ -211,6 +219,7 @@ def _render_queue(
     stats: _Stats,
     model_name: str,
     verbose: bool,
+    get_cwd: Callable[[], Path],
 ) -> None:
     """Drain the event queue and render output. Runs on the main thread."""
     spinner_text = Text("Thinking…", style="dim")
@@ -295,7 +304,7 @@ def _render_queue(
                 console.print(f"[bold red]Error:[/bold red] {err_msg}")
 
             elif tag == _EVT_DONE:
-                console.print(f"[dim]{stats.footer(model_name)}[/dim]")
+                console.print(f"[dim]{stats.footer(model_name, cwd=get_cwd())}[/dim]")
 
 
 # ── Agent runner ──────────────────────────────────────────────────────────────
@@ -316,6 +325,8 @@ def _run_task(
     config.project_path = project_path
     use_threaded = (cli_cfg.threading == "threaded") and not force_sync
 
+    get_cwd: Callable[[], Path] = lambda: project_path
+
     if use_threaded:
         q: queue.Queue = queue.Queue()
         callbacks = _make_threaded_callbacks(q, stats)
@@ -334,9 +345,9 @@ def _run_task(
 
         with ThreadPoolExecutor(max_workers=1) as executor:
             executor.submit(_agent_thread)
-            _render_queue(q, stats, model_name, verbose)
+            _render_queue(q, stats, model_name, verbose, get_cwd)
     else:
-        callbacks = _make_sync_callbacks(stats, model_name, verbose)
+        callbacks = _make_sync_callbacks(stats, model_name, verbose, get_cwd)
         loop = AgentLoop(
             config, callbacks,
             initial_messages=conversation_msgs or None,
@@ -354,6 +365,7 @@ def _run_task(
 _SLASH_COMMANDS: dict[str, str] = {
     "/help":    "Show this list of commands",
     "/exit":    "Exit the session (same as exit/quit/q)",
+    "/wd":      "Show or set working directory  (/wd <path>)",
     "/compact": "Force-compact conversation context into a summary",
     "/tools":   "List all registered agent tools",
     "/skills":  "List all loaded skills",
@@ -422,6 +434,29 @@ def _cmd_init(project_path: Path) -> None:
         console.print(f"[dim]Already initialised: {dagi_dir}[/dim]")
 
 
+def _cmd_wd(arg: str | None, current_path: Path) -> Path:
+    """Show or change the working directory. Returns the (possibly new) path."""
+    if not arg:
+        console.print(f"[bold cyan]Working directory:[/bold cyan] {current_path}")
+        return current_path
+
+    new_path = Path(arg).expanduser()
+    if not new_path.is_absolute():
+        new_path = current_path / new_path
+    new_path = new_path.resolve()
+
+    if not new_path.exists():
+        console.print(f"[red]Error:[/red] path does not exist: {new_path}")
+        return current_path
+    if not new_path.is_dir():
+        console.print(f"[red]Error:[/red] not a directory: {new_path}")
+        return current_path
+
+    console.print(f"[green]✓ Working directory →[/green] {new_path}")
+    console.print("[dim]Conversation history reset — new context will use the updated root.[/dim]")
+    return new_path
+
+
 def _cmd_compact(
     conversation_msgs: list,
     model_id: str | None,
@@ -462,15 +497,22 @@ def _handle_slash_command(
     stats: _Stats,
     project_path: Path,
     active_loop: "AgentLoop | None" = None,
-) -> object | None:
-    """Dispatch a slash command. Returns _EXIT_SENTINEL to signal REPL exit."""
+) -> tuple[object | None, Path]:
+    """Dispatch a slash command. Returns (result, project_path).
+    result is _EXIT_SENTINEL to signal REPL exit, or None otherwise.
+    project_path may be updated by /wd.
+    """
     parts = raw.split(maxsplit=1)
     cmd = parts[0].lower()
 
     if cmd == "/exit":
-        return _EXIT_SENTINEL
+        return _EXIT_SENTINEL, project_path
     elif cmd == "/help":
         _cmd_help()
+    elif cmd == "/wd":
+        arg = parts[1].strip() if len(parts) > 1 else None
+        new_path = _cmd_wd(arg, project_path)
+        return None, new_path
     elif cmd == "/compact":
         _cmd_compact(conversation_msgs, model_id, stats)
     elif cmd == "/tools":
@@ -482,7 +524,7 @@ def _handle_slash_command(
     else:
         console.print(f"[red]Unknown command:[/red] {cmd}")
         console.print("[dim]Type [bold]/help[/bold] to see available commands.[/dim]")
-    return None
+    return None, project_path
 
 
 # ── Typer command ─────────────────────────────────────────────────────────────
@@ -550,12 +592,16 @@ def run(
                 break
             # ── Slash commands ──────────────────────────────────────────
             if user_input.startswith("/"):
-                result = _handle_slash_command(
+                slash_result, new_path = _handle_slash_command(
                     user_input, conversation_msgs, model, stats,
                     project_path, active_loop,
                 )
-                if result is _EXIT_SENTINEL:
+                if slash_result is _EXIT_SENTINEL:
                     break
+                if new_path != project_path:
+                    project_path = new_path
+                    conversation_msgs = []
+                    active_loop = None
                 continue
             # ────────────────────────────────────────────────────────────
             run_one(user_input)

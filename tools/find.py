@@ -1,6 +1,7 @@
 from pathlib import Path
 
 from agent.base_tool import BaseTool
+from tools._path_guard import validate_path
 
 _MAX_RESULTS = 500
 
@@ -20,13 +21,15 @@ class FindTool(BaseTool):
         "required": ["pattern"],
     }
 
-    def __init__(self, cwd: Path = Path(".")):
+    def __init__(self, cwd: Path = Path("."), allowed_roots: list[Path] | None = None):
         self.cwd = cwd
+        self.allowed_roots = allowed_roots or [cwd]
 
     def run(self, pattern: str, path: str = ".") -> str:
         search_path = Path(path)
         if not search_path.is_absolute():
             search_path = self.cwd / search_path
+        search_path = validate_path(search_path, self.allowed_roots)
 
         if not search_path.exists():
             return f"Error: path does not exist: {search_path}"

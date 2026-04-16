@@ -295,6 +295,7 @@ class AgentLoop:
         # ── Build registry bound to project path ──────────────────────────
         self.registry = create_tool_registry(
             cwd=config.project_path,
+            allowed_roots=[dagi_root, config.project_path],
             skills=self.skills or None,
         )
 

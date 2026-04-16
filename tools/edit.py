@@ -1,6 +1,7 @@
 from pathlib import Path
 
 from agent.base_tool import BaseTool
+from tools._path_guard import validate_path
 
 
 class EditTool(BaseTool):
@@ -20,13 +21,15 @@ class EditTool(BaseTool):
         "required": ["path", "oldText", "newText"],
     }
 
-    def __init__(self, cwd: Path = Path(".")):
+    def __init__(self, cwd: Path = Path("."), allowed_roots: list[Path] | None = None):
         self.cwd = cwd
+        self.allowed_roots = allowed_roots or [cwd]
 
     def run(self, path: str, oldText: str, newText: str) -> str:
         p = Path(path)
         if not p.is_absolute():
             p = self.cwd / p
+        p = validate_path(p, self.allowed_roots)
         content = p.read_text(encoding="utf-8")
         count = content.count(oldText)
         if count == 0:

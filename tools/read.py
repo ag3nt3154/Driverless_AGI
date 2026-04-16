@@ -2,6 +2,7 @@ import base64
 from pathlib import Path
 
 from agent.base_tool import BaseTool
+from tools._path_guard import validate_path
 
 _IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
 _MIME = {
@@ -30,13 +31,15 @@ class ReadTool(BaseTool):
         "required": ["path"],
     }
 
-    def __init__(self, cwd: Path = Path(".")):
+    def __init__(self, cwd: Path = Path("."), allowed_roots: list[Path] | None = None):
         self.cwd = cwd
+        self.allowed_roots = allowed_roots or [cwd]
 
     def run(self, path: str, offset: int = 1, limit: int = 2000) -> str | list:
         p = Path(path)
         if not p.is_absolute():
             p = self.cwd / p
+        p = validate_path(p, self.allowed_roots)
         ext = p.suffix.lower()
         if ext in _IMAGE_EXTS:
             b64 = base64.b64encode(p.read_bytes()).decode()
