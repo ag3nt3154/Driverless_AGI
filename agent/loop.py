@@ -1,56 +1,14 @@
 import json
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Callable, NamedTuple
+from typing import Callable
 
 import openai
 
 from agent.registry import ToolRegistry
 from agent.session import SessionTracker, ToolCallRecord
 from agent.skills import SkillLoader, format_skills_for_prompt
-
-
-# ── Compaction helpers ────────────────────────────────────────────────────────
-
-class CompactionResult(NamedTuple):
-    """Returned by compact_context() so callers can track what happened."""
-    did_compact: bool
-    removed_count: int
-    summary_input_tokens: int   # prompt tokens used by summarisation call
-    summary_output_tokens: int  # completion tokens used by summarisation call
-    summary_cost: float | None  # cost if reported by the API, else None
-
-
-def _estimate_tokens(msg: dict) -> int:
-    """Rough token estimate for a single message (1 token ≈ 4 chars)."""
-    text = ""
-    if msg.get("content"):
-        text += str(msg["content"])
-    for tc in msg.get("tool_calls") or []:
-        text += str(tc.get("function", {}).get("arguments", ""))
-    return max(len(text) // 4, 4)
-
-
-def _format_messages_for_summary(messages: list[dict]) -> str:
-    """Render a message slice as human-readable text for the summarizer."""
-    lines = []
-    for msg in messages:
-        role = msg.get("role", "unknown").upper()
-        if role == "ASSISTANT":
-            content = msg.get("content") or ""
-            tool_calls = msg.get("tool_calls") or []
-            if content:
-                lines.append(f"[ASSISTANT]: {content}")
-            for tc in tool_calls:
-                fn = tc.get("function", {})
-                lines.append(f"[TOOL CALL {fn.get('name', '')}]: {fn.get('arguments', '')}")
-        elif role == "TOOL":
-            lines.append(
-                f"[TOOL RESULT tool_call_id={msg.get('tool_call_id', '')}]: {msg.get('content', '')}"
-            )
-        elif role == "USER":
-            lines.append(f"[USER]: {msg.get('content', '')}")
-    return "\n".join(lines)
+from tools.compact import CompactTool, CompactionResult
 
 DEFAULT_SYSTEM_PROMPT = """\
 You are an expert coding assistant. You help users with coding tasks by reading files, executing commands, editing code, and writing new files.
@@ -120,157 +78,6 @@ def _extract_reasoning(message) -> str:
         extras = getattr(message, "model_extra", None) or {}
         text = extras.get("reasoning", "")
     return text or ""
-
-
-def _load_md(*filenames: str) -> str:
-    parts = []
-    for name in filenames:
-        p = Path(name)
-        if p.exists():
-            parts.append(p.read_text(encoding="utf-8").strip())
-    return "\n\n---\n\n".join(parts)
-
-
-# ── Standalone compaction function ────────────────────────────────────────────
-
-_NO_COMPACTION = CompactionResult(
-    did_compact=False, removed_count=0,
-    summary_input_tokens=0, summary_output_tokens=0, summary_cost=None,
-)
-
-
-def compact_context(
-    messages: list[dict],
-    config: "AgentConfig",
-    client: openai.OpenAI,
-    *,
-    force: bool = False,
-    on_compaction: Callable[[int, int], None] | None = None,
-) -> CompactionResult:
-    """Pi-style context compaction (standalone).
-
-    Summarises the 'middle' of *messages* (everything older than the
-    ``keep_recent_tokens`` tail) into a single cumulative summary message.
-    Respects the OpenAI assistant/tool pairing invariant and supports
-    progressive re-summarisation when a prior summary already exists.
-
-    When *force* is True the token-threshold check is skipped — the middle
-    is always summarised (used by the ``/compact`` slash command).
-
-    Returns a :class:`CompactionResult` so the caller can track token usage.
-    *messages* is mutated in place.
-    """
-    msgs = messages
-    head_end = 1  # index immediately after the system message (always [0])
-
-    # ── Detect existing summary (progressive distillation) ────────────────
-    prior_summary: str | None = None
-    search_start = head_end
-    if (
-        len(msgs) > 1
-        and msgs[1].get("role") == "user"
-        and str(msgs[1].get("content", "")).startswith("[CONTEXT SUMMARY")
-    ):
-        prior_summary = str(msgs[1]["content"])
-        search_start = 2  # skip the old summary when scanning safe cuts
-
-    # ── Find safe cut points ──────────────────────────────────────────────
-    safe_cuts: list[int] = []
-    for i in range(search_start + 1, len(msgs)):
-        prev = msgs[i - 1]
-        if prev.get("role") == "tool":
-            safe_cuts.append(i)
-        elif prev.get("role") == "assistant" and not prev.get("tool_calls"):
-            safe_cuts.append(i)
-
-    if not safe_cuts:
-        return _NO_COMPACTION
-
-    # ── Token-based tail boundary ─────────────────────────────────────────
-    accumulated = 0
-    tail_start = len(msgs)
-    for i in range(len(msgs) - 1, search_start - 1, -1):
-        accumulated += _estimate_tokens(msgs[i])
-        if accumulated >= config.keep_recent_tokens:
-            tail_start = i
-            break
-
-    # ── Snap to nearest safe cut point at-or-before tail_start ────────────
-    valid_cuts = [c for c in safe_cuts if c <= tail_start]
-    if not valid_cuts:
-        if not force:
-            return _NO_COMPACTION
-        # force mode: use last safe cut even if inside the tail
-        valid_cuts = safe_cuts
-    tail_start = valid_cuts[-1]
-
-    # ── Slice the middle to be summarised ─────────────────────────────────
-    middle = msgs[head_end:tail_start]
-    if not middle:
-        return _NO_COMPACTION
-
-    # ── Build summarisation prompt ────────────────────────────────────────
-    prior_section = (
-        f"\n\n=== PRIOR SUMMARY (carry this forward) ===\n{prior_summary}"
-        if prior_summary
-        else ""
-    )
-    summarisation_messages = [
-        {
-            "role": "system",
-            "content": (
-                "You are a precise technical summariser. "
-                "Compress the conversation history into a single cumulative summary. "
-                "Preserve every file path, tool call, result, decision, error, and "
-                "resolution. End with a '### Files Read/Modified' section listing "
-                "every file path mentioned. Output ONLY the summary — no preamble."
-            ),
-        },
-        {
-            "role": "user",
-            "content": (
-                "Produce a cumulative summary of the following conversation segment."
-                + prior_section
-                + "\n\n=== NEW CONVERSATION SEGMENT ===\n"
-                + _format_messages_for_summary(middle)
-                + "\n=== END ==="
-            ),
-        },
-    ]
-
-    summary_response = client.chat.completions.create(
-        model=config.model,
-        messages=summarisation_messages,
-    )
-    summary_text = summary_response.choices[0].message.content or "(no summary)"
-
-    # ── Token usage from the summarisation call ───────────────────────────
-    su = summary_response.usage
-    sum_in = getattr(su, "prompt_tokens", 0) or 0
-    sum_out = getattr(su, "completion_tokens", 0) or 0
-    sum_cost = getattr(su, "cost", None)
-
-    # ── Build replacement message (role=user avoids pairing invariant) ────
-    summary_message = {
-        "role": "user",
-        "content": "[CONTEXT SUMMARY — prior conversation compacted]\n\n" + summary_text,
-    }
-
-    # ── Mutate in place ───────────────────────────────────────────────────
-    removed_count = len(middle)
-    messages[head_end:tail_start] = [summary_message]
-
-    # ── Notify observers ──────────────────────────────────────────────────
-    if on_compaction:
-        on_compaction(len(messages), removed_count)
-
-    return CompactionResult(
-        did_compact=True,
-        removed_count=removed_count,
-        summary_input_tokens=sum_in,
-        summary_output_tokens=sum_out,
-        summary_cost=sum_cost,
-    )
 
 
 class AgentLoop:
@@ -348,12 +155,16 @@ class AgentLoop:
         self.tracker = SessionTracker(model=config.model, thread_id=config.thread_id)
         self.tracker.record_system(system)
 
-    def _compact_context(self) -> CompactionResult:
-        """Thin wrapper — delegates to the standalone ``compact_context()``."""
-        return compact_context(
-            self._messages, self.config, self.client,
+        # ── Compaction tool (internal-only, not in ToolRegistry) ──────────
+        self.compact_tool = CompactTool()
+        self.compact_tool.bind(
+            self._messages, config, self.client,
             on_compaction=self.callbacks.on_compaction,
         )
+
+    def _compact_context(self) -> CompactionResult:
+        """Delegates to CompactTool.compact()."""
+        return self.compact_tool.compact()
 
     def run(self, task: str) -> str:
         self._messages.append({"role": "user", "content": task})

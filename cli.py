@@ -18,7 +18,6 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Optional
 
-import openai
 import typer
 from rich.console import Console
 from rich.live import Live
@@ -38,7 +37,7 @@ from agent.config_loader import (
     load_cli_config,
     resolve_model_config,
 )
-from agent.loop import AgentCallbacks, AgentLoop, compact_context, CompactionResult
+from agent.loop import AgentCallbacks, AgentLoop
 
 console = Console()
 app = typer.Typer(
@@ -458,29 +457,20 @@ def _cmd_wd(arg: str | None, current_path: Path) -> Path:
 
 
 def _cmd_compact(
-    conversation_msgs: list,
-    model_id: str | None,
+    active_loop: "AgentLoop | None",
     stats: _Stats,
 ) -> None:
-    if len(conversation_msgs) < 3:
-        console.print("[dim]Nothing to compact — conversation is too short.[/dim]")
+    if active_loop is None:
+        console.print("[dim]Nothing to compact — no active conversation.[/dim]")
         return
 
-    config = resolve_model_config(model_id)
-    client = openai.OpenAI(api_key=config.api_key, base_url=config.base_url)
-
-    def _on_compaction(kept: int, removed: int) -> None:
-        console.print(
-            f"[yellow]⚡ Context compacted — removed {removed} messages, kept {kept}[/yellow]"
-        )
-
-    result = compact_context(
-        conversation_msgs, config, client,
-        force=True,
-        on_compaction=_on_compaction,
-    )
+    result = active_loop.compact_tool.compact(force=True)
 
     if result.did_compact:
+        console.print(
+            f"[yellow]⚡ Context compacted — removed {result.removed_count} messages, "
+            f"kept {len(active_loop._messages)}[/yellow]"
+        )
         stats.update_tokens(
             result.summary_input_tokens,
             result.summary_output_tokens,
@@ -514,7 +504,7 @@ def _handle_slash_command(
         new_path = _cmd_wd(arg, project_path)
         return None, new_path
     elif cmd == "/compact":
-        _cmd_compact(conversation_msgs, model_id, stats)
+        _cmd_compact(active_loop, stats)
     elif cmd == "/tools":
         _cmd_tools(active_loop)
     elif cmd == "/skills":
