@@ -5,7 +5,8 @@
       "WebFetch(domain:github.com)",
       "Bash(conda run:*)",
       "Bash(ls \"C:\\\\Users\\\\alexr\\\\Driverless_AGI\"/*.md)",
-      "Bash(ls \"C:\\\\Users\\\\alexr\\\\Driverless_AGI\"/*.MD)"
+      "Bash(ls \"C:\\\\Users\\\\alexr\\\\Driverless_AGI\"/*.MD)",
+      "Bash(python -c \"import ast; ast.parse\\(open\\('main.py'\\).read\\(\\)\\); print\\('main.py syntax OK'\\)\")"
     ]
   }
 }

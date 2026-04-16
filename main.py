@@ -31,6 +31,14 @@ def main():
     if not task:
         parser.error("No task provided — pass as argument or pipe via stdin")
 
+    # Handle /hist as a slash command.
+    # Git Bash expands /hist → a Windows absolute path; check basename to be robust.
+    _task = task.strip()
+    if _task in ("/hist", "hist") or _task.replace("\\", "/").endswith("/hist"):
+        from hist import run as hist_run
+        hist_run(project=config.project_path)
+        return
+
     result = AgentLoop(config).run(task)
     print(result)
 

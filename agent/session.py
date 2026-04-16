@@ -38,7 +38,7 @@ class SessionTracker:
     def __init__(
         self,
         model: str,
-        logs_dir: str | Path = "logs",
+        logs_dir: str | Path = ".dagi/logs",
         thread_id: str | None = None,
     ) -> None:
         self._model = model

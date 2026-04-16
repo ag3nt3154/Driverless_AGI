@@ -111,7 +111,7 @@ class AgentLoop:
 
         # ── Load skills ───────────────────────────────────────────────────
         skill_roots = [
-            dagi_root / "skills",
+            dagi_root / ".dagi" / "skills",
             config.project_path / ".dagi" / "skills",
         ]
         self.skills = SkillLoader().load_all(skill_roots)

@@ -369,6 +369,7 @@ _SLASH_COMMANDS: dict[str, str] = {
     "/tools":   "List all registered agent tools",
     "/skills":  "List all loaded skills",
     "/init":    "Initialise .dagi/ scaffold in the project directory",
+    "/hist":    "Show the 20 most recent agent sessions  (/hist [n])",
 }
 
 _EXIT_SENTINEL = object()  # returned by /exit handler to signal the REPL to break
@@ -431,6 +432,16 @@ def _cmd_init(project_path: Path) -> None:
             console.print(f"  [dim]created:[/dim] {p}")
     else:
         console.print(f"[dim]Already initialised: {dagi_dir}[/dim]")
+
+
+def _cmd_hist(project_path: Path, arg: str | None) -> None:
+    from hist import run as hist_run
+    try:
+        n = int(arg) if arg else 20
+    except ValueError:
+        console.print(f"[red]Usage:[/red] /hist [n]  (n must be an integer)")
+        return
+    hist_run(project=project_path, n=n)
 
 
 def _cmd_wd(arg: str | None, current_path: Path) -> Path:
@@ -511,6 +522,9 @@ def _handle_slash_command(
         _cmd_skills(active_loop)
     elif cmd == "/init":
         _cmd_init(project_path)
+    elif cmd == "/hist":
+        arg = parts[1].strip() if len(parts) > 1 else None
+        _cmd_hist(project_path, arg)
     else:
         console.print(f"[red]Unknown command:[/red] {cmd}")
         console.print("[dim]Type [bold]/help[/bold] to see available commands.[/dim]")
