@@ -7,6 +7,7 @@ import openai
 
 from agent.registry import ToolRegistry
 from agent.session import SessionTracker, ToolCallRecord
+from agent.skills import SkillLoader, format_skills_for_prompt
 
 
 # ── Compaction helpers ────────────────────────────────────────────────────────
@@ -55,16 +56,20 @@ DEFAULT_SYSTEM_PROMPT = """\
 You are an expert coding assistant. You help users with coding tasks by reading files, executing commands, editing code, and writing new files.
 
 Available tools:
-- read: Read file contents
-- bash: Execute bash commands
-- edit: Make surgical edits to files
-- write: Create or overwrite files
+- read: Read file contents (relative to the project root)
+- write: Create or overwrite files (relative to the project root)
+- edit: Make surgical edits to files (relative to the project root)
+- bash: Execute commands within the project directory
+- grep: Search file contents by regex or literal pattern
+- find: Discover files by glob pattern
+- skill: Load a named skill document for detailed guidance
 
 Guidelines:
-- Use bash for file operations like ls, grep, find
+- Use grep and find instead of bash for searching/discovering files
 - Use read to examine files before editing
 - Use edit for precise changes (old text must match exactly)
 - Use write only for new files or complete rewrites
+- All file paths are relative to the project root unless absolute
 - When summarizing your actions, output plain text directly - do NOT use cat or bash to display what you did
 - Be concise in your responses
 - Show file paths clearly when working with files
@@ -88,6 +93,8 @@ class AgentConfig:
     context_window: int = 128_000     # model's hard token limit
     reserve_tokens: int = 16_384      # headroom for summary response + next reply
     keep_recent_tokens: int = 20_000  # tail kept verbatim (token budget)
+    # Project scope
+    project_path: Path = field(default_factory=lambda: Path(".").resolve())
 
 
 @dataclass
@@ -270,23 +277,60 @@ class AgentLoop:
     def __init__(
         self,
         config: AgentConfig,
-        registry: ToolRegistry,
         callbacks: AgentCallbacks | None = None,
         initial_messages: list | None = None,
     ):
+        from agent.tools import create_tool_registry
+
         self.callbacks = callbacks or AgentCallbacks()
-        readme_path = (Path(__file__).parent.parent / "README.md").resolve()
+        dagi_root = Path(__file__).parent.parent
+
+        # ── Load skills ───────────────────────────────────────────────────
+        skill_roots = [
+            dagi_root / "skills",
+            config.project_path / ".dagi" / "skills",
+        ]
+        self.skills = SkillLoader().load_all(skill_roots)
+
+        # ── Build registry bound to project path ──────────────────────────
+        self.registry = create_tool_registry(
+            cwd=config.project_path,
+            skills=self.skills or None,
+        )
+
+        # ── Build system prompt ───────────────────────────────────────────
+        readme_path = (dagi_root / "README.md").resolve()
         prompt = config.system_prompt.format(readme_path=readme_path)
-        preamble = _load_md("soul.md", "agents.md")
-        system = f"{preamble}\n\n---\n\n{prompt}" if preamble else prompt
+
+        # Load preamble: dagi root soul/agents, then project .dagi/AGENTS.md
+        preamble_parts: list[str] = []
+        for filename in ("soul.md", "agents.md"):
+            p = dagi_root / filename
+            if p.exists():
+                preamble_parts.append(p.read_text(encoding="utf-8").strip())
+        project_agents = config.project_path / ".dagi" / "AGENTS.md"
+        if project_agents.exists():
+            text = project_agents.read_text(encoding="utf-8").strip()
+            if text:
+                preamble_parts.append(text)
+        preamble = "\n\n---\n\n".join(preamble_parts)
+
+        skills_section = format_skills_for_prompt(self.skills)
+        sections = [s for s in [preamble, prompt, skills_section] if s]
+        system = "\n\n---\n\n".join(sections)
+
+        # Project context line appended to system prompt
+        system += f"\n\n---\n\nProject root: {config.project_path}"
 
         # Build labeled system-prompt sections for the UI expander
         self.system_parts: list[dict] = []
         for filename, label in [("soul.md", "SOUL.md"), ("agents.md", "AGENTS.md")]:
-            p = Path(filename)
+            p = dagi_root / filename
             if p.exists():
                 self.system_parts.append({"label": label, "content": p.read_text(encoding="utf-8").strip()})
         self.system_parts.append({"label": "System Prompt", "content": prompt})
+        if skills_section:
+            self.system_parts.append({"label": "Skills", "content": skills_section})
 
         if initial_messages:
             # multi-turn: continue from existing conversation history
@@ -296,7 +340,6 @@ class AgentLoop:
 
         self.client = openai.OpenAI(api_key=config.api_key, base_url=config.base_url)
         self.config = config
-        self.registry = registry
         # Build the extra_body for reasoning/thinking (OpenRouter extension)
         self._reasoning_extra: dict = {}
         if config.thinking and config.thinking.lower() != "none":

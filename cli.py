@@ -14,6 +14,7 @@ import queue
 import sys
 import textwrap
 from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
 from typing import Optional
 
 import openai
@@ -37,8 +38,6 @@ from agent.config_loader import (
     resolve_model_config,
 )
 from agent.loop import AgentCallbacks, AgentLoop, compact_context, CompactionResult
-from agent.registry import registry
-import agent.tools  # noqa: F401 — registers all tools
 
 console = Console()
 app = typer.Typer(
@@ -55,6 +54,9 @@ _TOOL_COLOURS = {
     "read": "blue",
     "write": "green",
     "edit": "magenta",
+    "grep": "cyan",
+    "find": "cyan",
+    "skill": "bright_magenta",
 }
 _MAX_COMPACT_LEN = 120
 
@@ -307,16 +309,18 @@ def _run_task(
     verbose: bool,
     force_sync: bool,
     stats: _Stats,
-) -> list:
-    """Run one agent task. Returns updated conversation messages for multi-turn."""
+    project_path: Path,
+) -> tuple[list, "AgentLoop"]:
+    """Run one agent task. Returns (updated conversation messages, loop) for multi-turn."""
     config = resolve_model_config(model_id)
+    config.project_path = project_path
     use_threaded = (cli_cfg.threading == "threaded") and not force_sync
 
     if use_threaded:
         q: queue.Queue = queue.Queue()
         callbacks = _make_threaded_callbacks(q, stats)
         loop = AgentLoop(
-            config, registry, callbacks,
+            config, callbacks,
             initial_messages=conversation_msgs or None,
         )
 
@@ -334,7 +338,7 @@ def _run_task(
     else:
         callbacks = _make_sync_callbacks(stats, model_name, verbose)
         loop = AgentLoop(
-            config, registry, callbacks,
+            config, callbacks,
             initial_messages=conversation_msgs or None,
         )
         try:
@@ -342,7 +346,7 @@ def _run_task(
         except Exception:
             console.print_exception()
 
-    return loop._messages
+    return loop._messages, loop
 
 
 # ── Slash commands ─────────────────────────────────────────────────────────────
@@ -352,6 +356,8 @@ _SLASH_COMMANDS: dict[str, str] = {
     "/exit":    "Exit the session (same as exit/quit/q)",
     "/compact": "Force-compact conversation context into a summary",
     "/tools":   "List all registered agent tools",
+    "/skills":  "List all loaded skills",
+    "/init":    "Initialise .dagi/ scaffold in the project directory",
 }
 
 _EXIT_SENTINEL = object()  # returned by /exit handler to signal the REPL to break
@@ -366,14 +372,54 @@ def _cmd_help() -> None:
     console.print(table)
 
 
-def _cmd_tools() -> None:
-    tools = registry.list_tools()
+def _cmd_tools(loop: "AgentLoop | None" = None) -> None:
+    if loop is None:
+        console.print("[dim]No active session — start a task first.[/dim]")
+        return
+    tools = loop.registry.list_tools()
     table = Table(title="Registered Tools", border_style="dim", padding=(0, 1))
     table.add_column("Name", style="bold green")
     table.add_column("Description", style="dim")
     for name, desc in tools:
         table.add_row(name, desc)
     console.print(table)
+
+
+def _cmd_skills(loop: "AgentLoop | None" = None) -> None:
+    if loop is None:
+        console.print("[dim]No active session — start a task first.[/dim]")
+        return
+    skills = loop.skills
+    if not skills:
+        console.print("[dim]No skills loaded.[/dim]")
+        return
+    table = Table(title="Loaded Skills", border_style="dim", padding=(0, 1))
+    table.add_column("Name", style="bold bright_magenta")
+    table.add_column("Description", style="dim")
+    table.add_column("Source", style="dim italic")
+    for s in sorted(skills, key=lambda x: x.name):
+        table.add_row(s.name, s.description or "—", s.source)
+    console.print(table)
+
+
+def _cmd_init(project_path: Path) -> None:
+    dagi_dir = project_path / ".dagi"
+    skills_dir = dagi_dir / "skills"
+    agents_file = dagi_dir / "AGENTS.md"
+
+    created: list[str] = []
+
+    skills_dir.mkdir(parents=True, exist_ok=True)
+    if not agents_file.exists():
+        agents_file.write_text("", encoding="utf-8")
+        created.append(str(agents_file.relative_to(project_path)))
+
+    if created:
+        console.print(f"[green]✓ Initialised[/green] [dim]{dagi_dir}[/dim]")
+        for p in created:
+            console.print(f"  [dim]created:[/dim] {p}")
+    else:
+        console.print(f"[dim]Already initialised: {dagi_dir}[/dim]")
 
 
 def _cmd_compact(
@@ -414,6 +460,8 @@ def _handle_slash_command(
     conversation_msgs: list,
     model_id: str | None,
     stats: _Stats,
+    project_path: Path,
+    active_loop: "AgentLoop | None" = None,
 ) -> object | None:
     """Dispatch a slash command. Returns _EXIT_SENTINEL to signal REPL exit."""
     parts = raw.split(maxsplit=1)
@@ -426,7 +474,11 @@ def _handle_slash_command(
     elif cmd == "/compact":
         _cmd_compact(conversation_msgs, model_id, stats)
     elif cmd == "/tools":
-        _cmd_tools()
+        _cmd_tools(active_loop)
+    elif cmd == "/skills":
+        _cmd_skills(active_loop)
+    elif cmd == "/init":
+        _cmd_init(project_path)
     else:
         console.print(f"[red]Unknown command:[/red] {cmd}")
         console.print("[dim]Type [bold]/help[/bold] to see available commands.[/dim]")
@@ -449,17 +501,24 @@ def run(
     sync: bool = typer.Option(
         False, "--sync", help="Force synchronous mode (no spinner)."
     ),
+    project: Optional[str] = typer.Option(
+        None, "--project", "-p",
+        help="Project directory to work in (default: current directory).",
+    ),
 ) -> None:
     cli_cfg = load_cli_config()
     effective_verbose = verbose or cli_cfg.verbose
     stats = _Stats()
     conversation_msgs: list = []
+    active_loop: "AgentLoop | None" = None
     is_tty = sys.stdin.isatty()
     model_name = get_model_display_name(model)
+    project_path = Path(project).resolve() if project else Path.cwd()
 
     console.print(
         Panel(
             "[bold cyan]Driverless AGI[/bold cyan]  [dim]— agentic coding assistant[/dim]\n"
+            f"[dim]Project: [bold]{project_path}[/bold][/dim]\n"
             "[dim]Type [bold]/help[/bold] for commands · "
             "[bold]exit[/bold] or [bold]/exit[/bold] to leave · "
             "[bold]Ctrl-C[/bold] to interrupt[/dim]",
@@ -469,11 +528,11 @@ def run(
     )
 
     def run_one(t: str) -> None:
-        nonlocal conversation_msgs
+        nonlocal conversation_msgs, active_loop
         console.print()
-        conversation_msgs = _run_task(
+        conversation_msgs, active_loop = _run_task(
             t, conversation_msgs, cli_cfg, model, model_name,
-            effective_verbose, sync, stats,
+            effective_verbose, sync, stats, project_path,
         )
 
     if task:
@@ -493,6 +552,7 @@ def run(
             if user_input.startswith("/"):
                 result = _handle_slash_command(
                     user_input, conversation_msgs, model, stats,
+                    project_path, active_loop,
                 )
                 if result is _EXIT_SENTINEL:
                     break

@@ -3,7 +3,9 @@
     "allow": [
       "WebFetch(domain:mariozechner.at)",
       "WebFetch(domain:github.com)",
-      "Bash(conda run:*)"
+      "Bash(conda run:*)",
+      "Bash(ls \"C:\\\\Users\\\\alexr\\\\Driverless_AGI\"/*.md)",
+      "Bash(ls \"C:\\\\Users\\\\alexr\\\\Driverless_AGI\"/*.MD)"
     ]
   }
 }
