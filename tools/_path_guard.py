@@ -16,6 +16,10 @@ class PathNotAllowedError(ValueError):
 def validate_path(p: Path, allowed_roots: list[Path]) -> Path:
     """Resolve *p* and verify it sits under at least one of *allowed_roots*.
 
+    allowed_roots entries may be directories (any descendant is allowed) or
+    exact file paths (only that precise file is allowed). This lets plan mode
+    register write tools scoped to a single plan document.
+
     Returns the resolved path on success.
     Raises PathNotAllowedError with a human-readable message on failure.
     Inherits ValueError so ToolRegistry.dispatch()'s except-Exception guard
@@ -23,11 +27,16 @@ def validate_path(p: Path, allowed_roots: list[Path]) -> Path:
     """
     resolved = p.resolve()
     for root in allowed_roots:
-        try:
-            resolved.relative_to(root.resolve())
-            return resolved
-        except ValueError:
-            continue
+        root_resolved = root.resolve()
+        if root_resolved.is_file():
+            if resolved == root_resolved:
+                return resolved
+        else:
+            try:
+                resolved.relative_to(root_resolved)
+                return resolved
+            except ValueError:
+                continue
     allowed_strs = ", ".join(str(r.resolve()) for r in allowed_roots)
     raise PathNotAllowedError(
         f"Path '{resolved}' is outside allowed roots: {allowed_strs}"

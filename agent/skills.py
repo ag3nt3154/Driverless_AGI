@@ -5,8 +5,8 @@ Skills are markdown files (SKILL.md) with optional YAML frontmatter.
 They are injected into the system prompt and callable via SkillTool.
 
 Discovery roots (in priority order — later roots override earlier ones):
-  1. <dagi_root>/skills/   — dagi's own built-in skills
-  2. <project>/.dagi/skills/  — project-specific skills
+  1. <project>/.dagi/skills/  — project-specific skills
+  2. <dagi_root>/.dagi/skills/ — dagi's built-in skills (take precedence)
 """
 from __future__ import annotations
 
@@ -52,7 +52,7 @@ class SkillLoader:
         for root in roots:
             source = "project" if root.name == "skills" and root.parent.name == ".dagi" else "builtin"
             for skill in self._load_from_root(root, source):
-                seen[skill.name] = skill  # project skills win over built-ins
+                seen[skill.name] = skill  # dagi built-ins win over project skills
         return list(seen.values())
 
     def _load_from_root(self, root: Path, source: str) -> list[Skill]:

@@ -3,63 +3,77 @@
 ## Done
 
 - [x] Auto compaction for long contexts — Pi-style compaction in `agent/loop.py` (`_compact_context`). Summarizes middle history, preserves system prompt + recent tail, carries forward prior summaries.
+- [x] Plan mode — Full read-only planning mode in `agent/loop.py` (`plan_mode` flag, `plan_file` path). BashTool omitted, WriteTool/EditTool restricted to plan document.
 
 ## In Progress
 
-_(nothing active)_
+#### Persistent Memory System — Wiki infrastructure complete, not yet populated
+
+**Status:** Infrastructure is fully built but empty. The agent does not yet use the memory system autonomously.
+
+**What exists:**
+- Wiki at `.dagi/memory/wiki/` — topic folders, entity pages, wikilinks, indexes
+- Skill files under `.dagi/skills/`: `memory-add`, `memory-ingest`, `memory-lint`, `memory-query`, `create-skill`
+- `SkillTool` registered in `create_tool_registry()` — skills loadable via the `skill` tool
+
+**What is missing (next steps):**
+- Ingest initial source material into `.dagi/memory/raw/` and run `memory-ingest`
+- Populate the wiki with user context: environment, preferences, recurring decisions
+- Wire memory-query into the system prompt so the agent consults the wiki on session start
+- Add a `memory` CLI slash command for `memory-ingest`, `memory-lint`, `memory-query`
+
+**Files:** `.dagi/skills/`, `agent/tools.py`, `agent/loop.py`, CLI
+
+---
 
 ## Backlog
 
 ### High Impact
 
-#### 1. Project / Folder Scoping _(safety)_
+#### 1. Project / Folder Scoping _(partially done)_
 
-Tools can currently read, write, and execute anywhere on disk. Add configurable path boundaries so the agent only operates within a designated project.
+Path validation infrastructure exists (`tools/_path_guard.py`, `validate_path`, `PathNotAllowedError`) and is wired into ReadTool, WriteTool, EditTool, GrepTool, FindTool. BashTool is intentionally excluded from sandboxing.
 
-**Deliverables:**
-- `allowed_paths` list per tool type in `config.yaml` (whitelist)
-- `blocked_commands` list for `bash` (blacklist patterns like `rm -rf /`)
-- Path validation in `BaseTool.run()` before dispatch — reject with clear error
-- Default: current working directory if unset
+**What is missing:**
+- `allowed_paths` / `blocked_commands` keys in `config.yaml` (currently hardcoded to `[dagi_root, cwd]`)
+- UI to configure scope per-project
+- BashTool command blacklist (only argument-path sandboxing exists today)
 
-**Files:** `agent/base_tool.py`, `agent/tools.py`, `config.yaml`
+**Files:** `agent/tools.py`, `config.yaml`
 
 ---
 
-#### 2. Error Handling & Retries _(reliability)_
+#### 2. Error Handling & Retries _(partially done)_
 
-A single 429 or network timeout kills the entire run. Bash timeouts don't actually kill the child process.
+`ToolRegistry.dispatch()` catches exceptions and returns error strings. `EditTool` returns errors rather than raising. BashTool uses `subprocess.run(timeout=)` but does not kill the process group.
 
-**Deliverables:**
+**What is missing:**
 - Exponential backoff for transient API errors (429, timeout, 5xx) — initial 1s, max 60s, 3 attempts
-- Fail-fast for permanent errors (auth 401, bad request 400)
-- `on_error_retry(error, attempt, backoff_ms)` callback for UIs
+- Fail-fast for permanent errors (401, 400)
+- `on_error_retry` callback for UIs
 - `BashTool`: kill process group on timeout via `os.killpg`
 - `EditTool`: raise exception on not-found instead of returning error string
 - Empty API key → fail immediately with actionable message
 
-**Files:** `agent/loop.py`, `agent/tools.py`
-
----
-
-#### 3. Persistent Memory System _(capability)_
-
-The agent forgets everything between sessions. A memory system lets it accumulate knowledge about the user's environment, preferences, and past decisions.
-
-**Deliverables:**
-- Per-project JSON store at `.dagi/memory.json` — sections: `environment`, `preferences`, `decisions`
-- New `memory` tool (read/write/search) registered alongside existing tools
-- Auto-inject relevant memory into system prompt on session start
-- Compact older entries when file exceeds threshold
-- Agent can write to memory unprompted when it learns something useful
-
-**Files:** new `agent/memory.py`, `agent/tools.py`, `agent/loop.py`
+**Files:** `agent/loop.py`, `tools/bash.py`, `tools/edit.py`
 
 ---
 
 ### Medium Impact
 
-- [ ] Plan mode / ask mode — agent outlines steps and waits for confirmation before executing
+- [ ] Multi-agent / parallel clones — spawn independent copies of the agent to tackle separate tasks concurrently, each with their own tool access and loop. Useful for covering more ground simultaneously. Requires coordination to avoid file conflicts (e.g., each clone works on distinct files, or a shared queue/lock mechanism).
+
+**Deliverables:**
+- Clone/spawn function that creates independent agent loops
+- Task queue or manifest to distribute work
+- Conflict avoidance: per-clone file locks, or assign disjoint file sets
+- Merge/consolidate results back to main agent
+- UI support: show multiple agent threads in web UI
+
+**Files:** `agent/loop.py`, `agent/tools.py`, web UIs
+
+---
+
 - [ ] Dynamic generation of tool descriptions — tailor tool schemas per model or context
 - [ ] Ability to work in projects — dedicated project folders with per-project config (depends on #1)
 - [ ] Sample project to test dagi — example task + source files + expected output for validation

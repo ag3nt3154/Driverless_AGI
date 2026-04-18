@@ -1,9 +1,9 @@
 ---
-name: init-pms
+name: pms-init
 description: Initialise the PMS folder structure and create all six blank wiki stub documents
 ---
 
-# init-pms — Initialise Project Management System
+# pms-init — Initialise Project Management System
 
 ## Purpose
 
@@ -162,7 +162,7 @@ _None yet._
 > **Last updated:** YYYY-MM-DD
 
 This file maps every ingested source document to the wiki pages it informed.
-It is auto-maintained by the `ingest-raw` skill — do not edit manually.
+It is auto-maintained by the `pms-ingest` skill — do not edit manually.
 
 | Source File | Type | Ingested | Wiki Documents Updated | Notes |
 |-------------|------|----------|------------------------|-------|
@@ -177,7 +177,7 @@ After completing all writes, report to the user:
 
 - List each file written (or skipped if it already existed).
 - Confirm the full directory tree that was created.
-- Remind the user: place raw source files into `raw/` and then invoke the `ingest-raw`
+- Remind the user: place raw source files into `raw/` and then invoke the `pms-ingest`
   skill to populate the wiki.
 
 ---

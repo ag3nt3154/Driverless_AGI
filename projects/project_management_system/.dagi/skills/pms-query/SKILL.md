@@ -1,9 +1,9 @@
 ---
-name: query-wiki
+name: pms-query
 description: Answer questions about the project by reading the wiki and tracing back to source documents
 ---
 
-# query-wiki — Query the Project Wiki
+# pms-query — Query the Project Wiki
 
 ## Purpose
 
@@ -59,7 +59,7 @@ For cross-document questions, plan which documents to read before opening any of
 
 Before reading, confirm `wiki/readme.md` exists using `find` with pattern
 `wiki/*.md` and path `.`. If no wiki files are found, stop and tell the user:
-"The wiki has not been initialised. Run the `init-pms` skill first."
+"The wiki has not been initialised. Run the `pms-init` skill first."
 
 ---
 
@@ -157,7 +157,7 @@ If the wiki does not contain the information requested:
 
 3. If neither yields an answer, tell the user:
    "This information is not currently recorded in the wiki. You may want to add a
-   relevant source file to `raw/` and run the `ingest-raw` skill."
+   relevant source file to `raw/` and run the `pms-ingest` skill."
 
 ---
 
@@ -168,7 +168,7 @@ If the wiki does not contain the information requested:
   Then ask the user a clarifying question listing the candidate topics before reading
   further.
 - **Wiki not initialised:** If `wiki/*.md` files do not exist, direct the user to
-  run `init-pms`.
+  run `pms-init`.
 - **Source file linked in wiki no longer exists:** Note the broken link to the user.
   Continue answering from the wiki text alone.
 - **Conflicting data across documents:** Surface the conflict explicitly. Example:

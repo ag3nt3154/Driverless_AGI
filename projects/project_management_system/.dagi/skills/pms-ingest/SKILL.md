@@ -1,9 +1,9 @@
 ---
-name: ingest-raw
+name: pms-ingest
 description: Process files in raw/, classify them, move to wiki/sources/, and update all wiki documents
 ---
 
-# ingest-raw — Ingest Raw Source Files
+# pms-ingest — Ingest Raw Source Files
 
 ## Purpose
 
@@ -134,12 +134,12 @@ For each extracted **task or action item:**
 
 If a due date was found:
 ```
-- [ ] {Task description} — Due: {YYYY-MM-DD} | [[sources/{type}/{filename}]]
+- [ ] {Task description} — Due: {YYYY-MM-DD} | [[sources/{type}/filename]]
 ```
 
 If no due date was found:
 ```
-- [ ] {Task description} — Due: TBD | [[sources/{type}/{filename}]]
+- [ ] {Task description} — Due: TBD | [[sources/{type}/filename]]
 ```
 Additionally, note this task — you will add an open question for it in Step 9.
 
@@ -259,4 +259,4 @@ After all files are processed, report to the user:
 - **Empty source file:** Move to `wiki/sources/misc/`. Add index row with
   "No content extracted" in Notes. Do not update other wiki documents.
 - **Wiki not initialised:** If `wiki/readme.md` does not exist, stop and tell the user
-  to run the `init-pms` skill first.
+  to run the `pms-init` skill first.

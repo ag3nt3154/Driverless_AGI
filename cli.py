@@ -15,6 +15,7 @@ import sys
 import textwrap
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
@@ -318,10 +319,14 @@ def _run_task(
     force_sync: bool,
     stats: _Stats,
     project_path: Path,
+    plan_mode: bool = False,
+    plan_file: Path | None = None,
 ) -> tuple[list, "AgentLoop"]:
     """Run one agent task. Returns (updated conversation messages, loop) for multi-turn."""
     config = resolve_model_config(model_id)
     config.project_path = project_path
+    config.plan_mode = plan_mode
+    config.plan_file = str(plan_file) if plan_file else None
     use_threaded = (cli_cfg.threading == "threaded") and not force_sync
 
     get_cwd: Callable[[], Path] = lambda: project_path
@@ -362,14 +367,17 @@ def _run_task(
 # ── Slash commands ─────────────────────────────────────────────────────────────
 
 _SLASH_COMMANDS: dict[str, str] = {
-    "/help":    "Show this list of commands",
-    "/exit":    "Exit the session (same as exit/quit/q)",
-    "/wd":      "Show or set working directory  (/wd <path>)",
-    "/compact": "Force-compact conversation context into a summary",
-    "/tools":   "List all registered agent tools",
-    "/skills":  "List all loaded skills",
-    "/init":    "Initialise .dagi/ scaffold in the project directory",
-    "/hist":    "Show the 20 most recent agent sessions  (/hist [n])",
+    "/help":         "Show this list of commands",
+    "/exit":         "Exit the session (same as exit/quit/q)",
+    "/wd":           "Show or set working directory  (/wd <path>)",
+    "/compact":      "Force-compact conversation context into a summary",
+    "/tools":        "List all registered agent tools",
+    "/skills":       "List all loaded skills",
+    "/init":         "Initialise .dagi/ scaffold in the project directory",
+    "/memory-init":  "Initialise the dagi memory system at .dagi/memory/",
+    "/hist":         "Show the 20 most recent agent sessions  (/hist [n])",
+    "/plan":         "Enter plan mode — agent explores and writes a plan doc (read-only except plan file)",
+    "/exit-plan":    "Exit plan mode and begin implementation based on the plan",
 }
 
 _EXIT_SENTINEL = object()  # returned by /exit handler to signal the REPL to break
@@ -434,6 +442,77 @@ def _cmd_init(project_path: Path) -> None:
         console.print(f"[dim]Already initialised: {dagi_dir}[/dim]")
 
 
+def _cmd_memory_init() -> None:
+    """Initialise the dagi memory system at .dagi/memory/."""
+    from datetime import date
+    dagi_root = Path(__file__).parent
+    memory = dagi_root / ".dagi" / "memory"
+    today = date.today().isoformat()
+
+    dirs = [memory / "raw", memory / "sources", memory / "wiki"]
+    for d in dirs:
+        d.mkdir(parents=True, exist_ok=True)
+
+    stubs: dict[Path, str] = {
+        memory / "wiki" / "index.md": (
+            "# Wiki Index\n\n"
+            f"> **Last updated:** {today}\n\n"
+            "This is the root navigation index. Each row is a top-level topic folder.\n"
+            "Read the linked topic index.md to drill down into sub-topics and pages.\n\n"
+            "| Topic | Description | Pages | Last Updated |\n"
+            "|-------|-------------|-------|-------------- |\n"
+            "| — | — | — | — |\n"
+        ),
+        memory / "wiki" / "overview.md": (
+            "# Overview\n\n"
+            f"> **Last updated:** {today}\n\n"
+            "_No sources ingested yet. This document will be updated as sources are added._\n"
+        ),
+        memory / "wiki" / "log.md": (
+            "# Memory Log\n\n"
+            "> Append-only. Do not edit manually.\n"
+            "> Each entry format: `## [YYYY-MM-DD] {operation} | {title}`\n"
+            "> Operations: ingest | query | lint\n\n"
+            "<!-- entries appended below -->\n"
+        ),
+        memory / "wiki" / "open_questions.md": (
+            "# Open Questions\n\n"
+            f"> **Last updated:** {today}\n\n"
+            "Questions raised by wiki nodes that are relevant to but not yet answered "
+            "by existing wiki content. Move resolved questions to the Resolved section "
+            "with a brief resolution summary.\n\n"
+            "## Pending\n\n"
+            "| # | Question | Context | Node | Date Raised |\n"
+            "|---|----------|---------|------|-------------|\n"
+            "| — | — | — | — | — |\n\n"
+            "## Resolved\n\n"
+            "| # | Question | Resolution | Node | Date Resolved |\n"
+            "|---|----------|-----------|------|---------------|\n"
+            "| — | — | — | — | — |\n"
+        ),
+    }
+
+    created: list[str] = []
+    skipped: list[str] = []
+    for path, content in stubs.items():
+        rel = str(path.relative_to(dagi_root))
+        if path.exists() and path.stat().st_size > 0:
+            skipped.append(rel)
+        else:
+            path.write_text(content, encoding="utf-8")
+            created.append(rel)
+
+    console.print(f"[green]✓ Memory system initialised[/green] [dim]{memory}[/dim]")
+    for p in created:
+        console.print(f"  [dim]created:[/dim] {p}")
+    for p in skipped:
+        console.print(f"  [dim]skipped (exists):[/dim] {p}")
+    console.print(
+        "[dim]Next: drop files into [bold].dagi/memory/raw/[/bold] "
+        "then invoke [bold]memory-ingest[/bold].[/dim]"
+    )
+
+
 def _cmd_hist(project_path: Path, arg: str | None) -> None:
     from hist import run as hist_run
     try:
@@ -491,6 +570,37 @@ def _cmd_compact(
         console.print("[dim]Nothing to compact.[/dim]")
 
 
+def _cmd_plan(project_path: Path) -> tuple[bool, Path]:
+    """Enter plan mode: create the plan document scaffold. Returns (True, plan_path)."""
+    plans_dir = project_path / ".dagi" / "plans"
+    plans_dir.mkdir(parents=True, exist_ok=True)
+    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+    plan_path = plans_dir / f"plan_{ts}.md"
+    plan_path.write_text(
+        f"# Plan — {ts}\n\n"
+        "## Context\n\n\n"
+        "## Approach\n\n\n"
+        "## Files to Modify\n\n\n"
+        "## Implementation Steps\n\n\n"
+        "## Todo List\n\n"
+        "- [ ] \n\n"
+        "## Verification\n\n",
+        encoding="utf-8",
+    )
+    console.print(
+        Panel(
+            f"[bold cyan]Plan mode active[/bold cyan]\n"
+            f"[dim]Plan document: {plan_path}[/dim]\n\n"
+            "[dim]Describe your task. The agent will ask clarifying questions and "
+            "explore the codebase before writing a plan.\n"
+            "Run [bold]/exit-plan[/bold] when ready to begin implementation.[/dim]",
+            border_style="cyan",
+            padding=(0, 2),
+        )
+    )
+    return True, plan_path
+
+
 def _handle_slash_command(
     raw: str,
     conversation_msgs: list,
@@ -522,6 +632,8 @@ def _handle_slash_command(
         _cmd_skills(active_loop)
     elif cmd == "/init":
         _cmd_init(project_path)
+    elif cmd == "/memory-init":
+        _cmd_memory_init()
     elif cmd == "/hist":
         arg = parts[1].strip() if len(parts) > 1 else None
         _cmd_hist(project_path, arg)
@@ -557,6 +669,8 @@ def run(
     stats = _Stats()
     conversation_msgs: list = []
     active_loop: "AgentLoop | None" = None
+    plan_mode: bool = False
+    plan_file: Path | None = None
     is_tty = sys.stdin.isatty()
     model_name = get_model_display_name(model)
     project_path = Path(project).resolve() if project else Path.cwd()
@@ -579,6 +693,8 @@ def run(
         conversation_msgs, active_loop = _run_task(
             t, conversation_msgs, cli_cfg, model, model_name,
             effective_verbose, sync, stats, project_path,
+            plan_mode=plan_mode,
+            plan_file=plan_file,
         )
 
     if task:
@@ -596,6 +712,37 @@ def run(
                 break
             # ── Slash commands ──────────────────────────────────────────
             if user_input.startswith("/"):
+                cmd_lower = user_input.split()[0].lower()
+
+                if cmd_lower == "/plan":
+                    if plan_mode:
+                        console.print(
+                            f"[yellow]Already in plan mode.[/yellow] "
+                            f"[dim]Plan file: {plan_file}[/dim]"
+                        )
+                    else:
+                        plan_mode, plan_file = _cmd_plan(project_path)
+                    continue
+
+                if cmd_lower == "/exit-plan":
+                    if not plan_mode:
+                        console.print("[dim]Not in plan mode — nothing to exit.[/dim]")
+                        continue
+                    saved_plan_file = plan_file
+                    plan_mode = False
+                    plan_file = None
+                    console.print(
+                        "[bold green]✓ Exiting plan mode — beginning implementation[/bold green]"
+                    )
+                    run_one(
+                        f"Plan mode complete. Read and implement the plan at {saved_plan_file}. "
+                        "If you discover a better approach mid-execution, rewrite the plan "
+                        "document on the fly so it always reflects your actual strategy and "
+                        "actions. Keep the todo list in sync — check off completed items and "
+                        "add or revise items as needed."
+                    )
+                    continue
+
                 slash_result, new_path = _handle_slash_command(
                     user_input, conversation_msgs, model, stats,
                     project_path, active_loop,

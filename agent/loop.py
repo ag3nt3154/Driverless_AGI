@@ -70,6 +70,9 @@ class AgentConfig:
     keep_recent_tokens: int = 20_000  # tail kept verbatim (token budget)
     # Project scope
     project_path: Path = field(default_factory=lambda: Path(".").resolve())
+    # Plan mode
+    plan_mode: bool = False
+    plan_file: str | None = None  # absolute path to the active plan document
 
 
 @dataclass
@@ -111,8 +114,8 @@ class AgentLoop:
 
         # ── Load skills ───────────────────────────────────────────────────
         skill_roots = [
-            dagi_root / ".dagi" / "skills",
             config.project_path / ".dagi" / "skills",
+            dagi_root / ".dagi" / "skills",
         ]
         self.skills = SkillLoader().load_all(skill_roots)
 
@@ -121,6 +124,8 @@ class AgentLoop:
             cwd=config.project_path,
             allowed_roots=[dagi_root, config.project_path],
             skills=self.skills or None,
+            plan_mode=config.plan_mode,
+            plan_file=Path(config.plan_file) if config.plan_file else None,
         )
 
         # ── Build system prompt ───────────────────────────────────────────
@@ -149,6 +154,31 @@ class AgentLoop:
 
         # Project context line appended to system prompt
         system += f"\n\n---\n\nProject root: {config.project_path}"
+
+        if config.plan_mode and config.plan_file:
+            system += f"""
+
+---
+
+## PLAN MODE ACTIVE
+
+You are in read-only planning mode. Your capabilities are restricted:
+- **READ**: You can read any file in the project.
+- **WRITE**: You may ONLY write to this plan document: `{config.plan_file}`
+- **BLOCKED**: bash, shell commands, and writes to any other file are unavailable.
+
+Your objective is to collaborate interactively with the user to produce a comprehensive plan.
+Ask clarifying questions. Explore the codebase as needed. Then write your plan to `{config.plan_file}`.
+
+The plan document must include:
+1. **Context** — what problem is being solved and why
+2. **Approach** — the chosen strategy and key architectural decisions
+3. **Files to modify** — exact file paths and line references
+4. **Step-by-step implementation** — ordered, concrete steps
+5. **Todo list** — checkboxes (`- [ ]`) for each discrete action
+6. **Verification** — how to test that the implementation is correct
+
+When you are satisfied with the plan, tell the user to run `/exit-plan` to begin implementation."""
 
         # Build labeled system-prompt sections for the UI expander
         self.system_parts: list[dict] = []
