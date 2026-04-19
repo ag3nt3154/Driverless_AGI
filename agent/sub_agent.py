@@ -1,8 +1,14 @@
+from __future__ import annotations
+
 from dataclasses import dataclass, replace
+from typing import TYPE_CHECKING
 
 from agent.base_tool import BaseTool
 from agent.loop import AgentCallbacks, AgentConfig
 from agent.registry import ToolRegistry
+
+if TYPE_CHECKING:
+    from agent.session import SessionTracker
 
 
 @dataclass
@@ -26,9 +32,13 @@ class SubAgentRunner:
         system_prompt: str,
         callbacks: AgentCallbacks | None = None,
         sub_cfg: SubAgentConfig | None = None,
+        parent_tracker: "SessionTracker | None" = None,
+        subagent_id: str | None = None,
     ) -> None:
         sub_cfg = sub_cfg or SubAgentConfig()
         self._system_prompt = system_prompt
+        self._parent_tracker = parent_tracker
+        self._subagent_id = subagent_id
 
         # Inherit model/auth/context from parent; cap iterations and disable plan mode
         self._config = replace(
@@ -69,5 +79,7 @@ class SubAgentRunner:
             callbacks=self._callbacks,
             initial_messages=initial_messages,
             _registry=self._registry,
+            _parent_tracker=self._parent_tracker,
+            _subagent_id=self._subagent_id,
         )
         return loop.run(task)

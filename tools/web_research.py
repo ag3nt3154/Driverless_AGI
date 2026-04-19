@@ -1,6 +1,13 @@
+from __future__ import annotations
+
 from pathlib import Path
+from typing import TYPE_CHECKING
+from uuid import uuid4
 
 from agent.base_tool import BaseTool
+
+if TYPE_CHECKING:
+    from agent.session import SessionTracker
 
 _SYSTEM_PROMPT = """\
 You are a focused web research agent. Answer the research question using web_search and web_fetch only.
@@ -34,9 +41,10 @@ class WebResearchTool(BaseTool):
         "required": ["task"],
     }
 
-    def __init__(self, config, callbacks=None, cwd: Path = Path("."), allowed_roots=None):
+    def __init__(self, config, callbacks=None, cwd: Path = Path("."), allowed_roots=None, tracker: "SessionTracker | None" = None):
         self._config = config
         self._callbacks = callbacks
+        self._tracker = tracker
 
     def run(self, task: str) -> str:
         try:
@@ -44,13 +52,26 @@ class WebResearchTool(BaseTool):
             from tools.web_fetch import WebFetchTool
             from tools.web_search import WebSearchTool
 
+            subagent_id = uuid4().hex
+            depth = self._tracker._depth if self._tracker else 0
+
+            if self._tracker:
+                self._tracker.record_subagent_start(subagent_id, "web_research", task, depth)
+
             runner = SubAgentRunner(
                 config=self._config,
                 tools=[WebSearchTool(), WebFetchTool()],
                 system_prompt=_SYSTEM_PROMPT,
                 callbacks=self._callbacks,
                 sub_cfg=SubAgentConfig(max_iterations=8, prefix="[web-research]"),
+                parent_tracker=self._tracker,
+                subagent_id=subagent_id,
             )
-            return runner.run(task)
+            result = runner.run(task)
+
+            if self._tracker:
+                self._tracker.record_subagent_end(subagent_id, result, depth)
+
+            return result
         except Exception as e:
             return f"[web_research error] {e}"

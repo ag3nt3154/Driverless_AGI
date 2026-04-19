@@ -369,6 +369,7 @@ def _run_task(
 _SLASH_COMMANDS: dict[str, str] = {
     "/help":         "Show this list of commands",
     "/exit":         "Exit the session (same as exit/quit/q)",
+    "/clear":        "Clear conversation context and start a fresh session",
     "/wd":           "Show or set working directory  (/wd <path>)",
     "/compact":      "Force-compact conversation context into a summary",
     "/tools":        "List all registered agent tools",
@@ -741,6 +742,15 @@ def run(
                         "actions. Keep the todo list in sync — check off completed items and "
                         "add or revise items as needed."
                     )
+                    continue
+
+                if cmd_lower == "/clear":
+                    conversation_msgs = []
+                    active_loop = None
+                    if plan_mode:
+                        plan_mode = False
+                        plan_file = None
+                    console.print("[bold green]✓ Context cleared — fresh session[/bold green]")
                     continue
 
                 slash_result, new_path = _handle_slash_command(

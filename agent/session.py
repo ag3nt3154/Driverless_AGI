@@ -48,6 +48,12 @@ class SessionTracker:
         self._seq = 0
         self._started_at = datetime.now(timezone.utc)
 
+        # Root-only attributes
+        self._parent: SessionTracker | None = None
+        self._subagent_id: str | None = None
+        self._depth: int = 0
+        self._subagent_stats: list[dict] = []
+
         self._logs_dir.mkdir(parents=True, exist_ok=True)
         ts = self._started_at.strftime("%Y-%m-%d_%H-%M-%S")
         self._path = self._logs_dir / f"session_{ts}.jsonl"
@@ -59,6 +65,24 @@ class SessionTracker:
             "started_at": self._started_at.isoformat(),
         })
 
+    # ---------------------------------------------------------------- factory
+
+    def child_tracker(self, subagent_id: str) -> "SessionTracker":
+        """Create a child tracker that writes into this tracker's session file."""
+        child = object.__new__(SessionTracker)
+        child._model = self._model
+        child._thread_id = self._thread_id
+        child._messages = []
+        child._seq = 0
+        child._started_at = datetime.now(timezone.utc)
+        child._parent = self
+        child._subagent_id = subagent_id
+        child._depth = self._depth + 1
+        child._subagent_stats = []  # unused for children but keeps attr access safe
+        child._path = None
+        child._logs_dir = None
+        return child
+
     @property
     def thread_id(self) -> str:
         return self._thread_id
@@ -67,11 +91,11 @@ class SessionTracker:
 
     def record_system(self, content: str) -> None:
         node = self._add(entity="system", content=content)
-        self._write({"type": "message", **asdict(node)})
+        self._write(self._tag({"type": "message", **asdict(node)}))
 
     def record_user(self, content: str) -> None:
         node = self._add(entity="user", content=content)
-        self._write({"type": "message", **asdict(node)})
+        self._write(self._tag({"type": "message", **asdict(node)}))
 
     def record_assistant(
         self,
@@ -91,26 +115,71 @@ class SessionTracker:
             cost=cost,
             tool_calls=tool_calls,
         )
-        self._write({"type": "message", **asdict(node)})
+        self._write(self._tag({"type": "message", **asdict(node)}))
 
     def record_tool_start(self, name: str, description: str, input_str: str) -> None:
-        self._write({
+        self._write(self._tag({
             "type": "tool_start",
             "name": name,
             "description": description,
             "input": input_str,
             "timestamp": _now(),
-        })
+        }))
 
     def record_tool_end(self, name: str, result_str: str) -> None:
-        self._write({
+        self._write(self._tag({
             "type": "tool_end",
             "name": name,
             "result": result_str,
             "timestamp": _now(),
+        }))
+
+    def record_subagent_start(
+        self, subagent_id: str, tool: str, task: str, depth: int
+    ) -> None:
+        self._write({
+            "type": "subagent_start",
+            "subagent_id": subagent_id,
+            "tool": tool,
+            "task": task,
+            "depth": depth,
+            "timestamp": _now(),
+        })
+
+    def record_subagent_end(
+        self, subagent_id: str, result: str, depth: int
+    ) -> None:
+        self._write({
+            "type": "subagent_end",
+            "subagent_id": subagent_id,
+            "result": result[:500],
+            "depth": depth,
+            "timestamp": _now(),
         })
 
     def finish(self, raw_messages: list | None = None) -> None:
+        if self._parent is not None:
+            # Child tracker: roll stats up to the root accumulator, then exit.
+            root = self
+            while root._parent is not None:
+                root = root._parent
+            assistant_nodes = [m for m in self._messages if m.entity == "assistant"]
+            child_in  = sum(n.input_tokens  for n in assistant_nodes if n.input_tokens)
+            child_out = sum(n.output_tokens for n in assistant_nodes if n.output_tokens)
+            child_cost = sum(n.cost for n in assistant_nodes if n.cost)
+            child_tools: dict[str, int] = {}
+            for n in assistant_nodes:
+                for tc in n.tool_calls:
+                    child_tools[tc.name] = child_tools.get(tc.name, 0) + 1
+            root._subagent_stats.append({
+                "subagent_id": self._subagent_id,
+                "input_tokens": child_in,
+                "output_tokens": child_out,
+                "cost": child_cost,
+                "tool_call_counts": child_tools,
+            })
+            return
+
         finished_at = datetime.now(timezone.utc)
 
         assistant_nodes = [m for m in self._messages if m.entity == "assistant"]
@@ -123,6 +192,15 @@ class SessionTracker:
         for node in assistant_nodes:
             for tc in node.tool_calls:
                 tool_call_counts[tc.name] = tool_call_counts.get(tc.name, 0) + 1
+
+        # Merge sub-agent stats into root totals
+        for s in self._subagent_stats:
+            total_in  += s["input_tokens"]
+            total_out += s["output_tokens"]
+            if s["cost"]:
+                total_cost = (total_cost or 0) + s["cost"]
+            for name, count in s["tool_call_counts"].items():
+                tool_call_counts[name] = tool_call_counts.get(name, 0) + count
 
         record: dict = {
             "type": "session_end",
@@ -147,9 +225,20 @@ class SessionTracker:
 
     # ---------------------------------------------------------------- internal
 
+    def _tag(self, record: dict) -> dict:
+        """Inject subagent_id and depth fields when this is a child tracker."""
+        if self._subagent_id is not None:
+            record["subagent_id"] = self._subagent_id
+        if self._depth > 0:
+            record["depth"] = self._depth
+        return record
+
     def _write(self, record: dict) -> None:
-        with open(self._path, "a", encoding="utf-8") as fh:
-            fh.write(json.dumps(record, ensure_ascii=False) + "\n")
+        if self._parent is not None:
+            self._parent._write(record)
+        else:
+            with open(self._path, "a", encoding="utf-8") as fh:
+                fh.write(json.dumps(record, ensure_ascii=False) + "\n")
 
     def _add(
         self,

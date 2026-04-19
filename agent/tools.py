@@ -20,6 +20,7 @@ from tools.write import WriteTool
 
 if TYPE_CHECKING:
     from agent.loop import AgentCallbacks, AgentConfig
+    from agent.session import SessionTracker
 
 _DAGI_ROOT = Path(__file__).parent.parent
 
@@ -32,6 +33,7 @@ def create_tool_registry(
     plan_file: Path | None = None,
     config: "AgentConfig | None" = None,
     callbacks: "AgentCallbacks | None" = None,
+    tracker: "SessionTracker | None" = None,
 ) -> ToolRegistry:
     """Build a fresh ToolRegistry with all tools bound to *cwd*.
 
@@ -65,8 +67,8 @@ def create_tool_registry(
         if config is not None:
             from tools.explore_files import ExploreFilesTool
             from tools.web_research import WebResearchTool
-            reg.register(WebResearchTool(config=config, callbacks=callbacks, cwd=cwd, allowed_roots=effective_roots))
-            reg.register(ExploreFilesTool(config=config, callbacks=callbacks, cwd=cwd, allowed_roots=effective_roots))
+            reg.register(WebResearchTool(config=config, callbacks=callbacks, cwd=cwd, allowed_roots=effective_roots, tracker=tracker))
+            reg.register(ExploreFilesTool(config=config, callbacks=callbacks, cwd=cwd, allowed_roots=effective_roots, tracker=tracker))
         else:
             # Fallback for callers that do not supply config (e.g. tests)
             from tools.web_fetch import WebFetchTool

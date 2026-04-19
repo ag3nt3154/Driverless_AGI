@@ -113,11 +113,20 @@ class AgentLoop:
         callbacks: AgentCallbacks | None = None,
         initial_messages: list | None = None,
         _registry: "ToolRegistry | None" = None,
+        _parent_tracker: "SessionTracker | None" = None,
+        _subagent_id: str | None = None,
     ):
         from agent.tools import create_tool_registry
+        from uuid import uuid4
 
         self.callbacks = callbacks or AgentCallbacks()
         dagi_root = Path(__file__).parent.parent
+
+        # ── Create tracker first so sub-agent tools can reference it ─────────
+        if _parent_tracker is not None:
+            self.tracker = _parent_tracker.child_tracker(_subagent_id or uuid4().hex)
+        else:
+            self.tracker = SessionTracker(model=config.model, thread_id=config.thread_id)
 
         if _registry is not None:
             # Sub-agent path: use the provided registry, skip skill loading
@@ -140,6 +149,7 @@ class AgentLoop:
                 plan_file=Path(config.plan_file) if config.plan_file else None,
                 config=config,
                 callbacks=self.callbacks,
+                tracker=self.tracker,
             )
 
         # ── Build system prompt ───────────────────────────────────────────
@@ -214,7 +224,6 @@ When you are satisfied with the plan, tell the user to run `/exit-plan` to begin
         self._reasoning_extra: dict = {}
         if config.thinking and config.thinking.lower() != "none":
             self._reasoning_extra = {"reasoning": {"effort": config.thinking.lower()}}
-        self.tracker = SessionTracker(model=config.model, thread_id=config.thread_id)
         self.tracker.record_system(system)
 
         # ── Compaction tool (internal-only, not in ToolRegistry) ──────────

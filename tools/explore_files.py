@@ -1,6 +1,13 @@
+from __future__ import annotations
+
 from pathlib import Path
+from typing import TYPE_CHECKING
+from uuid import uuid4
 
 from agent.base_tool import BaseTool
+
+if TYPE_CHECKING:
+    from agent.session import SessionTracker
 
 _SYSTEM_PROMPT = """\
 You are a focused file exploration agent. Answer the question using read, grep, and find only.
@@ -42,11 +49,12 @@ class ExploreFilesTool(BaseTool):
         "required": ["task"],
     }
 
-    def __init__(self, config, callbacks=None, cwd: Path = Path("."), allowed_roots=None):
+    def __init__(self, config, callbacks=None, cwd: Path = Path("."), allowed_roots=None, tracker: "SessionTracker | None" = None):
         self._config = config
         self._callbacks = callbacks
         self._cwd = cwd
         self._allowed_roots = allowed_roots
+        self._tracker = tracker
 
     def run(self, task: str, paths: str | None = None) -> str:
         try:
@@ -62,13 +70,27 @@ class ExploreFilesTool(BaseTool):
                 FindTool(cwd=self._cwd, allowed_roots=effective_roots),
             ]
             full_task = task if not paths else f"{task}\n\nFocus on these paths: {paths}"
+
+            subagent_id = uuid4().hex
+            depth = self._tracker._depth if self._tracker else 0
+
+            if self._tracker:
+                self._tracker.record_subagent_start(subagent_id, "explore_files", full_task, depth)
+
             runner = SubAgentRunner(
                 config=self._config,
                 tools=sub_tools,
                 system_prompt=_SYSTEM_PROMPT,
                 callbacks=self._callbacks,
                 sub_cfg=SubAgentConfig(max_iterations=8, prefix="[explore-files]"),
+                parent_tracker=self._tracker,
+                subagent_id=subagent_id,
             )
-            return runner.run(full_task)
+            result = runner.run(full_task)
+
+            if self._tracker:
+                self._tracker.record_subagent_end(subagent_id, result, depth)
+
+            return result
         except Exception as e:
             return f"[explore_files error] {e}"
