@@ -186,4 +186,6 @@ logs/
 
 .env
 .claude/
-.dagi/
+.dagi/memory/*
+.dagi/logs/*
+.dagi/plans/*
