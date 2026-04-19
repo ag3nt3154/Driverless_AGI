@@ -100,41 +100,55 @@ def _extract_reasoning(message) -> str:
     return text or ""
 
 
+class _SafeDict(dict):
+    """Format-map helper: leaves unknown {key} placeholders intact."""
+    def __missing__(self, key: str) -> str:
+        return f"{{{key}}}"
+
+
 class AgentLoop:
     def __init__(
         self,
         config: AgentConfig,
         callbacks: AgentCallbacks | None = None,
         initial_messages: list | None = None,
+        _registry: "ToolRegistry | None" = None,
     ):
         from agent.tools import create_tool_registry
 
         self.callbacks = callbacks or AgentCallbacks()
         dagi_root = Path(__file__).parent.parent
 
-        # ── Load skills ───────────────────────────────────────────────────
-        skill_roots = [
-            config.project_path / ".dagi" / "skills",
-            dagi_root / ".dagi" / "skills",
-        ]
-        self.skills = SkillLoader().load_all(skill_roots)
+        if _registry is not None:
+            # Sub-agent path: use the provided registry, skip skill loading
+            self.registry = _registry
+            self.skills = []
+        else:
+            # ── Load skills ───────────────────────────────────────────────────
+            skill_roots = [
+                config.project_path / ".dagi" / "skills",
+                dagi_root / ".dagi" / "skills",
+            ]
+            self.skills = SkillLoader().load_all(skill_roots)
 
-        # ── Build registry bound to project path ──────────────────────────
-        self.registry = create_tool_registry(
-            cwd=config.project_path,
-            allowed_roots=[dagi_root, config.project_path],
-            skills=self.skills or None,
-            plan_mode=config.plan_mode,
-            plan_file=Path(config.plan_file) if config.plan_file else None,
-        )
+            # ── Build registry bound to project path ──────────────────────────
+            self.registry = create_tool_registry(
+                cwd=config.project_path,
+                allowed_roots=[dagi_root, config.project_path],
+                skills=self.skills or None,
+                plan_mode=config.plan_mode,
+                plan_file=Path(config.plan_file) if config.plan_file else None,
+                config=config,
+                callbacks=self.callbacks,
+            )
 
         # ── Build system prompt ───────────────────────────────────────────
         readme_path = (dagi_root / "README.md").resolve()
         tools_and_skills_section = _format_tools_and_skills(self.registry, self.skills)
-        prompt = config.system_prompt.format(
+        prompt = config.system_prompt.format_map(_SafeDict(
             readme_path=readme_path,
             tools_and_skills=tools_and_skills_section,
-        )
+        ))
 
         # Load preamble: dagi root soul/agents, then project .dagi/AGENTS.md
         preamble_parts: list[str] = []
