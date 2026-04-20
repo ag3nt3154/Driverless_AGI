@@ -82,7 +82,7 @@ class ExploreFilesTool(BaseTool):
                 tools=sub_tools,
                 system_prompt=_SYSTEM_PROMPT,
                 callbacks=self._callbacks,
-                sub_cfg=SubAgentConfig(max_iterations=8, prefix="[explore-files]"),
+                sub_cfg=SubAgentConfig(prefix="[explore-files]"),
                 parent_tracker=self._tracker,
                 subagent_id=subagent_id,
             )

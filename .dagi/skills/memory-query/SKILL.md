@@ -30,7 +30,7 @@ Before opening any files, identify:
 
 Use `find` with pattern `index.md` and path `.dagi/memory/wiki/` to confirm the
 wiki has been initialised. If not found, stop and tell the user:
-"The wiki has not been initialised. Run `memory-init` first."
+"The wiki has not been initialised. Run `/init` first."
 
 ---
 

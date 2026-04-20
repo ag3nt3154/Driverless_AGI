@@ -39,6 +39,8 @@ You are an expert coding assistant. You help users with coding tasks by reading 
 
 {tools_and_skills}
 
+Use `tool_search` to discover additional capabilities (web research, file exploration, skills) not listed above.
+
 Guidelines:
 - Use grep and find instead of bash for searching/discovering files
 - Use read to examine files before editing
@@ -48,6 +50,10 @@ Guidelines:
 - When summarizing your actions, output plain text directly - do NOT use cat or bash to display what you did
 - Be concise in your responses
 - Show file paths clearly when working with files
+- Never stop mid-task. Keep calling tools until the task is fully complete before returning a plain-text response.
+- If you have completed one step but further steps remain, call the next required tool immediately — do not summarize partial progress as a final answer.
+- A response with no tool calls signals task completion. Only emit one when every required action has been taken and the result is ready to present.
+- Memory: When you notice something substantial worth preserving across sessions (future tasks, improvement ideas, open questions, reflections), invoke skill("memory-add"). Use sparingly — significant insights only.
 
 Documentation:
 - Your own documentation (including custom model setup and theme creation) is at: {readme_path}
@@ -60,7 +66,6 @@ class AgentConfig:
     model: str = "gpt-4o"
     base_url: str = "https://api.openai.com/v1"
     api_key: str = ""  # always set by agent.config_loader.resolve_model_config
-    max_iterations: int = 20
     system_prompt: str = DEFAULT_SYSTEM_PROMPT
     thread_id: str | None = None
     thinking: str = "none"  # "none" | "low" | "medium" | "high"
@@ -83,7 +88,7 @@ class AgentCallbacks:
     on_tool_end:       Callable[[str, str], None]               = field(default=lambda n, r: None)
     on_assistant_text: Callable[[str], None]                    = field(default=lambda t: None)
     on_token_update:   Callable[[int, int, float | None, int], None] = field(default=lambda i, o, c, t: None)
-    on_iteration:      Callable[[int, int], None]               = field(default=lambda cur, mx: None)
+    on_iteration:      Callable[[int], None]                    = field(default=lambda cur: None)
     on_done:           Callable[[str], None]                    = field(default=lambda r: None)
     on_error:          Callable[[Exception], None]              = field(default=lambda e: None)
     on_api_call:       Callable[[list], None]                   = field(default=lambda msgs: None)
@@ -115,6 +120,7 @@ class AgentLoop:
         _registry: "ToolRegistry | None" = None,
         _parent_tracker: "SessionTracker | None" = None,
         _subagent_id: str | None = None,
+        _tracker: "SessionTracker | None" = None,
     ):
         from agent.tools import create_tool_registry
         from uuid import uuid4
@@ -123,7 +129,9 @@ class AgentLoop:
         dagi_root = Path(__file__).parent.parent
 
         # ── Create tracker first so sub-agent tools can reference it ─────────
-        if _parent_tracker is not None:
+        if _tracker is not None:
+            self.tracker = _tracker
+        elif _parent_tracker is not None:
             self.tracker = _parent_tracker.child_tracker(_subagent_id or uuid4().hex)
         else:
             self.tracker = SessionTracker(model=config.model, thread_id=config.thread_id)
@@ -154,7 +162,7 @@ class AgentLoop:
 
         # ── Build system prompt ───────────────────────────────────────────
         readme_path = (dagi_root / "README.md").resolve()
-        tools_and_skills_section = _format_tools_and_skills(self.registry, self.skills)
+        tools_and_skills_section = _format_tools_and_skills(self.registry, [])
         prompt = config.system_prompt.format_map(_SafeDict(
             readme_path=readme_path,
             tools_and_skills=tools_and_skills_section,
@@ -242,8 +250,10 @@ When you are satisfied with the plan, tell the user to run `/exit-plan` to begin
         self.tracker.record_user(task)
 
         try:
-            for iteration in range(self.config.max_iterations):
-                self.callbacks.on_iteration(iteration + 1, self.config.max_iterations)
+            iteration = 0
+            while True:
+                iteration += 1
+                self.callbacks.on_iteration(iteration)
 
                 self.callbacks.on_api_call(list(self._messages))
                 response = self.client.chat.completions.create(
@@ -276,7 +286,6 @@ When you are satisfied with the plan, tell the user to run `/exit-plan` to begin
                         _thinking_tok,
                     )
                     self.tracker.record_assistant(message.content, response.usage, tool_records)
-                    self.tracker.finish(raw_messages=self._messages)
                     self.callbacks.on_done(result)
                     return result
 
@@ -346,32 +355,6 @@ When you are satisfied with the plan, tell the user to run `/exit-plan` to begin
             self.callbacks.on_error(e)
             raise
 
-        # max iterations hit — ask for a summary
-        summary_msg = "Max iterations reached. Summarize what you have done so far."
-        self._messages.append({"role": "user", "content": summary_msg})
-        self.tracker.record_user(summary_msg)
-        self.callbacks.on_api_call(list(self._messages))
-        response = self.client.chat.completions.create(
-            model=self.config.model,
-            messages=self._messages,
-            **(dict(extra_body=self._reasoning_extra) if self._reasoning_extra else {}),
-        )
-        _final_msg = response.choices[0].message
-        _final_reasoning = _extract_reasoning(_final_msg)
-        if _final_reasoning:
-            self.callbacks.on_reasoning(_final_reasoning)
-        final = _final_msg.content or ""
-        self.tracker.record_assistant(final, response.usage, [])
+    def finish(self) -> None:
+        """Finalize the session — write session_end to JSONL. Called by the CLI at session end."""
         self.tracker.finish(raw_messages=self._messages)
-        _thinking_tok = (
-            getattr(getattr(response.usage, "completion_tokens_details", None), "reasoning_tokens", None)
-            or 0
-        )
-        self.callbacks.on_token_update(
-            getattr(response.usage, "prompt_tokens", 0) or 0,
-            getattr(response.usage, "completion_tokens", 0) or 0,
-            getattr(response.usage, "cost", None),
-            _thinking_tok,
-        )
-        self.callbacks.on_done(final)
-        return final

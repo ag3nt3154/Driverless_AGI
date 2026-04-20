@@ -185,7 +185,7 @@ For each item, provide the exact file path and a one-line description of the iss
 ## Edge Cases
 
 - **Wiki not initialised:** If `.dagi/memory/wiki/index.md` does not exist, stop
-  and tell the user to run `memory-init` first.
+  and tell the user to run `/init` first.
 - **Empty wiki (no content pages yet):** Report "Wiki is empty — no pages to lint."
   Skip all checks and do not append to log.md.
 - **grep returns too many results:** Limit to first 200 matches. Note truncation in

@@ -321,6 +321,7 @@ def _run_task(
     project_path: Path,
     plan_mode: bool = False,
     plan_file: Path | None = None,
+    existing_tracker: "SessionTracker | None" = None,
 ) -> tuple[list, "AgentLoop"]:
     """Run one agent task. Returns (updated conversation messages, loop) for multi-turn."""
     config = resolve_model_config(model_id)
@@ -337,6 +338,7 @@ def _run_task(
         loop = AgentLoop(
             config, callbacks,
             initial_messages=conversation_msgs or None,
+            _tracker=existing_tracker,
         )
 
         def _agent_thread() -> None:
@@ -355,6 +357,7 @@ def _run_task(
         loop = AgentLoop(
             config, callbacks,
             initial_messages=conversation_msgs or None,
+            _tracker=existing_tracker,
         )
         try:
             loop.run(task)
@@ -374,8 +377,7 @@ _SLASH_COMMANDS: dict[str, str] = {
     "/compact":      "Force-compact conversation context into a summary",
     "/tools":        "List all registered agent tools",
     "/skills":       "List all loaded skills",
-    "/init":         "Initialise .dagi/ scaffold in the project directory",
-    "/memory-init":  "Initialise the dagi memory system at .dagi/memory/",
+    "/init":         "Initialise .dagi/ scaffold (dirs, AGENTS.md, memory wiki stubs)",
     "/hist":         "Show the 20 most recent agent sessions  (/hist [n])",
     "/plan":         "Enter plan mode — agent explores and writes a plan doc (read-only except plan file)",
     "/exit-plan":    "Exit plan mode and begin implementation based on the plan",
@@ -424,37 +426,21 @@ def _cmd_skills(loop: "AgentLoop | None" = None) -> None:
 
 
 def _cmd_init(project_path: Path) -> None:
-    dagi_dir = project_path / ".dagi"
-    skills_dir = dagi_dir / "skills"
-    agents_file = dagi_dir / "AGENTS.md"
-
-    created: list[str] = []
-
-    skills_dir.mkdir(parents=True, exist_ok=True)
-    if not agents_file.exists():
-        agents_file.write_text("", encoding="utf-8")
-        created.append(str(agents_file.relative_to(project_path)))
-
-    if created:
-        console.print(f"[green]✓ Initialised[/green] [dim]{dagi_dir}[/dim]")
-        for p in created:
-            console.print(f"  [dim]created:[/dim] {p}")
-    else:
-        console.print(f"[dim]Already initialised: {dagi_dir}[/dim]")
-
-
-def _cmd_memory_init() -> None:
-    """Initialise the dagi memory system at .dagi/memory/."""
     from datetime import date
-    dagi_root = Path(__file__).parent
-    memory = dagi_root / ".dagi" / "memory"
+    dagi_dir = project_path / ".dagi"
+    memory = dagi_dir / "memory"
     today = date.today().isoformat()
 
-    dirs = [memory / "raw", memory / "sources", memory / "wiki"]
-    for d in dirs:
+    for d in [
+        dagi_dir / "skills",
+        memory / "raw",
+        memory / "sources",
+        memory / "wiki",
+    ]:
         d.mkdir(parents=True, exist_ok=True)
 
-    stubs: dict[Path, str] = {
+    agents_file = dagi_dir / "AGENTS.md"
+    wiki_stubs: dict[Path, str] = {
         memory / "wiki" / "index.md": (
             "# Wiki Index\n\n"
             f"> **Last updated:** {today}\n\n"
@@ -495,19 +481,28 @@ def _cmd_memory_init() -> None:
 
     created: list[str] = []
     skipped: list[str] = []
-    for path, content in stubs.items():
-        rel = str(path.relative_to(dagi_root))
+
+    if agents_file.exists():
+        skipped.append(str(agents_file.relative_to(project_path)))
+    else:
+        agents_file.write_text("", encoding="utf-8")
+        created.append(str(agents_file.relative_to(project_path)))
+
+    for path, content in wiki_stubs.items():
+        rel = str(path.relative_to(project_path))
         if path.exists() and path.stat().st_size > 0:
             skipped.append(rel)
         else:
             path.write_text(content, encoding="utf-8")
             created.append(rel)
 
-    console.print(f"[green]✓ Memory system initialised[/green] [dim]{memory}[/dim]")
+    console.print(f"[green]✓ Initialised[/green] [dim]{dagi_dir}[/dim]")
     for p in created:
         console.print(f"  [dim]created:[/dim] {p}")
     for p in skipped:
         console.print(f"  [dim]skipped (exists):[/dim] {p}")
+    if not created and not skipped:
+        console.print(f"[dim]Already initialised: {dagi_dir}[/dim]")
     console.print(
         "[dim]Next: drop files into [bold].dagi/memory/raw/[/bold] "
         "then invoke [bold]memory-ingest[/bold].[/dim]"
@@ -633,8 +628,6 @@ def _handle_slash_command(
         _cmd_skills(active_loop)
     elif cmd == "/init":
         _cmd_init(project_path)
-    elif cmd == "/memory-init":
-        _cmd_memory_init()
     elif cmd == "/hist":
         arg = parts[1].strip() if len(parts) > 1 else None
         _cmd_hist(project_path, arg)
@@ -691,11 +684,13 @@ def run(
     def run_one(t: str) -> None:
         nonlocal conversation_msgs, active_loop
         console.print()
+        existing_tracker = active_loop.tracker if active_loop is not None else None
         conversation_msgs, active_loop = _run_task(
             t, conversation_msgs, cli_cfg, model, model_name,
             effective_verbose, sync, stats, project_path,
             plan_mode=plan_mode,
             plan_file=plan_file,
+            existing_tracker=existing_tracker,
         )
 
     if task:
@@ -706,10 +701,14 @@ def run(
             try:
                 user_input = console.input("\n[bold cyan]>[/bold cyan] ").strip()
             except (EOFError, KeyboardInterrupt):
+                if active_loop is not None:
+                    active_loop.finish()
                 break
             if not user_input:
                 continue
             if user_input.lower() in ("exit", "quit", "q"):
+                if active_loop is not None:
+                    active_loop.finish()
                 break
             # ── Slash commands ──────────────────────────────────────────
             if user_input.startswith("/"):
@@ -745,6 +744,8 @@ def run(
                     continue
 
                 if cmd_lower == "/clear":
+                    if active_loop is not None:
+                        active_loop.finish()
                     conversation_msgs = []
                     active_loop = None
                     if plan_mode:
@@ -758,8 +759,12 @@ def run(
                     project_path, active_loop,
                 )
                 if slash_result is _EXIT_SENTINEL:
+                    if active_loop is not None:
+                        active_loop.finish()
                     break
                 if new_path != project_path:
+                    if active_loop is not None:
+                        active_loop.finish()
                     project_path = new_path
                     conversation_msgs = []
                     active_loop = None

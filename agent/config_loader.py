@@ -3,7 +3,6 @@ agent/config_loader.py — single source of truth for dagi configuration.
 
 config.yaml schema:
     default_model: <model_id>
-    max_iterations: 20
     models:
       <model_id>:
         name: "Human-readable label"
@@ -123,7 +122,6 @@ def resolve_model_config(model_id: str | None = None) -> AgentConfig:
         model=entry["model"],
         base_url=entry["api_url"],
         api_key=api_key,
-        max_iterations=raw.get("max_iterations", 20),
         thinking=str(thinking).lower(),
         context_window=int(context_window),
         reserve_tokens=int(reserve_tokens),
@@ -131,14 +129,11 @@ def resolve_model_config(model_id: str | None = None) -> AgentConfig:
     )
 
 
-def save_config(default_model: str, max_iterations: int) -> None:
-    """
-    Persist default_model and max_iterations back to config.yaml.
-    The models catalog is preserved exactly — it is never clobbered.
-    """
+def save_config(default_model: str) -> None:
+    """Persist default_model back to config.yaml. The models catalog is preserved exactly."""
     raw = load_raw_config()
     raw["default_model"] = default_model
-    raw["max_iterations"] = max_iterations
+    raw.pop("max_iterations", None)  # clean up legacy key if present
     _CONFIG_PATH.write_text(
         yaml.dump(raw, default_flow_style=False, allow_unicode=True),
         encoding="utf-8",

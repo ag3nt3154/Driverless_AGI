@@ -63,7 +63,7 @@ class WebResearchTool(BaseTool):
                 tools=[WebSearchTool(), WebFetchTool()],
                 system_prompt=_SYSTEM_PROMPT,
                 callbacks=self._callbacks,
-                sub_cfg=SubAgentConfig(max_iterations=8, prefix="[web-research]"),
+                sub_cfg=SubAgentConfig(prefix="[web-research]"),
                 parent_tracker=self._tracker,
                 subagent_id=subagent_id,
             )

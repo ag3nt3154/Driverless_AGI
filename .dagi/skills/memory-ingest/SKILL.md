@@ -137,7 +137,7 @@ After all files are processed:
 ## Edge Cases
 
 - **Wiki not initialised:** If `.dagi/memory/wiki/index.md` does not exist, stop
-  and tell the user to run `/memory-init` first.
+  and tell the user to run `/init` first.
 - **Already-ingested file:** If filename appears in `log.md`, warn and skip.
 - **Unreadable file:** Leave in `raw/`. Report the failure. Do not archive.
 - **`bash` unavailable:** Skip the `rm` in Step 5; note for manual deletion.

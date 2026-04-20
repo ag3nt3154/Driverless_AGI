@@ -13,7 +13,6 @@ if TYPE_CHECKING:
 
 @dataclass
 class SubAgentConfig:
-    max_iterations: int = 8
     prefix: str = "[sub-agent]"
 
 
@@ -40,10 +39,9 @@ class SubAgentRunner:
         self._parent_tracker = parent_tracker
         self._subagent_id = subagent_id
 
-        # Inherit model/auth/context from parent; cap iterations and disable plan mode
+        # Inherit model/auth/context from parent; disable plan mode
         self._config = replace(
             config,
-            max_iterations=min(config.max_iterations, sub_cfg.max_iterations),
             plan_mode=False,
             plan_file=None,
         )
@@ -82,4 +80,6 @@ class SubAgentRunner:
             _parent_tracker=self._parent_tracker,
             _subagent_id=self._subagent_id,
         )
-        return loop.run(task)
+        result = loop.run(task)
+        loop.finish()  # rolls child stats up to root; no file write
+        return result

@@ -66,15 +66,61 @@ def create_tool_registry(
         reg.register(BashTool(cwd=cwd))
         if config is not None:
             from tools.explore_files import ExploreFilesTool
+            from tools.run_tool import RunToolTool
+            from tools.tool_search import CatalogEntry, ToolSearchTool
             from tools.web_research import WebResearchTool
-            reg.register(WebResearchTool(config=config, callbacks=callbacks, cwd=cwd, allowed_roots=effective_roots, tracker=tracker))
-            reg.register(ExploreFilesTool(config=config, callbacks=callbacks, cwd=cwd, allowed_roots=effective_roots, tracker=tracker))
+
+            hidden_reg = ToolRegistry()
+            web_tool = WebResearchTool(
+                config=config, callbacks=callbacks,
+                cwd=cwd, allowed_roots=effective_roots, tracker=tracker,
+            )
+            explore_tool = ExploreFilesTool(
+                config=config, callbacks=callbacks,
+                cwd=cwd, allowed_roots=effective_roots, tracker=tracker,
+            )
+            hidden_reg.register(web_tool)
+            hidden_reg.register(explore_tool)
+
+            catalog: list[CatalogEntry] = [
+                CatalogEntry(
+                    name="web_research",
+                    kind="tool",
+                    description=web_tool.description,
+                    params_summary="task: str",
+                    example_call='run_tool(name="web_research", args=\'{"task": "..."}\')',
+                ),
+                CatalogEntry(
+                    name="explore_files",
+                    kind="tool",
+                    description=explore_tool.description,
+                    params_summary="task: str, paths: str (optional)",
+                    example_call='run_tool(name="explore_files", args=\'{"task": "...", "paths": "src/"}\')',
+                ),
+            ]
+
+            if skills:
+                hidden_reg.register(SkillTool(skills=skills))
+                for s in skills:
+                    catalog.append(CatalogEntry(
+                        name=s.name,
+                        kind="skill",
+                        description=s.description or "(no description)",
+                        params_summary="(none — skill loads a guidance document)",
+                        example_call=f'run_tool(name="skill", args=\'{{"skill": "{s.name}"}}\')',
+                    ))
+
+            reg.register(ToolSearchTool(
+                catalog=catalog, config=config,
+                callbacks=callbacks, tracker=tracker,
+            ))
+            reg.register(RunToolTool(hidden_registry=hidden_reg))
         else:
             # Fallback for callers that do not supply config (e.g. tests)
             from tools.web_fetch import WebFetchTool
             from tools.web_search import WebSearchTool
             reg.register(WebSearchTool())
             reg.register(WebFetchTool())
-    if skills:
-        reg.register(SkillTool(skills=skills))
+            if skills:
+                reg.register(SkillTool(skills=skills))
     return reg

@@ -26,7 +26,7 @@ If no mode is specified, assume `direct`.
 ## Step 1 — Confirm the wiki is initialised
 
 Check `.dagi/memory/wiki/index.md` exists using `find`. If not, stop:
-"Run `/memory-init` first."
+"Run `/init` first."
 
 ---
 
@@ -279,7 +279,7 @@ Derive ONE open question from the content just added. The question should:
 5. Update `> **Last updated:**` date.
 
 If `open_questions.md` does not exist (wiki initialised before this feature was added),
-stop and tell the user: "open_questions.md not found — run `/memory-init` again to create it."
+stop and tell the user: "open_questions.md not found — run `/init` again to create it."
 
 ---
 
@@ -297,7 +297,7 @@ Tell the user:
 
 ## Edge Cases
 
-- **Wiki not initialised:** Stop at Step 1. Run `/memory-init` first.
+- **Wiki not initialised:** Stop at Step 1. Run `/init` first.
 - **Slug already exists:** Append `-2`, `-3`, etc.
 - **`edit` oldText not unique:** Expand surrounding context to uniquify. If still not
   possible, append to the end of the relevant section.
