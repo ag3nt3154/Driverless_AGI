@@ -7,7 +7,7 @@ description: Answer questions by traversing the dagi wiki index hierarchy, then 
 
 ## Purpose
 
-Answer questions by consulting the wiki at `.dagi/memory/wiki/`. Navigate the
+Answer questions by consulting the wiki at `dagi-memory/wiki/`. Navigate the
 index.md hierarchy to find relevant pages, synthesise an answer with citations,
 and offer to file the answer as a new wiki page if it adds value.
 
@@ -28,7 +28,7 @@ Before opening any files, identify:
 
 ## Step 2 — Verify the wiki exists
 
-Use `find` with pattern `index.md` and path `.dagi/memory/wiki/` to confirm the
+Use `find` with pattern `index.md` and path `dagi-memory/wiki/` to confirm the
 wiki has been initialised. If not found, stop and tell the user:
 "The wiki has not been initialised. Run `/init` first."
 
@@ -36,7 +36,7 @@ wiki has been initialised. If not found, stop and tell the user:
 
 ## Step 3 — Navigate via root index.md (semantic routing)
 
-`read .dagi/memory/wiki/index.md`
+`read dagi-memory/wiki/index.md`
 
 Scan the topic table for entries whose description matches the query's key terms or
 likely topic areas. Identify candidate topic folders to drill into.
@@ -49,13 +49,13 @@ If the root index has no entries yet, skip to Step 5 (grep fallback).
 
 For each candidate topic identified in Step 3:
 
-`read .dagi/memory/wiki/{topic}/index.md`
+`read dagi-memory/wiki/{topic}/index.md`
 
 Scan "Sub-topics" and "Pages in this folder" for entries relevant to the query.
 Identify specific pages to read.
 
 If a sub-topic looks relevant, read its index.md too:
-`read .dagi/memory/wiki/{topic}/{subtopic}/index.md`
+`read dagi-memory/wiki/{topic}/{subtopic}/index.md`
 
 Limit depth: stop at the first level that surfaces specific page names.
 
@@ -65,7 +65,7 @@ Limit depth: stop at the first level that surfaces specific page names.
 
 If Steps 3–4 do not surface relevant pages, use grep:
 
-`grep "{key term}" .dagi/memory/wiki/**/*.md`
+`grep "{key term}" dagi-memory/wiki/**/*.md`
 
 This finds pages containing the exact term even when index.md summaries don't match.
 Collect matching file paths.
@@ -96,7 +96,7 @@ Only read the original archived source when:
   (e.g. "what exactly did the paper say about X?"), OR
 - The wiki node is ambiguous and the source would resolve it.
 
-Path: `.dagi/memory/sources/{topic}/{filename}`
+Path: `dagi-memory/sources/{topic}/{filename}`
 
 Do not read sources by default — wiki nodes are usually sufficient.
 
@@ -128,7 +128,7 @@ information, say so — do not invent or extrapolate.
 Quote or paraphrase the specific passages, table rows, or bullet points that
 support the answer. Label each excerpt with its page path:
 
-> **From `.dagi/memory/wiki/knowledge-management/pioneers/VannevarBush.md`:**
+> **From `dagi-memory/wiki/knowledge-management/pioneers/VannevarBush.md`:**
 > VannevarBush proposed the Memex in 1945 — a personal knowledge device with
 > associative trails between documents.
 
@@ -137,7 +137,7 @@ Include only the directly relevant sections. Do not dump full pages.
 ### Part 3 — Source Documents
 
 List the archived sources referenced by the wiki pages used in your answer:
-- Path: `.dagi/memory/sources/{topic}/{filename}`
+- Path: `dagi-memory/sources/{topic}/{filename}`
 - One-sentence description of what it contains.
 
 Omit Part 3 if no source links appear in the relevant wiki sections.
@@ -173,13 +173,13 @@ Do not file if:
 
 If filing is warranted, ask the user:
 "This answer involves useful synthesis. Shall I file it as a new page at
-`.dagi/memory/wiki/{topic}/{suggested-slug}.md`?"
+`dagi-memory/wiki/{topic}/{suggested-slug}.md`?"
 
 If the user agrees, write the page, update the topic index.md, and append to log.md:
 ```markdown
 ## [YYYY-MM-DD] query | "{query summary}"
 - Topics consulted: {list}
-- Answer filed as: .dagi/memory/wiki/{topic}/{slug}.md
+- Answer filed as: dagi-memory/wiki/{topic}/{slug}.md
 ```
 
 If not filing, still append to log.md:

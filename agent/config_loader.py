@@ -72,6 +72,27 @@ def list_model_ids() -> list[str]:
     return list(load_raw_config().get("models", {}).keys())
 
 
+def _build_config_from_entry(entry: dict, raw: dict) -> AgentConfig:
+    """Build an AgentConfig from a catalog entry dict and the top-level raw config."""
+    api_key_env = entry.get("api_key_env", "OPENAI_API_KEY")
+    api_key = os.environ.get(api_key_env, "")
+
+    context_window     = entry.get("context_window")      or raw.get("context_window",      128_000)
+    reserve_tokens     = entry.get("reserve_tokens")      or raw.get("reserve_tokens",       16_384)
+    keep_recent_tokens = entry.get("keep_recent_tokens")  or raw.get("keep_recent_tokens",   20_000)
+    thinking = entry.get("thinking") or raw.get("thinking", "none") or "none"
+
+    return AgentConfig(
+        model=entry["model"],
+        base_url=entry["api_url"],
+        api_key=api_key,
+        thinking=str(thinking).lower(),
+        context_window=int(context_window),
+        reserve_tokens=int(reserve_tokens),
+        keep_recent_tokens=int(keep_recent_tokens),
+    )
+
+
 def resolve_model_config(model_id: str | None = None) -> AgentConfig:
     """
     Build an AgentConfig by looking up a model in the catalog.
@@ -80,6 +101,10 @@ def resolve_model_config(model_id: str | None = None) -> AgentConfig:
       1. model_id argument (CLI --model or UI selectbox)
       2. default_model from config.yaml
       3. built-in fallback (gpt-4o-openai)
+
+    If worker_model is set in config.yaml and resolves to a known catalog entry,
+    the returned config carries a worker_config field that sub-agents use instead
+    of the primary model. Unrecognised worker_model values are silently ignored.
 
     Raises
     ------
@@ -100,9 +125,7 @@ def resolve_model_config(model_id: str | None = None) -> AgentConfig:
 
     entry = catalog.get(chosen_id, _FALLBACK_ENTRY)
     api_key_env = entry.get("api_key_env", "OPENAI_API_KEY")
-    api_key = os.environ.get(api_key_env, "")
-
-    if not api_key:
+    if not os.environ.get(api_key_env, ""):
         print(
             f"Warning: env var '{api_key_env}' is not set "
             f"(required for model '{chosen_id}'). "
@@ -110,23 +133,16 @@ def resolve_model_config(model_id: str | None = None) -> AgentConfig:
             file=sys.stderr,
         )
 
-    # Per-model overrides take precedence (different models have different limits)
-    context_window     = entry.get("context_window")      or raw.get("context_window",      128_000)
-    reserve_tokens     = entry.get("reserve_tokens")      or raw.get("reserve_tokens",       16_384)
-    keep_recent_tokens = entry.get("keep_recent_tokens")  or raw.get("keep_recent_tokens",   20_000)
+    cfg = _build_config_from_entry(entry, raw)
 
-    # Per-model thinking effort override, falling back to global
-    thinking = entry.get("thinking") or raw.get("thinking", "none") or "none"
+    # Resolve optional worker model for sub-agents; silently fall back if unset/invalid.
+    worker_id = raw.get("worker_model")
+    worker_cfg: AgentConfig | None = None
+    if worker_id and worker_id in catalog:
+        worker_cfg = _build_config_from_entry(catalog[worker_id], raw)
 
-    return AgentConfig(
-        model=entry["model"],
-        base_url=entry["api_url"],
-        api_key=api_key,
-        thinking=str(thinking).lower(),
-        context_window=int(context_window),
-        reserve_tokens=int(reserve_tokens),
-        keep_recent_tokens=int(keep_recent_tokens),
-    )
+    from dataclasses import replace
+    return replace(cfg, worker_config=worker_cfg)
 
 
 def save_config(default_model: str) -> None:

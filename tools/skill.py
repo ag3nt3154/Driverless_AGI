@@ -18,13 +18,18 @@ class SkillTool(BaseTool):
         "required": ["skill"],
     }
 
-    def __init__(self, skills: list):
-        # skills: list[agent.skills.Skill]
-        self._skills = {s.name: s for s in skills}
+    def __init__(self, skill_roots: list[Path], dagi_root: Path | None = None):
+        self._skill_roots = skill_roots
+        self._dagi_root = dagi_root
 
     def run(self, skill: str) -> str:
-        if skill not in self._skills:
-            available = ", ".join(sorted(self._skills.keys())) or "none loaded"
+        from agent.skills import SkillLoader
+        skills_map = {
+            s.name: s
+            for s in SkillLoader().load_all(self._skill_roots, dagi_root=self._dagi_root)
+        }
+        if skill not in skills_map:
+            available = ", ".join(sorted(skills_map.keys())) or "none loaded"
             return f"Skill '{skill}' not found. Available skills: {available}"
-        s = self._skills[skill]
+        s = skills_map[skill]
         return f"# {s.name}\n\n{s.content}"

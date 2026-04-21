@@ -25,7 +25,7 @@ If no mode is specified, assume `direct`.
 
 ## Step 1 — Confirm the wiki is initialised
 
-Check `.dagi/memory/wiki/index.md` exists using `find`. If not, stop:
+Check `dagi-memory/wiki/index.md` exists using `find`. If not, stop:
 "Run `/init` first."
 
 ---
@@ -75,20 +75,20 @@ Currently all content is `human` unless the caller explicitly states otherwise.
    If a file already exists at the target path, append `-2`, `-3`, etc.
 
 **Target path:**
-- Topic-level: `.dagi/memory/wiki/{topic}/{slug}.md`
-- Sub-topic: `.dagi/memory/wiki/{topic}/{subtopic}/{slug}.md`
+- Topic-level: `dagi-memory/wiki/{topic}/{slug}.md`
+- Sub-topic: `dagi-memory/wiki/{topic}/{subtopic}/{slug}.md`
 
 ---
 
 ## Step 4 — Check existing wiki state
 
-**4a.** `read .dagi/memory/wiki/index.md` — does the topic already exist?
+**4a.** `read dagi-memory/wiki/index.md` — does the topic already exist?
 
-**4b.** If topic exists: `read .dagi/memory/wiki/{topic}/index.md` — scan for
+**4b.** If topic exists: `read dagi-memory/wiki/{topic}/index.md` — scan for
 related pages and sub-topics.
 
 **4c.** For each significant entity from Step 2, check for an existing page:
-`grep "{entity name}" .dagi/memory/wiki/**/*.md`
+`grep "{entity name}" dagi-memory/wiki/**/*.md`
 Note which entities already have pages (to update) vs. which are new (to create).
 
 ---
@@ -154,7 +154,7 @@ For each **significant entity** identified in Step 2:
 4. Update `last_updated` in frontmatter to today
 
 **No page exists yet** and the entity is significant enough to warrant one:
-Create `.dagi/memory/wiki/{topic}/{EntityName}.md`:
+Create `dagi-memory/wiki/{topic}/{EntityName}.md`:
 
 ```yaml
 ---
@@ -186,7 +186,7 @@ in the wiki node.
 
 Update every `index.md` in folders touched by this addition.
 
-**Topic index.md** — `.dagi/memory/wiki/{topic}/index.md`:
+**Topic index.md** — `dagi-memory/wiki/{topic}/index.md`:
 
 If it does not exist (new topic), create it:
 ```markdown
@@ -212,7 +212,7 @@ If it exists, `read` it first, then `edit`:
 - If a new sub-topic was used, add a row to "Sub-topics"
 - If the existing table header lacks a Tags column, add it with `edit` before inserting the new row
 
-**Root index.md** — `.dagi/memory/wiki/index.md`:
+**Root index.md** — `dagi-memory/wiki/index.md`:
 
 `read` it first, then `edit`:
 - New topic: add row `| [{topic}/](wiki/{topic}/index.md) | {one-line description} | 1 | YYYY-MM-DD |`
@@ -230,12 +230,12 @@ may want to run `memory-lint` to consider a sub-topic split.
 
 **Skip this step entirely if called from `memory-ingest`.** The caller handles log.
 
-For `direct` mode: `read .dagi/memory/wiki/log.md`, then `edit` to append:
+For `direct` mode: `read dagi-memory/wiki/log.md`, then `edit` to append:
 
 ```markdown
 ## [YYYY-MM-DD] add | {slug}
 - Topic: {topic}{/subtopic if applicable}
-- Wiki node: .dagi/memory/wiki/{topic}/{slug}.md
+- Wiki node: dagi-memory/wiki/{topic}/{slug}.md
 - Pages created: {comma-separated list, or "none"}
 - Pages updated: {comma-separated list, or "none"}
 ```
@@ -244,7 +244,7 @@ For `direct` mode: `read .dagi/memory/wiki/log.md`, then `edit` to append:
 
 ## Step 9 — Update overview.md (conditional)
 
-`read .dagi/memory/wiki/overview.md`.
+`read dagi-memory/wiki/overview.md`.
 
 Update **only** if this content adds synthesis-level value:
 - A new theme that connects previously separate topics
@@ -271,7 +271,7 @@ Derive ONE open question from the content just added. The question should:
 - Questions already present in the Pending table
 
 **Process:**
-1. `read .dagi/memory/wiki/open_questions.md`
+1. `read dagi-memory/wiki/open_questions.md`
 2. Count existing Pending rows (exclude placeholder). Assign next sequential number N.
 3. Append to the Pending table:
    `| {N} | {Question} | {One-sentence context} | [[{topic}/{slug}]] | {YYYY-MM-DD} |`

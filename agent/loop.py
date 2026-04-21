@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import json
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -47,6 +49,7 @@ Guidelines:
 - Use edit for precise changes (old text must match exactly)
 - Use write only for new files or complete rewrites
 - All file paths are relative to the project root unless absolute
+- When searching for files, always search in the project root first. Only access `dagi-memory/` or `.dagi/` when explicitly performing memory/wiki operations (memory-add, memory-ingest, memory-query, memory-lint skills)
 - When summarizing your actions, output plain text directly - do NOT use cat or bash to display what you did
 - Be concise in your responses
 - Show file paths clearly when working with files
@@ -78,6 +81,8 @@ class AgentConfig:
     # Plan mode
     plan_mode: bool = False
     plan_file: str | None = None  # absolute path to the active plan document
+    # Worker model (cheaper LLM for sub-agents); None = use this config as-is
+    worker_config: AgentConfig | None = field(default=None)
 
 
 @dataclass
@@ -143,16 +148,16 @@ class AgentLoop:
         else:
             # ── Load skills ───────────────────────────────────────────────────
             skill_roots = [
-                config.project_path / ".dagi" / "skills",
                 dagi_root / ".dagi" / "skills",
+                config.project_path / ".dagi" / "skills",
             ]
-            self.skills = SkillLoader().load_all(skill_roots)
+            self.skills = SkillLoader().load_all(skill_roots, dagi_root=dagi_root)
 
             # ── Build registry bound to project path ──────────────────────────
             self.registry = create_tool_registry(
                 cwd=config.project_path,
                 allowed_roots=[dagi_root, config.project_path],
-                skills=self.skills or None,
+                skill_roots=skill_roots,
                 plan_mode=config.plan_mode,
                 plan_file=Path(config.plan_file) if config.plan_file else None,
                 config=config,

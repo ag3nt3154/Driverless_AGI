@@ -1,0 +1,17 @@
+{
+  "id": "sample_001",
+  "description": "Financial results extraction — Apple Q1 2024",
+  "input": {
+    "text": "Apple Inc. reported quarterly revenue of $119.6 billion for Q1 FY2024, a 2% increase year over year. iPhone revenue reached $69.7 billion. Services revenue hit a record $23.1 billion. The company reported earnings per share of $2.18 and a net income of $33.9 billion."
+  },
+  "ground_truth": {
+    "company": "Apple Inc.",
+    "quarter": "Q1 FY2024",
+    "revenue_usd_billions": 119.6,
+    "revenue_yoy_change_pct": 2.0,
+    "iphone_revenue_usd_billions": 69.7,
+    "services_revenue_usd_billions": 23.1,
+    "earnings_per_share_usd": 2.18,
+    "net_income_usd_billions": 33.9
+  }
+}

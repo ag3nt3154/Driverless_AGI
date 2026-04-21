@@ -1,53 +1,49 @@
-# Copy to config.yaml and fill in your values.
-# config.yaml is gitignored.
-#
-# Each model entry:
-#   name        — human-readable label shown in the UI
-#   model       — model string sent verbatim to the API
-#   api_url     — provider base URL
-#   api_key_env — name of the env var in .env that holds the API key
+cli:
+  threading: threaded   # "threaded" | "sync"
+  verbose: false        # true = show full tool output
 
-default_model: gpt-4o-openai
-
-# Reasoning / thinking effort for models that support it.
-# Values: none | low | medium | high
-# "none" disables thinking. low/medium/high map to the provider's reasoning effort.
-# For models with binary thinking (on/off), any value other than "none" enables it.
-# Note: higher thinking effort increases token usage and cost.
-# Can also be set per-model (see commented example below).
-thinking: none
-
+context_window: 128000
+# context_window: 4000
+default_model: minimax-2.7-openrouter
+# worker_model: glm-5-turbo-openrouter   # cheaper LLM for sub-agents; omit to use default_model
+thinking: high          # none | low | medium | high — reasoning effort for models that support it
+keep_recent_tokens: 20000
+# keep_recent_tokens: 1000
 max_iterations: 20
-
 models:
-  gpt-4o-openai:
-    name: "GPT-4o (OpenAI)"
-    model: "gpt-4o"
-    api_url: "https://api.openai.com/v1"
-    api_key_env: "OPENAI_API_KEY"
-
-  gpt-4o-mini-openai:
-    name: "GPT-4o Mini (OpenAI)"
-    model: "gpt-4o-mini"
-    api_url: "https://api.openai.com/v1"
-    api_key_env: "OPENAI_API_KEY"
-
-  claude-sonnet-openrouter:
-    name: "Claude Sonnet 4.6 (OpenRouter)"
-    model: "anthropic/claude-sonnet-4-6"
-    api_url: "https://openrouter.ai/api/v1"
-    api_key_env: "OPENROUTER_API_KEY"
-
   claude-opus-openrouter:
-    name: "Claude Opus 4.6 (OpenRouter)"
-    model: "anthropic/claude-opus-4-6"
-    api_url: "https://openrouter.ai/api/v1"
-    api_key_env: "OPENROUTER_API_KEY"
-
-  # Example: per-model thinking override (overrides global `thinking:` above)
-  # qwen3-30b-openrouter:
-  #   name: "Qwen3 30B (OpenRouter)"
-  #   model: "qwen/qwen3-30b-a3b"
-  #   api_url: "https://openrouter.ai/api/v1"
-  #   api_key_env: "OPENROUTER_API_KEY"
-  #   thinking: high
+    api_key_env: OPENROUTER_API_KEY
+    api_url: https://openrouter.ai/api/v1
+    model: anthropic/claude-opus-4-6
+    name: Claude Opus 4.6 (OpenRouter)
+  claude-sonnet-openrouter:
+    api_key_env: OPENROUTER_API_KEY
+    api_url: https://openrouter.ai/api/v1
+    model: anthropic/claude-sonnet-4-6
+    name: Claude Sonnet 4.6 (OpenRouter)
+  glm-5-turbo-openrouter:
+    api_key_env: OPENROUTER_API_KEY
+    api_url: https://openrouter.ai/api/v1
+    model: z-ai/glm-5-turbo
+    name: GLM-5 Turbo (OpenRouter)
+  gpt-4o-mini-openai:
+    api_key_env: OPENAI_API_KEY
+    api_url: https://api.openai.com/v1
+    model: gpt-4o-mini
+    name: GPT-4o Mini (OpenAI)
+  gpt-4o-openai:
+    api_key_env: OPENAI_API_KEY
+    api_url: https://api.openai.com/v1
+    model: gpt-4o
+    name: GPT-4o (OpenAI)
+  minimax-2.7-openrouter:
+    api_key_env: OPENROUTER_API_KEY
+    api_url: https://openrouter.ai/api/v1
+    model: minimax/minimax-m2.7
+    name: Minimax 2.7 (OpenRouter)
+  qwen3.5-27b-openrouter:
+    api_key_env: OPENROUTER_API_KEY
+    api_url: https://openrouter.ai/api/v1
+    model: qwen/qwen3.5-27b
+    name: Qwen 3.5 27B (OpenRouter)
+reserve_tokens: 16384

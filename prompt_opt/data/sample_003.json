@@ -1,0 +1,19 @@
+{
+  "id": "sample_003",
+  "description": "Financial results extraction — NVIDIA Q3 FY2024",
+  "input": {
+    "text": "NVIDIA reported record revenue of $18.1 billion for the third quarter of fiscal 2024, up 206% from the same period a year ago. Data Center revenue was $14.5 billion, up 279% year over year. Gaming revenue was $2.9 billion, up 81%. GAAP earnings per diluted share were $3.71. Net income totaled $9.2 billion."
+  },
+  "ground_truth": {
+    "company": "NVIDIA",
+    "quarter": "Q3 FY2024",
+    "revenue_usd_billions": 18.1,
+    "revenue_yoy_change_pct": 206.0,
+    "data_center_revenue_usd_billions": 14.5,
+    "data_center_growth_pct": 279.0,
+    "gaming_revenue_usd_billions": 2.9,
+    "gaming_growth_pct": 81.0,
+    "earnings_per_share_usd": 3.71,
+    "net_income_usd_billions": 9.2
+  }
+}

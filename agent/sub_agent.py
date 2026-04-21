@@ -39,11 +39,22 @@ class SubAgentRunner:
         self._parent_tracker = parent_tracker
         self._subagent_id = subagent_id
 
-        # Inherit model/auth/context from parent; disable plan mode
+        # Use worker model if configured; fall back to parent model.
+        # Only LLM-specific fields (model, base_url, api_key, thinking, token limits)
+        # come from the worker — project context always stays from the parent.
+        w = config.worker_config or config
         self._config = replace(
             config,
+            model=w.model,
+            base_url=w.base_url,
+            api_key=w.api_key,
+            thinking=w.thinking,
+            context_window=w.context_window,
+            reserve_tokens=w.reserve_tokens,
+            keep_recent_tokens=w.keep_recent_tokens,
             plan_mode=False,
             plan_file=None,
+            worker_config=None,  # prevent further nesting
         )
 
         self._registry = ToolRegistry()

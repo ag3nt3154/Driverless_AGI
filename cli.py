@@ -377,7 +377,7 @@ _SLASH_COMMANDS: dict[str, str] = {
     "/compact":      "Force-compact conversation context into a summary",
     "/tools":        "List all registered agent tools",
     "/skills":       "List all loaded skills",
-    "/init":         "Initialise .dagi/ scaffold (dirs, AGENTS.md, memory wiki stubs)",
+    "/init":         "Initialise .dagi/ scaffold and dagi-memory/ wiki (dirs, AGENTS.md, stubs)",
     "/hist":         "Show the 20 most recent agent sessions  (/hist [n])",
     "/plan":         "Enter plan mode — agent explores and writes a plan doc (read-only except plan file)",
     "/exit-plan":    "Exit plan mode and begin implementation based on the plan",
@@ -386,13 +386,20 @@ _SLASH_COMMANDS: dict[str, str] = {
 _EXIT_SENTINEL = object()  # returned by /exit handler to signal the REPL to break
 
 
-def _cmd_help() -> None:
+def _cmd_help(skill_slash_map: "dict | None" = None) -> None:
     table = Table(title="Slash Commands", border_style="dim", padding=(0, 1))
     table.add_column("Command", style="bold cyan")
     table.add_column("Description", style="dim")
     for cmd, desc in _SLASH_COMMANDS.items():
         table.add_row(cmd, desc)
     console.print(table)
+    if skill_slash_map:
+        skill_table = Table(title="Skill Commands", border_style="dim", padding=(0, 1))
+        skill_table.add_column("Command", style="bold bright_magenta")
+        skill_table.add_column("Description", style="dim")
+        for slash_cmd, skill in sorted(skill_slash_map.items()):
+            skill_table.add_row(slash_cmd, skill.description or "—")
+        console.print(skill_table)
 
 
 def _cmd_tools(loop: "AgentLoop | None" = None) -> None:
@@ -408,11 +415,8 @@ def _cmd_tools(loop: "AgentLoop | None" = None) -> None:
     console.print(table)
 
 
-def _cmd_skills(loop: "AgentLoop | None" = None) -> None:
-    if loop is None:
-        console.print("[dim]No active session — start a task first.[/dim]")
-        return
-    skills = loop.skills
+def _cmd_skills(loop: "AgentLoop | None" = None, skill_slash_map: "dict | None" = None) -> None:
+    skills = loop.skills if loop is not None else (list(skill_slash_map.values()) if skill_slash_map else [])
     if not skills:
         console.print("[dim]No skills loaded.[/dim]")
         return
@@ -423,12 +427,13 @@ def _cmd_skills(loop: "AgentLoop | None" = None) -> None:
     for s in sorted(skills, key=lambda x: x.name):
         table.add_row(s.name, s.description or "—", s.source)
     console.print(table)
+    console.print("[dim]Tip: invoke any skill as a slash command, e.g. [bold]/memory-add[/bold][/dim]")
 
 
 def _cmd_init(project_path: Path) -> None:
     from datetime import date
     dagi_dir = project_path / ".dagi"
-    memory = dagi_dir / "memory"
+    memory = project_path / "dagi-memory"
     today = date.today().isoformat()
 
     for d in [
@@ -504,7 +509,7 @@ def _cmd_init(project_path: Path) -> None:
     if not created and not skipped:
         console.print(f"[dim]Already initialised: {dagi_dir}[/dim]")
     console.print(
-        "[dim]Next: drop files into [bold].dagi/memory/raw/[/bold] "
+        "[dim]Next: drop files into [bold]dagi-memory/raw/[/bold] "
         "then invoke [bold]memory-ingest[/bold].[/dim]"
     )
 
@@ -604,6 +609,7 @@ def _handle_slash_command(
     stats: _Stats,
     project_path: Path,
     active_loop: "AgentLoop | None" = None,
+    skill_slash_map: "dict | None" = None,
 ) -> tuple[object | None, Path]:
     """Dispatch a slash command. Returns (result, project_path).
     result is _EXIT_SENTINEL to signal REPL exit, or None otherwise.
@@ -615,7 +621,7 @@ def _handle_slash_command(
     if cmd == "/exit":
         return _EXIT_SENTINEL, project_path
     elif cmd == "/help":
-        _cmd_help()
+        _cmd_help(skill_slash_map)
     elif cmd == "/wd":
         arg = parts[1].strip() if len(parts) > 1 else None
         new_path = _cmd_wd(arg, project_path)
@@ -625,7 +631,7 @@ def _handle_slash_command(
     elif cmd == "/tools":
         _cmd_tools(active_loop)
     elif cmd == "/skills":
-        _cmd_skills(active_loop)
+        _cmd_skills(active_loop, skill_slash_map)
     elif cmd == "/init":
         _cmd_init(project_path)
     elif cmd == "/hist":
@@ -635,6 +641,16 @@ def _handle_slash_command(
         console.print(f"[red]Unknown command:[/red] {cmd}")
         console.print("[dim]Type [bold]/help[/bold] to see available commands.[/dim]")
     return None, project_path
+
+
+# ── Skill slash-command map ───────────────────────────────────────────────────
+
+def _load_skill_map(proj_path: Path) -> dict:
+    from agent.skills import SkillLoader
+    dagi_root = Path(__file__).parent
+    roots = [dagi_root / ".dagi" / "skills", proj_path / ".dagi" / "skills"]
+    skills = SkillLoader().load_all(roots, dagi_root=dagi_root)
+    return {f"/{s.name}": s for s in skills}
 
 
 # ── Typer command ─────────────────────────────────────────────────────────────
@@ -668,6 +684,7 @@ def run(
     is_tty = sys.stdin.isatty()
     model_name = get_model_display_name(model)
     project_path = Path(project).resolve() if project else Path.cwd()
+    skill_slash_map = _load_skill_map(project_path)
 
     console.print(
         Panel(
@@ -754,9 +771,19 @@ def run(
                     console.print("[bold green]✓ Context cleared — fresh session[/bold green]")
                     continue
 
+                # ── Skill slash commands ──────────────────────────────
+                if cmd_lower in skill_slash_map:
+                    skill = skill_slash_map[cmd_lower]
+                    args_str = user_input.split(maxsplit=1)[1] if " " in user_input else ""
+                    task_msg = f"Invoke the '{skill.name}' skill."
+                    if args_str:
+                        task_msg += f" {args_str}"
+                    run_one(task_msg)
+                    continue
+
                 slash_result, new_path = _handle_slash_command(
                     user_input, conversation_msgs, model, stats,
-                    project_path, active_loop,
+                    project_path, active_loop, skill_slash_map,
                 )
                 if slash_result is _EXIT_SENTINEL:
                     if active_loop is not None:
@@ -766,6 +793,7 @@ def run(
                     if active_loop is not None:
                         active_loop.finish()
                     project_path = new_path
+                    skill_slash_map = _load_skill_map(project_path)
                     conversation_msgs = []
                     active_loop = None
                 continue

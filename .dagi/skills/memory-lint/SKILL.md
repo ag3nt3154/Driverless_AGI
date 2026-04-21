@@ -7,7 +7,7 @@ description: Health-check the dagi wiki — find orphans, contradictions, stale 
 
 ## Purpose
 
-Audit the wiki at `.dagi/memory/wiki/` and produce a prioritised action list.
+Audit the wiki at `dagi-memory/wiki/` and produce a prioritised action list.
 Run periodically (e.g. after every 5–10 ingests) to keep the wiki healthy as it grows.
 
 This skill is read-only — it reports issues but does not fix them. The user decides
@@ -17,7 +17,7 @@ which actions to take.
 
 ## Step 1 — Enumerate all wiki pages
 
-Use `find .dagi/memory/wiki/ **/*.md` to collect every markdown file.
+Use `find dagi-memory/wiki/ **/*.md` to collect every markdown file.
 
 Categorise by type:
 - `index.md` files — folder navigation indexes
@@ -55,7 +55,7 @@ file exists using `find`. If not found, add to action list:
 An orphan is a content page that has no inbound wikilinks from any other wiki page.
 
 For each content page path:
-`grep "{page slug}" .dagi/memory/wiki/**/*.md`
+`grep "{page slug}" dagi-memory/wiki/**/*.md`
 
 If the grep returns no results (the page slug appears nowhere else in the wiki),
 the page is an orphan. Add to action list:
@@ -69,12 +69,12 @@ pages have been ingested.
 ## Step 4 — Check for broken source links
 
 For each content page, check its `source:` frontmatter field and any inline links
-pointing to `.dagi/memory/sources/`:
+pointing to `dagi-memory/sources/`:
 
-`grep "sources/" .dagi/memory/wiki/**/*.md`
+`grep "sources/" dagi-memory/wiki/**/*.md`
 
 For each source path referenced, verify the file exists:
-`find .dagi/memory/sources/ {filename}`
+`find dagi-memory/sources/ {filename}`
 
 If not found, add to action list:
 "Broken source link in {page path}: {source path} not found in archive"
@@ -84,9 +84,9 @@ If not found, add to action list:
 ## Step 5 — Check for missing entity/concept pages
 
 Scan all content pages for wikilinks that point to pages that don't exist yet:
-`grep "\[\[" .dagi/memory/wiki/**/*.md`
+`grep "\[\[" dagi-memory/wiki/**/*.md`
 
-For each `[[target]]` found, check if `.dagi/memory/wiki/{topic}/{target}.md` exists.
+For each `[[target]]` found, check if `dagi-memory/wiki/{topic}/{target}.md` exists.
 If not, collect the unresolved link.
 
 Group unresolved links by target name. If a target is linked from 3+ pages, add to
@@ -115,7 +115,7 @@ Do not flag minor stylistic differences — only factual contradictions.
 
 ## Step 7 — Check overview.md currency
 
-`read .dagi/memory/wiki/overview.md`
+`read dagi-memory/wiki/overview.md`
 
 If the overview still reads `_No sources ingested yet._` but log.md shows multiple
 ingests, add to action list:
@@ -144,7 +144,7 @@ Add these as suggestions (not action items) in the report.
 
 ## Step 9 — Append to log.md
 
-`read .dagi/memory/wiki/log.md` first, then append using `edit`:
+`read dagi-memory/wiki/log.md` first, then append using `edit`:
 
 ```markdown
 ## [YYYY-MM-DD] lint | Health check
@@ -184,7 +184,7 @@ For each item, provide the exact file path and a one-line description of the iss
 
 ## Edge Cases
 
-- **Wiki not initialised:** If `.dagi/memory/wiki/index.md` does not exist, stop
+- **Wiki not initialised:** If `dagi-memory/wiki/index.md` does not exist, stop
   and tell the user to run `/init` first.
 - **Empty wiki (no content pages yet):** Report "Wiki is empty — no pages to lint."
   Skip all checks and do not append to log.md.

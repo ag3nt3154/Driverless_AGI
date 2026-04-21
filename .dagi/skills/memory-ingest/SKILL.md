@@ -1,26 +1,26 @@
 ---
 name: memory-ingest
-description: Ingest raw source files from .dagi/memory/raw/ — classify, archive originals to sources/, then delegate wiki-writing to memory-add
+description: Ingest raw source files from dagi-memory/raw/ — classify, archive originals to sources/, then delegate wiki-writing to memory-add
 ---
 
 # memory-ingest — Ingest Raw Sources
 
 ## Purpose
 
-Process files in `.dagi/memory/raw/`: read and classify them, archive the originals
-to `.dagi/memory/sources/`, then call the `memory-add` skill to integrate each one
+Process files in `dagi-memory/raw/`: read and classify them, archive the originals
+to `dagi-memory/sources/`, then call the `memory-add` skill to integrate each one
 into the wiki.
 
 `memory-ingest` owns the file I/O and archiving.
 `memory-add` owns all wiki-writing (nodes, entity pages, index updates).
 
-Run this skill whenever new files appear in `.dagi/memory/raw/`.
+Run this skill whenever new files appear in `dagi-memory/raw/`.
 
 ---
 
 ## Step 1 — Discover files in `raw/`
 
-Use `find` with pattern `*` and path `.dagi/memory/raw/` to list all files.
+Use `find` with pattern `*` and path `dagi-memory/raw/` to list all files.
 
 If `raw/` is empty, report this and stop — nothing to ingest.
 
@@ -31,7 +31,7 @@ for file N before starting file N+1.
 
 ## Step 2 — Check for duplicate ingestion
 
-`read .dagi/memory/wiki/log.md` and scan for the filename.
+`read dagi-memory/wiki/log.md` and scan for the filename.
 
 If it appears in a prior `ingest` entry, warn the user and skip this file.
 
@@ -39,7 +39,7 @@ If it appears in a prior `ingest` entry, warn the user and skip this file.
 
 ## Step 3 — Read the source file
 
-`read .dagi/memory/raw/{filename}`
+`read dagi-memory/raw/{filename}`
 
 If the file cannot be read (binary, corrupt), add to the final failure report.
 Leave it in `raw/` and move to the next file.
@@ -58,8 +58,8 @@ Based on the file content, determine:
    this source clearly fits one. Default to topic-level when in doubt.
 
 **Archive path:**
-- Topic-level: `.dagi/memory/sources/{topic}/{filename}`
-- Sub-topic: `.dagi/memory/sources/{topic}/{subtopic}/{filename}`
+- Topic-level: `dagi-memory/sources/{topic}/{filename}`
+- Sub-topic: `dagi-memory/sources/{topic}/{subtopic}/{filename}`
 
 The `sources/` hierarchy mirrors `wiki/` — same topic/sub-topic names.
 
@@ -72,7 +72,7 @@ The `sources/` hierarchy mirrors `wiki/` — same topic/sub-topic names.
 3. After confirming the write succeeded, delete the original:
 
 ```bash
-rm ".dagi/memory/raw/{filename}"
+rm "dagi-memory/raw/{filename}"
 ```
 
 If `bash` is unavailable, note the file for manual deletion in the final report
@@ -92,7 +92,7 @@ Then follow `memory-add` with these inputs:
 
 - **Mode:** `ingest` (memory-ingest will write the log entry — memory-add must skip Step 8)
 - **Content:** the file content read in Step 3
-- **Archive path:** the path written in Step 5 (e.g. `.dagi/memory/sources/{topic}/{filename}`)
+- **Archive path:** the path written in Step 5 (e.g. `dagi-memory/sources/{topic}/{filename}`)
 - **Topic hint:** the topic determined in Step 4 (memory-add may refine it)
 
 Follow all steps of `memory-add` except Step 8 (log append) — that is handled here
@@ -102,13 +102,13 @@ in Step 7.
 
 ## Step 7 — Append to log.md
 
-After `memory-add` completes, `read .dagi/memory/wiki/log.md`, then `edit` to append:
+After `memory-add` completes, `read dagi-memory/wiki/log.md`, then `edit` to append:
 
 ```markdown
 ## [YYYY-MM-DD] ingest | {filename}
 - Topic: {topic}{/subtopic if applicable}
-- Archived: .dagi/memory/raw/{filename} → .dagi/memory/sources/{topic}/{filename}
-- Wiki node: .dagi/memory/wiki/{topic}/{slug}.md
+- Archived: dagi-memory/raw/{filename} → dagi-memory/sources/{topic}/{filename}
+- Wiki node: dagi-memory/wiki/{topic}/{slug}.md
 - Pages created: {list from memory-add report, or "none"}
 - Pages updated: {list from memory-add report, or "none"}
 - index.md files updated: {list}
@@ -136,7 +136,7 @@ After all files are processed:
 
 ## Edge Cases
 
-- **Wiki not initialised:** If `.dagi/memory/wiki/index.md` does not exist, stop
+- **Wiki not initialised:** If `dagi-memory/wiki/index.md` does not exist, stop
   and tell the user to run `/init` first.
 - **Already-ingested file:** If filename appears in `log.md`, warn and skip.
 - **Unreadable file:** Leave in `raw/`. Report the failure. Do not archive.

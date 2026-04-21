@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from pathlib import Path
 from typing import TYPE_CHECKING, Literal
 from uuid import uuid4
 
@@ -18,11 +19,17 @@ class CatalogEntry:
     description: str
     params_summary: str
     example_call: str
+    source: str = ""  # "builtin" | "project" | "" for unknown
 
 
 _TOOL_SEARCH_SYSTEM_PROMPT = """\
 You are a tool-selection specialist. Match the user's capability request to
 the best entry in the catalog below.
+
+The catalog includes BOTH built-in tools/skills [builtin] and project-specific
+tools/skills [project]. When the user is working on a project task, prefer
+entries labeled [project] if they closely match the request. Use [builtin]
+entries when no project-specific match exists.
 
 ## Catalog
 
@@ -35,7 +42,7 @@ TYPE: <tool|skill>
 DESCRIPTION: <one sentence>
 CALL: <run_tool(name="...", args='...') example>
 
-If nothing fits, respond with:
+If nothing in the catalog fits the request, respond with:
 NO_MATCH: <brief reason>
 
 Do not invent tools. Do not suggest basic tools (read, write, edit, grep, find, bash).\
@@ -45,7 +52,8 @@ Do not invent tools. Do not suggest basic tools (read, write, edit, grep, find, 
 def _render_catalog(catalog: list[CatalogEntry]) -> str:
     lines: list[str] = []
     for e in catalog:
-        lines.append(f"**{e.name}** ({e.kind})")
+        source_tag = f" [{e.source}]" if e.source else ""
+        lines.append(f"**{e.name}** ({e.kind}){source_tag}")
         lines.append(f"  {e.description}")
         lines.append(f"  Params: {e.params_summary}")
         lines.append(f"  Example: {e.example_call}")
@@ -67,9 +75,13 @@ class ToolSearchTool(BaseTool):
             "query": {
                 "type": "string",
                 "description": (
-                    "Natural language description of the capability you need. "
-                    "Examples: 'search the web for X', 'explore files in the repo', "
-                    "'load guidance for writing tests'."
+                    "Natural language description of the capability you need, "
+                    "including your best guess at the kind of tool required. "
+                    "Always start with a short tool-type hypothesis, then the task. "
+                    "Examples: "
+                    "'web-search or web-fetch tool needed — find recent papers on RAG'; "
+                    "'file-explorer tool needed — list all Python files under src/'; "
+                    "'skill or guidance tool needed — load test-writing conventions'."
                 ),
             },
         },
@@ -78,20 +90,42 @@ class ToolSearchTool(BaseTool):
 
     def __init__(
         self,
-        catalog: list[CatalogEntry],
+        static_tool_entries: list[CatalogEntry],
+        dagi_root: Path,
         config: "AgentConfig",
         callbacks: "AgentCallbacks | None" = None,
         tracker: "SessionTracker | None" = None,
     ) -> None:
-        self._catalog = catalog
+        self._static_tool_entries = static_tool_entries
+        self._dagi_root = dagi_root
         self._config = config
         self._callbacks = callbacks
         self._tracker = tracker
 
+    def _build_catalog(self) -> list[CatalogEntry]:
+        """Rebuild catalog on every call: static tool entries + freshly scanned skills."""
+        from agent.skills import SkillLoader
+
+        catalog = list(self._static_tool_entries)
+        skill_roots = [
+            self._dagi_root / ".dagi" / "skills",
+            self._config.project_path / ".dagi" / "skills",
+        ]
+        for s in SkillLoader().load_all(skill_roots, dagi_root=self._dagi_root):
+            catalog.append(CatalogEntry(
+                name=s.name,
+                kind="skill",
+                description=s.description or "(no description)",
+                params_summary="(none — skill loads a guidance document)",
+                example_call=f'run_tool(name="skill", args=\'{{"skill": "{s.name}"}}\')',
+                source=s.source,
+            ))
+        return catalog
+
     def run(self, query: str) -> str:
         from agent.sub_agent import SubAgentConfig, SubAgentRunner
 
-        catalog_text = _render_catalog(self._catalog)
+        catalog_text = _render_catalog(self._build_catalog())
         system_prompt = _TOOL_SEARCH_SYSTEM_PROMPT.format(catalog=catalog_text)
         subagent_id = uuid4().hex
         depth = self._tracker._depth if self._tracker else 0
@@ -114,9 +148,5 @@ class ToolSearchTool(BaseTool):
             self._tracker.record_subagent_end(subagent_id, result, depth)
 
         if result.strip().startswith("NO_MATCH:"):
-            return (
-                f"[tool_search] {result.strip()}\n\n"
-                "Proceed with basic tools (read/grep/find/bash/write/edit) "
-                "or inform the user this capability is unavailable."
-            )
+            return f"[tool_search] {result.strip()}"
         return result

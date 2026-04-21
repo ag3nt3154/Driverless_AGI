@@ -123,7 +123,7 @@ def _load_project_tools(project_path: Path) -> list[BaseTool]:
 def create_tool_registry(
     cwd: Path = Path("."),
     allowed_roots: list[Path] | None = None,
-    skills: list | None = None,
+    skill_roots: list[Path] | None = None,
     plan_mode: bool = False,
     plan_file: Path | None = None,
     config: "AgentConfig | None" = None,
@@ -184,6 +184,7 @@ def create_tool_registry(
                     description=web_tool.description,
                     params_summary="task: str",
                     example_call='run_tool(name="web_research", args=\'{"task": "..."}\')',
+                    source="builtin",
                 ),
                 CatalogEntry(
                     name="explore_files",
@@ -191,6 +192,7 @@ def create_tool_registry(
                     description=explore_tool.description,
                     params_summary="task: str, paths: str (optional)",
                     example_call='run_tool(name="explore_files", args=\'{"task": "...", "paths": "src/"}\')',
+                    source="builtin",
                 ),
             ]
 
@@ -208,6 +210,7 @@ def create_tool_registry(
                         example_call=(
                             f'run_tool(name="{pt.name}", args=\'{example_json}\')'
                         ),
+                        source="project",
                     ))
                 except Exception as exc:  # noqa: BLE001
                     print(
@@ -216,20 +219,15 @@ def create_tool_registry(
                         file=sys.stderr,
                     )
 
-            if skills:
-                hidden_reg.register(SkillTool(skills=skills))
-                for s in skills:
-                    catalog.append(CatalogEntry(
-                        name=s.name,
-                        kind="skill",
-                        description=s.description or "(no description)",
-                        params_summary="(none — skill loads a guidance document)",
-                        example_call=f'run_tool(name="skill", args=\'{{"skill": "{s.name}"}}\')',
-                    ))
+            if skill_roots:
+                hidden_reg.register(SkillTool(skill_roots=skill_roots, dagi_root=_DAGI_ROOT))
 
             reg.register(ToolSearchTool(
-                catalog=catalog, config=config,
-                callbacks=callbacks, tracker=tracker,
+                static_tool_entries=catalog,
+                dagi_root=_DAGI_ROOT,
+                config=config,
+                callbacks=callbacks,
+                tracker=tracker,
             ))
             reg.register(RunToolTool(hidden_registry=hidden_reg))
         else:
@@ -238,6 +236,6 @@ def create_tool_registry(
             from tools.web_search import WebSearchTool
             reg.register(WebSearchTool())
             reg.register(WebFetchTool())
-            if skills:
-                reg.register(SkillTool(skills=skills))
+            if skill_roots:
+                reg.register(SkillTool(skill_roots=skill_roots, dagi_root=_DAGI_ROOT))
     return reg
