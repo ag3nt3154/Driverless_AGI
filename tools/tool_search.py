@@ -40,7 +40,7 @@ Respond in EXACTLY this format — no preamble:
 MATCH: <name>
 TYPE: <tool|skill>
 DESCRIPTION: <one sentence>
-CALL: <run_tool(name="...", args='...') example>
+CALL: <invocation — skill(skill="name") for TYPE=skill, run_tool(name="...", args='...') for TYPE=tool>
 
 If nothing in the catalog fits the request, respond with:
 NO_MATCH: <brief reason>
@@ -117,7 +117,7 @@ class ToolSearchTool(BaseTool):
                 kind="skill",
                 description=s.description or "(no description)",
                 params_summary="(none — skill loads a guidance document)",
-                example_call=f'run_tool(name="skill", args=\'{{"skill": "{s.name}"}}\')',
+                example_call=f'skill(skill="{s.name}")',
                 source=s.source,
             ))
         return catalog

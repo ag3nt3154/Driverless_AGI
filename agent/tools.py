@@ -220,7 +220,7 @@ def create_tool_registry(
                     )
 
             if skill_roots:
-                hidden_reg.register(SkillTool(skill_roots=skill_roots, dagi_root=_DAGI_ROOT))
+                reg.register(SkillTool(skill_roots=skill_roots, dagi_root=_DAGI_ROOT))
 
             reg.register(ToolSearchTool(
                 static_tool_entries=catalog,

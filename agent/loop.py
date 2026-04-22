@@ -41,7 +41,7 @@ You are an expert coding assistant. You help users with coding tasks by reading 
 
 {tools_and_skills}
 
-Use `tool_search` to discover additional capabilities (web research, file exploration, skills) not listed above.
+Use `tool_search` to discover additional capabilities (web research, file exploration) not listed above.
 
 Guidelines:
 - Use grep and find instead of bash for searching/discovering files
@@ -167,7 +167,7 @@ class AgentLoop:
 
         # ── Build system prompt ───────────────────────────────────────────
         readme_path = (dagi_root / "README.md").resolve()
-        tools_and_skills_section = _format_tools_and_skills(self.registry, [])
+        tools_and_skills_section = _format_tools_and_skills(self.registry, self.skills)
         prompt = config.system_prompt.format_map(_SafeDict(
             readme_path=readme_path,
             tools_and_skills=tools_and_skills_section,
