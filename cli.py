@@ -71,6 +71,21 @@ def _truncate(text: str, length: int = _MAX_COMPACT_LEN) -> str:
     return text if len(text) <= length else text[:length] + "…"
 
 
+def _resolve_option(raw: str, options: list[dict]) -> str:
+    """Map user input (number or label string) to an option label. Falls back to recommended/first."""
+    if raw.isdigit():
+        idx = int(raw) - 1
+        if 0 <= idx < len(options):
+            return options[idx]["label"]
+    for opt in options:
+        if opt["label"].lower() == raw.lower():
+            return opt["label"]
+    return next(
+        (o["label"] for o in options if o.get("recommended")),
+        options[0]["label"] if options else "",
+    )
+
+
 # ── Stats accumulator ─────────────────────────────────────────────────────────
 
 class _Stats:
@@ -174,6 +189,25 @@ def _make_sync_callbacks(
     def on_done(_result: str) -> None:
         console.print(f"[dim]{stats.footer(model_name, cwd=get_cwd())}[/dim]")
 
+    def on_ask_user(question: str, options: list[dict]) -> str:
+        console.print()
+        console.print(Panel(
+            question,
+            title="[bold cyan]Question from Dagi[/bold cyan]",
+            border_style="cyan",
+            padding=(0, 2),
+        ))
+        table = Table(border_style="dim", padding=(0, 1))
+        table.add_column("#", style="bold cyan", width=3)
+        table.add_column("Option", style="bold")
+        table.add_column("Description", style="dim")
+        for i, opt in enumerate(options, 1):
+            rec = " [bold green](recommended)[/bold green]" if opt.get("recommended") else ""
+            table.add_row(str(i), opt["label"] + rec, opt.get("description", ""))
+        console.print(table)
+        raw = console.input("[dim]Enter option number or label: [/dim]").strip()
+        return _resolve_option(raw, options)
+
     return AgentCallbacks(
         on_tool_start=on_tool_start,
         on_tool_end=on_tool_end,
@@ -183,6 +217,7 @@ def _make_sync_callbacks(
         on_reasoning=on_reasoning,
         on_error=on_error,
         on_done=on_done,
+        on_ask_user=on_ask_user,
     )
 
 
@@ -196,11 +231,24 @@ _EVT_COMPACTION = "compaction"
 _EVT_REASONING  = "reasoning"
 _EVT_ERROR      = "error"
 _EVT_DONE       = "done"
+_EVT_ASK_USER   = "ask_user"
 
 
 def _make_threaded_callbacks(q: queue.Queue, stats: _Stats) -> AgentCallbacks:
+    import threading
+
     def put(tag: str, *payload) -> None:
         q.put((tag, *payload))
+
+    def on_ask_user(question: str, options: list[dict]) -> str:
+        response_event = threading.Event()
+        answer_container: list[str] = []
+        q.put((_EVT_ASK_USER, question, options, response_event, answer_container))
+        # Main thread resolves within 300 s; 360 s here is a safety net only
+        response_event.wait(timeout=360)
+        if answer_container:
+            return answer_container[0]
+        return _resolve_option("", options)
 
     return AgentCallbacks(
         on_tool_start     = lambda n, d, a: put(_EVT_TOOL_START, n, d, a),
@@ -211,6 +259,7 @@ def _make_threaded_callbacks(q: queue.Queue, stats: _Stats) -> AgentCallbacks:
         on_reasoning      = lambda t:       put(_EVT_REASONING, t),
         on_error          = lambda e:       put(_EVT_ERROR, str(e)),
         on_done           = lambda r:       put(_EVT_DONE, r),
+        on_ask_user       = on_ask_user,
     )
 
 
@@ -225,7 +274,7 @@ def _render_queue(
     spinner_text = Text("Thinking…", style="dim")
     spinner = Spinner("dots", text=spinner_text)
 
-    with Live(spinner, console=console, refresh_per_second=10, transient=True):
+    with Live(spinner, console=console, refresh_per_second=10, transient=True) as live:
         while True:
             try:
                 event = q.get(timeout=0.05)
@@ -302,6 +351,52 @@ def _render_queue(
             elif tag == _EVT_ERROR:
                 err_msg = payload[0] if payload and payload[0] else "Unknown error"
                 console.print(f"[bold red]Error:[/bold red] {err_msg}")
+
+            elif tag == _EVT_ASK_USER:
+                import threading as _threading
+                question, options, response_event, answer_container = payload
+                live.stop()
+                try:
+                    console.print()
+                    console.print(Panel(
+                        question,
+                        title="[bold cyan]Question from Dagi[/bold cyan]",
+                        border_style="cyan",
+                        padding=(0, 2),
+                    ))
+                    tbl = Table(border_style="dim", padding=(0, 1))
+                    tbl.add_column("#", style="bold cyan", width=3)
+                    tbl.add_column("Option", style="bold")
+                    tbl.add_column("Description", style="dim")
+                    for i, opt in enumerate(options, 1):
+                        rec = " [bold green](recommended)[/bold green]" if opt.get("recommended") else ""
+                        tbl.add_row(str(i), opt["label"] + rec, opt.get("description", ""))
+                    console.print(tbl)
+                    console.print("[dim]Enter option number or label — auto-selects in 5 min[/dim]")
+
+                    user_answer: list[str] = []
+                    input_done = _threading.Event()
+
+                    def _get_input() -> None:
+                        try:
+                            raw = console.input("[bold cyan]>[/bold cyan] ").strip()
+                            user_answer.append(raw)
+                        except (EOFError, KeyboardInterrupt):
+                            pass
+                        finally:
+                            input_done.set()
+
+                    _threading.Thread(target=_get_input, daemon=True).start()
+                    timed_out = not input_done.wait(timeout=300)
+
+                    chosen = _resolve_option(user_answer[0] if user_answer else "", options)
+                    if timed_out or not user_answer:
+                        console.print(f"[dim]No response — auto-selected: {chosen}[/dim]")
+                    answer_container.append(chosen)
+                finally:
+                    response_event.set()
+                    live.start()
+                spinner_text.plain = "Thinking…"
 
             elif tag == _EVT_DONE:
                 console.print(f"[dim]{stats.footer(model_name, cwd=get_cwd())}[/dim]")
@@ -732,10 +827,13 @@ def run(
                 cmd_lower = user_input.split()[0].lower()
 
                 if cmd_lower == "/plan":
-                    if plan_mode:
+                    already_in_plan = plan_mode or (
+                        active_loop is not None and active_loop.config.plan_mode
+                    )
+                    if already_in_plan:
                         console.print(
-                            f"[yellow]Already in plan mode.[/yellow] "
-                            f"[dim]Plan file: {plan_file}[/dim]"
+                            "[yellow]Already in plan mode.[/yellow] "
+                            "[dim]Use /exit-plan to finish the current plan.[/dim]"
                         )
                     else:
                         plan_mode, plan_file = _cmd_plan(project_path)

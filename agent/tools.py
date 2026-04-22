@@ -120,12 +120,21 @@ def _load_project_tools(project_path: Path) -> list[BaseTool]:
     return loaded
 
 
+def _default_ask_user(question: str, options: list[dict]) -> str:  # noqa: ARG001
+    """Fallback on_ask_user for tests / headless callers (no callbacks supplied)."""
+    return next(
+        (o["label"] for o in options if o.get("recommended")),
+        options[0]["label"] if options else "",
+    )
+
+
 def create_tool_registry(
     cwd: Path = Path("."),
     allowed_roots: list[Path] | None = None,
     skill_roots: list[Path] | None = None,
     plan_mode: bool = False,
     plan_file: Path | None = None,
+    plan_mode_initiated_by: str = "user",
     config: "AgentConfig | None" = None,
     callbacks: "AgentCallbacks | None" = None,
     tracker: "SessionTracker | None" = None,
@@ -155,10 +164,20 @@ def create_tool_registry(
             reg.register(WriteTool(cwd=cwd, allowed_roots=[plan_file]))
             reg.register(EditTool(cwd=cwd, allowed_roots=[plan_file]))
         # BashTool always omitted in plan mode
+        from tools.plan_mode import ExitPlanModeTool
+        reg.register(ExitPlanModeTool())
+        if plan_mode_initiated_by == "user":
+            from tools.ask_user import AskUserTool
+            _on_ask = callbacks.on_ask_user if callbacks else _default_ask_user
+            reg.register(AskUserTool(on_ask_user=_on_ask))
+        if skill_roots:
+            reg.register(SkillTool(skill_roots=skill_roots, dagi_root=_DAGI_ROOT))
     else:
         reg.register(WriteTool(cwd=cwd, allowed_roots=effective_roots))
         reg.register(EditTool(cwd=cwd, allowed_roots=effective_roots))
         reg.register(BashTool(cwd=cwd))
+        from tools.plan_mode import EnterPlanModeTool
+        reg.register(EnterPlanModeTool())
         if config is not None:
             from tools.explore_files import ExploreFilesTool
             from tools.run_tool import RunToolTool

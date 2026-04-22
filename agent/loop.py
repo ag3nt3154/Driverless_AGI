@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass, field
+from datetime import datetime
 from pathlib import Path
 from typing import Callable
 
@@ -11,6 +12,7 @@ from agent.registry import ToolRegistry
 from agent.session import SessionTracker, ToolCallRecord
 from agent.skills import Skill, SkillLoader
 from tools.compact import CompactTool, CompactionResult
+from tools.plan_mode import ENTER_PLAN_MODE_SENTINEL, EXIT_PLAN_MODE_SENTINEL
 
 
 def _format_tools_and_skills(registry: ToolRegistry, skills: list[Skill]) -> str:
@@ -60,8 +62,60 @@ Guidelines:
 
 Documentation:
 - Your own documentation (including custom model setup and theme creation) is at: {readme_path}
-- Read it when users ask about features, configuration, or setup, and especially if the user asks you to add a custom model or provider, or create a custom theme.\
+- Read it when users ask about features, configuration, or setup, and especially if the user asks you to add a custom model or provider, or create a custom theme.
+
+## Autonomous Plan Mode
+
+Call `enter_plan_mode` when the task has ANY of these characteristics:
+- Requires 3 or more distinct implementation steps across different files
+- Involves architectural decisions with non-trivial trade-offs (new abstractions, interface changes, new dependencies)
+- Touches multiple subsystems or requires broad exploration before acting
+- Has requirements ambiguous enough that a wrong choice would require significant rework
+
+Do NOT enter plan mode for:
+- Single-file edits or clearly scoped additions
+- Bug fixes where the root cause and fix are already clear
+- Tasks already fully specified with no design decisions remaining
+
+During dagi-initiated plan mode: explore autonomously with read/grep/find, write the plan document, then call `exit_plan_mode` immediately to restore full tools and begin implementation.\
 """
+
+
+_PLAN_MODE_SYSTEM_ADDENDUM = """
+
+---
+
+## PLAN MODE ACTIVE
+
+You are in read-only planning mode. Your capabilities are restricted:
+- **READ**: You can read any file in the project.
+- **WRITE**: You may ONLY write to this plan document: `{plan_file}`
+- **BLOCKED**: bash, shell commands, and writes to any other file are unavailable.
+
+Your objective is to produce a comprehensive plan document.
+Explore the codebase as needed with read/grep/find. Write the plan to `{plan_file}`.
+
+The plan document must include:
+1. **Context** — what problem is being solved and why
+2. **Approach** — the chosen strategy and key architectural decisions
+3. **Files to modify** — exact file paths and line references
+4. **Step-by-step implementation** — ordered, concrete steps
+5. **Todo list** — checkboxes (`- [ ]`) for each discrete action
+6. **Verification** — how to test that the implementation is correct
+
+{ask_user_instruction}
+
+When the plan is complete, call `exit_plan_mode` to restore full tools and begin implementation."""
+
+
+_PLAN_MODE_ASK_USER_INSTRUCTION = (
+    "Use `ask_user` to present solution options and resolve key decisions before finalising the plan. "
+    "Provide 2-4 concrete options; mark the strongest with recommended=true."
+)
+_PLAN_MODE_NO_ASK_INSTRUCTION = (
+    "Plan autonomously — explore, decide, and write the plan without waiting for user input. "
+    "Call `exit_plan_mode` as soon as the plan is complete."
+)
 
 
 @dataclass
@@ -81,6 +135,7 @@ class AgentConfig:
     # Plan mode
     plan_mode: bool = False
     plan_file: str | None = None  # absolute path to the active plan document
+    plan_mode_initiated_by: str = "user"  # "user" | "dagi"
     # Worker model (cheaper LLM for sub-agents); None = use this config as-is
     worker_config: AgentConfig | None = field(default=None)
 
@@ -99,6 +154,12 @@ class AgentCallbacks:
     on_api_call:       Callable[[list], None]                   = field(default=lambda msgs: None)
     on_reasoning:      Callable[[str], None]                    = field(default=lambda text: None)
     on_compaction:     Callable[[int, int], None]               = field(default=lambda kept, removed: None)
+    on_ask_user:       Callable[[str, list], str]               = field(
+        default=lambda question, options: next(
+            (o["label"] for o in options if o.get("recommended")),
+            options[0]["label"] if options else "",
+        )
+    )
 
 
 def _extract_reasoning(message) -> str:
@@ -160,6 +221,7 @@ class AgentLoop:
                 skill_roots=skill_roots,
                 plan_mode=config.plan_mode,
                 plan_file=Path(config.plan_file) if config.plan_file else None,
+                plan_mode_initiated_by=config.plan_mode_initiated_by,
                 config=config,
                 callbacks=self.callbacks,
                 tracker=self.tracker,
@@ -193,29 +255,15 @@ class AgentLoop:
         system += f"\n\n---\n\nProject root: {config.project_path}"
 
         if config.plan_mode and config.plan_file:
-            system += f"""
-
----
-
-## PLAN MODE ACTIVE
-
-You are in read-only planning mode. Your capabilities are restricted:
-- **READ**: You can read any file in the project.
-- **WRITE**: You may ONLY write to this plan document: `{config.plan_file}`
-- **BLOCKED**: bash, shell commands, and writes to any other file are unavailable.
-
-Your objective is to collaborate interactively with the user to produce a comprehensive plan.
-Ask clarifying questions. Explore the codebase as needed. Then write your plan to `{config.plan_file}`.
-
-The plan document must include:
-1. **Context** — what problem is being solved and why
-2. **Approach** — the chosen strategy and key architectural decisions
-3. **Files to modify** — exact file paths and line references
-4. **Step-by-step implementation** — ordered, concrete steps
-5. **Todo list** — checkboxes (`- [ ]`) for each discrete action
-6. **Verification** — how to test that the implementation is correct
-
-When you are satisfied with the plan, tell the user to run `/exit-plan` to begin implementation."""
+            ask_instr = (
+                _PLAN_MODE_ASK_USER_INSTRUCTION
+                if config.plan_mode_initiated_by == "user"
+                else _PLAN_MODE_NO_ASK_INSTRUCTION
+            )
+            system += _PLAN_MODE_SYSTEM_ADDENDUM.format(
+                plan_file=config.plan_file,
+                ask_user_instruction=ask_instr,
+            )
 
         # Build labeled system-prompt sections for the UI expander
         self.system_parts: list[dict] = []
@@ -320,6 +368,10 @@ When you are satisfied with the plan, tell the user to run `/exit-plan` to begin
                     result = self.registry.dispatch(
                         tc.function.name, json.loads(tc.function.arguments)
                     )
+                    if result == ENTER_PLAN_MODE_SENTINEL:
+                        result = self._handle_enter_plan_mode(json.loads(tc.function.arguments))
+                    elif result == EXIT_PLAN_MODE_SENTINEL:
+                        result = self._handle_exit_plan_mode(json.loads(tc.function.arguments))
                     result_str = result if isinstance(result, str) else "__list__:" + json.dumps(result)
                     self.callbacks.on_tool_end(tc.function.name, result_str)
                     self.tracker.record_tool_end(tc.function.name, result_str)
@@ -359,6 +411,122 @@ When you are satisfied with the plan, tell the user to run `/exit-plan` to begin
         except Exception as e:
             self.callbacks.on_error(e)
             raise
+
+    # ── Plan mode transitions ─────────────────────────────────────────────────
+
+    def _handle_enter_plan_mode(self, args: dict) -> str:
+        reason = args.get("reason", "")
+        dagi_root = Path(__file__).parent.parent
+        plans_dir = self.config.project_path / ".dagi" / "plans"
+        plans_dir.mkdir(parents=True, exist_ok=True)
+        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+        plan_file = plans_dir / f"plan_{ts}.md"
+        plan_file.write_text(
+            f"# Plan — {ts}\n\n"
+            "## Context\n\n\n"
+            "## Approach\n\n\n"
+            "## Files to Modify\n\n\n"
+            "## Implementation Steps\n\n\n"
+            "## Todo List\n\n"
+            "- [ ] \n\n"
+            "## Verification\n\n",
+            encoding="utf-8",
+        )
+        self._rebuild_for_plan_mode(dagi_root, plan_file)
+        return (
+            f"Plan mode activated (initiated by dagi). Plan document: {plan_file}\n"
+            f"Reason: {reason}\n"
+            "Tools restricted: read/grep/find + plan file write only (bash unavailable). "
+            "Explore, write the plan, then call exit_plan_mode."
+        )
+
+    def _handle_exit_plan_mode(self, args: dict) -> str:
+        summary = args.get("summary", "")
+        saved_plan = self.config.plan_file
+        dagi_root = Path(__file__).parent.parent
+        self._rebuild_for_normal_mode(dagi_root)
+        return (
+            f"Plan mode exited. Full tool access restored.\n"
+            f"Plan summary: {summary}\n"
+            f"Plan document: {saved_plan}\n"
+            "Proceed to implement according to the plan immediately."
+        )
+
+    def _rebuild_for_plan_mode(self, dagi_root: Path, plan_file: Path) -> None:
+        from agent.tools import create_tool_registry
+
+        self.config.plan_mode = True
+        self.config.plan_file = str(plan_file)
+        self.config.plan_mode_initiated_by = "dagi"
+
+        skill_roots = [
+            dagi_root / ".dagi" / "skills",
+            self.config.project_path / ".dagi" / "skills",
+        ]
+        self.registry = create_tool_registry(
+            cwd=self.config.project_path,
+            allowed_roots=[dagi_root, self.config.project_path],
+            skill_roots=skill_roots,
+            plan_mode=True,
+            plan_file=plan_file,
+            plan_mode_initiated_by="dagi",
+            config=self.config,
+            callbacks=self.callbacks,
+            tracker=self.tracker,
+        )
+
+        tools_and_skills = _format_tools_and_skills(self.registry, self.skills)
+        readme_path = (dagi_root / "README.md").resolve()
+        new_system = self.config.system_prompt.format_map(_SafeDict(
+            readme_path=readme_path,
+            tools_and_skills=tools_and_skills,
+        ))
+        new_system += f"\n\n---\n\nProject root: {self.config.project_path}"
+        new_system += _PLAN_MODE_SYSTEM_ADDENDUM.format(
+            plan_file=plan_file,
+            ask_user_instruction=_PLAN_MODE_NO_ASK_INSTRUCTION,
+        )
+        self._messages[0] = {"role": "system", "content": new_system}
+        self.compact_tool.bind(
+            self._messages, self.config, self.client,
+            on_compaction=self.callbacks.on_compaction,
+        )
+
+    def _rebuild_for_normal_mode(self, dagi_root: Path) -> None:
+        from agent.tools import create_tool_registry
+
+        self.config.plan_mode = False
+        self.config.plan_file = None
+        self.config.plan_mode_initiated_by = "user"
+
+        skill_roots = [
+            dagi_root / ".dagi" / "skills",
+            self.config.project_path / ".dagi" / "skills",
+        ]
+        self.registry = create_tool_registry(
+            cwd=self.config.project_path,
+            allowed_roots=[dagi_root, self.config.project_path],
+            skill_roots=skill_roots,
+            plan_mode=False,
+            plan_file=None,
+            plan_mode_initiated_by="user",
+            config=self.config,
+            callbacks=self.callbacks,
+            tracker=self.tracker,
+        )
+
+        tools_and_skills = _format_tools_and_skills(self.registry, self.skills)
+        readme_path = (dagi_root / "README.md").resolve()
+        new_system = self.config.system_prompt.format_map(_SafeDict(
+            readme_path=readme_path,
+            tools_and_skills=tools_and_skills,
+        ))
+        new_system += f"\n\n---\n\nProject root: {self.config.project_path}"
+        self._messages[0] = {"role": "system", "content": new_system}
+        self.compact_tool.bind(
+            self._messages, self.config, self.client,
+            on_compaction=self.callbacks.on_compaction,
+        )
 
     def finish(self) -> None:
         """Finalize the session — write session_end to JSONL. Called by the CLI at session end."""
