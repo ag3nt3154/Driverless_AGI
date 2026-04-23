@@ -19,7 +19,7 @@ class ReadTool(BaseTool):
     description = (
         "Read the contents of a file. Supports text files and images (jpg, png, gif, webp). "
         "Images are sent as attachments. For text files, defaults to first 2000 lines. "
-        "Use offset/limit for large files. Paths are relative to the project root."
+        "Use offset/limit for large files. Accepts both relative paths (resolved from the project root) and absolute paths."
     )
     _parameters = {
         "type": "object",

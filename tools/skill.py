@@ -32,4 +32,18 @@ class SkillTool(BaseTool):
             available = ", ".join(sorted(skills_map.keys())) or "none loaded"
             return f"Skill '{skill}' not found. Available skills: {available}"
         s = skills_map[skill]
-        return f"# {s.name}\n\n{s.content}"
+        result = f"# {s.name}\n\n{s.content}"
+
+        skill_dir = Path(s.file_path).parent
+        siblings = sorted(p for p in skill_dir.iterdir() if p.is_file() and p.name != "SKILL.md")
+        if siblings:
+            def _posix_bash(p: Path) -> str:
+                resolved = p.resolve()
+                drive = resolved.drive  # e.g. "C:"
+                rest = resolved.as_posix()[len(drive):]  # e.g. "/Users/alexr/..."
+                return "/" + drive[0].lower() + rest
+
+            lines = [f"- Windows: {p.resolve()}  |  POSIX: {_posix_bash(p)}" for p in siblings]
+            result += "\n\n## Associated Files\n\n" + "\n".join(lines)
+
+        return result
