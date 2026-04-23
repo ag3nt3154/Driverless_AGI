@@ -106,7 +106,7 @@ class _Stats:
     def record_tool(self, name: str) -> None:
         self.tool_counts[name] = self.tool_counts.get(name, 0) + 1
 
-    def footer(self, model_name: str, cwd: Path | None = None) -> str:
+    def footer(self, model_name: str, cwd: Path | None = None, plan_mode: bool = False) -> str:
         parts = [model_name]
         tok_seg = f"in {self.input_tok:,}"
         if self.thinking_tok > 0:
@@ -121,6 +121,8 @@ class _Stats:
             except ValueError:
                 display = str(cwd)
             parts.append(display)
+        if plan_mode:
+            parts.append("📋 plan mode")
         return "  ·  ".join(parts)
 
 
@@ -128,7 +130,7 @@ class _Stats:
 
 def _make_sync_callbacks(
     stats: _Stats, model_name: str, verbose: bool,
-    get_cwd: Callable[[], Path],
+    get_cwd: Callable[[], Path], plan_mode: bool = False,
 ) -> AgentCallbacks:
     def on_tool_start(name: str, _desc: str, args: str) -> None:
         col = _colour(name)
@@ -187,7 +189,7 @@ def _make_sync_callbacks(
         console.print_exception()
 
     def on_done(_result: str) -> None:
-        console.print(f"[dim]{stats.footer(model_name, cwd=get_cwd())}[/dim]")
+        console.print(f"[dim]{stats.footer(model_name, cwd=get_cwd(), plan_mode=plan_mode)}[/dim]")
 
     def on_ask_user(question: str, options: list[dict]) -> str:
         console.print()
@@ -269,6 +271,7 @@ def _render_queue(
     model_name: str,
     verbose: bool,
     get_cwd: Callable[[], Path],
+    plan_mode: bool = False,
 ) -> None:
     """Drain the event queue and render output. Runs on the main thread."""
     spinner_text = Text("Thinking…", style="dim")
@@ -399,7 +402,7 @@ def _render_queue(
                 spinner_text.plain = "Thinking…"
 
             elif tag == _EVT_DONE:
-                console.print(f"[dim]{stats.footer(model_name, cwd=get_cwd())}[/dim]")
+                console.print(f"[dim]{stats.footer(model_name, cwd=get_cwd(), plan_mode=plan_mode)}[/dim]")
 
 
 # ── Agent runner ──────────────────────────────────────────────────────────────
@@ -446,9 +449,9 @@ def _run_task(
 
         with ThreadPoolExecutor(max_workers=1) as executor:
             executor.submit(_agent_thread)
-            _render_queue(q, stats, model_name, verbose, get_cwd)
+            _render_queue(q, stats, model_name, verbose, get_cwd, plan_mode=plan_mode)
     else:
-        callbacks = _make_sync_callbacks(stats, model_name, verbose, get_cwd)
+        callbacks = _make_sync_callbacks(stats, model_name, verbose, get_cwd, plan_mode=plan_mode)
         loop = AgentLoop(
             config, callbacks,
             initial_messages=conversation_msgs or None,
@@ -794,7 +797,7 @@ def run(
     )
 
     def run_one(t: str) -> None:
-        nonlocal conversation_msgs, active_loop
+        nonlocal conversation_msgs, active_loop, plan_mode, plan_file
         console.print()
         existing_tracker = active_loop.tracker if active_loop is not None else None
         conversation_msgs, active_loop = _run_task(
@@ -804,6 +807,18 @@ def run(
             plan_file=plan_file,
             existing_tracker=existing_tracker,
         )
+        if active_loop.plan_mode_exited and active_loop.exited_plan_file:
+            plan_mode = True
+            plan_file = Path(active_loop.exited_plan_file)
+            console.print(
+                Panel(
+                    "[bold cyan]Plan ready for review.[/bold cyan]\n"
+                    f"[dim]Plan document: {plan_file}[/dim]\n\n"
+                    "[dim]Review the plan, then type [bold]/exit-plan[/bold] to begin implementation.[/dim]",
+                    border_style="cyan",
+                    padding=(0, 2),
+                )
+            )
 
     if task:
         run_one(task)

@@ -164,8 +164,9 @@ def create_tool_registry(
             reg.register(WriteTool(cwd=cwd, allowed_roots=[plan_file]))
             reg.register(EditTool(cwd=cwd, allowed_roots=[plan_file]))
         # BashTool always omitted in plan mode
-        from tools.plan_mode import ExitPlanModeTool
-        reg.register(ExitPlanModeTool())
+        if plan_mode_initiated_by == "dagi":
+            from tools.plan_mode import ExitPlanModeTool
+            reg.register(ExitPlanModeTool())
         if plan_mode_initiated_by == "user":
             from tools.ask_user import AskUserTool
             _on_ask = callbacks.on_ask_user if callbacks else _default_ask_user

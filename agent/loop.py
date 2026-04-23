@@ -92,8 +92,10 @@ You are in read-only planning mode. Your capabilities are restricted:
 - **WRITE**: You may ONLY write to this plan document: `{plan_file}`
 - **BLOCKED**: bash, shell commands, and writes to any other file are unavailable.
 
-Your objective is to produce a comprehensive plan document.
-Explore the codebase as needed with read/grep/find. Write the plan to `{plan_file}`.
+Your objective is to produce a comprehensive plan document. You must NOT write any code,
+implement any changes, or describe implementation steps in your text responses — all output
+belongs in the plan document at `{plan_file}`. Explore the codebase with read/grep/find,
+then write the plan.
 
 The plan document must include:
 1. **Context** — what problem is being solved and why
@@ -105,7 +107,7 @@ The plan document must include:
 
 {ask_user_instruction}
 
-When the plan is complete, call `exit_plan_mode` to restore full tools and begin implementation."""
+When the plan is complete, {exit_instruction}"""
 
 
 _PLAN_MODE_ASK_USER_INSTRUCTION = (
@@ -113,8 +115,14 @@ _PLAN_MODE_ASK_USER_INSTRUCTION = (
     "Provide 2-4 concrete options; mark the strongest with recommended=true."
 )
 _PLAN_MODE_NO_ASK_INSTRUCTION = (
-    "Plan autonomously — explore, decide, and write the plan without waiting for user input. "
-    "Call `exit_plan_mode` as soon as the plan is complete."
+    "Plan autonomously — explore, decide, and write the plan without waiting for user input."
+)
+_PLAN_MODE_EXIT_DAGI = (
+    "call `exit_plan_mode` to restore full tools and begin implementation."
+)
+_PLAN_MODE_EXIT_USER = (
+    "stop. Do NOT call `exit_plan_mode`. "
+    "The user will review the plan and type /exit-plan when ready to begin implementation."
 )
 
 
@@ -260,9 +268,15 @@ class AgentLoop:
                 if config.plan_mode_initiated_by == "user"
                 else _PLAN_MODE_NO_ASK_INSTRUCTION
             )
+            exit_instr = (
+                _PLAN_MODE_EXIT_USER
+                if config.plan_mode_initiated_by == "user"
+                else _PLAN_MODE_EXIT_DAGI
+            )
             system += _PLAN_MODE_SYSTEM_ADDENDUM.format(
                 plan_file=config.plan_file,
                 ask_user_instruction=ask_instr,
+                exit_instruction=exit_instr,
             )
 
         # Build labeled system-prompt sections for the UI expander
@@ -286,6 +300,10 @@ class AgentLoop:
         if config.thinking and config.thinking.lower() != "none":
             self._reasoning_extra = {"reasoning": {"effort": config.thinking.lower()}}
         self.tracker.record_system(system)
+
+        # Set when DAGI calls exit_plan_mode; signals run() to stop iterating
+        self.plan_mode_exited: bool = False
+        self.exited_plan_file: str | None = None
 
         # ── Compaction tool (internal-only, not in ToolRegistry) ──────────
         self.compact_tool = CompactTool()
@@ -398,6 +416,10 @@ class AgentLoop:
                     _thinking_tok,
                 )
 
+                if self.plan_mode_exited:
+                    self.callbacks.on_done("")
+                    return ""
+
                 # ── Compaction trigger ────────────────────────────────────────
                 _prompt_tok = getattr(response.usage, "prompt_tokens", 0) or 0
                 if (
@@ -443,13 +465,14 @@ class AgentLoop:
     def _handle_exit_plan_mode(self, args: dict) -> str:
         summary = args.get("summary", "")
         saved_plan = self.config.plan_file
+        self.plan_mode_exited = True
+        self.exited_plan_file = saved_plan
         dagi_root = Path(__file__).parent.parent
         self._rebuild_for_normal_mode(dagi_root)
         return (
-            f"Plan mode exited. Full tool access restored.\n"
+            f"Plan complete. Awaiting user review before implementation begins.\n"
             f"Plan summary: {summary}\n"
-            f"Plan document: {saved_plan}\n"
-            "Proceed to implement according to the plan immediately."
+            f"Plan document: {saved_plan}"
         )
 
     def _rebuild_for_plan_mode(self, dagi_root: Path, plan_file: Path) -> None:
@@ -485,6 +508,7 @@ class AgentLoop:
         new_system += _PLAN_MODE_SYSTEM_ADDENDUM.format(
             plan_file=plan_file,
             ask_user_instruction=_PLAN_MODE_NO_ASK_INSTRUCTION,
+            exit_instruction=_PLAN_MODE_EXIT_DAGI,
         )
         self._messages[0] = {"role": "system", "content": new_system}
         self.compact_tool.bind(
