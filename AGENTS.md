@@ -21,6 +21,7 @@ agents.md        This file — project context prepended to every session
 | write | Write or overwrite a file; creates parent dirs automatically |
 | edit  | Replace an exact unique string in a file — surgical edits only |
 | bash  | Run a shell command; returns stdout + stderr + exit code |
+| tool_search  | Ask a subagent to return suitable tools by telling it what you need to do and your guess of the appropriate tool |
 
 ## Conventions
 - `edit` requires `oldText` to appear exactly once in the file. If it appears 0 or 2+ times, the tool errors — use `write` for full rewrites instead.

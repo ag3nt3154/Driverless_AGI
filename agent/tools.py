@@ -173,6 +173,18 @@ def create_tool_registry(
             reg.register(AskUserTool(on_ask_user=_on_ask))
         if skill_roots:
             reg.register(SkillTool(skill_roots=skill_roots, dagi_root=_DAGI_ROOT))
+        # Web research — available in plan mode for information gathering
+        if config is not None:
+            from tools.web_research import WebResearchTool
+            reg.register(WebResearchTool(
+                config=config, callbacks=callbacks,
+                cwd=cwd, allowed_roots=effective_roots, tracker=tracker,
+            ))
+        else:
+            from tools.web_fetch import WebFetchTool
+            from tools.web_search import WebSearchTool
+            reg.register(WebSearchTool())
+            reg.register(WebFetchTool())
     else:
         reg.register(WriteTool(cwd=cwd, allowed_roots=effective_roots))
         reg.register(EditTool(cwd=cwd, allowed_roots=effective_roots))

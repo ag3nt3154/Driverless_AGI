@@ -89,6 +89,7 @@ _PLAN_MODE_SYSTEM_ADDENDUM = """
 
 You are in read-only planning mode. Your capabilities are restricted:
 - **READ**: You can read any file in the project.
+- **WEB-RESEARCH**: You can research information online using the `web_research` tool (or `web_search`/`web_fetch` if available). Use these to gather context during planning.
 - **WRITE**: You may ONLY write to this plan document: `{plan_file}`
 - **BLOCKED**: bash, shell commands, and writes to any other file are unavailable.
 
