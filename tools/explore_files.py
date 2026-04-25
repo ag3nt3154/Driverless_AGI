@@ -5,21 +5,12 @@ from typing import TYPE_CHECKING
 from uuid import uuid4
 
 from agent.base_tool import BaseTool
+from agent.prompts import load_prompt
 
 if TYPE_CHECKING:
     from agent.session import SessionTracker
 
-_SYSTEM_PROMPT = """\
-You are a focused file exploration agent. Answer the question using read, grep, and find only.
-
-Guidelines:
-- Use find to locate files by glob pattern.
-- Use grep to search for identifiers, patterns, or keywords.
-- Use read to inspect file contents as needed.
-- Synthesise findings into a structured Markdown summary.
-- Include file paths for every finding.
-- Do NOT modify any files.\
-"""
+_SYSTEM_PROMPT = load_prompt("explore_files.md")
 
 
 class ExploreFilesTool(BaseTool):

@@ -1,6 +1,7 @@
 ---
 name: memory-add
 description: Core wiki-writing primitive — integrate a piece of text into the wiki (topic routing, node creation, index updates, log). Called directly for user-typed content or by memory-ingest for file sources.
+triggers: save to memory, add to wiki, remember this, store in memory, add to memory, write to wiki, note this down
 ---
 
 # memory-add — Add Content to the Wiki

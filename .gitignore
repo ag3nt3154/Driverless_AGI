@@ -189,3 +189,4 @@ logs/
 dagi-memory/*
 .dagi/logs/*
 .dagi/plans/*
+snapshots/

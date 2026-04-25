@@ -199,16 +199,20 @@ def _make_sync_callbacks(
             border_style="cyan",
             padding=(0, 2),
         ))
-        table = Table(border_style="dim", padding=(0, 1))
-        table.add_column("#", style="bold cyan", width=3)
-        table.add_column("Option", style="bold")
-        table.add_column("Description", style="dim")
-        for i, opt in enumerate(options, 1):
-            rec = " [bold green](recommended)[/bold green]" if opt.get("recommended") else ""
-            table.add_row(str(i), opt["label"] + rec, opt.get("description", ""))
-        console.print(table)
-        raw = console.input("[dim]Enter option number or label: [/dim]").strip()
-        return _resolve_option(raw, options)
+        if options:
+            table = Table(border_style="dim", padding=(0, 1))
+            table.add_column("#", style="bold cyan", width=3)
+            table.add_column("Option", style="bold")
+            table.add_column("Description", style="dim")
+            for i, opt in enumerate(options, 1):
+                rec = " [bold green](recommended)[/bold green]" if opt.get("recommended") else ""
+                table.add_row(str(i), opt["label"] + rec, opt.get("description", ""))
+            console.print(table)
+            raw = console.input("[dim]Enter option number or label: [/dim]").strip()
+            return _resolve_option(raw, options)
+        else:
+            raw = console.input("[dim]Your answer: [/dim]").strip()
+            return raw
 
     return AgentCallbacks(
         on_tool_start=on_tool_start,
@@ -367,15 +371,18 @@ def _render_queue(
                         border_style="cyan",
                         padding=(0, 2),
                     ))
-                    tbl = Table(border_style="dim", padding=(0, 1))
-                    tbl.add_column("#", style="bold cyan", width=3)
-                    tbl.add_column("Option", style="bold")
-                    tbl.add_column("Description", style="dim")
-                    for i, opt in enumerate(options, 1):
-                        rec = " [bold green](recommended)[/bold green]" if opt.get("recommended") else ""
-                        tbl.add_row(str(i), opt["label"] + rec, opt.get("description", ""))
-                    console.print(tbl)
-                    console.print("[dim]Enter option number or label — auto-selects in 5 min[/dim]")
+                    if options:
+                        tbl = Table(border_style="dim", padding=(0, 1))
+                        tbl.add_column("#", style="bold cyan", width=3)
+                        tbl.add_column("Option", style="bold")
+                        tbl.add_column("Description", style="dim")
+                        for i, opt in enumerate(options, 1):
+                            rec = " [bold green](recommended)[/bold green]" if opt.get("recommended") else ""
+                            tbl.add_row(str(i), opt["label"] + rec, opt.get("description", ""))
+                        console.print(tbl)
+                        console.print("[dim]Enter option number or label — auto-selects in 5 min[/dim]")
+                    else:
+                        console.print("[dim]Type your answer — auto-selects in 5 min[/dim]")
 
                     user_answer: list[str] = []
                     input_done = _threading.Event()
@@ -462,6 +469,57 @@ def _run_task(
         except Exception:
             console.print_exception()
 
+    return loop._messages, loop
+
+
+def _run_plan_turn(
+    task: str,
+    plan_cfg: "AgentConfig",
+    initial_messages: "list | None",
+    cli_cfg: CliConfig,
+    model_name: str,
+    verbose: bool,
+    force_sync: bool,
+    stats: "_Stats",
+    project_path: Path,
+    existing_tracker: "SessionTracker | None" = None,
+) -> tuple[list, "AgentLoop"]:
+    """Run one user turn in plan mode. Creates a fresh AgentLoop each turn so tool
+    callbacks (AskUserTool, ShowPlanTool) are bound to the current queue/sink.
+    Conversation history is preserved by passing previous _messages as initial_messages."""
+    use_threaded = (cli_cfg.threading == "threaded") and not force_sync
+    get_cwd: Callable[[], Path] = lambda: project_path
+    if use_threaded:
+        q: queue.Queue = queue.Queue()
+        callbacks = _make_threaded_callbacks(q, stats)
+        loop = AgentLoop(
+            plan_cfg, callbacks,
+            initial_messages=initial_messages,
+            _tracker=existing_tracker,
+        )
+
+        def _agent_thread() -> None:
+            try:
+                loop.run(task)
+            except Exception:
+                pass
+            finally:
+                q.put(None)
+
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            executor.submit(_agent_thread)
+            _render_queue(q, stats, model_name, verbose, get_cwd, plan_mode=True)
+    else:
+        callbacks = _make_sync_callbacks(stats, model_name, verbose, get_cwd, plan_mode=True)
+        loop = AgentLoop(
+            plan_cfg, callbacks,
+            initial_messages=initial_messages,
+            _tracker=existing_tracker,
+        )
+        try:
+            loop.run(task)
+        except Exception:
+            console.print_exception()
     return loop._messages, loop
 
 
@@ -779,6 +837,7 @@ def run(
     active_loop: "AgentLoop | None" = None
     plan_mode: bool = False
     plan_file: Path | None = None
+    plan_loop: "AgentLoop | None" = None
     is_tty = sys.stdin.isatty()
     model_name = get_model_display_name(model)
     project_path = Path(project).resolve() if project else Path.cwd()
@@ -797,24 +856,58 @@ def run(
     )
 
     def run_one(t: str) -> None:
-        nonlocal conversation_msgs, active_loop, plan_mode, plan_file
+        nonlocal conversation_msgs, active_loop, plan_mode, plan_file, plan_loop
         console.print()
+
+        if plan_mode:
+            from agent.config_loader import load_raw_config
+            from tools.plan_subagent import build_plan_agent_config
+            plan_cfg = build_plan_agent_config(
+                resolve_model_config(model), plan_file, project_path,
+                plan_mode_initiated_by="user",
+            )
+            plan_model_name = get_model_display_name(load_raw_config().get("plan_model"))
+            plan_messages = plan_loop._messages if plan_loop is not None else None
+            plan_tracker = plan_loop.tracker if plan_loop is not None else None
+            _, plan_loop = _run_plan_turn(
+                t, plan_cfg, plan_messages, cli_cfg, plan_model_name,
+                effective_verbose, sync, stats, project_path,
+                existing_tracker=plan_tracker,
+            )
+
+            if plan_loop.plan_mode_exited:
+                exited_file = plan_loop.exited_plan_file
+                plan_mode = False
+                plan_file = None
+                plan_loop = None
+                console.print(
+                    Panel(
+                        "[bold cyan]Plan complete.[/bold cyan]\n"
+                        + (f"[dim]Plan document: {exited_file}[/dim]\n\n" if exited_file else "")
+                        + "[dim]The plan is loaded into context. "
+                        "Continue with your next instruction to begin implementation.[/dim]",
+                        border_style="cyan",
+                        padding=(0, 2),
+                    )
+                )
+            return
+
         existing_tracker = active_loop.tracker if active_loop is not None else None
         conversation_msgs, active_loop = _run_task(
             t, conversation_msgs, cli_cfg, model, model_name,
             effective_verbose, sync, stats, project_path,
-            plan_mode=plan_mode,
-            plan_file=plan_file,
+            plan_mode=False,
+            plan_file=None,
             existing_tracker=existing_tracker,
         )
         if active_loop.plan_mode_exited and active_loop.exited_plan_file:
-            plan_mode = True
-            plan_file = Path(active_loop.exited_plan_file)
+            # Agent-initiated plan mode: subagent wrote the plan and returned to normal.
             console.print(
                 Panel(
-                    "[bold cyan]Plan ready for review.[/bold cyan]\n"
-                    f"[dim]Plan document: {plan_file}[/dim]\n\n"
-                    "[dim]Review the plan, then type [bold]/exit-plan[/bold] to begin implementation.[/dim]",
+                    "[bold cyan]Plan complete.[/bold cyan]\n"
+                    f"[dim]Plan document: {active_loop.exited_plan_file}[/dim]\n\n"
+                    "[dim]The plan is loaded into context. "
+                    "Continue with your next instruction to begin implementation.[/dim]",
                     border_style="cyan",
                     padding=(0, 2),
                 )
@@ -881,6 +974,7 @@ def run(
                     if plan_mode:
                         plan_mode = False
                         plan_file = None
+                        plan_loop = None
                     console.print("[bold green]✓ Context cleared — fresh session[/bold green]")
                     continue
 

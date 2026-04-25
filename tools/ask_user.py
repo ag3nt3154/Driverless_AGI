@@ -9,13 +9,12 @@ from agent.base_tool import BaseTool
 class AskUserTool(BaseTool):
     name = "ask_user"
     description = (
-        "Pause planning and present the user with a question and a list of options. "
+        "Pause planning and present the user with a question. "
         "Use during user-initiated plan mode to resolve ambiguities, choose between approaches, "
-        "or confirm architectural decisions. "
-        "Provide 2-4 concrete options; mark the strongest with recommended=true. "
-        "The user picks one option, or the recommended option (or first if none marked) is "
-        "chosen automatically after a 5-minute timeout. "
-        "Returns the chosen option label and description as JSON."
+        "confirm architectural decisions, or collect free-text feedback. "
+        "Optionally provide 2-4 concrete options; omit options entirely to ask a free-text question. "
+        "Mark the strongest option with recommended=true to set a default. "
+        "Returns the chosen option label and description as JSON, or the free-text answer as JSON."
     )
     _parameters = {
         "type": "object",
@@ -48,20 +47,23 @@ class AskUserTool(BaseTool):
                     },
                     "required": ["label", "description"],
                 },
-                "minItems": 2,
+                "minItems": 0,
                 "maxItems": 4,
             },
         },
-        "required": ["question", "options"],
+        "required": ["question"],
     }
 
     def __init__(self, on_ask_user: Callable[[str, list[dict]], str]) -> None:
         self._on_ask_user = on_ask_user
 
-    def run(self, question: str, options: list[dict]) -> str:
-        chosen_label = self._on_ask_user(question, options)
-        chosen_desc = next(
-            (o.get("description", "") for o in options if o["label"] == chosen_label),
-            "",
+    def run(self, question: str, options: list[dict] | None = None) -> str:
+        options = options or []
+        chosen = self._on_ask_user(question, options)
+        matched_desc = next(
+            (o.get("description", "") for o in options if o["label"] == chosen),
+            None,
         )
-        return json.dumps({"chosen": chosen_label, "description": chosen_desc})
+        if matched_desc is not None:
+            return json.dumps({"chosen": chosen, "description": matched_desc})
+        return json.dumps({"answer": chosen})

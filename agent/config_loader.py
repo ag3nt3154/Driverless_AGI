@@ -141,8 +141,14 @@ def resolve_model_config(model_id: str | None = None) -> AgentConfig:
     if worker_id and worker_id in catalog:
         worker_cfg = _build_config_from_entry(catalog[worker_id], raw)
 
+    # Resolve optional plan model for the plan subagent; silently fall back if unset/invalid.
+    plan_id = raw.get("plan_model")
+    plan_cfg: AgentConfig | None = None
+    if plan_id and plan_id in catalog:
+        plan_cfg = _build_config_from_entry(catalog[plan_id], raw)
+
     from dataclasses import replace
-    return replace(cfg, worker_config=worker_cfg)
+    return replace(cfg, worker_config=worker_cfg, plan_config=plan_cfg)
 
 
 def save_config(default_model: str) -> None:

@@ -1,6 +1,7 @@
 ---
 name: build-api-tools
 description: Ingest a Swagger/OpenAPI spec from .dagi/api_tools/ and generate callable BaseTool scripts in .dagi/tools/ — one per API endpoint
+triggers: build api tools, generate api tools, ingest openapi spec, ingest swagger spec, generate tool from api, create api tools
 ---
 
 # build-api-tools — Swagger Ingestion Workflow

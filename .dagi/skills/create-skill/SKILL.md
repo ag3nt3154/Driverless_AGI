@@ -1,6 +1,7 @@
 ---
 name: create-skill
 description: Create a new SKILL.md file so future agents can reuse learned workflows
+triggers: create a skill, build a skill, write a skill, new skill, add a skill, make a skill, define a skill
 ---
 
 # Creating a New Skill

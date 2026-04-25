@@ -8,11 +8,27 @@ from typing import Callable
 
 import openai
 
+from agent.prompts import load_prompt
 from agent.registry import ToolRegistry
 from agent.session import SessionTracker, ToolCallRecord
 from agent.skills import Skill, SkillLoader
 from tools.compact import CompactTool, CompactionResult
 from tools.plan_mode import ENTER_PLAN_MODE_SENTINEL, EXIT_PLAN_MODE_SENTINEL
+
+
+def _is_plan_empty(path: Path) -> bool:
+    """Return True if the plan file has no meaningful content beyond scaffold boilerplate."""
+    try:
+        text = path.read_text(encoding="utf-8")
+    except Exception:
+        return True
+    meaningful = [
+        line for line in text.splitlines()
+        if line.strip()
+        and not line.strip().startswith("#")
+        and line.strip() not in ("- [ ]", "- [ ] ", "- [x]")
+    ]
+    return len(meaningful) == 0
 
 
 def _format_tools_and_skills(registry: ToolRegistry, skills: list[Skill]) -> str:
@@ -27,104 +43,26 @@ def _format_tools_and_skills(registry: ToolRegistry, skills: list[Skill]) -> str
             "## Available Skills",
             "",
             "Skills are detailed guidance documents for specific workflows. "
-            "Invoke the `skill` tool autonomously whenever a task matches a skill's "
-            "purpose — do not wait for the user to ask.",
+            "You MUST invoke the relevant `skill` tool BEFORE beginning any task for which "
+            "a matching skill exists. Treat skill invocation as a required first step — "
+            "never implement a skill-governed workflow without loading it first. "
+            "If the user's request matches a skill's description or any of its trigger phrases, "
+            "call `skill(name)` immediately as your first action. "
+            "Skills may include executable scripts — after loading a skill, use "
+            "`run_skill_script(skill_name, script_name)` to run them.",
             "",
         ]
         for s in sorted(skills, key=lambda x: x.name):
             desc = f" — {s.description}" if s.description else ""
             lines.append(f"- **{s.name}**{desc}")
+            if s.triggers:
+                quoted = ", ".join(f'"{t}"' for t in s.triggers)
+                lines.append(f"  Triggers: {quoted}")
 
     return "\n".join(lines)
 
 
-DEFAULT_SYSTEM_PROMPT = """\
-You are an expert coding assistant. You help users with coding tasks by reading files, executing commands, editing code, and writing new files.
-
-{tools_and_skills}
-
-Use `tool_search` to discover additional capabilities (web research, file exploration) not listed above.
-
-Guidelines:
-- Use grep and find instead of bash for searching/discovering files
-- Use read to examine files before editing
-- Use edit for precise changes (old text must match exactly)
-- Use write only for new files or complete rewrites
-- All file paths are relative to the project root unless absolute
-- When searching for files, always search in the project root first. Only access `dagi-memory/` or `.dagi/` when explicitly performing memory/wiki operations (memory-add, memory-ingest, memory-query, memory-lint skills)
-- When summarizing your actions, output plain text directly - do NOT use cat or bash to display what you did
-- Be concise in your responses
-- Show file paths clearly when working with files
-- Never stop mid-task. Keep calling tools until the task is fully complete before returning a plain-text response.
-- If you have completed one step but further steps remain, call the next required tool immediately — do not summarize partial progress as a final answer.
-- A response with no tool calls signals task completion. Only emit one when every required action has been taken and the result is ready to present.
-- Memory: When you notice something substantial worth preserving across sessions (future tasks, improvement ideas, open questions, reflections), invoke skill("memory-add"). Use sparingly — significant insights only.
-
-Documentation:
-- Your own documentation (including custom model setup and theme creation) is at: {readme_path}
-- Read it when users ask about features, configuration, or setup, and especially if the user asks you to add a custom model or provider, or create a custom theme.
-
-## Autonomous Plan Mode
-
-Call `enter_plan_mode` when the task has ANY of these characteristics:
-- Requires 3 or more distinct implementation steps across different files
-- Involves architectural decisions with non-trivial trade-offs (new abstractions, interface changes, new dependencies)
-- Touches multiple subsystems or requires broad exploration before acting
-- Has requirements ambiguous enough that a wrong choice would require significant rework
-
-Do NOT enter plan mode for:
-- Single-file edits or clearly scoped additions
-- Bug fixes where the root cause and fix are already clear
-- Tasks already fully specified with no design decisions remaining
-
-During dagi-initiated plan mode: explore autonomously with read/grep/find, write the plan document, then call `exit_plan_mode` immediately to restore full tools and begin implementation.\
-"""
-
-
-_PLAN_MODE_SYSTEM_ADDENDUM = """
-
----
-
-## PLAN MODE ACTIVE
-
-You are in read-only planning mode. Your capabilities are restricted:
-- **READ**: You can read any file in the project.
-- **WEB-RESEARCH**: You can research information online using the `web_research` tool (or `web_search`/`web_fetch` if available). Use these to gather context during planning.
-- **WRITE**: You may ONLY write to this plan document: `{plan_file}`
-- **BLOCKED**: bash, shell commands, and writes to any other file are unavailable.
-
-Your objective is to produce a comprehensive plan document. You must NOT write any code,
-implement any changes, or describe implementation steps in your text responses — all output
-belongs in the plan document at `{plan_file}`. Explore the codebase with read/grep/find,
-then write the plan.
-
-The plan document must include:
-1. **Context** — what problem is being solved and why
-2. **Approach** — the chosen strategy and key architectural decisions
-3. **Files to modify** — exact file paths and line references
-4. **Step-by-step implementation** — ordered, concrete steps
-5. **Todo list** — checkboxes (`- [ ]`) for each discrete action
-6. **Verification** — how to test that the implementation is correct
-
-{ask_user_instruction}
-
-When the plan is complete, {exit_instruction}"""
-
-
-_PLAN_MODE_ASK_USER_INSTRUCTION = (
-    "Use `ask_user` to present solution options and resolve key decisions before finalising the plan. "
-    "Provide 2-4 concrete options; mark the strongest with recommended=true."
-)
-_PLAN_MODE_NO_ASK_INSTRUCTION = (
-    "Plan autonomously — explore, decide, and write the plan without waiting for user input."
-)
-_PLAN_MODE_EXIT_DAGI = (
-    "call `exit_plan_mode` to restore full tools and begin implementation."
-)
-_PLAN_MODE_EXIT_USER = (
-    "stop. Do NOT call `exit_plan_mode`. "
-    "The user will review the plan and type /exit-plan when ready to begin implementation."
-)
+DEFAULT_SYSTEM_PROMPT = load_prompt("main_system.md")
 
 
 @dataclass
@@ -147,6 +85,10 @@ class AgentConfig:
     plan_mode_initiated_by: str = "user"  # "user" | "dagi"
     # Worker model (cheaper LLM for sub-agents); None = use this config as-is
     worker_config: AgentConfig | None = field(default=None)
+    # Plan model (dedicated LLM for the plan subagent); None = use this config as-is
+    plan_config: AgentConfig | None = field(default=None)
+    # Active plan file persisted in system prompt after plan mode exits
+    active_plan_file: str | None = None
 
 
 @dataclass
@@ -262,23 +204,6 @@ class AgentLoop:
 
         # Project context line appended to system prompt
         system += f"\n\n---\n\nProject root: {config.project_path}"
-
-        if config.plan_mode and config.plan_file:
-            ask_instr = (
-                _PLAN_MODE_ASK_USER_INSTRUCTION
-                if config.plan_mode_initiated_by == "user"
-                else _PLAN_MODE_NO_ASK_INSTRUCTION
-            )
-            exit_instr = (
-                _PLAN_MODE_EXIT_USER
-                if config.plan_mode_initiated_by == "user"
-                else _PLAN_MODE_EXIT_DAGI
-            )
-            system += _PLAN_MODE_SYSTEM_ADDENDUM.format(
-                plan_file=config.plan_file,
-                ask_user_instruction=ask_instr,
-                exit_instruction=exit_instr,
-            )
 
         # Build labeled system-prompt sections for the UI expander
         self.system_parts: list[dict] = []
@@ -438,6 +363,12 @@ class AgentLoop:
     # ── Plan mode transitions ─────────────────────────────────────────────────
 
     def _handle_enter_plan_mode(self, args: dict) -> str:
+        from tools.plan_subagent import PlanSubAgent
+
+        # Snapshot whether plan mode was user-initiated (harness pre-set plan_mode=True)
+        # before we rebuild back to normal mode below.
+        was_user_initiated = self.config.plan_mode
+
         reason = args.get("reason", "")
         dagi_root = Path(__file__).parent.parent
         plans_dir = self.config.project_path / ".dagi" / "plans"
@@ -455,13 +386,54 @@ class AgentLoop:
             "## Verification\n\n",
             encoding="utf-8",
         )
-        self._rebuild_for_plan_mode(dagi_root, plan_file)
-        return (
-            f"Plan mode activated (initiated by dagi). Plan document: {plan_file}\n"
-            f"Reason: {reason}\n"
-            "Tools restricted: read/grep/find + plan file write only (bash unavailable). "
-            "Explore, write the plan, then call exit_plan_mode."
+
+        self.callbacks.on_assistant_text(
+            f"Entering plan mode — spawning plan subagent.\n\n"
+            f"**Plan file:** `{plan_file}`\n\n**Reason:** {reason}"
         )
+
+        subagent = PlanSubAgent(
+            config=self.config,
+            plan_file=plan_file,
+            callbacks=self.callbacks,
+            tracker=self.tracker,
+        )
+        task = (
+            f"Write a comprehensive implementation plan for the following task:\n\n"
+            f"{reason}\n\n"
+            f"Project root: {self.config.project_path}\n"
+            f"Plan file path: {plan_file}\n\n"
+            f"Explore the codebase thoroughly, then overwrite the scaffold at {plan_file} "
+            f"with your complete plan document."
+        )
+        subagent.run(task)
+
+        try:
+            plan_contents = plan_file.read_text(encoding="utf-8")
+        except Exception:
+            plan_contents = "(plan file could not be read)"
+
+        self.config.active_plan_file = str(plan_file)
+        self.exited_plan_file = str(plan_file)
+        self._rebuild_for_normal_mode(dagi_root)
+
+        if was_user_initiated:
+            # show_plan tool already displayed the plan and ran the modification loop.
+            self.plan_mode_exited = True
+            return f"Plan written to {plan_file}. Awaiting user review."
+        else:
+            # DAGI-initiated: return plan contents as tool result so the agent
+            # continues executing in the same turn.
+            if _is_plan_empty(plan_file):
+                return (
+                    f"The plan document at {plan_file} is empty. "
+                    "Stop immediately and ask the user for further directions "
+                    "before doing anything else."
+                )
+            return (
+                f"Plan written to {plan_file}. Returning to normal mode to execute.\n\n"
+                f"{plan_contents}"
+            )
 
     def _handle_exit_plan_mode(self, args: dict) -> str:
         summary = args.get("summary", "")
@@ -470,51 +442,16 @@ class AgentLoop:
         self.exited_plan_file = saved_plan
         dagi_root = Path(__file__).parent.parent
         self._rebuild_for_normal_mode(dagi_root)
+        if saved_plan and _is_plan_empty(Path(saved_plan)):
+            return (
+                "The plan document is empty. "
+                "Stop immediately and ask the user for further directions "
+                "before doing anything else."
+            )
         return (
             f"Plan complete. Awaiting user review before implementation begins.\n"
             f"Plan summary: {summary}\n"
             f"Plan document: {saved_plan}"
-        )
-
-    def _rebuild_for_plan_mode(self, dagi_root: Path, plan_file: Path) -> None:
-        from agent.tools import create_tool_registry
-
-        self.config.plan_mode = True
-        self.config.plan_file = str(plan_file)
-        self.config.plan_mode_initiated_by = "dagi"
-
-        skill_roots = [
-            dagi_root / ".dagi" / "skills",
-            self.config.project_path / ".dagi" / "skills",
-        ]
-        self.registry = create_tool_registry(
-            cwd=self.config.project_path,
-            allowed_roots=[dagi_root, self.config.project_path],
-            skill_roots=skill_roots,
-            plan_mode=True,
-            plan_file=plan_file,
-            plan_mode_initiated_by="dagi",
-            config=self.config,
-            callbacks=self.callbacks,
-            tracker=self.tracker,
-        )
-
-        tools_and_skills = _format_tools_and_skills(self.registry, self.skills)
-        readme_path = (dagi_root / "README.md").resolve()
-        new_system = self.config.system_prompt.format_map(_SafeDict(
-            readme_path=readme_path,
-            tools_and_skills=tools_and_skills,
-        ))
-        new_system += f"\n\n---\n\nProject root: {self.config.project_path}"
-        new_system += _PLAN_MODE_SYSTEM_ADDENDUM.format(
-            plan_file=plan_file,
-            ask_user_instruction=_PLAN_MODE_NO_ASK_INSTRUCTION,
-            exit_instruction=_PLAN_MODE_EXIT_DAGI,
-        )
-        self._messages[0] = {"role": "system", "content": new_system}
-        self.compact_tool.bind(
-            self._messages, self.config, self.client,
-            on_compaction=self.callbacks.on_compaction,
         )
 
     def _rebuild_for_normal_mode(self, dagi_root: Path) -> None:
@@ -547,6 +484,19 @@ class AgentLoop:
             tools_and_skills=tools_and_skills,
         ))
         new_system += f"\n\n---\n\nProject root: {self.config.project_path}"
+
+        if self.config.active_plan_file:
+            new_system += (
+                f"\n\n---\n\n"
+                f"## Active Plan\n\n"
+                f"A plan document is active at: `{self.config.active_plan_file}`\n\n"
+                f"As you implement each step:\n"
+                f"- Read the plan file when the user asks about progress.\n"
+                f"- After completing each todo item, edit the plan file and tick its "
+                f"checkbox: `- [ ]` → `- [x]`.\n"
+                f"- If you deviate from the plan, update the plan document to reflect reality."
+            )
+
         self._messages[0] = {"role": "system", "content": new_system}
         self.compact_tool.bind(
             self._messages, self.config, self.client,

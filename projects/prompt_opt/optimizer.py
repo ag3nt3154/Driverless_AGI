@@ -2,68 +2,22 @@ import json
 import time
 from collections.abc import Callable
 from datetime import datetime, timezone
+from pathlib import Path
 
 from api_client import APIClient, APIError
 from config import load_config
 
+_PROMPTS_DIR = Path(__file__).resolve().parent.parent.parent / ".dagi" / "prompts"
 
-_ANALYSIS_SYSTEM = """\
-You are an expert prompt engineer. Analyze why a language model prompt produced \
-incorrect or suboptimal outputs for the given inputs.
 
-Be specific and actionable. Identify patterns across all samples. Focus on what \
-the prompt fails to communicate, constrain, or clarify.\
-"""
+def _load_prompt(name: str) -> str:
+    return (_PROMPTS_DIR / name).read_text(encoding="utf-8")
 
-_ANALYSIS_USER = """\
-## Current Prompt
-{prompt}
 
-## Sample Results
-{sample_results}
-
-## Prompt History (oldest first)
-{history_json}
-
-Analyze why this prompt produced incorrect outputs. Identify:
-1. What the prompt failed to specify or constrain
-2. Whether errors are consistent across samples or sample-specific
-3. The root cause in the prompt wording
-
-Be concise. Maximum 300 words.\
-"""
-
-_IMPROVEMENT_SYSTEM = """\
-You are an expert prompt engineer. Rewrite a prompt to fix identified errors.
-
-Rules:
-- Return ONLY the improved prompt text, with no preamble or surrounding quotes.
-- The improved prompt must be usable as a direct system or instruction prompt.
-- Do not reference the evaluation process or scoring in the new prompt.
-- Make targeted changes; rewrite entirely only if necessary.
-- After the improved prompt, add one line starting with "MODIFICATION:" describing \
-  in one sentence what you changed and why.\
-"""
-
-_IMPROVEMENT_USER = """\
-## Current Best Prompt (iteration {best_iteration}, score {best_score:.4f})
-{prompt}
-
-## Error Analysis
-{analysis}
-
-## Sample Results
-{sample_results}
-
-## Full Prompt History (oldest first)
-{history_json}
-
-Rewrite the prompt to fix the identified errors. Format your response as:
-
-<improved prompt text>
-
-MODIFICATION: <one sentence describing what changed and why>\
-"""
+_ANALYSIS_SYSTEM = _load_prompt("prompt_opt_analysis_system.md")
+_ANALYSIS_USER = _load_prompt("prompt_opt_analysis_user.md")
+_IMPROVEMENT_SYSTEM = _load_prompt("prompt_opt_improvement_system.md")
+_IMPROVEMENT_USER = _load_prompt("prompt_opt_improvement_user.md")
 
 
 def optimize_prompt(

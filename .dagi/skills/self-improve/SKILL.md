@@ -1,6 +1,7 @@
 ---
 name: self-improve
 description: Two-phase self-improvement loop — analyze last 5 sessions for errors, friction, and missing capabilities, then generate concrete improvement plans for tools, skills, prompts, and config
+triggers: self-improve, improve yourself, analyze sessions, review past sessions, reflect on sessions, improve your skills, improve your tools
 ---
 
 # self-improve — Session Analysis and Improvement Planning

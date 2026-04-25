@@ -3,13 +3,14 @@ cli:
   verbose: false        # true = show full tool output
 
 context_window: 128000
-# context_window: 4000
+keep_recent_tokens: 20000
+max_iterations: 20
+
 default_model: minimax-2.7-openrouter
 # worker_model: glm-5-turbo-openrouter   # cheaper LLM for sub-agents; omit to use default_model
+plan_model: kimi-2.6-openrouter   # model for the plan subagent; omit to use default_model
 thinking: high          # none | low | medium | high — reasoning effort for models that support it
-keep_recent_tokens: 20000
-# keep_recent_tokens: 1000
-max_iterations: 20
+
 models:
   claude-opus-openrouter:
     api_key_env: OPENROUTER_API_KEY
@@ -46,4 +47,14 @@ models:
     api_url: https://openrouter.ai/api/v1
     model: qwen/qwen3.5-27b
     name: Qwen 3.5 27B (OpenRouter)
+  kimi-2.6-openrouter:
+    api_key_env: OPENROUTER_API_KEY
+    api_url: https://openrouter.ai/api/v1
+    model: moonshotai/kimi-k2.6
+    name: Kimi 2.6 (OpenRouter)
+  deepseek-v4-pro-openrouter:
+    api_key_env: OPENROUTER_API_KEY
+    api_url: https://openrouter.ai/api/v1
+    model: deepseek/deepseek-v4-pro
+    name: Deepseek v4 (OpenRouter)
 reserve_tokens: 16384

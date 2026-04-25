@@ -14,9 +14,13 @@ from typing import Callable, NamedTuple, TYPE_CHECKING
 import openai
 
 from agent.base_tool import BaseTool
+from agent.prompts import load_prompt
 
 if TYPE_CHECKING:
     from agent.loop import AgentConfig
+
+_COMPACT_SYSTEM = load_prompt("compact_system.md")
+_COMPACT_USER = load_prompt("compact_user.md")
 
 
 # ── Result type ───────────────────────────────────────────────────────────────
@@ -198,24 +202,12 @@ class CompactTool(BaseTool):
             else ""
         )
         summarisation_messages = [
-            {
-                "role": "system",
-                "content": (
-                    "You are a precise technical summariser. "
-                    "Compress the conversation history into a single cumulative summary. "
-                    "Preserve every file path, tool call, result, decision, error, and "
-                    "resolution. End with a '### Files Read/Modified' section listing "
-                    "every file path mentioned. Output ONLY the summary — no preamble."
-                ),
-            },
+            {"role": "system", "content": _COMPACT_SYSTEM},
             {
                 "role": "user",
-                "content": (
-                    "Produce a cumulative summary of the following conversation segment."
-                    + prior_section
-                    + "\n\n=== NEW CONVERSATION SEGMENT ===\n"
-                    + _format_messages_for_summary(middle)
-                    + "\n=== END ==="
+                "content": _COMPACT_USER.format(
+                    prior_section=prior_section,
+                    conversation=_format_messages_for_summary(middle),
                 ),
             },
         ]

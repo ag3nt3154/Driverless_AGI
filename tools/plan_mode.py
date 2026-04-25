@@ -37,8 +37,9 @@ class ExitPlanModeTool(BaseTool):
     name = "exit_plan_mode"
     description = (
         "Exit plan mode and restore full tool access (write, edit, bash). "
-        "Call this when the plan document is complete. "
-        "Immediately proceed to implement according to the plan after calling this."
+        "In DAGI-initiated plan mode: call this when the plan is complete to return to the main agent. "
+        "In user-initiated plan mode: do NOT call this — the user exits plan mode manually via /exit-plan. "
+        "After show_plan confirms approval, simply output your final response and stop."
     )
     _parameters = {
         "type": "object",
@@ -51,5 +52,15 @@ class ExitPlanModeTool(BaseTool):
         "required": ["summary"],
     }
 
+    def __init__(self, show_plan_tool: "object | None" = None) -> None:
+        self._show_plan_tool = show_plan_tool
+
     def run(self, summary: str) -> str:  # noqa: ARG002
+        if self._show_plan_tool is not None:
+            # User-initiated plan mode: exit is controlled by the user via /exit-plan in the CLI.
+            return (
+                "Do not call this tool. "
+                "The user exits plan mode by typing /exit-plan in the CLI. "
+                "Simply output your final response and stop."
+            )
         return EXIT_PLAN_MODE_SENTINEL

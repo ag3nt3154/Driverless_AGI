@@ -55,6 +55,7 @@ class SubAgentRunner:
             plan_mode=False,
             plan_file=None,
             worker_config=None,  # prevent further nesting
+            plan_config=None,    # prevent plan_config nesting in generic sub-agents
         )
 
         self._registry = ToolRegistry()

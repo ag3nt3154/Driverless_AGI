@@ -37,13 +37,27 @@ class SkillTool(BaseTool):
         skill_dir = Path(s.file_path).parent
         siblings = sorted(p for p in skill_dir.iterdir() if p.is_file() and p.name != "SKILL.md")
         if siblings:
+            _SCRIPT_EXTS = {".py", ".sh", ".bash", ".ps1", ".js", ".ts", ".rb", ".pl"}
+
             def _posix_bash(p: Path) -> str:
                 resolved = p.resolve()
                 drive = resolved.drive  # e.g. "C:"
                 rest = resolved.as_posix()[len(drive):]  # e.g. "/Users/alexr/..."
                 return "/" + drive[0].lower() + rest
 
-            lines = [f"- Windows: {p.resolve()}  |  POSIX: {_posix_bash(p)}" for p in siblings]
-            result += "\n\n## Associated Files\n\n" + "\n".join(lines)
+            scripts = [p for p in siblings if p.suffix.lower() in _SCRIPT_EXTS]
+            data_files = [p for p in siblings if p.suffix.lower() not in _SCRIPT_EXTS]
+
+            if scripts:
+                script_lines = [
+                    f"- `{p.name}` — run with: `run_skill_script(\"{skill}\", \"{p.name}\")`"
+                    f"  |  path: {_posix_bash(p)}"
+                    for p in scripts
+                ]
+                result += "\n\n## Scripts in this skill\n\n" + "\n".join(script_lines)
+
+            if data_files:
+                data_lines = [f"- Windows: {p.resolve()}  |  POSIX: {_posix_bash(p)}" for p in data_files]
+                result += "\n\n## Associated Files\n\n" + "\n".join(data_lines)
 
         return result
