@@ -594,6 +594,7 @@ def _cmd_init(project_path: Path) -> None:
 
     for d in [
         dagi_dir / "skills",
+        dagi_dir / "self-review",
         memory / "raw",
         memory / "sources",
         memory / "wiki",
