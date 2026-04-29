@@ -1,6 +1,14 @@
+import re
 from pathlib import Path
 
 from agent.base_tool import BaseTool
+
+
+def _substitute(text: str, replacements: dict[str, str]) -> str:
+    """Replace only exact {key} tokens from replacements; leave all other {…} intact."""
+    def _replace(m: re.Match) -> str:
+        return replacements.get(m.group(1), m.group(0))
+    return re.sub(r"\{(\w+)\}", _replace, text)
 
 
 class SkillTool(BaseTool):
@@ -18,9 +26,17 @@ class SkillTool(BaseTool):
         "required": ["skill"],
     }
 
-    def __init__(self, skill_roots: list[Path], dagi_root: Path | None = None):
+    def __init__(
+        self,
+        skill_roots: list[Path],
+        dagi_root: Path | None = None,
+        cwd: Path | None = None,
+        memory_root: Path | None = None,
+    ):
         self._skill_roots = skill_roots
         self._dagi_root = dagi_root
+        self._cwd = cwd
+        self._memory_root = memory_root
 
     def run(self, skill: str) -> str:
         from agent.skills import SkillLoader
@@ -59,5 +75,9 @@ class SkillTool(BaseTool):
             if data_files:
                 data_lines = [f"- Windows: {p.resolve()}  |  POSIX: {_posix_bash(p)}" for p in data_files]
                 result += "\n\n## Associated Files\n\n" + "\n".join(data_lines)
+
+        cwd_str = str(self._cwd.resolve()) if self._cwd else str(Path.cwd())
+        memory_root_str = str(self._memory_root.resolve()) if self._memory_root else "dagi-memory"
+        result = _substitute(result, {"cwd": cwd_str, "memory_root": memory_root_str})
 
         return result

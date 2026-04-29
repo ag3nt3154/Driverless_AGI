@@ -371,6 +371,58 @@ If no significant issues: "No improvements identified."}
 
 ---
 
+## Step 7 — Append improvement items to TODO.md
+
+After writing the report, add the improvement items from the plan to
+`{DAGI_ROOT}/TODO.md` so they enter the main work queue.
+
+**Skip this step** if the plan produced no improvement items ("No improvements
+identified") — do not append empty or placeholder entries.
+
+### 7a — Read TODO.md
+Read `{DAGI_ROOT}/TODO.md` to find whether a `## Session Review Queue` section
+already exists. If it does not exist, you will create it. If a `## Backlog`
+section exists and is sparse, you may append there instead.
+
+### 7b — Format entries
+For each improvement item from the plan (Step 5b), format one entry:
+
+```markdown
+### [{priority}] {improvement item verb phrase}
+
+**Source:** Session review `{session-id}` | **Generated:** {YYYY-MM-DD} | **Review:** [review_{session-id}.md](.dagi/self-review/review_{session-id}.md) | **Plan:** [plan_{session-id}.md](.dagi/self-review/plan_{session-id}.md)
+
+**Observation:** {one sentence — the shortcoming this addresses, quoted from the plan}
+
+- [ ] Review plan at `.dagi/self-review/plan_{session-id}.md`
+- [ ] Implement
+- [ ] Mark as done
+```
+
+### 7c — Single edit call
+Use a **single `edit` call** to append all entries for this session at once.
+Do not make multiple edits — append the whole block in one operation.
+
+If the `## Session Review Queue` section does not exist yet, prepend it:
+```markdown
+## Session Review Queue
+
+> Entries added automatically by the review-session skill.
+> Each entry links to the full review report and improvement plan.
+
+```
+
+### 7d — Batch behaviour
+When reviewing multiple sessions (Step 1g multi-session path), append all
+sessions' entries in a single edit after all reviews are written. Group
+entries under a shared header if more than one session was reviewed:
+
+```markdown
+<!-- Session review batch: {date} — {N} sessions -->
+```
+
+---
+
 ## Edge Cases
 
 | Situation | Handling |
@@ -384,6 +436,9 @@ If no significant issues: "No improvements identified."}
 | enter_plan_mode unavailable | Skip plan mode; write the shortcomings and improvements inline in the report (note the limitation) |
 | Session ID not found | Report: "No session file found at {path}. Run --list to see available sessions." |
 | Output file already exists | Overwrite — this is a re-review (or honour `re-review` param) |
+| TODO.md does not exist | Create it with a `## Session Review Queue` header, then append entries |
+| Re-review: TODO entries already exist for this session ID | Append new entries anyway (plan may have changed); note "re-review" in the Source field |
+| No improvement items in plan | Skip Step 7 entirely — do not append empty entries |
 | All sessions already reviewed | Report "No unreviewed sessions found matching filters" and stop |
 | All candidates dropped as unmeaningful | Report each with reason; stop — no reports written |
 | Time filter yields no sessions | Report "No sessions started within the given window" |

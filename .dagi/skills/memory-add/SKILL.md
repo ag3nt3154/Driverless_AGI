@@ -6,6 +6,18 @@ triggers: save to memory, add to wiki, remember this, store in memory, add to me
 
 # memory-add — Add Content to the Wiki
 
+## Path Roots
+
+All paths in this skill are under **memory root** (`{memory_root}`), NOT under CWD (`{cwd}`).
+The `read`, `write`, `edit`, and `find` tools resolve from CWD — use **bash with absolute paths** for all file I/O:
+
+- Read: `bash: type "{memory_root}\wiki\{path}"`
+- Write/append: `bash: ... | Out-File -FilePath "{memory_root}\wiki\{path}" -Encoding utf8`
+- List: `bash: dir "{memory_root}\wiki\{topic}"` (use `dir`, not `ls`, on non-C: drives)
+- Grep across wiki: use the `grep` tool — it accepts absolute paths
+
+---
+
 ## Purpose
 
 This is the core wiki-writing operation. It takes a piece of text and integrates
@@ -26,7 +38,7 @@ If no mode is specified, assume `direct`.
 
 ## Step 1 — Confirm the wiki is initialised
 
-Check `dagi-memory/wiki/index.md` exists using `find`. If not, stop:
+Check `{memory_root}/wiki/index.md` exists using `find`. If not, stop:
 "Run `/init` first."
 
 ---
@@ -76,27 +88,67 @@ Currently all content is `human` unless the caller explicitly states otherwise.
    If a file already exists at the target path, append `-2`, `-3`, etc.
 
 **Target path:**
-- Topic-level: `dagi-memory/wiki/{topic}/{slug}.md`
-- Sub-topic: `dagi-memory/wiki/{topic}/{subtopic}/{slug}.md`
+- Topic-level: `{memory_root}/wiki/{topic}/{slug}.md`
+- Sub-topic: `{memory_root}/wiki/{topic}/{subtopic}/{slug}.md`
 
 ---
 
 ## Step 4 — Check existing wiki state
 
-**4a.** `read dagi-memory/wiki/index.md` — does the topic already exist?
+**4a.** `read {memory_root}/wiki/index.md` — does the topic already exist?
 
-**4b.** If topic exists: `read dagi-memory/wiki/{topic}/index.md` — scan for
+**4b.** If topic exists: `read {memory_root}/wiki/{topic}/index.md` — scan for
 related pages and sub-topics.
 
 **4c.** For each significant entity from Step 2, check for an existing page:
-`grep "{entity name}" dagi-memory/wiki/**/*.md`
+`grep "{entity name}" {memory_root}/wiki/**/*.md`
 Note which entities already have pages (to update) vs. which are new (to create).
+
+---
+
+## Step 4.5 — Decide: single node or split?
+
+Before writing, analyse the content for natural idea breakpoints.
+
+A **distinct idea** qualifies for its own node if it:
+- Has its own premise and conclusion (can stand alone)
+- Could be understood without the other ideas in the source
+- Is likely to be referenced or searched independently in the future
+
+**If single idea:** proceed to Step 5 with one node.
+
+**If multiple distinct ideas:** list them explicitly before writing (e.g. "Idea 1: X, Idea 2: Y"). Then write one node per idea, running Step 5 for each in sequence. Assign each node its own descriptive slug (e.g. `attention-mechanism-self-attention`, `attention-mechanism-multi-head`) rather than `part-1`, `part-2` suffixes where possible.
+
+**Linking split nodes:** every node in a split set must include a "Part of series" block in its Related Pages section:
+
+```markdown
+## Related Pages
+
+**Part of series:** {source title or unifying theme}
+- [[{topic}/{sibling-slug-1}]] — {one phrase: what that node covers}
+- [[{topic}/{sibling-slug-2}]] — {one phrase}
+- [[{topic}/index]] — parent topic
+```
+
+**When NOT to split:**
+- A unified list of facts or tips on one subject (keep together)
+- Ideas that are tightly interdependent and lose meaning when separated
+- Input shorter than 3 paragraphs — splitting would produce stub nodes
 
 ---
 
 ## Step 5 — Write the wiki node
 
-Write the wiki node at the path from Step 3.
+Write the wiki node at the path determined in Step 3 (or per-idea paths if split).
+
+**Writing standard:** Write as if the source will never be consulted again. A reader
+must be able to fully understand the subject — including background, reasoning,
+evidence, and implications — from this node alone. Depth scales with input richness:
+a brief personal note may be 2–3 paragraphs; a dense paper or technical document
+should be as long as needed to capture it completely. Do not compress: if the source
+spends significant space on a mechanism or example, so should the wiki node.
+
+Omit sections the input has no material for — never invent content to fill a section.
 
 **Frontmatter:**
 ```yaml
@@ -114,22 +166,53 @@ source: {archive path — only if ingest mode, omit if direct}
 Adjust `type` to fit: `note` (default), `source-summary`, `reflection`, `insight`,
 `analysis`. Use judgment based on the content.
 
-**Body template:**
+---
+
+### Body template — `info` content
+
+Use for facts, research findings, technical knowledge, how-tos, and external sources.
+
 ```markdown
 # {Descriptive title}
 
 {ingest mode only — omit in direct mode:}
 > Source: [{filename}]({relative path from wiki node to archive}) | Added: YYYY-MM-DD
 
-## Summary
+## Background
 
-{2–4 paragraph synthesis of the content, written clearly in your own words.
-For direct user input: preserve meaning but organise into coherent paragraphs.
-For ingested sources: distil the key content, not just list facts.}
+{Why does this topic exist or matter? What problem does it solve, or what context
+is needed to understand it? 1–3 paragraphs. Include historical or domain context
+if present in the source.}
 
-## Key Points
+## Core Concepts
 
-- {3–8 bullet points: the most important facts, claims, or insights}
+{Define every key term used in this content. Use bold term + colon format.
+Include the definition as it applies in this specific context, not just a generic one.}
+
+**{Term}**: {Definition.}
+**{Term}**: {Definition.}
+
+## How It Works
+
+{The full mechanism, process, or explanation. Preserve specific steps, causal chains,
+and logical structure. If the source has 5 steps, capture all 5 with their detail.
+Use numbered lists for sequential processes, prose for causal explanations.}
+
+## Evidence & Examples
+
+{Specific data points, case studies, worked examples, or experiments that support
+the claims. Include numbers, names, dates, and sources where present. Vague
+references ("studies show") are not sufficient — name the study if known.}
+
+## Implications & Applications
+
+{What does this mean in practice? How can it be applied? What does it change about
+how to think about related topics or adjacent fields?}
+
+## Limitations & Caveats
+
+{What does this NOT apply to? What assumptions does it rest on? What are known
+failure modes, open debates, or contested claims?}
 
 ## Related Pages
 
@@ -137,13 +220,61 @@ For ingested sources: distil the key content, not just list facts.}
 - [[{related-topic}/{related-page}]] — {why related, one phrase}
 ```
 
-Adapt the structure to the content. A short personal note may only need "Summary".
-A dense paper may add "Methodology" or "Conclusions" sections. The template is a
-starting point, not a rigid requirement.
+---
+
+### Body template — `thought` content
+
+Use for reflections, opinions, hypotheses, plans, and personal observations.
+
+```markdown
+# {Descriptive title}
+
+## Context & Premise
+
+{What prompted this thought? What situation, observation, or prior belief is it
+responding to? What assumptions does it start from?}
+
+## The Argument
+
+{The full reasoning chain. Preserve the logic, not just the conclusion. If there
+are sub-points or steps in the reasoning, list them with their supporting logic.
+Do not flatten a multi-step argument into a single conclusion.}
+
+## Supporting Evidence or Examples
+
+{What does this thought draw on? References, analogies, personal experiences, or
+prior observations cited. Be specific about what evidence supports which claim.}
+
+## Conclusions
+
+{What does this lead to? What action, belief, or further question does it produce?
+State both the immediate conclusion and any second-order implications.}
+
+## Open Questions
+
+{What does this thought leave unresolved? What evidence would change the conclusion?
+What needs to be investigated before acting on this?}
+
+## Related Pages
+
+- [[{topic}/index]] — parent topic
+- [[{related-topic}/{related-page}]] — {why related, one phrase}
+```
+
+---
+
+The templates are a starting point, not a rigid requirement. Add, rename, or merge
+sections to fit the content — a short personal note may only need Context, Argument,
+and Conclusions; a technical deep-dive may add Methodology or Worked Examples.
 
 ---
 
 ## Step 6 — Create or update entity/concept pages
+
+**If the content was split in Step 4.5:** collect entities from ALL nodes first, then
+process entity pages once — do not create duplicate entity pages for the same entity
+appearing in multiple sibling nodes. Each entity page's `## Sources` section should
+reference all sibling nodes that mention it.
 
 For each **significant entity** identified in Step 2:
 
@@ -155,7 +286,7 @@ For each **significant entity** identified in Step 2:
 4. Update `last_updated` in frontmatter to today
 
 **No page exists yet** and the entity is significant enough to warrant one:
-Create `dagi-memory/wiki/{topic}/{EntityName}.md`:
+Create `{memory_root}/wiki/{topic}/{EntityName}.md`:
 
 ```yaml
 ---
@@ -187,7 +318,7 @@ in the wiki node.
 
 Update every `index.md` in folders touched by this addition.
 
-**Topic index.md** — `dagi-memory/wiki/{topic}/index.md`:
+**Topic index.md** — `{memory_root}/wiki/{topic}/index.md`:
 
 If it does not exist (new topic), create it:
 ```markdown
@@ -213,7 +344,7 @@ If it exists, `read` it first, then `edit`:
 - If a new sub-topic was used, add a row to "Sub-topics"
 - If the existing table header lacks a Tags column, add it with `edit` before inserting the new row
 
-**Root index.md** — `dagi-memory/wiki/index.md`:
+**Root index.md** — `{memory_root}/wiki/index.md`:
 
 `read` it first, then `edit`:
 - New topic: add row `| [{topic}/](wiki/{topic}/index.md) | {one-line description} | 1 | YYYY-MM-DD |`
@@ -231,12 +362,12 @@ may want to run `memory-lint` to consider a sub-topic split.
 
 **Skip this step entirely if called from `memory-ingest`.** The caller handles log.
 
-For `direct` mode: `read dagi-memory/wiki/log.md`, then `edit` to append:
+For `direct` mode: `read {memory_root}/wiki/log.md`, then `edit` to append:
 
 ```markdown
-## [YYYY-MM-DD] add | {slug}
+## [YYYY-MM-DD] add | {slug} {or: slug-1, slug-2, ... if split}
 - Topic: {topic}{/subtopic if applicable}
-- Wiki node: dagi-memory/wiki/{topic}/{slug}.md
+- Wiki nodes: {memory_root}/wiki/{topic}/{slug}.md {list all if split}
 - Pages created: {comma-separated list, or "none"}
 - Pages updated: {comma-separated list, or "none"}
 ```
@@ -245,7 +376,7 @@ For `direct` mode: `read dagi-memory/wiki/log.md`, then `edit` to append:
 
 ## Step 9 — Update overview.md (conditional)
 
-`read dagi-memory/wiki/overview.md`.
+`read {memory_root}/wiki/overview.md`.
 
 Update **only** if this content adds synthesis-level value:
 - A new theme that connects previously separate topics
@@ -272,7 +403,7 @@ Derive ONE open question from the content just added. The question should:
 - Questions already present in the Pending table
 
 **Process:**
-1. `read dagi-memory/wiki/open_questions.md`
+1. `read {memory_root}/wiki/open_questions.md`
 2. Count existing Pending rows (exclude placeholder). Assign next sequential number N.
 3. Append to the Pending table:
    `| {N} | {Question} | {One-sentence context} | [[{topic}/{slug}]] | {YYYY-MM-DD} |`
@@ -287,11 +418,12 @@ stop and tell the user: "open_questions.md not found — run `/init` again to cr
 ## Step 11 — Report
 
 Tell the user:
-- Wiki node created at: `{path}`
+- Wiki nodes created: `{path}` (list all if split — one line per node)
+- Split into N nodes: `{yes/no — if yes, briefly explain the breakpoints chosen}`
 - Entity/concept pages created: `{list or "none"}`
 - Pages updated: `{list or "none"}`
 - index.md files updated: `{list}`
-- Open question added to open_questions.md: `"{question text}"`
+- Open question(s) added to open_questions.md: `"{question text}"` (one per node if split)
 - Any index.md approaching 50 rows (if applicable)
 
 ---

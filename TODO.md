@@ -81,6 +81,103 @@ Path validation infrastructure exists (`tools/_path_guard.py`, `validate_path`, 
 
 ---
 
+## Session Review Queue
+
+> Entries added automatically by the review-session skill.
+> Each entry links to the full review report and improvement plan.
+
+<!-- Session review batch: 2026-04-28 — 2 sessions -->
+
+### [high] Add path resolution warning to memory-ingest SKILL.md
+
+**Source:** Session review `2026-04-26_15-24-09` | **Generated:** 2026-04-28 | **Review:** [.dagi/self-review/review_2026-04-26_15-24-09.md](.dagi/self-review/review_2026-04-26_15-24-09.md) | **Plan:** [.dagi/self-review/plan_2026-04-26_15-24-09.md](.dagi/self-review/plan_2026-04-26_15-24-09.md)
+
+**Observation:** The `read`, `write`, `edit`, and `find` tools resolve relative paths from `C:` but `dagi-memory/` lives on `G:` — every dagi-memory tool call failed, forcing bash fallback.
+
+- [ ] Review plan at `.dagi/self-review/plan_2026-04-26_15-24-09.md`
+- [ ] Implement
+- [ ] Mark as done
+
+### [high] Add same path resolution warning to memory-add SKILL.md
+
+**Source:** Session review `2026-04-26_15-24-09` | **Generated:** 2026-04-28 | **Review:** [.dagi/self-review/review_2026-04-26_15-24-09.md](.dagi/self-review/review_2026-04-26_15-24-09.md) | **Plan:** [.dagi/self-review/plan_2026-04-26_15-24-09.md](.dagi/self-review/plan_2026-04-26_15-24-09.md)
+
+**Observation:** `memory-add` uses the same `dagi-memory/...` relative paths and will fail identically when used directly (not via `memory-ingest`).
+
+- [ ] Review plan at `.dagi/self-review/plan_2026-04-26_15-24-09.md`
+- [ ] Implement
+- [ ] Mark as done
+
+### [high] Fix redundant skill-load instruction in memory-ingest Step 6
+
+**Source:** Session review `2026-04-26_15-24-09` | **Generated:** 2026-04-28 | **Review:** [.dagi/self-review/review_2026-04-26_15-24-09.md](.dagi/self-review/review_2026-04-26_15-24-09.md) | **Plan:** [.dagi/self-review/plan_2026-04-26_15-24-09.md](.dagi/self-review/plan_2026-04-26_15-24-09.md)
+
+**Observation:** Step 6 instructs the agent to call `skill("memory-add")` again even though the full skill content is already embedded in the tool result from Step 6 of `memory-ingest` — agent called the skill twice.
+
+- [ ] Review plan at `.dagi/self-review/plan_2026-04-26_15-24-09.md`
+- [ ] Implement
+- [ ] Mark as done
+
+### [medium] Add bash-based archiving template to memory-ingest Step 5
+
+**Source:** Session review `2026-04-26_15-24-09` | **Generated:** 2026-04-28 | **Review:** [.dagi/self-review/review_2026-04-26_15-24-09.md](.dagi/self-review/review_2026-04-26_15-24-09.md) | **Plan:** [.dagi/self-review/plan_2026-04-26_15-24-09.md](.dagi/self-review/plan_2026-04-26_15-24-09.md)
+
+**Observation:** Agent spent tool calls figuring out the right bash/PowerShell commands to archive files to `G:` drive — the skill should provide this template explicitly.
+
+- [ ] Review plan at `.dagi/self-review/plan_2026-04-26_15-24-09.md`
+- [ ] Implement
+- [ ] Mark as done
+
+### [low] Add pre-flight path check to memory-ingest
+
+**Source:** Session review `2026-04-26_15-24-09` | **Generated:** 2026-04-28 | **Review:** [.dagi/self-review/review_2026-04-26_15-24-09.md](.dagi/self-review/review_2026-04-26_15-24-09.md) | **Plan:** [.dagi/self-review/plan_2026-04-26_15-24-09.md](.dagi/self-review/plan_2026-04-26_15-24-09.md)
+
+**Observation:** Agent made 6+ tool calls discovering that `dagi-memory/` paths fail — a pre-flight check would set a path-mode flag on the first operation, avoiding wasted discovery.
+
+- [ ] Review plan at `.dagi/self-review/plan_2026-04-26_15-24-09.md`
+- [ ] Implement
+- [ ] Mark as done
+
+### [high] Validate project root in system prompt against actual filesystem
+
+**Source:** Session review `2026-04-26_15-20-10` | **Generated:** 2026-04-28 | **Review:** [.dagi/self-review/review_2026-04-26_15-20-10.md](.dagi/self-review/review_2026-04-26_15-20-10.md) | **Plan:** [.dagi/self-review/plan_2026-04-26_15-20-10.md](.dagi/self-review/plan_2026-04-26_15-20-10.md)
+
+**Observation:** System prompt contained `Project root: G:\My Drive\black_grimoire\dagi-memory\raw` — inside `raw/` itself, not the actual project root `C:\Users\alexr\Driverless_AGI`. This caused all tool paths to resolve incorrectly. This is a session config error, not an agent error.
+
+- [ ] Review plan at `.dagi/self-review/plan_2026-04-26_15-20-10.md`
+- [ ] Implement
+- [ ] Mark as done
+
+### [high] Extend path guard to cover full dagi-memory tree on G:
+
+**Source:** Session review `2026-04-26_15-20-10` | **Generated:** 2026-04-28 | **Review:** [.dagi/self-review/review_2026-04-26_15-20-10.md](.dagi/self-review/review_2026-04-26_15-20-10.md) | **Plan:** [.dagi/self-review/plan_2026-04-26_15-20-10.md](.dagi/self-review/plan_2026-04-26_15-20-10.md)
+
+**Observation:** Path guard allowed `G:\My Drive\black_grimoire\dagi-memory\raw` only, blocking `G:\My Drive\black_grimoire\dagi-memory\wiki` when the agent used an absolute path.
+
+- [ ] Review plan at `.dagi/self-review/plan_2026-04-26_15-20-10.md`
+- [ ] Implement
+- [ ] Mark as done
+
+### [medium] Add bash-fallback guidance to memory-ingest for G: path operations
+
+**Source:** Session review `2026-04-26_15-20-10` | **Generated:** 2026-04-28 | **Review:** [.dagi/self-review/review_2026-04-26_15-20-10.md](.dagi/self-review/review_2026-04-26_15-20-10.md) | **Plan:** [.dagi/self-review/plan_2026-04-26_15-20-10.md](.dagi/self-review/plan_2026-04-26_15-20-10.md)
+
+**Observation:** When `read`/`find`/`write`/`edit` failed on G: paths, the agent stopped instead of falling back to `bash`. The skill should instruct agents to always use `bash` for dagi-memory file I/O on G:.
+
+- [ ] Review plan at `.dagi/self-review/plan_2026-04-26_15-20-10.md`
+- [ ] Implement
+- [ ] Mark as done
+
+### [low] Recommend `dir` not `ls` in memory skills for Windows paths
+
+**Source:** Session review `2026-04-26_15-20-10` | **Generated:** 2026-04-28 | **Review:** [.dagi/self-review/review_2026-04-26_15-20-10.md](.dagi/self-review/review_2026-04-26_15-20-10.md) | **Plan:** [.dagi/self-review/plan_2026-04-26_15-20-10.md](.dagi/self-review/plan_2026-04-26_15-20-10.md)
+
+**Observation:** `ls "G:\My Drive\black_grimoire\dagi-memory\wiki"` failed while `dir` in the same bash tool succeeded — inconsistent behavior on Windows G: paths.
+
+- [ ] Review plan at `.dagi/self-review/plan_2026-04-26_15-20-10.md`
+- [ ] Implement
+- [ ] Mark as done
+
 ## Self-Improvement Queue
 
 ### [High] Run the self-improve skill to bootstrap the improvement loop

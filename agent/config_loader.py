@@ -82,6 +82,9 @@ def _build_config_from_entry(entry: dict, raw: dict) -> AgentConfig:
     keep_recent_tokens = entry.get("keep_recent_tokens")  or raw.get("keep_recent_tokens",   20_000)
     thinking = entry.get("thinking") or raw.get("thinking", "none") or "none"
 
+    raw_memory_root = raw.get("memory_root")
+    memory_root = Path(raw_memory_root).expanduser() if raw_memory_root else None
+
     return AgentConfig(
         model=entry["model"],
         base_url=entry["api_url"],
@@ -90,6 +93,7 @@ def _build_config_from_entry(entry: dict, raw: dict) -> AgentConfig:
         context_window=int(context_window),
         reserve_tokens=int(reserve_tokens),
         keep_recent_tokens=int(keep_recent_tokens),
+        memory_root=memory_root,
     )
 
 
@@ -133,21 +137,25 @@ def resolve_model_config(model_id: str | None = None) -> AgentConfig:
             file=sys.stderr,
         )
 
+    from dataclasses import replace
+
     cfg = _build_config_from_entry(entry, raw)
+    cfg = replace(cfg, display_name=entry.get("name", chosen_id))
 
     # Resolve optional worker model for sub-agents; silently fall back if unset/invalid.
     worker_id = raw.get("worker_model")
     worker_cfg: AgentConfig | None = None
     if worker_id and worker_id in catalog:
         worker_cfg = _build_config_from_entry(catalog[worker_id], raw)
+        worker_cfg = replace(worker_cfg, display_name=catalog[worker_id].get("name", worker_id))
 
     # Resolve optional plan model for the plan subagent; silently fall back if unset/invalid.
     plan_id = raw.get("plan_model")
     plan_cfg: AgentConfig | None = None
     if plan_id and plan_id in catalog:
         plan_cfg = _build_config_from_entry(catalog[plan_id], raw)
+        plan_cfg = replace(plan_cfg, display_name=catalog[plan_id].get("name", plan_id))
 
-    from dataclasses import replace
     return replace(cfg, worker_config=worker_cfg, plan_config=plan_cfg)
 
 

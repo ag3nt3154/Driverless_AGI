@@ -103,6 +103,7 @@ def create_tool_registry(
     config: "AgentConfig | None" = None,
     callbacks: "AgentCallbacks | None" = None,
     tracker: "SessionTracker | None" = None,
+    memory_root: Path | None = None,
 ) -> ToolRegistry:
     """Build a fresh ToolRegistry with all tools bound to *cwd*.
 
@@ -145,7 +146,8 @@ def create_tool_registry(
             else:
                 reg.register(ExitPlanModeTool())
         if skill_roots:
-            reg.register(SkillTool(skill_roots=skill_roots, dagi_root=_DAGI_ROOT))
+            _effective_memory_root = memory_root or cwd / "dagi-memory"
+            reg.register(SkillTool(skill_roots=skill_roots, dagi_root=_DAGI_ROOT, cwd=cwd, memory_root=_effective_memory_root))
         # Web research — available in plan mode for information gathering
         if config is not None:
             from tools.web_research import WebResearchTool
@@ -164,6 +166,9 @@ def create_tool_registry(
         reg.register(BashTool(cwd=cwd))
         from tools.plan_mode import EnterPlanModeTool
         reg.register(EnterPlanModeTool())
+        if config is not None and (config.plan_config is not None or config.worker_config is not None):
+            from tools.switch_model import SwitchModelTool
+            reg.register(SwitchModelTool())
         if config is not None:
             from tools.explore_files import ExploreFilesTool
             from tools.web_research import WebResearchTool
@@ -191,7 +196,8 @@ def create_tool_registry(
                     )
 
             if skill_roots:
-                reg.register(SkillTool(skill_roots=skill_roots, dagi_root=_DAGI_ROOT))
+                _effective_memory_root = memory_root or cwd / "dagi-memory"
+                reg.register(SkillTool(skill_roots=skill_roots, dagi_root=_DAGI_ROOT, cwd=cwd, memory_root=_effective_memory_root))
                 from tools.run_skill_script import RunSkillScriptTool
                 reg.register(RunSkillScriptTool(skill_roots=skill_roots, dagi_root=_DAGI_ROOT))
         else:
@@ -201,5 +207,6 @@ def create_tool_registry(
             reg.register(WebSearchTool())
             reg.register(WebFetchTool())
             if skill_roots:
-                reg.register(SkillTool(skill_roots=skill_roots, dagi_root=_DAGI_ROOT))
+                _effective_memory_root = memory_root or cwd / "dagi-memory"
+                reg.register(SkillTool(skill_roots=skill_roots, dagi_root=_DAGI_ROOT, cwd=cwd, memory_root=_effective_memory_root))
     return reg

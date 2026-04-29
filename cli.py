@@ -185,6 +185,11 @@ def _make_sync_callbacks(
                 )
             )
 
+    def on_model_switch(from_name: str, to_name: str) -> None:
+        console.print(
+            f"[bold cyan]⇄ Model switch:[/bold cyan] [dim]{from_name}[/dim] → [bold]{to_name}[/bold]"
+        )
+
     def on_error(exc: Exception) -> None:
         console.print_exception()
 
@@ -221,6 +226,7 @@ def _make_sync_callbacks(
         on_token_update=on_token_update,
         on_compaction=on_compaction,
         on_reasoning=on_reasoning,
+        on_model_switch=on_model_switch,
         on_error=on_error,
         on_done=on_done,
         on_ask_user=on_ask_user,
@@ -229,15 +235,16 @@ def _make_sync_callbacks(
 
 # ── Threaded callbacks (post events to queue; main thread renders) ────────────
 
-_EVT_TOOL_START = "tool_start"
-_EVT_TOOL_END   = "tool_end"
-_EVT_ASSISTANT  = "assistant"
-_EVT_TOKENS     = "tokens"
-_EVT_COMPACTION = "compaction"
-_EVT_REASONING  = "reasoning"
-_EVT_ERROR      = "error"
-_EVT_DONE       = "done"
-_EVT_ASK_USER   = "ask_user"
+_EVT_TOOL_START   = "tool_start"
+_EVT_TOOL_END     = "tool_end"
+_EVT_ASSISTANT    = "assistant"
+_EVT_TOKENS       = "tokens"
+_EVT_COMPACTION   = "compaction"
+_EVT_REASONING    = "reasoning"
+_EVT_ERROR        = "error"
+_EVT_DONE         = "done"
+_EVT_ASK_USER     = "ask_user"
+_EVT_MODEL_SWITCH = "model_switch"
 
 
 def _make_threaded_callbacks(q: queue.Queue, stats: _Stats) -> AgentCallbacks:
@@ -263,6 +270,7 @@ def _make_threaded_callbacks(q: queue.Queue, stats: _Stats) -> AgentCallbacks:
         on_token_update   = lambda i, o, c, t=0: put(_EVT_TOKENS, i, o, c, t),
         on_compaction     = lambda k, r:    put(_EVT_COMPACTION, k, r),
         on_reasoning      = lambda t:       put(_EVT_REASONING, t),
+        on_model_switch   = lambda f, t:    put(_EVT_MODEL_SWITCH, f, t),
         on_error          = lambda e:       put(_EVT_ERROR, str(e)),
         on_done           = lambda r:       put(_EVT_DONE, r),
         on_ask_user       = on_ask_user,
@@ -407,6 +415,12 @@ def _render_queue(
                     response_event.set()
                     live.start()
                 spinner_text.plain = "Thinking…"
+
+            elif tag == _EVT_MODEL_SWITCH:
+                from_name, to_name = payload
+                console.print(
+                    f"[bold cyan]⇄ Model switch:[/bold cyan] [dim]{from_name}[/dim] → [bold]{to_name}[/bold]"
+                )
 
             elif tag == _EVT_DONE:
                 console.print(f"[dim]{stats.footer(model_name, cwd=get_cwd(), plan_mode=plan_mode)}[/dim]")
@@ -868,6 +882,10 @@ def run(
                 plan_mode_initiated_by="user",
             )
             plan_model_name = get_model_display_name(load_raw_config().get("plan_model"))
+            if plan_model_name != model_name:
+                console.print(
+                    f"[bold cyan]⇄ Model switch:[/bold cyan] [dim]{model_name}[/dim] → [bold]{plan_model_name}[/bold]"
+                )
             plan_messages = plan_loop._messages if plan_loop is not None else None
             plan_tracker = plan_loop.tracker if plan_loop is not None else None
             _, plan_loop = _run_plan_turn(
@@ -881,10 +899,15 @@ def run(
                 plan_mode = False
                 plan_file = None
                 plan_loop = None
+                switch_back = (
+                    f"[dim]Returning to: {model_name}[/dim]\n"
+                    if plan_model_name != model_name else ""
+                )
                 console.print(
                     Panel(
                         "[bold cyan]Plan complete.[/bold cyan]\n"
                         + (f"[dim]Plan document: {exited_file}[/dim]\n\n" if exited_file else "")
+                        + switch_back
                         + "[dim]The plan is loaded into context. "
                         "Continue with your next instruction to begin implementation.[/dim]",
                         border_style="cyan",
@@ -903,11 +926,21 @@ def run(
         )
         if active_loop.plan_mode_exited and active_loop.exited_plan_file:
             # Agent-initiated plan mode: subagent wrote the plan and returned to normal.
+            had_plan_model = active_loop.config.plan_config is not None
+            plan_label = (
+                active_loop.config.plan_config.display_name
+                if had_plan_model else model_name
+            )
+            switch_back = (
+                f"[dim]Returning to: {model_name}[/dim]\n"
+                if had_plan_model and plan_label != model_name else ""
+            )
             console.print(
                 Panel(
                     "[bold cyan]Plan complete.[/bold cyan]\n"
                     f"[dim]Plan document: {active_loop.exited_plan_file}[/dim]\n\n"
-                    "[dim]The plan is loaded into context. "
+                    + switch_back
+                    + "[dim]The plan is loaded into context. "
                     "Continue with your next instruction to begin implementation.[/dim]",
                     border_style="cyan",
                     padding=(0, 2),

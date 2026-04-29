@@ -14,6 +14,7 @@ from agent.session import SessionTracker, ToolCallRecord
 from agent.skills import Skill, SkillLoader
 from tools.compact import CompactTool, CompactionResult
 from tools.plan_mode import ENTER_PLAN_MODE_SENTINEL, EXIT_PLAN_MODE_SENTINEL
+from tools.switch_model import parse_switch_sentinel
 
 
 def _is_plan_empty(path: Path) -> bool:
@@ -79,6 +80,9 @@ class AgentConfig:
     keep_recent_tokens: int = 20_000  # tail kept verbatim (token budget)
     # Project scope
     project_path: Path = field(default_factory=lambda: Path(".").resolve())
+    # Memory root — absolute path to dagi-memory directory.
+    # None means "resolve at loop init time to project_path / dagi-memory".
+    memory_root: Path | None = None
     # Plan mode
     plan_mode: bool = False
     plan_file: str | None = None  # absolute path to the active plan document
@@ -89,6 +93,8 @@ class AgentConfig:
     plan_config: AgentConfig | None = field(default=None)
     # Active plan file persisted in system prompt after plan mode exits
     active_plan_file: str | None = None
+    # Human-readable label from the config catalog (e.g. "GPT-4o (OpenAI)")
+    display_name: str = ""
 
 
 @dataclass
@@ -105,6 +111,7 @@ class AgentCallbacks:
     on_api_call:       Callable[[list], None]                   = field(default=lambda msgs: None)
     on_reasoning:      Callable[[str], None]                    = field(default=lambda text: None)
     on_compaction:     Callable[[int, int], None]               = field(default=lambda kept, removed: None)
+    on_model_switch:   Callable[[str, str], None]               = field(default=lambda f, t: None)
     on_ask_user:       Callable[[str, list], str]               = field(
         default=lambda question, options: next(
             (o["label"] for o in options if o.get("recommended")),
@@ -153,6 +160,11 @@ class AgentLoop:
         else:
             self.tracker = SessionTracker(model=config.model, thread_id=config.thread_id)
 
+        effective_memory_root = (
+            config.memory_root if config.memory_root is not None
+            else config.project_path / "dagi-memory"
+        ).resolve()
+
         if _registry is not None:
             # Sub-agent path: use the provided registry, skip skill loading
             self.registry = _registry
@@ -176,6 +188,7 @@ class AgentLoop:
                 config=config,
                 callbacks=self.callbacks,
                 tracker=self.tracker,
+                memory_root=effective_memory_root,
             )
 
         # ── Build system prompt ───────────────────────────────────────────
@@ -184,6 +197,8 @@ class AgentLoop:
         prompt = config.system_prompt.format_map(_SafeDict(
             readme_path=readme_path,
             tools_and_skills=tools_and_skills_section,
+            cwd=str(config.project_path.resolve()),
+            memory_root=str(effective_memory_root),
         ))
 
         # Load preamble: dagi root soul/agents, then project .dagi/AGENTS.md
@@ -225,6 +240,19 @@ class AgentLoop:
         self._reasoning_extra: dict = {}
         if config.thinking and config.thinking.lower() != "none":
             self._reasoning_extra = {"reasoning": {"effort": config.thinking.lower()}}
+
+        # ── Model-tier tracking ───────────────────────────────────────────────
+        # Snapshot the five LLM identity fields so "default" tier can always
+        # be restored regardless of how many switch_model calls happen.
+        self._base_config_snapshot: dict = {
+            "model":        config.model,
+            "base_url":     config.base_url,
+            "api_key":      config.api_key,
+            "thinking":     config.thinking,
+            "display_name": config.display_name,
+        }
+        self._current_tier: str = "default"
+
         self.tracker.record_system(system)
 
         # Set when DAGI calls exit_plan_mode; signals run() to stop iterating
@@ -316,6 +344,10 @@ class AgentLoop:
                         result = self._handle_enter_plan_mode(json.loads(tc.function.arguments))
                     elif result == EXIT_PLAN_MODE_SENTINEL:
                         result = self._handle_exit_plan_mode(json.loads(tc.function.arguments))
+                    else:
+                        _switch_target = parse_switch_sentinel(result)
+                        if _switch_target is not None:
+                            result = self._handle_switch_model(_switch_target, json.loads(tc.function.arguments))
                     result_str = result if isinstance(result, str) else "__list__:" + json.dumps(result)
                     self.callbacks.on_tool_end(tc.function.name, result_str)
                     self.tracker.record_tool_end(tc.function.name, result_str)
@@ -392,6 +424,8 @@ class AgentLoop:
             f"**Plan file:** `{plan_file}`\n\n**Reason:** {reason}"
         )
 
+        self._handle_switch_model("plan", {"reason": f"entering plan mode: {reason}"})
+
         subagent = PlanSubAgent(
             config=self.config,
             plan_file=plan_file,
@@ -407,6 +441,8 @@ class AgentLoop:
             f"with your complete plan document."
         )
         subagent.run(task)
+
+        self._handle_switch_model("default", {"reason": "returning from plan mode"})
 
         try:
             plan_contents = plan_file.read_text(encoding="utf-8")
@@ -453,6 +489,68 @@ class AgentLoop:
             f"Plan summary: {summary}\n"
             f"Plan document: {saved_plan}"
         )
+
+    def _handle_switch_model(self, target: str, args: dict) -> str:
+        """Switch the active LLM tier in-place without changing the tool registry."""
+        reason = args.get("reason", "")
+
+        if target == self._current_tier:
+            return (
+                f"Already on the '{target}' tier "
+                f"({self.config.display_name or self.config.model}) — no switch needed."
+            )
+
+        from_name = self.config.display_name or self.config.model
+
+        if target == "plan":
+            tier_cfg = self.config.plan_config
+            if tier_cfg is None:
+                return (
+                    "Cannot switch to 'plan' tier: no plan_model is configured in config.yaml. "
+                    "Continuing with the current model."
+                )
+        elif target == "worker":
+            tier_cfg = self.config.worker_config
+            if tier_cfg is None:
+                return (
+                    "Cannot switch to 'worker' tier: no worker_model is configured in config.yaml. "
+                    "Continuing with the current model."
+                )
+        elif target == "default":
+            snap = self._base_config_snapshot
+            self.config.model        = snap["model"]
+            self.config.base_url     = snap["base_url"]
+            self.config.api_key      = snap["api_key"]
+            self.config.thinking     = snap["thinking"]
+            self.config.display_name = snap["display_name"]
+            tier_cfg = None
+        else:
+            return f"Unknown model tier '{target}'. Valid values: plan, default, worker."
+
+        if tier_cfg is not None:
+            self.config.model        = tier_cfg.model
+            self.config.base_url     = tier_cfg.base_url
+            self.config.api_key      = tier_cfg.api_key
+            self.config.thinking     = tier_cfg.thinking
+            self.config.display_name = tier_cfg.display_name
+
+        self.client = openai.OpenAI(api_key=self.config.api_key, base_url=self.config.base_url)
+
+        if self.config.thinking and self.config.thinking.lower() != "none":
+            self._reasoning_extra = {"reasoning": {"effort": self.config.thinking.lower()}}
+        else:
+            self._reasoning_extra = {}
+
+        self.compact_tool.bind(
+            self._messages, self.config, self.client,
+            on_compaction=self.callbacks.on_compaction,
+        )
+
+        self._current_tier = target
+        to_name = self.config.display_name or self.config.model
+        self.callbacks.on_model_switch(from_name, to_name)
+
+        return f"Switched to '{target}' tier: {to_name}. Reason: {reason}"
 
     def _rebuild_for_normal_mode(self, dagi_root: Path) -> None:
         from agent.tools import create_tool_registry
