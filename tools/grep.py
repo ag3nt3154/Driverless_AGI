@@ -6,6 +6,7 @@ from agent.base_tool import BaseTool
 from tools._path_guard import validate_path
 
 _MAX_RESULTS = 200
+_DEFAULT_PATH = object()  # sentinel: "no path given" → search all allowed_roots
 
 
 class GrepTool(BaseTool):
@@ -13,13 +14,14 @@ class GrepTool(BaseTool):
     description = (
         "Search for a pattern in files using regex or literal match. "
         "Returns matching lines with file:line format. "
-        "Paths are relative to the project root. Uses ripgrep (rg) if available."
+        "Paths are relative to the project root. Uses ripgrep (rg) if available. "
+        "When no path is given, searches across all configured search roots."
     )
     _parameters = {
         "type": "object",
         "properties": {
             "pattern": {"type": "string", "description": "Regex pattern (or literal string) to search for"},
-            "path": {"type": "string", "description": "File or directory to search (default: project root)"},
+            "path": {"type": "string", "description": "File or directory to search (default: all search roots)"},
             "glob": {"type": "string", "description": "Glob pattern to filter files (e.g. '*.py', '**/*.ts')"},
             "literal": {"type": "boolean", "description": "Treat pattern as a literal string, not regex (default: false)"},
         },
@@ -33,15 +35,37 @@ class GrepTool(BaseTool):
     def run(
         self,
         pattern: str,
-        path: str = ".",
+        path: str | object = _DEFAULT_PATH,
         glob: str | None = None,
         literal: bool = False,
     ) -> str:
-        search_path = Path(path)
-        if not search_path.is_absolute():
-            search_path = self.cwd / search_path
-        search_path = validate_path(search_path, self.allowed_roots)
+        if path is _DEFAULT_PATH:
+            search_paths = list(self.allowed_roots)
+        else:
+            sp = Path(str(path))
+            if not sp.is_absolute():
+                sp = self.cwd / sp
+            search_paths = [validate_path(sp, self.allowed_roots)]
 
+        all_lines: list[str] = []
+        for search_path in search_paths:
+            lines = self._search_one(pattern, search_path, glob, literal)
+            all_lines.extend(lines)
+            if len(all_lines) >= _MAX_RESULTS:
+                break
+
+        if len(all_lines) > _MAX_RESULTS:
+            all_lines = all_lines[:_MAX_RESULTS]
+            all_lines.append(f"[truncated — showing first {_MAX_RESULTS} results]")
+        return "\n".join(all_lines) if all_lines else "[no matches]"
+
+    def _search_one(
+        self,
+        pattern: str,
+        search_path: Path,
+        glob: str | None,
+        literal: bool,
+    ) -> list[str]:
         # ── Try ripgrep first ─────────────────────────────────────────────
         try:
             cmd = ["rg", "--line-number", "--no-heading", "--color=never"]
@@ -52,11 +76,7 @@ class GrepTool(BaseTool):
             cmd += [pattern, str(search_path)]
             result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
             if result.returncode in (0, 1):  # 0 = matches, 1 = no matches
-                lines = result.stdout.splitlines()
-                if len(lines) > _MAX_RESULTS:
-                    lines = lines[:_MAX_RESULTS]
-                    lines.append(f"[truncated — showing first {_MAX_RESULTS} results]")
-                return "\n".join(lines) if lines else "[no matches]"
+                return result.stdout.splitlines()
         except (FileNotFoundError, subprocess.TimeoutExpired):
             pass  # rg not available, fall back to Python
 
@@ -65,10 +85,7 @@ class GrepTool(BaseTool):
             flags = re.IGNORECASE if not literal else 0
             rx = re.compile(re.escape(pattern) if literal else pattern, flags)
         except re.error as e:
-            return f"Error: invalid regex pattern: {e}"
-
-        results: list[str] = []
-        target = search_path if search_path.is_file() else None
+            return [f"Error: invalid regex pattern: {e}"]
 
         if search_path.is_file():
             files = [search_path]
@@ -83,6 +100,7 @@ class GrepTool(BaseTool):
                     )
                 )
 
+        results: list[str] = []
         for fpath in files:
             try:
                 text = fpath.read_text(encoding="utf-8", errors="replace")
@@ -92,8 +110,4 @@ class GrepTool(BaseTool):
                 if rx.search(line):
                     rel = fpath.relative_to(self.cwd) if fpath.is_relative_to(self.cwd) else fpath
                     results.append(f"{rel}:{lineno}: {line}")
-                    if len(results) >= _MAX_RESULTS:
-                        results.append(f"[truncated — showing first {_MAX_RESULTS} results]")
-                        return "\n".join(results)
-
-        return "\n".join(results) if results else "[no matches]"
+        return results

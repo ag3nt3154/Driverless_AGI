@@ -4,6 +4,8 @@
 
 - [x] Auto compaction for long contexts — Pi-style compaction in `agent/loop.py` (`_compact_context`). Summarizes middle history, preserves system prompt + recent tail, carries forward prior summaries.
 - [x] Plan mode — Full read-only planning mode in `agent/loop.py` (`plan_mode` flag, `plan_file` path). BashTool omitted, WriteTool/EditTool restricted to plan document.
+- [x] Web research tools — `web_search`, `web_fetch`, `web_research`, `explore_files` available in `tools/`. Powered by DuckDuckGo, httpx, beautifulsoup4, crawl4ai.
+- [x] Multi-root search for find and grep — `FindTool` and `GrepTool` now accept an optional `path` argument; when omitted, they search all `allowed_roots` simultaneously (deduped). Implemented in `tools/find.py` and `tools/grep.py`.
 
 ## In Progress
 
@@ -68,7 +70,7 @@ Path validation infrastructure exists (`tools/_path_guard.py`, `validate_path`, 
 - Task queue or manifest to distribute work
 - Conflict avoidance: per-clone file locks, or assign disjoint file sets
 - Merge/consolidate results back to main agent
-- UI support: show multiple agent threads in web UI
+- UI support: show multiple agent threads in `cli.py` (web UIs are archived)
 
 **Files:** `agent/loop.py`, `agent/tools.py`, web UIs
 
@@ -77,7 +79,7 @@ Path validation infrastructure exists (`tools/_path_guard.py`, `validate_path`, 
 - [ ] Dynamic generation of tool descriptions — tailor tool schemas per model or context
 - [ ] Ability to work in projects — dedicated project folders with per-project config (depends on #1)
 - [ ] Sample project to test dagi — example task + source files + expected output for validation
-- [ ] Fix `pyproject.toml` — missing `typer`, `rich`, `streamlit`, `streamlit-autorefresh` from deps
+- [ ] Fix `pyproject.toml` — missing `typer`, `rich` from declared dependencies (`crawl4ai` already added; `streamlit` dropped since web UI is archived)
 
 ---
 

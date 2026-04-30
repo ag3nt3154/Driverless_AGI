@@ -1,6 +1,6 @@
 # Driverless AGI
 
-A minimal, self-hosted coding agent. Give it a task — it plans, calls tools, reads results, and iterates until done. Ships with a Rich interactive CLI, a Streamlit web UI, and a NiceGUI web UI. Supports any OpenAI-compatible API, automatic context compaction for long sessions, and full session logging with cost tracking.
+A minimal, self-hosted coding agent. Give it a task — it plans, calls tools, reads results, and iterates until done. Ships with a Rich interactive CLI. Supports any OpenAI-compatible API, automatic context compaction for long sessions, extended reasoning, skills-based guidance, and full session logging with cost tracking.
 
 ---
 
@@ -11,7 +11,7 @@ Plan → Act → Observe → Repeat
 ```
 
 1. **Plan** — The model decides the next step based on the task and prior results
-2. **Act** — It calls a tool (`read`, `write`, `edit`, or `bash`)
+2. **Act** — It calls a tool (`read`, `write`, `edit`, `bash`, `grep`, …)
 3. **Observe** — It reads the tool's output
 4. **Repeat** — Until the task is complete or `max_iterations` is hit
 
@@ -57,6 +57,7 @@ echo "Add type hints to agent/" | python main.py
 |------|-------------|
 | `--model` | Model ID from `config.yaml` |
 | `--max-iter` | Override max iterations |
+| `--project` | Path to a project directory to scope file access |
 
 ### Interactive CLI (`cli.py`)
 
@@ -76,21 +77,7 @@ python cli.py -m claude-opus-openrouter -v "task"
 
 Exit with `q`, `exit`, or `quit`. Conversation history carries across turns.
 
-### Web UI — Streamlit (`app.py`)
-
-```bash
-streamlit run app.py
-```
-
-Full-featured chat interface with model selector, live tool cards, session history, cost tracking, and an API debug panel.
-
-### Web UI — NiceGUI (`nicegui_app/`)
-
-```bash
-python -m nicegui_app.main
-```
-
-Alternative web interface with the same feature set: model/iteration controls, collapsible tool cards, session history with continuation, iteration progress bar, and export.
+> **Archived UIs:** `archive/app.py` (Streamlit) and `archive/nicegui_app/` (NiceGUI) are no longer maintained.
 
 ---
 
@@ -164,7 +151,6 @@ When reasoning is active:
 Driverless_AGI/
 ├── main.py                # Single-shot CLI (argparse)
 ├── cli.py                 # Interactive CLI / REPL (typer + rich)
-├── app.py                 # Streamlit web UI
 ├── config.yaml            # Runtime config (gitignored)
 ├── config.example.yaml    # Config template
 ├── .env                   # API keys (gitignored)
@@ -174,18 +160,43 @@ Driverless_AGI/
 ├── agent/
 │   ├── base_tool.py       # BaseTool ABC
 │   ├── registry.py        # ToolRegistry singleton
-│   ├── tools.py           # read, write, edit, bash
+│   ├── tools.py           # Builds and returns the tool registry
 │   ├── loop.py            # AgentLoop, AgentConfig, AgentCallbacks
 │   ├── config_loader.py   # Resolves model config from YAML
-│   └── session.py         # SessionTracker — JSONL logs
+│   ├── session.py         # SessionTracker — JSONL logs
+│   ├── prompts.py         # Loads system/user prompts from .dagi/prompts/
+│   ├── skills.py          # SkillLoader — loads .dagi/skills/
+│   └── sub_agent.py       # Spawns independent sub-agent loops
 │
-├── nicegui_app/           # NiceGUI web UI
-│   ├── main.py            # App entry point
-│   ├── callbacks.py       # Agent → UI bridge (thread-safe)
-│   ├── state.py           # App state
-│   ├── history.py         # Session history loader
-│   ├── components/        # Sidebar, chat message, tool card
-│   └── styles/theme.css   # Soft-structuralism CSS
+├── tools/
+│   ├── read.py            # Read files (text + image)
+│   ├── write.py           # Write / overwrite files
+│   ├── edit.py            # Exact-text replacement
+│   ├── bash.py            # Run shell commands
+│   ├── grep.py            # Regex search across files (ripgrep)
+│   ├── find.py            # Glob-pattern file finder
+│   ├── skill.py           # Load a .dagi/skills/ guidance document
+│   ├── web_search.py      # DuckDuckGo web search
+│   ├── web_fetch.py       # Fetch and parse a URL
+│   ├── web_research.py    # Multi-page web research
+│   ├── explore_files.py   # Large-scale codebase scanning
+│   ├── compact.py         # Trigger context compaction
+│   ├── plan_mode.py       # Enter / exit read-only plan mode
+│   ├── switch_model.py    # Swap models mid-session
+│   ├── ask_user.py        # Prompt user for clarification
+│   └── _path_guard.py     # Path sandboxing utilities
+│
+├── .dagi/
+│   ├── prompts/           # System and user prompt markdown files
+│   ├── skills/            # Structured guidance documents (memory-*, create-skill, …)
+│   ├── memory/wiki/       # Topic-organized persistent wiki (infrastructure built)
+│   ├── tools/             # Project-local tools (auto-loaded at startup)
+│   ├── plans/             # Generated plan files
+│   └── self-review/       # Session review reports and improvement plans
+│
+├── archive/
+│   ├── app.py             # Streamlit web UI (deprecated)
+│   └── nicegui_app/       # NiceGUI web UI (deprecated)
 │
 └── logs/                  # Session JSONL files
 ```
@@ -198,15 +209,27 @@ Driverless_AGI/
 | `write` | Overwrite a file. Creates parent dirs. Takes `path` + `content` |
 | `edit` | Replace exact `oldText` with `newText` in a file. Errors if text is absent or non-unique |
 | `bash` | Run a shell command. Returns stdout + stderr + exit code. Pass `command` + optional `timeout` |
+| `grep` | Regex search across files. Returns `file:line:match` format. Uses ripgrep when available |
+| `find` | Find files by glob pattern (e.g. `**/*.py`). Searches all allowed roots when no path given |
+| `skill` | Load a `.dagi/skills/<name>/SKILL.md` guidance document and return it for execution |
+| `web_search` | DuckDuckGo web search. Returns titles, URLs, and snippets |
+| `web_fetch` | Fetch and parse a URL. Returns cleaned page text |
+| `web_research` | Multi-page research task: searches, fetches, and synthesizes results |
+| `explore_files` | Large-scale codebase scan: reads many files and returns a structured summary |
+| `compact` | Manually trigger Pi-style context compaction |
+| `switch_model` | Swap to a different model (from `config.yaml`) mid-session |
+| `ask_user` | Pause and ask the user a clarifying question with optional choices |
+
+File tools (`read`, `write`, `edit`, `grep`, `find`) are sandboxed to allowed roots via `tools/_path_guard.py`. `bash` is intentionally unsandboxed.
 
 ### Adding a Custom Tool
 
-1. Create a class inheriting from `BaseTool`
-2. Define `name`, `description`, and `_parameters` (JSON Schema)
-3. Implement `run(self, ...)` — receives parsed args as kwargs
-4. Register at the bottom of `agent/tools.py`:
+**Option A — core tool:** Add a file in `tools/` and register it in `agent/tools.py`:
 
 ```python
+# tools/my_tool.py
+from agent.base_tool import BaseTool
+
 class MyTool(BaseTool):
     name = "my_tool"
     description = "Does something useful"
@@ -220,9 +243,29 @@ class MyTool(BaseTool):
 
     def run(self, input: str) -> str:
         return f"processed: {input}"
-
-registry.register(MyTool())
 ```
+
+Then import and register in `agent/tools.py`.
+
+**Option B — project-local tool:** Drop a `.py` file into `.dagi/tools/`. It will be auto-discovered and registered at startup — no changes to core files needed.
+
+---
+
+## Skills
+
+Skills are structured guidance documents stored at `.dagi/skills/<name>/SKILL.md`. When the agent calls `skill("memory-add")`, it loads and reads the full document, which contains step-by-step instructions and embedded scripts the agent then follows.
+
+Built-in skills:
+
+| Skill | What it does |
+|-------|-------------|
+| `memory-add` | Add a structured note to the wiki |
+| `memory-ingest` | Bulk-ingest source material into the wiki |
+| `memory-query` | Look up information in the wiki |
+| `memory-lint` | Validate wiki structure and wikilinks |
+| `create-skill` | Scaffold a new skill document |
+
+Add a custom skill by creating `.dagi/skills/<name>/SKILL.md`.
 
 ---
 
@@ -234,13 +277,13 @@ Every run is logged to `logs/session_<timestamp>.jsonl`. Entries include:
 - Tool call start/end events with inputs/outputs
 - Session summary with totals on finish
 
-The web UIs can load past sessions and continue them. Logs are append-only.
+Logs are append-only JSONL — each line is a self-contained JSON record.
 
 ---
 
 ## Agent Identity
 
-`SOUL.md` defines the agent's personality. `AGENTS.md` provides project context. Both are prepended to the system prompt.
+`SOUL.md` defines the agent's personality. `AGENTS.md` provides project context. Both are prepended to the system prompt at startup.
 
 ---
 
@@ -251,10 +294,13 @@ Core (from `pyproject.toml`):
 - `openai` — API client (any OpenAI-compatible endpoint)
 - `pyyaml` — config parsing
 - `python-dotenv` — `.env` loading
-- `nicegui` — NiceGUI web UI
+- `ddgs` — DuckDuckGo web search
+- `httpx` + `beautifulsoup4` — web fetching and HTML parsing
+- `crawl4ai` — web crawling for research tasks
 - `markdown` — markdown rendering
+- `matplotlib` — data visualization
+- `nicegui` — retained for archived web UI; not needed for CLI use
 
-Additional (used by CLI and Streamlit UI, install separately if needed):
+Additional (install separately if using the interactive CLI):
 
-- `typer` + `rich` — interactive CLI
-- `streamlit` + `streamlit-autorefresh` — Streamlit web UI
+- `typer` + `rich` — interactive CLI (`cli.py`)
