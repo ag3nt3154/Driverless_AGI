@@ -8,19 +8,27 @@ description: Ingest raw source files from {memory_root}/raw/ — classify, archi
 ## Path Roots
 
 All paths in this skill are under **memory root** (`{memory_root}`), NOT under CWD (`{cwd}`).
-The `read`, `write`, `edit`, and `find` tools resolve from CWD and WILL FAIL for any
-`{memory_root}/...` path. Use **bash with absolute paths** for all file I/O:
+
+The `Read`, `Write`, `Edit`, `Grep`, and `Glob` tools all accept **absolute paths** and work
+with any location on the filesystem, including `{memory_root}` even when it differs from CWD
+or the dagi root. Use them directly:
+
+| Operation | Tool |
+|-----------|------|
+| Read a file | `Read` with absolute path |
+| Write/overwrite a file | `Write` with absolute path |
+| Edit a file in-place | `Edit` with absolute path |
+| Search file contents | `Grep` with `path: {memory_root}/` |
+| Find files by pattern | `Glob` with `path: {memory_root}/` |
+
+Use **bash** only for operations the tools cannot do:
 
 | Operation | Command |
 |-----------|---------|
-| List raw/ | `bash: dir "{memory_root}\raw"` |
-| Read file | `bash: type "{memory_root}\raw\{filename}"` |
-| Create dir | `bash: mkdir "{memory_root}\sources\{topic}" 2>nul` |
-| Archive | `bash: type "{memory_root}\raw\{f}" \| Out-File -FilePath "{memory_root}\sources\{topic}\{f}" -Encoding utf8` |
-| Delete original | `bash: del "{memory_root}\raw\{filename}"` |
-| Append to log | `bash: Add-Content -Path "{memory_root}\wiki\log.md" -Value "{text}"` |
-
-Use `dir` not `ls` for listing on non-C: drives.
+| List raw/ | `bash: dir "{memory_root}\raw"` (non-C: drives) |
+| Create dir | `bash: mkdir -p "{memory_root}/sources/{topic}"` |
+| Archive (copy) | `bash: Copy-Item "{memory_root}\raw\{f}" "{memory_root}\sources\{topic}\{f}"` |
+| Delete original | `bash: Remove-Item "{memory_root}\raw\{filename}"` |
 
 ---
 

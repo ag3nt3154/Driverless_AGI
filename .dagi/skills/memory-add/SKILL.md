@@ -9,12 +9,22 @@ triggers: save to memory, add to wiki, remember this, store in memory, add to me
 ## Path Roots
 
 All paths in this skill are under **memory root** (`{memory_root}`), NOT under CWD (`{cwd}`).
-The `read`, `write`, `edit`, and `find` tools resolve from CWD — use **bash with absolute paths** for all file I/O:
 
-- Read: `bash: type "{memory_root}\wiki\{path}"`
-- Write/append: `bash: ... | Out-File -FilePath "{memory_root}\wiki\{path}" -Encoding utf8`
-- List: `bash: dir "{memory_root}\wiki\{topic}"` (use `dir`, not `ls`, on non-C: drives)
-- Grep across wiki: use the `grep` tool — it accepts absolute paths
+The `Read`, `Write`, `Edit`, `Grep`, and `Glob` tools all accept **absolute paths** and work
+with any location on the filesystem, including `{memory_root}` even when it differs from CWD
+or the dagi root. Use them directly:
+
+| Operation | Tool |
+|-----------|------|
+| Read a file | `Read` with absolute path |
+| Write/overwrite a file | `Write` with absolute path |
+| Edit a file in-place | `Edit` with absolute path |
+| Search file contents | `Grep` with `path: {memory_root}/wiki/` |
+| Find files by pattern | `Glob` with `path: {memory_root}/wiki/` |
+
+Use **bash** only for operations the tools cannot do:
+- Create directories: `bash: mkdir -p "{memory_root}/sources/{topic}"`
+- List a directory on a non-C: drive: `bash: dir "{memory_root}\wiki\{topic}"`
 
 ---
 
@@ -33,6 +43,19 @@ related entity/concept pages, and keeps all index.md files current.
 
 The caller sets the mode by telling you which applies before you start.
 If no mode is specified, assume `direct`.
+
+---
+
+## Step 0 — Resolve the memory root
+
+1. Attempt to read `{cwd}/config.yaml`.
+2. If the file exists and contains a non-empty `memory_root:` key that is not
+   commented out, use that value as `{memory_root}` for all subsequent steps.
+   Strip any surrounding quotes and trailing slashes.
+3. If the file does not exist, or `memory_root` is absent, commented out, or empty,
+   fall back to `{cwd}/.dagi/memory` as `{memory_root}`.
+4. Note the resolved path to the user only if it differs from the default
+   (e.g. "Using memory root: G:\My Drive\dagi-memory").
 
 ---
 
@@ -106,7 +129,61 @@ Note which entities already have pages (to update) vs. which are new (to create)
 
 ---
 
-## Step 4.5 — Decide: single node or split?
+## Step 4.5 — Check for semantically similar existing nodes
+
+After resolving the topic and slug (Step 3), scan for existing nodes that may
+cover the same subject before creating a new one.
+
+**4.5a.** Read `{memory_root}/wiki/{topic}/index.md` (if it exists). Scan the
+"Pages in this folder" table for entries whose summary matches the main subject
+of the incoming content.
+
+**4.5b.** Run a grep for the main subject keyword:
+`grep "{main subject keyword}" {memory_root}/wiki/{topic}/*.md`
+to surface any pages not yet indexed or with different slug names.
+
+**4.5c.** If one or more candidate matches are found, read the most promising one.
+Assess semantic similarity: do the existing node and the new content cover the
+same core idea, entity, or claim?
+
+**4.5d.** If a strong match exists (same core subject, substantial overlap), present
+the choice to the user:
+
+  "Found existing node: `{memory_root}/wiki/{topic}/{existing-slug}.md`
+   — {one-sentence description of what it covers}.
+   A) Add to the existing node (applies support rule to confidence)
+   B) Create a new node"
+
+**4.5e. If the user chooses A (update mode):**
+  1. Note the existing node path — use it in Step 6 instead of the new slug path.
+  2. Mark this operation as **update mode** for Steps 6 and 7.
+  3. Record the existing node's current `confidence` value.
+
+**4.5f. If the user chooses B, or no match is found:** proceed to Step 5 normally.
+
+---
+
+**Update mode — Step 6 behaviour:**
+
+When in update mode, instead of writing a new file:
+  1. Read the existing node in full.
+  2. Identify which sections the new content can enrich.
+  3. Add the new information using `edit` — append to relevant sections, or add new
+     sections if the content introduces genuinely new structure.
+  4. Apply the **support rule** to the confidence score:
+       existing_score = existing node's `confidence` frontmatter value
+       incoming_score = initial confidence for the new content's tag combination
+         (from the table in Step 6)
+       new_score = min(1.0, existing_score + 0.5 * incoming_score)
+  5. Update frontmatter fields via `edit`:
+       - `confidence`: new_score (rounded to 4 decimal places)
+       - `confidence_last_updated`: today's date
+       - `last_updated`: today's date (add this field if not already present)
+  6. Do NOT create a new file — the slug for log/index purposes is the existing slug.
+
+---
+
+## Step 5 — Decide: single node or split?
 
 Before writing, analyse the content for natural idea breakpoints.
 
@@ -115,9 +192,9 @@ A **distinct idea** qualifies for its own node if it:
 - Could be understood without the other ideas in the source
 - Is likely to be referenced or searched independently in the future
 
-**If single idea:** proceed to Step 5 with one node.
+**If single idea:** proceed to Step 6 with one node.
 
-**If multiple distinct ideas:** list them explicitly before writing (e.g. "Idea 1: X, Idea 2: Y"). Then write one node per idea, running Step 5 for each in sequence. Assign each node its own descriptive slug (e.g. `attention-mechanism-self-attention`, `attention-mechanism-multi-head`) rather than `part-1`, `part-2` suffixes where possible.
+**If multiple distinct ideas:** list them explicitly before writing (e.g. "Idea 1: X, Idea 2: Y"). Then write one node per idea, running Step 6 for each in sequence. Assign each node its own descriptive slug (e.g. `attention-mechanism-self-attention`, `attention-mechanism-multi-head`) rather than `part-1`, `part-2` suffixes where possible.
 
 **Linking split nodes:** every node in a split set must include a "Part of series" block in its Related Pages section:
 
@@ -137,9 +214,27 @@ A **distinct idea** qualifies for its own node if it:
 
 ---
 
-## Step 5 — Write the wiki node
+## Step 5.5 — Switch to plan model for drafting
+
+Call:
+```
+switch_model(target="plan")
+```
+
+This activates the plan model (as configured in `config.yaml`) for the note-drafting step.
+If no `plan_model` is configured, the tool will notify you and drafting continues with
+the default model.
+
+> If content was split in Step 5 into multiple nodes, this switch applies to all of them —
+> do not switch back until all Step 6 iterations are complete.
+
+---
+
+## Step 6 — Write the wiki node
 
 Write the wiki node at the path determined in Step 3 (or per-idea paths if split).
+If in **update mode** (chosen in Step 4.5), edit the existing node instead — see
+the update mode instructions in Step 4.5.
 
 **Writing standard:** Write as if the source will never be consulted again. A reader
 must be able to fully understand the subject — including background, reasoning,
@@ -159,12 +254,29 @@ tags:
   - {info or thought}
   - {human or ai}
 date_added: YYYY-MM-DD
+confidence: {float — see table below}
+confidence_last_updated: YYYY-MM-DD
+last_reviewed: YYYY-MM-DD
 source: {archive path — only if ingest mode, omit if direct}
 ---
 ```
 
+Set `confidence`, `confidence_last_updated`, and `last_reviewed` all to today's date
+on first write. All confidence scores are clamped to **[0.2, 1.0]**.
+
 Adjust `type` to fit: `note` (default), `source-summary`, `reflection`, `insight`,
 `analysis`. Use judgment based on the content.
+
+**Confidence score assignment:**
+
+| Tag combination | Initial confidence |
+|-----------------|--------------------|
+| `info` + `human` | 0.75 |
+| `info` + `ai` | 0.50 |
+| `thought` + `human` | 0.25 |
+| `thought` + `ai` | 0.25 |
+
+Note: the hard floor is 0.2 — do not assign a value below 0.2.
 
 ---
 
@@ -269,9 +381,22 @@ and Conclusions; a technical deep-dive may add Methodology or Worked Examples.
 
 ---
 
-## Step 6 — Create or update entity/concept pages
+## Step 6.5 — Switch back to default model
 
-**If the content was split in Step 4.5:** collect entities from ALL nodes first, then
+Call:
+```
+switch_model(target="default")
+```
+
+This restores the default model for all remaining steps (entity pages, index updates,
+log, open questions). Only call this once — after all Step 6 iterations are complete
+if content was split in Step 5.
+
+---
+
+## Step 7 — Create or update entity/concept pages
+
+**If the content was split in Step 5:** collect entities from ALL nodes first, then
 process entity pages once — do not create duplicate entity pages for the same entity
 appearing in multiple sibling nodes. Each entity page's `## Sources` section should
 reference all sibling nodes that mention it.
@@ -314,7 +439,7 @@ in the wiki node.
 
 ---
 
-## Step 7 — Update index.md files
+## Step 8 — Update index.md files
 
 Update every `index.md` in folders touched by this addition.
 
@@ -358,7 +483,7 @@ may want to run `memory-lint` to consider a sub-topic split.
 
 ---
 
-## Step 8 — Append to log.md (direct mode only)
+## Step 9 — Append to log.md (direct mode only)
 
 **Skip this step entirely if called from `memory-ingest`.** The caller handles log.
 
@@ -370,11 +495,12 @@ For `direct` mode: `read {memory_root}/wiki/log.md`, then `edit` to append:
 - Wiki nodes: {memory_root}/wiki/{topic}/{slug}.md {list all if split}
 - Pages created: {comma-separated list, or "none"}
 - Pages updated: {comma-separated list, or "none"}
+- Update mode: {yes — existing node {slug}, new confidence {score} / no}
 ```
 
 ---
 
-## Step 9 — Update overview.md (conditional)
+## Step 10 — Update overview.md (conditional)
 
 `read {memory_root}/wiki/overview.md`.
 
@@ -390,7 +516,7 @@ If nothing synthesis-level applies, skip this step.
 
 ---
 
-## Step 10 — Generate and append one open question
+## Step 11 — Generate and append one open question
 
 Derive ONE open question from the content just added. The question should:
 - Be **relevant to the topic** but **not directly answered** by the wiki node you just created
@@ -415,11 +541,12 @@ stop and tell the user: "open_questions.md not found — run `/init` again to cr
 
 ---
 
-## Step 11 — Report
+## Step 12 — Report
 
 Tell the user:
 - Wiki nodes created: `{path}` (list all if split — one line per node)
 - Split into N nodes: `{yes/no — if yes, briefly explain the breakpoints chosen}`
+- Update mode: `{yes — updated {existing slug}, new confidence {score} / no}`
 - Entity/concept pages created: `{list or "none"}`
 - Pages updated: `{list or "none"}`
 - index.md files updated: `{list}`
@@ -441,3 +568,7 @@ Tell the user:
 - **Entity page creation ambiguity:** When unsure whether an entity warrants its own
   page, default to leaving it as an inline wikilink. Create the page on the next
   addition that also mentions it.
+- **Update mode: confidence below 0.2:** After applying the support rule, the new
+  confidence will always be ≥ the existing score. If the existing score is already
+  at the floor (0.2), the result will be at minimum 0.2 + 0.5 * incoming ≥ 0.2.
+  No special handling needed.

@@ -8,8 +8,22 @@ description: Answer questions by traversing the dagi wiki index hierarchy, then 
 ## Path Roots
 
 All paths in this skill are under **memory root** (`{memory_root}`), NOT under CWD (`{cwd}`).
-Use bash with absolute paths for all file I/O — `read`/`write`/`edit`/`find` resolve from CWD and will fail.
-Use `dir` not `ls` on non-C: drives.
+
+The `Read`, `Write`, `Edit`, `Grep`, and `Glob` tools all accept **absolute paths** and work
+with any location on the filesystem, including `{memory_root}` even when it differs from CWD
+or the dagi root. Use them directly:
+
+| Operation | Tool |
+|-----------|------|
+| Read a file | `Read` with absolute path |
+| Write/overwrite a file | `Write` with absolute path |
+| Edit a file in-place | `Edit` with absolute path |
+| Search file contents | `Grep` with `path: {memory_root}/wiki/` |
+| Find files by pattern | `Glob` with `path: {memory_root}/wiki/` |
+
+Use **bash** only for operations the tools cannot do:
+- Create directories: `bash: mkdir -p "{memory_root}/sources/{topic}"`
+- List a directory on a non-C: drive: `bash: dir "{memory_root}\wiki\{topic}"`
 
 ---
 
@@ -21,6 +35,18 @@ and offer to file the answer as a new wiki page if it adds value.
 
 Do not answer from memory alone — ground every answer in what the wiki contains.
 If information is not in the wiki, say so explicitly and suggest how to add it.
+
+---
+
+## Step 0 — Resolve the memory root
+
+1. Attempt to read `{cwd}/config.yaml`.
+2. If the file exists and contains a non-empty `memory_root:` key that is not
+   commented out, use that value as `{memory_root}` for all subsequent steps.
+   Strip any surrounding quotes and trailing slashes.
+3. If the file does not exist, or `memory_root` is absent, commented out, or empty,
+   fall back to `{cwd}/.dagi/memory` as `{memory_root}`.
+4. Note the resolved path to the user only if it differs from the default.
 
 ---
 
