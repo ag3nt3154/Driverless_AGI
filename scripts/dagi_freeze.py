@@ -58,6 +58,7 @@ SNAPSHOT_PATHS = [
     "agent",
     "tools",
     ".dagi/skills",
+    ".dagi/prompts",
     "cli.py",
     "main.py",
     "hist.py",
@@ -67,6 +68,7 @@ SNAPSHOT_PATHS = [
     "CLAUDE.local.md",
     "pyproject.toml",
     "config.yaml",
+    ".env",
 ]
 
 # Any path component matching one of these will be pruned during directory walk.
@@ -280,6 +282,8 @@ class SnapshotManager:
             dest = snap_dir / rel
             dest.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(self.root / rel, dest)
+        # Runnable snapshot: provide an empty logs dir so main.py can write sessions here.
+        (snap_dir / ".dagi" / "logs").mkdir(parents=True, exist_ok=True)
 
         metadata = {
             "id": snapshot_id,
@@ -304,6 +308,8 @@ class SnapshotManager:
             _warn(f"Not found (skipped): {', '.join(missing)}")
         if any(r["path"] == "config.yaml" for r in file_records):
             _warn("config.yaml captured - it may contain API key env var names.")
+        if any(r["path"] == ".env" for r in file_records):
+            _warn(".env captured - contains API keys. Snapshots are gitignored; keep them local.")
         return snapshot_id
 
     def list_snapshots(self) -> list[dict]:

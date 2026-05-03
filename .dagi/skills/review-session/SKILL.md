@@ -288,7 +288,9 @@ Evaluate and write these sections to the plan file:
 (e.g. "agent over-reads files", "agent retries without changing approach",
 "agent misinterprets terse instructions").
 
-**Improvement items** — concrete, actionable items, one per finding:
+**Improvement items** — concrete, actionable items:
+- Try to generalize for findings that points to similar roots causes, e.g. if agent cannot find files in multiple sessions, this should point to lack of directory information as a single cause, rather than having 1 item for each issue encountered.
+- Determine if agent require architectural changes or simple edits or additions.
 - Each item should specify: what to change, where (file/tool/prompt), and why
 - Format each as: `[priority: high/medium/low] {verb phrase} — {one-sentence rationale}`
 - Examples:
@@ -380,42 +382,41 @@ After writing the report, add the improvement items from the plan to
 identified") — do not append empty or placeholder entries.
 
 ### 7a — Read TODO.md
-Read `{DAGI_ROOT}/TODO.md` to find whether a `## Session Review Queue` section
-already exists. If it does not exist, you will create it. If a `## Backlog`
-section exists and is sparse, you may append there instead.
+Read `{DAGI_ROOT}/TODO.md` to find whether a `## Work Queue` section
+already exists. If it does not exist, you will create it.
 
 ### 7b — Format entries
-For each improvement item from the plan (Step 5b), format one entry:
+For each improvement item from the plan (Step 5b), format one bullet entry:
 
 ```markdown
-### [{priority}] {improvement item verb phrase}
-
-**Source:** Session review `{session-id}` | **Generated:** {YYYY-MM-DD} | **Review:** [review_{session-id}.md](.dagi/self-review/review_{session-id}.md) | **Plan:** [plan_{session-id}.md](.dagi/self-review/plan_{session-id}.md)
-
-**Observation:** {one sentence — the shortcoming this addresses, quoted from the plan}
-
-- [ ] Review plan at `.dagi/self-review/plan_{session-id}.md`
-- [ ] Implement
-- [ ] Mark as done
+- **{improvement item verb phrase}** · `priority:{priority}` · `impact:{priority}` · `review-item`
+  - **Current:** {one sentence — the shortcoming this addresses, quoted from the plan}
+  - **Ideal:** The agent no longer encounters this issue; the fix is implemented.
+  - **Next:** Review plan at `.dagi/self-review/plan_{session-id}.md` · implement · mark done
+  - **Source:** Session `{session-id}` · [review_{session-id}.md](.dagi/self-review/review_{session-id}.md) · [plan_{session-id}.md](.dagi/self-review/plan_{session-id}.md)
 ```
+
+`impact` defaults to the same value as `priority` unless the observation suggests otherwise.
 
 ### 7c — Single edit call
 Use a **single `edit` call** to append all entries for this session at once.
 Do not make multiple edits — append the whole block in one operation.
 
-If the `## Session Review Queue` section does not exist yet, prepend it:
-```markdown
-## Session Review Queue
+Insert the new bullets at the end of the `## Work Queue` item list, before the
+closing `---` separator (or at the end of the section if no separator exists).
 
-> Entries added automatically by the review-session skill.
-> Each entry links to the full review report and improvement plan.
+If the `## Work Queue` section does not exist yet, prepend it:
+```markdown
+## Work Queue
+
+> Main task list. Items from backlog, in-progress work, and session reviews are all tracked here.
 
 ```
 
 ### 7d — Batch behaviour
 When reviewing multiple sessions (Step 1g multi-session path), append all
 sessions' entries in a single edit after all reviews are written. Group
-entries under a shared header if more than one session was reviewed:
+entries under a shared comment if more than one session was reviewed:
 
 ```markdown
 <!-- Session review batch: {date} — {N} sessions -->
@@ -436,7 +437,7 @@ entries under a shared header if more than one session was reviewed:
 | enter_plan_mode unavailable | Skip plan mode; write the shortcomings and improvements inline in the report (note the limitation) |
 | Session ID not found | Report: "No session file found at {path}. Run --list to see available sessions." |
 | Output file already exists | Overwrite — this is a re-review (or honour `re-review` param) |
-| TODO.md does not exist | Create it with a `## Session Review Queue` header, then append entries |
+| TODO.md does not exist | Create it with a `## Work Queue` header, then append entries |
 | Re-review: TODO entries already exist for this session ID | Append new entries anyway (plan may have changed); note "re-review" in the Source field |
 | No improvement items in plan | Skip Step 7 entirely — do not append empty entries |
 | All sessions already reviewed | Report "No unreviewed sessions found matching filters" and stop |

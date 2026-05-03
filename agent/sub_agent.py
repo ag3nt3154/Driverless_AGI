@@ -54,8 +54,8 @@ class SubAgentRunner:
             keep_recent_tokens=w.keep_recent_tokens,
             plan_mode=False,
             plan_file=None,
-            worker_config=None,  # prevent further nesting
-            plan_config=None,    # prevent plan_config nesting in generic sub-agents
+            worker_config=None,    # prevent further nesting
+            advanced_config=None,  # prevent advanced_config nesting in generic sub-agents
         )
 
         self._registry = ToolRegistry()

@@ -149,14 +149,14 @@ def resolve_model_config(model_id: str | None = None) -> AgentConfig:
         worker_cfg = _build_config_from_entry(catalog[worker_id], raw)
         worker_cfg = replace(worker_cfg, display_name=catalog[worker_id].get("name", worker_id))
 
-    # Resolve optional plan model for the plan subagent; silently fall back if unset/invalid.
-    plan_id = raw.get("plan_model")
-    plan_cfg: AgentConfig | None = None
-    if plan_id and plan_id in catalog:
-        plan_cfg = _build_config_from_entry(catalog[plan_id], raw)
-        plan_cfg = replace(plan_cfg, display_name=catalog[plan_id].get("name", plan_id))
+    # Resolve optional advanced model for the plan subagent; silently fall back if unset/invalid.
+    advanced_id = raw.get("advanced_model")
+    advanced_cfg: AgentConfig | None = None
+    if advanced_id and advanced_id in catalog:
+        advanced_cfg = _build_config_from_entry(catalog[advanced_id], raw)
+        advanced_cfg = replace(advanced_cfg, display_name=catalog[advanced_id].get("name", advanced_id))
 
-    return replace(cfg, worker_config=worker_cfg, plan_config=plan_cfg)
+    return replace(cfg, worker_config=worker_cfg, advanced_config=advanced_cfg)
 
 
 def save_config(default_model: str) -> None:

@@ -214,15 +214,15 @@ A **distinct idea** qualifies for its own node if it:
 
 ---
 
-## Step 5.5 — Switch to plan model for drafting
+## Step 5.5 — Switch to advanced model for drafting
 
 Call:
 ```
 switch_model(target="plan")
 ```
 
-This activates the plan model (as configured in `config.yaml`) for the note-drafting step.
-If no `plan_model` is configured, the tool will notify you and drafting continues with
+This activates the advanced model (as configured in `config.yaml`) for the note-drafting step.
+If no `advanced_model` is configured, the tool will notify you and drafting continues with
 the default model.
 
 > If content was split in Step 5 into multiple nodes, this switch applies to all of them —

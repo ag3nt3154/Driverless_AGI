@@ -166,6 +166,7 @@ Driverless_AGI/
 │   ├── session.py         # SessionTracker — JSONL logs
 │   ├── prompts.py         # Loads system/user prompts from .dagi/prompts/
 │   ├── skills.py          # SkillLoader — loads .dagi/skills/
+│   ├── workflows.py       # WorkflowLoader — loads .dagi/workflow/
 │   └── sub_agent.py       # Spawns independent sub-agent loops
 │
 ├── tools/
@@ -176,6 +177,7 @@ Driverless_AGI/
 │   ├── grep.py            # Regex search across files (ripgrep)
 │   ├── find.py            # Glob-pattern file finder
 │   ├── skill.py           # Load a .dagi/skills/ guidance document
+│   ├── workflow.py        # Workflow content loader and lister (CLI helpers)
 │   ├── web_search.py      # DuckDuckGo web search
 │   ├── web_fetch.py       # Fetch and parse a URL
 │   ├── web_research.py    # Multi-page web research
@@ -187,18 +189,23 @@ Driverless_AGI/
 │   └── _path_guard.py     # Path sandboxing utilities
 │
 ├── .dagi/
-│   ├── prompts/           # System and user prompt markdown files
-│   ├── skills/            # Structured guidance documents (memory-*, create-skill, …)
+│   ├── prompts/           # Prompt markdown files, organized by role
+│   │   ├── main/          #   main_system.md — primary coding assistant prompt
+│   │   ├── subagents/     #   plan_subagent, explore_files, web_research
+│   │   └── compact/       #   compact_system, compact_user (Pi-style summariser)
+│   ├── skills/            # Structured guidance documents (memory-*, create-skill, review-session, …)
+│   ├── workflow/          # User-directed workflows (.dagi/workflow/<name>/workflow.md)
 │   ├── memory/wiki/       # Topic-organized persistent wiki (infrastructure built)
 │   ├── tools/             # Project-local tools (auto-loaded at startup)
 │   ├── plans/             # Generated plan files
+│   ├── logs/              # Session JSONL files
 │   └── self-review/       # Session review reports and improvement plans
 │
 ├── archive/
 │   ├── app.py             # Streamlit web UI (deprecated)
 │   └── nicegui_app/       # NiceGUI web UI (deprecated)
 │
-└── logs/                  # Session JSONL files
+└── snapshots/             # Isolated agent snapshots for the improve-yourself workflow
 ```
 
 ### Tools
@@ -264,14 +271,40 @@ Built-in skills:
 | `memory-query` | Look up information in the wiki |
 | `memory-lint` | Validate wiki structure and wikilinks |
 | `create-skill` | Scaffold a new skill document |
+| `review-session` | Deep-read session logs, analyse tasks/actions/errors/corrections, and write structured review reports to `.dagi/self-review/` |
 
 Add a custom skill by creating `.dagi/skills/<name>/SKILL.md`.
 
 ---
 
+## Workflows
+
+Workflows are user-directed multi-step procedures stored at `.dagi/workflow/<name>/workflow.md`
+with optional YAML frontmatter (`name`, `description`). Unlike skills, they are **not injected
+into the system prompt** and are not autonomously discoverable by the agent — they are invoked
+only when the user types a slash command in the interactive CLI.
+
+**Discovery and invocation (in `cli.py`):**
+- At startup, all workflows under `.dagi/workflow/` are loaded via `agent/workflows.py`
+- `/workflows` — list all loaded workflows with their descriptions
+- `/<workflow-name>` — inject the workflow document as the next agent task; any sibling scripts
+  in the workflow directory are listed automatically by `tools/workflow.py`
+
+**Built-in workflows:**
+
+| Workflow | Command | What it does |
+|----------|---------|-------------|
+| `improve-yourself` | `/improve-yourself` | End-to-end self-improvement loop: picks a `review-item` from the Work Queue, researches prior art, runs baseline and after tests in an isolated snapshot, compares structural metrics, and writes a verdict + ready-to-apply implementation description to `TODO.md` |
+
+Add a custom workflow by creating `.dagi/workflow/<name>/workflow.md`. Any sibling `.py`,
+`.sh`, or other script files in the workflow directory are listed in the injected task
+message when the workflow is invoked.
+
+---
+
 ## Session Logs
 
-Every run is logged to `logs/session_<timestamp>.jsonl`. Entries include:
+Every run is logged to `.dagi/logs/session_<timestamp>.jsonl`. Entries include:
 
 - Message history with token counts and cost estimates
 - Tool call start/end events with inputs/outputs

@@ -10,7 +10,7 @@ if TYPE_CHECKING:
     from agent.loop import AgentCallbacks, AgentConfig
     from agent.session import SessionTracker
 
-_PLAN_SUBAGENT_SYSTEM_PROMPT = load_prompt("plan_subagent.md")
+_PLAN_SUBAGENT_SYSTEM_PROMPT = load_prompt("subagents/plan_subagent.md")
 
 
 def build_plan_agent_config(
@@ -21,30 +21,30 @@ def build_plan_agent_config(
 ) -> "AgentConfig":
     """Build an AgentConfig for a plan agent (used by both PlanSubAgent and the CLI plan loop)."""
     from dataclasses import replace
-    plan_cfg = base_config.plan_config or base_config
+    advanced_cfg = base_config.advanced_config or base_config
     return replace(
         base_config,
-        model=plan_cfg.model,
-        base_url=plan_cfg.base_url,
-        api_key=plan_cfg.api_key,
-        thinking=plan_cfg.thinking,
-        context_window=plan_cfg.context_window,
-        reserve_tokens=plan_cfg.reserve_tokens,
-        keep_recent_tokens=plan_cfg.keep_recent_tokens,
+        model=advanced_cfg.model,
+        base_url=advanced_cfg.base_url,
+        api_key=advanced_cfg.api_key,
+        thinking=advanced_cfg.thinking,
+        context_window=advanced_cfg.context_window,
+        reserve_tokens=advanced_cfg.reserve_tokens,
+        keep_recent_tokens=advanced_cfg.keep_recent_tokens,
         system_prompt=_PLAN_SUBAGENT_SYSTEM_PROMPT,
         plan_mode=True,
         plan_file=str(plan_file),
         plan_mode_initiated_by=plan_mode_initiated_by,
         project_path=project_path,
         worker_config=None,
-        plan_config=None,
+        advanced_config=None,
     )
 
 
 class PlanSubAgent:
     """Runs an isolated plan-writing sub-agent.
 
-    Uses plan_config model if set, falls back to the parent config model.
+    Uses advanced_config model if set, falls back to the parent config model.
     Tools are restricted to read/grep/find + write to the plan file only.
     """
 

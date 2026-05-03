@@ -166,7 +166,7 @@ def create_tool_registry(
         reg.register(BashTool(cwd=cwd))
         from tools.plan_mode import EnterPlanModeTool
         reg.register(EnterPlanModeTool())
-        if config is not None and (config.plan_config is not None or config.worker_config is not None):
+        if config is not None and (config.advanced_config is not None or config.worker_config is not None):
             from tools.switch_model import SwitchModelTool
             reg.register(SwitchModelTool())
         if config is not None:

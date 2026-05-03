@@ -10,7 +10,7 @@ from agent.prompts import load_prompt
 if TYPE_CHECKING:
     from agent.session import SessionTracker
 
-_SYSTEM_PROMPT = load_prompt("web_research.md")
+_SYSTEM_PROMPT = load_prompt("subagents/web_research.md")
 
 
 class WebResearchTool(BaseTool):

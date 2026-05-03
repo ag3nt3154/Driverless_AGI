@@ -63,7 +63,7 @@ def _format_tools_and_skills(registry: ToolRegistry, skills: list[Skill]) -> str
     return "\n".join(lines)
 
 
-DEFAULT_SYSTEM_PROMPT = load_prompt("main_system.md")
+DEFAULT_SYSTEM_PROMPT = load_prompt("main/main_system.md")
 
 
 @dataclass
@@ -89,8 +89,8 @@ class AgentConfig:
     plan_mode_initiated_by: str = "user"  # "user" | "dagi"
     # Worker model (cheaper LLM for sub-agents); None = use this config as-is
     worker_config: AgentConfig | None = field(default=None)
-    # Plan model (dedicated LLM for the plan subagent); None = use this config as-is
-    plan_config: AgentConfig | None = field(default=None)
+    # Advanced model (dedicated LLM for the plan subagent); None = use this config as-is
+    advanced_config: AgentConfig | None = field(default=None)
     # Active plan file persisted in system prompt after plan mode exits
     active_plan_file: str | None = None
     # Human-readable label from the config catalog (e.g. "GPT-4o (OpenAI)")
@@ -199,15 +199,20 @@ class AgentLoop:
             tools_and_skills=tools_and_skills_section,
             cwd=str(config.project_path.resolve()),
             memory_root=str(effective_memory_root),
+            dagi_root=str(dagi_root.resolve()),
         ))
 
-        # Load preamble: dagi root soul/agents, then project .dagi/AGENTS.md
+        # Load preamble: dagi root soul + .dagi/agents.md, then project .dagi/agents.md
         preamble_parts: list[str] = []
-        for filename in ("soul.md", "agents.md"):
-            p = dagi_root / filename
-            if p.exists():
-                preamble_parts.append(p.read_text(encoding="utf-8").strip())
-        project_agents = config.project_path / ".dagi" / "AGENTS.md"
+        dagi_soul = dagi_root / "soul.md"
+        if dagi_soul.exists():
+            preamble_parts.append(dagi_soul.read_text(encoding="utf-8").strip())
+        dagi_agents = dagi_root / ".dagi" / "agents.md"
+        if dagi_agents.exists():
+            text = dagi_agents.read_text(encoding="utf-8").strip()
+            if text:
+                preamble_parts.append(text)
+        project_agents = config.project_path / ".dagi" / "agents.md"
         if project_agents.exists():
             text = project_agents.read_text(encoding="utf-8").strip()
             if text:
@@ -222,10 +227,12 @@ class AgentLoop:
 
         # Build labeled system-prompt sections for the UI expander
         self.system_parts: list[dict] = []
-        for filename, label in [("soul.md", "SOUL.md"), ("agents.md", "AGENTS.md")]:
-            p = dagi_root / filename
-            if p.exists():
-                self.system_parts.append({"label": label, "content": p.read_text(encoding="utf-8").strip()})
+        if dagi_soul.exists():
+            self.system_parts.append({"label": "SOUL.md", "content": dagi_soul.read_text(encoding="utf-8").strip()})
+        if dagi_agents.exists():
+            self.system_parts.append({"label": ".dagi/agents.md (dagi)", "content": dagi_agents.read_text(encoding="utf-8").strip()})
+        if project_agents.exists():
+            self.system_parts.append({"label": ".dagi/agents.md (project)", "content": project_agents.read_text(encoding="utf-8").strip()})
         self.system_parts.append({"label": "System Prompt", "content": prompt})
 
         if initial_messages:
@@ -503,10 +510,10 @@ class AgentLoop:
         from_name = self.config.display_name or self.config.model
 
         if target == "plan":
-            tier_cfg = self.config.plan_config
+            tier_cfg = self.config.advanced_config
             if tier_cfg is None:
                 return (
-                    "Cannot switch to 'plan' tier: no plan_model is configured in config.yaml. "
+                    "Cannot switch to 'advanced' tier: no advanced_model is configured in config.yaml. "
                     "Continuing with the current model."
                 )
         elif target == "worker":
@@ -577,9 +584,16 @@ class AgentLoop:
 
         tools_and_skills = _format_tools_and_skills(self.registry, self.skills)
         readme_path = (dagi_root / "README.md").resolve()
+        effective_memory_root = (
+            self.config.memory_root if self.config.memory_root is not None
+            else self.config.project_path / "dagi-memory"
+        ).resolve()
         new_system = self.config.system_prompt.format_map(_SafeDict(
             readme_path=readme_path,
             tools_and_skills=tools_and_skills,
+            cwd=str(self.config.project_path.resolve()),
+            memory_root=str(effective_memory_root),
+            dagi_root=str(dagi_root.resolve()),
         ))
         new_system += f"\n\n---\n\nProject root: {self.config.project_path}"
 

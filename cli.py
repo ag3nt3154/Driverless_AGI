@@ -547,6 +547,7 @@ _SLASH_COMMANDS: dict[str, str] = {
     "/compact":      "Force-compact conversation context into a summary",
     "/tools":        "List all registered agent tools",
     "/skills":       "List all loaded skills",
+    "/workflows":    "List all loaded workflows",
     "/init":         "Initialise .dagi/ scaffold and dagi-memory/ wiki (dirs, AGENTS.md, stubs)",
     "/hist":         "Show the 20 most recent agent sessions  (/hist [n])",
     "/plan":         "Enter plan mode — agent explores and writes a plan doc (read-only except plan file)",
@@ -556,7 +557,7 @@ _SLASH_COMMANDS: dict[str, str] = {
 _EXIT_SENTINEL = object()  # returned by /exit handler to signal the REPL to break
 
 
-def _cmd_help(skill_slash_map: "dict | None" = None) -> None:
+def _cmd_help(skill_slash_map: "dict | None" = None, workflow_slash_map: "dict | None" = None) -> None:
     table = Table(title="Slash Commands", border_style="dim", padding=(0, 1))
     table.add_column("Command", style="bold cyan")
     table.add_column("Description", style="dim")
@@ -570,6 +571,13 @@ def _cmd_help(skill_slash_map: "dict | None" = None) -> None:
         for slash_cmd, skill in sorted(skill_slash_map.items()):
             skill_table.add_row(slash_cmd, skill.description or "—")
         console.print(skill_table)
+    if workflow_slash_map:
+        wf_table = Table(title="Workflow Commands", border_style="dim", padding=(0, 1))
+        wf_table.add_column("Command", style="bold yellow")
+        wf_table.add_column("Description", style="dim")
+        for slash_cmd, wf in sorted(workflow_slash_map.items()):
+            wf_table.add_row(slash_cmd, wf.description or "—")
+        console.print(wf_table)
 
 
 def _cmd_tools(loop: "AgentLoop | None" = None) -> None:
@@ -600,6 +608,22 @@ def _cmd_skills(loop: "AgentLoop | None" = None, skill_slash_map: "dict | None" 
     console.print("[dim]Tip: invoke any skill as a slash command, e.g. [bold]/memory-add[/bold][/dim]")
 
 
+def _cmd_workflows(workflow_slash_map: "dict | None" = None) -> None:
+    workflows = list(workflow_slash_map.values()) if workflow_slash_map else []
+    if not workflows:
+        console.print("[dim]No workflows loaded.[/dim]")
+        console.print("[dim]Add a workflow at [bold].dagi/workflow/<name>/workflow.md[/bold][/dim]")
+        return
+    table = Table(title="Loaded Workflows", border_style="dim", padding=(0, 1))
+    table.add_column("Command", style="bold yellow")
+    table.add_column("Name", style="bold")
+    table.add_column("Description", style="dim")
+    for w in sorted(workflows, key=lambda x: x.name):
+        table.add_row(f"/{w.name}", w.name, w.description or "—")
+    console.print(table)
+    console.print("[dim]Tip: invoke any workflow as a slash command, e.g. [bold]/deploy-staging[/bold][/dim]")
+
+
 def _cmd_init(project_path: Path) -> None:
     from datetime import date
     dagi_dir = project_path / ".dagi"
@@ -608,6 +632,7 @@ def _cmd_init(project_path: Path) -> None:
 
     for d in [
         dagi_dir / "skills",
+        dagi_dir / "workflow",
         dagi_dir / "self-review",
         memory / "raw",
         memory / "sources",
@@ -615,7 +640,27 @@ def _cmd_init(project_path: Path) -> None:
     ]:
         d.mkdir(parents=True, exist_ok=True)
 
-    agents_file = dagi_dir / "AGENTS.md"
+    agents_file = dagi_dir / "agents.md"
+    project_name = project_path.name
+    agents_stub = (
+        f"# Project: {project_name}\n\n"
+        f"> **Last updated:** {today}\n\n"
+        "## Description\n\n"
+        "_What this project does and why it exists._\n\n"
+        "## Objectives\n\n"
+        "_Key goals and success criteria._\n\n"
+        "## Directory Structure\n\n"
+        f"```\n{project_name}/\n```\n\n"
+        "## Environment\n\n"
+        "- **Language:**\n"
+        "- **Runtime / virtual env:**\n"
+        "- **Install dependencies:**\n"
+        "- **Run command:**\n\n"
+        "## Known Issues & Resolutions\n\n"
+        "_Document errors encountered and how they were resolved._\n\n"
+        "## Recent Changes\n\n"
+        "_Updated by the agent after each task._\n"
+    )
     wiki_stubs: dict[Path, str] = {
         memory / "wiki" / "index.md": (
             "# Wiki Index\n\n"
@@ -661,7 +706,7 @@ def _cmd_init(project_path: Path) -> None:
     if agents_file.exists():
         skipped.append(str(agents_file.relative_to(project_path)))
     else:
-        agents_file.write_text("", encoding="utf-8")
+        agents_file.write_text(agents_stub, encoding="utf-8")
         created.append(str(agents_file.relative_to(project_path)))
 
     for path, content in wiki_stubs.items():
@@ -681,7 +726,8 @@ def _cmd_init(project_path: Path) -> None:
         console.print(f"[dim]Already initialised: {dagi_dir}[/dim]")
     console.print(
         "[dim]Next: drop files into [bold]dagi-memory/raw/[/bold] "
-        "then invoke [bold]memory-ingest[/bold].[/dim]"
+        "then invoke [bold]memory-ingest[/bold]. "
+        "Add workflows to [bold].dagi/workflow/<name>/workflow.md[/bold].[/dim]"
     )
 
 
@@ -781,6 +827,7 @@ def _handle_slash_command(
     project_path: Path,
     active_loop: "AgentLoop | None" = None,
     skill_slash_map: "dict | None" = None,
+    workflow_slash_map: "dict | None" = None,
 ) -> tuple[object | None, Path]:
     """Dispatch a slash command. Returns (result, project_path).
     result is _EXIT_SENTINEL to signal REPL exit, or None otherwise.
@@ -792,7 +839,9 @@ def _handle_slash_command(
     if cmd == "/exit":
         return _EXIT_SENTINEL, project_path
     elif cmd == "/help":
-        _cmd_help(skill_slash_map)
+        _cmd_help(skill_slash_map, workflow_slash_map)
+    elif cmd == "/workflows":
+        _cmd_workflows(workflow_slash_map)
     elif cmd == "/wd":
         arg = parts[1].strip() if len(parts) > 1 else None
         new_path = _cmd_wd(arg, project_path)
@@ -822,6 +871,13 @@ def _load_skill_map(proj_path: Path) -> dict:
     roots = [dagi_root / ".dagi" / "skills", proj_path / ".dagi" / "skills"]
     skills = SkillLoader().load_all(roots, dagi_root=dagi_root)
     return {f"/{s.name}": s for s in skills}
+
+
+def _load_workflow_map(proj_path: Path) -> dict:
+    from agent.workflows import WorkflowLoader
+    roots = [proj_path / ".dagi" / "workflow"]
+    workflows = WorkflowLoader().load_all(roots)
+    return {f"/{w.name}": w for w in workflows}
 
 
 # ── Typer command ─────────────────────────────────────────────────────────────
@@ -857,6 +913,7 @@ def run(
     model_name = get_model_display_name(model)
     project_path = Path(project).resolve() if project else Path.cwd()
     skill_slash_map = _load_skill_map(project_path)
+    workflow_slash_map = _load_workflow_map(project_path)
 
     console.print(
         Panel(
@@ -881,7 +938,7 @@ def run(
                 resolve_model_config(model), plan_file, project_path,
                 plan_mode_initiated_by="user",
             )
-            plan_model_name = get_model_display_name(load_raw_config().get("plan_model"))
+            plan_model_name = get_model_display_name(load_raw_config().get("advanced_model"))
             if plan_model_name != model_name:
                 console.print(
                     f"[bold cyan]⇄ Model switch:[/bold cyan] [dim]{model_name}[/dim] → [bold]{plan_model_name}[/bold]"
@@ -926,9 +983,9 @@ def run(
         )
         if active_loop.plan_mode_exited and active_loop.exited_plan_file:
             # Agent-initiated plan mode: subagent wrote the plan and returned to normal.
-            had_plan_model = active_loop.config.plan_config is not None
+            had_plan_model = active_loop.config.advanced_config is not None
             plan_label = (
-                active_loop.config.plan_config.display_name
+                active_loop.config.advanced_config.display_name
                 if had_plan_model else model_name
             )
             switch_back = (
@@ -1022,9 +1079,23 @@ def run(
                     run_one(task_msg)
                     continue
 
+                # ── Workflow slash commands ───────────────────────────
+                if cmd_lower in workflow_slash_map:
+                    wf = workflow_slash_map[cmd_lower]
+                    args_str = user_input.split(maxsplit=1)[1] if " " in user_input else ""
+                    from tools.workflow import load_workflow_content
+                    task_msg = load_workflow_content(
+                        wf.name, [project_path / ".dagi" / "workflow"]
+                    )
+                    if args_str:
+                        task_msg += f"\n\nAdditional instructions: {args_str}"
+                    run_one(task_msg)
+                    continue
+
                 slash_result, new_path = _handle_slash_command(
                     user_input, conversation_msgs, model, stats,
                     project_path, active_loop, skill_slash_map,
+                    workflow_slash_map,
                 )
                 if slash_result is _EXIT_SENTINEL:
                     if active_loop is not None:
@@ -1035,6 +1106,7 @@ def run(
                         active_loop.finish()
                     project_path = new_path
                     skill_slash_map = _load_skill_map(project_path)
+                    workflow_slash_map = _load_workflow_map(project_path)
                     conversation_msgs = []
                     active_loop = None
                 continue

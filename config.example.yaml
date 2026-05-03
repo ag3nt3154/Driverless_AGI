@@ -7,8 +7,8 @@ keep_recent_tokens: 20000
 max_iterations: 20
 
 default_model: minimax-2.7-openrouter
-# worker_model: glm-5-turbo-openrouter   # cheaper LLM for sub-agents; omit to use default_model
-plan_model: kimi-2.6-openrouter   # model for the plan subagent; omit to use default_model
+# worker_model: glm-5-turbo-openrouter     # cheaper LLM for sub-agents; omit to use default_model
+# advanced_model: kimi-2.6-openrouter    # advanced LLM for planning; omit to use default_model
 thinking: high          # none | low | medium | high — reasoning effort for models that support it
 
 models:

@@ -19,8 +19,8 @@ from agent.prompts import load_prompt
 if TYPE_CHECKING:
     from agent.loop import AgentConfig
 
-_COMPACT_SYSTEM = load_prompt("compact_system.md")
-_COMPACT_USER = load_prompt("compact_user.md")
+_COMPACT_SYSTEM = load_prompt("compact/compact_system.md")
+_COMPACT_USER = load_prompt("compact/compact_user.md")
 
 
 # ── Result type ───────────────────────────────────────────────────────────────

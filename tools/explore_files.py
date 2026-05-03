@@ -10,7 +10,7 @@ from agent.prompts import load_prompt
 if TYPE_CHECKING:
     from agent.session import SessionTracker
 
-_SYSTEM_PROMPT = load_prompt("explore_files.md")
+_SYSTEM_PROMPT = load_prompt("subagents/explore_files.md")
 
 
 class ExploreFilesTool(BaseTool):
