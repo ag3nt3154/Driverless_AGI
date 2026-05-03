@@ -56,3 +56,21 @@ _Document errors encountered and how they were resolved._
 - Fixed `_rebuild_for_normal_mode` missing `cwd`, `memory_root`, `dagi_root` in its `format_map`.
 - Moved `agents.md` from dagi root → `.dagi/agents.md`; updated `loop.py` preamble loader and UI labels.
 - Updated `/init` to scaffold `.dagi/agents.md` with section headers instead of empty file.
+
+## Coding standards
+- Functions: <= 100 lines
+- Cyclomatic complexity: <= 8
+- Positional parameters: <= 5
+- Line length: 100 characters
+- Files: <= 500 lines
+
+## Behavioral Rules
+- NEVER create files unless absolutely necessary
+- ALWAYS read a file before editing it
+- ALWAYS prefer editing existing files to creating new ones
+- NEVER commit secrets, credentials, or .env files
+
+## Error handling
+- Fail fast with clear, actionable messages
+- Never swallow exceptions silently
+- Include context (what operation, what input, suggested fix)

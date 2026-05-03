@@ -42,7 +42,7 @@ Each file must stay current with:
 - **Recent changes** — what was last modified and why
 
 **When to read:** At the very start of every session, before touching any file or forming a plan.
-**When to write:** After completing any task that changes the codebase, adds tools/skills, changes dependencies, or resolves an error. Use `edit` for incremental updates; use `write` only for a full rewrite.
+**When to write:** After completing any task that changes the codebase, adds tools/skills, changes dependencies, or resolves an error. Only use `edit` for incremental updates in specified sections. Do not change anything else that the user might have added. Maintain only 5 recent changes when updating.
 
 ## Documentation
 
