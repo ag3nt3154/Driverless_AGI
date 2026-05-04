@@ -4,13 +4,13 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 from uuid import uuid4
 
-from agent.prompts import load_prompt
+from agent.prompts import load_subagent_prompt
 
 if TYPE_CHECKING:
     from agent.loop import AgentCallbacks, AgentConfig
     from agent.session import SessionTracker
 
-_PLAN_SUBAGENT_SYSTEM_PROMPT = load_prompt("subagents/plan_subagent.md")
+_PLAN_SUBAGENT_SYSTEM_PROMPT = load_subagent_prompt("plan")
 
 
 def build_plan_agent_config(

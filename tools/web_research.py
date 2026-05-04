@@ -5,12 +5,12 @@ from typing import TYPE_CHECKING
 from uuid import uuid4
 
 from agent.base_tool import BaseTool
-from agent.prompts import load_prompt
+from agent.prompts import load_subagent_prompt
 
 if TYPE_CHECKING:
     from agent.session import SessionTracker
 
-_SYSTEM_PROMPT = load_prompt("subagents/web_research.md")
+_SYSTEM_PROMPT = load_subagent_prompt("web_research")
 
 
 class WebResearchTool(BaseTool):
