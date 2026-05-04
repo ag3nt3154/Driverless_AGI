@@ -58,6 +58,7 @@ _TOOL_COLOURS = {
     "grep": "cyan",
     "find": "cyan",
     "skill": "bright_magenta",
+    "cli_subagent": "bright_blue",
 }
 _MAX_COMPACT_LEN = 120
 
@@ -880,6 +881,93 @@ def _load_workflow_map(proj_path: Path) -> dict:
     return {f"/{w.name}": w for w in workflows}
 
 
+# ── Subagent server modes ──────────────────────────────────────────────────────
+
+def _run_pty_viewer(log_path: Path) -> None:
+    """Tail a subagent log file and display it in this terminal window."""
+    import time
+
+    console.print(
+        Panel(
+            "[bold cyan]Driverless AGI — Subagent Viewer[/bold cyan]\n"
+            f"[dim]Log: {log_path}[/dim]\n"
+            "[dim]Ctrl-C to close this viewer (subagent continues running)[/dim]",
+            border_style="cyan",
+            padding=(0, 2),
+        )
+    )
+    pos = 0
+    try:
+        while True:
+            if log_path.exists():
+                text = log_path.read_text(encoding="utf-8", errors="replace")
+                if len(text) > pos:
+                    print(text[pos:], end="", flush=True)
+                    pos = len(text)
+            time.sleep(0.1)
+    except KeyboardInterrupt:
+        console.print("\n[dim]Viewer closed.[/dim]")
+
+
+def _run_subagent_server_loop(
+    model: Optional[str],
+    verbose: bool,
+    sync: bool,
+    project: Optional[str],
+) -> None:
+    """Run cli.py in subagent mode: read tasks from stdin, run them, print SENTINEL after each."""
+    from agent.pty_channel import SENTINEL
+
+    cli_cfg = load_cli_config()
+    effective_verbose = verbose or cli_cfg.verbose
+    project_path = Path(project).resolve() if project else Path.cwd()
+    model_name = get_model_display_name(model)
+    stats = _Stats()
+    conversation_msgs: list = []
+    active_loop: "AgentLoop | None" = None
+
+    console.print(
+        Panel(
+            "[bold cyan]Driverless AGI — Subagent Terminal[/bold cyan]\n"
+            "[dim]Controlled by parent agent via ConPTY stdin/stdout.[/dim]\n"
+            "[dim]Do not type here — prompts arrive automatically.[/dim]",
+            border_style="cyan",
+            padding=(0, 2),
+        )
+    )
+
+    for line in sys.stdin:
+        task = line.strip()
+        if not task or task == "<<<DAGI_EXIT>>>":
+            break
+
+        console.print(f"\n[bold cyan]Task:[/bold cyan] {task[:120]}")
+
+        try:
+            existing_tracker = active_loop.tracker if active_loop is not None else None
+            conversation_msgs, active_loop = _run_task(
+                task,
+                conversation_msgs,
+                cli_cfg,
+                model,
+                model_name,
+                effective_verbose,
+                sync,
+                stats,
+                project_path,
+                existing_tracker=existing_tracker,
+            )
+        except Exception:
+            console.print_exception()
+
+        # Sentinel printed with bare print() — must not be ANSI-decorated
+        print(f"\n{SENTINEL}", flush=True)
+
+    if active_loop is not None:
+        active_loop.finish()
+    console.print("[dim]Subagent session ended.[/dim]")
+
+
 # ── Typer command ─────────────────────────────────────────────────────────────
 
 @app.command()
@@ -900,7 +988,29 @@ def run(
         None, "--project", "-p",
         help="Project directory to work in (default: current directory).",
     ),
+    subagent_mode: bool = typer.Option(
+        False, "--subagent-mode",
+        help="[Internal] Run as a ConPTY subagent: read tasks from stdin, emit sentinel on completion.",
+        hidden=True,
+    ),
+    pty_viewer: Optional[str] = typer.Option(
+        None, "--pty-viewer",
+        help="[Internal] Tail a subagent log file and display it.",
+        hidden=True,
+    ),
 ) -> None:
+    if pty_viewer:
+        _run_pty_viewer(Path(pty_viewer))
+        return
+    if subagent_mode:
+        _run_subagent_server_loop(
+            model=model,
+            verbose=verbose,
+            sync=sync,
+            project=project,
+        )
+        return
+
     cli_cfg = load_cli_config()
     effective_verbose = verbose or cli_cfg.verbose
     stats = _Stats()
