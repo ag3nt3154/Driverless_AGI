@@ -136,21 +136,24 @@ class CliSubAgentTool(BaseTool):
         return argv
 
     def _launch_viewer(self, log_file: Path, subagent_id: str) -> None:
-        """Open a visible terminal window that tails the subagent log."""
+        """Open a visible terminal window that tails the subagent log.
+
+        Uses CREATE_NEW_CONSOLE instead of `cmd /c start "title" ...` to avoid
+        Windows misinterpreting the title string as the program name.
+        """
         conda_env = os.environ.get("CONDA_DEFAULT_ENV", "dagi")
-        viewer_cmd = (
-            f'conda run --no-capture-output -n {conda_env} '
-            f'python "{_CLI_PATH}" --pty-viewer "{log_file}"'
-        )
-        title = f"dagi-subagent-{subagent_id}"
-        wt = shutil.which("wt")
-        if wt:
-            launch = [wt, "new-tab", "--title", title, "--", "cmd", "/k", viewer_cmd]
-        else:
-            launch = ["cmd", "/c", f'start "{title}" cmd /k {viewer_cmd}']
+        argv = [
+            "conda", "run", "--no-capture-output", "-n", conda_env,
+            "python", str(_CLI_PATH),
+            "--pty-viewer", str(log_file),
+        ]
         subprocess.Popen(
-            launch,
-            creationflags=subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP,
+            argv,
+            creationflags=(
+                subprocess.CREATE_NEW_CONSOLE
+                | subprocess.DETACHED_PROCESS
+                | subprocess.CREATE_NEW_PROCESS_GROUP
+            ),
             close_fds=True,
         )
 
