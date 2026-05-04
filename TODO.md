@@ -3,9 +3,9 @@
 ## Work Queue
 
 - **Persistent Memory System** · `priority:high` · `impact:high` · `in-progress`
-  - **Current:** Wiki infrastructure built (`.dagi/memory/wiki/`, skills at `.dagi/skills/`). Agent does not yet use memory autonomously.
-  - **Ideal:** Agent queries wiki on session start; CLI slash command for `memory-ingest`, `memory-lint`, `memory-query`.
-  - **Next:** Ingest initial source material into `.dagi/memory/raw/` and run `memory-ingest`; wire `memory-query` into system prompt.
+  - **Current:** `memory-query` skill uses BM25 (`bm25_query.py`) for fast topic retrieval. System prompt encourages agent to call `skill("memory-query")` after receiving any substantive task (agent uses judgement — skips for greetings/trivial requests).
+  - **Ideal:** CLI slash commands for `memory-ingest`, `memory-lint`, `memory-query` (wiring into `cli.py`).
+  - **Next:** Add `/memory-ingest`, `/memory-lint`, `/memory-query` slash commands to `cli.py`; ingest initial source material into `dagi-memory/raw/` and run `memory-ingest`.
 
 - **Project / Folder Scoping** · `priority:high` · `impact:high`
   - **Current:** Path guard wired into Read/Write/Edit/Grep/Find (`tools/_path_guard.py`). Roots hardcoded to `[dagi_root, cwd]`. BashTool unsandboxed.
@@ -29,10 +29,10 @@
   - **Next:** Review plan · implement · mark done
   - **Source:** Session `2026-04-26_15-20-10` · [review_2026-04-26_15-20-10.md](.dagi/self-review/review_2026-04-26_15-20-10.md) · [plan_2026-04-26_15-20-10.md](.dagi/self-review/plan_2026-04-26_15-20-10.md)
 
-- **Multi-agent / parallel clones** · `priority:medium` · `impact:high`
-  - **Current:** Single-agent loop only. No mechanism to spawn concurrent agents or distribute work.
-  - **Ideal:** Spawn independent agent loops with a task queue, file-lock conflict avoidance, and multi-thread UI display in `cli.py`.
-  - **Next:** Design spawn API in `agent/loop.py`; prototype task queue / manifest structure.
+- **Multi-agent / parallel clones** · `priority:medium` · `impact:high` · `in-progress`
+  - **Current:** `cli_subagent` tool spawns visible terminal windows running a full dagi agent via ConPTY (`pywinpty`). Main agent has live stdin/stdout pipe access; viewer window tails the log. `persistent=true` enables multi-turn control of the same terminal.
+  - **Ideal:** Parallel spawning (multiple subagents concurrently); task queue / manifest structure; multi-pane UI in the main terminal showing all subagent outputs.
+  - **Next:** Prototype parallel dispatch (multiple `cli_subagent` calls in one agent turn); add a task manifest so subagents can coordinate without conflicts.
 
 - **Dynamic tool descriptions** · `priority:medium` · `impact:medium`
   - **Current:** Tool schemas are static — same description regardless of model or context.
@@ -93,6 +93,7 @@
 
 ## Done
 
+- [x] BM25 wiki retrieval in memory-query skill — `agent/memory_retriever.py` provides BM25 helpers; `.dagi/skills/memory-query/bm25_query.py` is a self-contained CLI script the agent runs in Step 3. Returns ranked `{score, path}` JSON. SKILL.md updated to call the script, review scores, and fall back to grep if needed. System prompt updated to encourage memory-query after receiving any substantive task.
 - [x] Auto compaction for long contexts — Pi-style compaction in `agent/loop.py` (`_compact_context`). Summarizes middle history, preserves system prompt + recent tail, carries forward prior summaries.
 - [x] Plan mode — Full read-only planning mode in `agent/loop.py` (`plan_mode` flag, `plan_file` path). BashTool omitted, WriteTool/EditTool restricted to plan document.
 - [x] Web research tools — `web_search`, `web_fetch`, `web_research`, `explore_files` available in `tools/`. Powered by DuckDuckGo, httpx, beautifulsoup4, crawl4ai.

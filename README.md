@@ -17,6 +17,8 @@ Plan → Act → Observe → Repeat
 
 When the conversation exceeds the model's context window, **Pi-style context compaction** kicks in — the middle of the history is summarized and replaced, preserving the system prompt and recent messages. This lets the agent handle arbitrarily long tasks without crashing.
 
+At session start, **BM25 memory injection** automatically retrieves relevant pages from the wiki knowledge base and prepends them as context before the first API call — giving the agent instant access to accumulated knowledge without any manual skill invocation.
+
 ---
 
 ## Setup
@@ -163,11 +165,13 @@ Driverless_AGI/
 │   ├── tools.py           # Builds and returns the tool registry
 │   ├── loop.py            # AgentLoop, AgentConfig, AgentCallbacks
 │   ├── config_loader.py   # Resolves model config from YAML
+│   ├── memory_retriever.py # BM25 wiki retrieval — auto-injects context at session start
 │   ├── session.py         # SessionTracker — JSONL logs
-│   ├── prompts.py         # Loads system/user prompts from .dagi/prompts/
+│   ├── prompts.py         # Loads system/user prompts from .dagi/prompts/ and .dagi/subagents/
+│   ├── pty_channel.py     # ConPTY wrapper — PtyProcess + reader thread + sentinel detection
 │   ├── skills.py          # SkillLoader — loads .dagi/skills/
 │   ├── workflows.py       # WorkflowLoader — loads .dagi/workflow/
-│   └── sub_agent.py       # Spawns independent sub-agent loops
+│   └── sub_agent.py       # Spawns independent sub-agent loops (in-process)
 │
 ├── tools/
 │   ├── read.py            # Read files (text + image)
@@ -182,6 +186,7 @@ Driverless_AGI/
 │   ├── web_fetch.py       # Fetch and parse a URL
 │   ├── web_research.py    # Multi-page web research
 │   ├── explore_files.py   # Large-scale codebase scanning
+│   ├── cli_subagent.py    # ConPTY subagent terminal — spawn & control via stdin/stdout
 │   ├── compact.py         # Trigger context compaction
 │   ├── plan_mode.py       # Enter / exit read-only plan mode
 │   ├── switch_model.py    # Swap models mid-session
@@ -191,8 +196,13 @@ Driverless_AGI/
 ├── .dagi/
 │   ├── prompts/           # Prompt markdown files, organized by role
 │   │   ├── main/          #   main_system.md — primary coding assistant prompt
-│   │   ├── subagents/     #   plan_subagent, explore_files, web_research
 │   │   └── compact/       #   compact_system, compact_user (Pi-style summariser)
+│   ├── subagents/         # Per-subagent config: <name>/prompt.md
+│   │   ├── explore_files/ #   exploration agent prompt
+│   │   ├── web_research/  #   web research agent prompt
+│   │   ├── plan/          #   plan-writing agent prompt
+│   │   └── cli/           #   ConPTY terminal subagent prompt
+│   ├── subagent_logs/     # Per-subagent ConPTY output logs (<id>.log)
 │   ├── skills/            # Structured guidance documents (memory-*, create-skill, review-session, …)
 │   ├── workflow/          # User-directed workflows (.dagi/workflow/<name>/workflow.md)
 │   ├── memory/wiki/       # Topic-organized persistent wiki (infrastructure built)
@@ -223,6 +233,7 @@ Driverless_AGI/
 | `web_fetch` | Fetch and parse a URL. Returns cleaned page text |
 | `web_research` | Multi-page research task: searches, fetches, and synthesizes results |
 | `explore_files` | Large-scale codebase scan: reads many files and returns a structured summary |
+| `cli_subagent` | Spawn a visible terminal running a full dagi agent via ConPTY. Main agent has live stdin/stdout pipe access. `persistent=true` keeps the terminal alive for multi-turn; `persistent=false` (default) closes it after the task |
 | `compact` | Manually trigger Pi-style context compaction |
 | `switch_model` | Swap to a different model (from `config.yaml`) mid-session |
 | `ask_user` | Pause and ask the user a clarifying question with optional choices |
@@ -337,3 +348,4 @@ Core (from `pyproject.toml`):
 Additional (install separately if using the interactive CLI):
 
 - `typer` + `rich` — interactive CLI (`cli.py`)
+- `pywinpty` — Windows ConPTY support for `cli_subagent` terminal spawning
