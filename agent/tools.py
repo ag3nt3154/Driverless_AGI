@@ -170,8 +170,11 @@ def create_tool_registry(
             from tools.switch_model import SwitchModelTool
             reg.register(SwitchModelTool())
         if config is not None:
+            from tools.cli_subagent import CliSubAgentTool
             from tools.explore_files import ExploreFilesTool
             from tools.web_research import WebResearchTool
+
+            reg.register(CliSubAgentTool(project_path=cwd, model=config.model))
 
             web_tool = WebResearchTool(
                 config=config, callbacks=callbacks,
