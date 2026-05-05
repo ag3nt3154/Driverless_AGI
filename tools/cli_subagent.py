@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import atexit
 import os
-import shutil
 import subprocess
 import uuid
 from dataclasses import dataclass
@@ -124,10 +123,14 @@ class CliSubAgentTool(BaseTool):
         return f"[subagent_id: {subagent_id}]\n\n{result}"
 
     def _build_argv(self, model: str | None) -> list[str]:
-        conda_env = os.environ.get("CONDA_DEFAULT_ENV", "dagi")
+        import sys
+        # Use the running interpreter directly: sys.executable is the fully-resolved
+        # path to the conda env's python.exe (e.g. miniconda3\envs\dagi\python.exe).
+        # This avoids `conda run`, which is a .bat shim that CreateProcess cannot
+        # execute without routing through cmd.exe. The child inherits the parent's
+        # environment so all packages are available automatically.
         argv = [
-            "conda", "run", "--no-capture-output", "-n", conda_env,
-            "python", str(_CLI_PATH),
+            sys.executable, str(_CLI_PATH),
             "--subagent-mode",
             "--project", str(self._project_path),
         ]
@@ -136,23 +139,16 @@ class CliSubAgentTool(BaseTool):
         return argv
 
     def _launch_viewer(self, log_file: Path, subagent_id: str) -> None:
-        """Open a visible terminal window that tails the subagent log.
-
-        Uses CREATE_NEW_CONSOLE instead of `cmd /c start "title" ...` to avoid
-        Windows misinterpreting the title string as the program name.
-        """
-        conda_env = os.environ.get("CONDA_DEFAULT_ENV", "dagi")
-        argv = [
-            "conda", "run", "--no-capture-output", "-n", conda_env,
-            "python", str(_CLI_PATH),
-            "--pty-viewer", str(log_file),
-        ]
+        """Open a visible terminal window that tails the subagent log."""
+        import sys
+        # Same logic as _build_argv: sys.executable is a real .exe, no conda
+        # shim needed. CREATE_NEW_CONSOLE gives the process its own window.
         subprocess.Popen(
-            argv,
+            [sys.executable, str(_CLI_PATH), "--pty-viewer", str(log_file)],
             creationflags=(
                 subprocess.CREATE_NEW_CONSOLE
-                | subprocess.DETACHED_PROCESS
                 | subprocess.CREATE_NEW_PROCESS_GROUP
+                | subprocess.DETACHED_PROCESS
             ),
             close_fds=True,
         )
