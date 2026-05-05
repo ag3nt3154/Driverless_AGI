@@ -30,7 +30,7 @@
   - **Source:** Session `2026-04-26_15-20-10` · [review_2026-04-26_15-20-10.md](.dagi/self-review/review_2026-04-26_15-20-10.md) · [plan_2026-04-26_15-20-10.md](.dagi/self-review/plan_2026-04-26_15-20-10.md)
 
 - **Multi-agent / parallel clones** · `priority:medium` · `impact:high` · `in-progress`
-  - **Current:** `cli_subagent` tool spawns visible terminal windows running a full dagi agent via ConPTY (`pywinpty`). Main agent has live stdin/stdout pipe access; viewer window tails the log. `persistent=true` enables multi-turn control of the same terminal.
+  - **Current:** `cli_subagent` tool spawns visible terminal windows (via `subprocess.CREATE_NEW_CONSOLE`) running a full dagi agent. Parent controls them via file-based IPC: numbered `task_<n>.json` / `result_<n>.json` files with atomic rename writes in `%TEMP%/dagi_ipc/<uuid>/`. `persistent=true` enables multi-turn control of the same terminal. No native ConPTY/pywinpty dependency.
   - **Ideal:** Parallel spawning (multiple subagents concurrently); task queue / manifest structure; multi-pane UI in the main terminal showing all subagent outputs.
   - **Next:** Prototype parallel dispatch (multiple `cli_subagent` calls in one agent turn); add a task manifest so subagents can coordinate without conflicts.
 
