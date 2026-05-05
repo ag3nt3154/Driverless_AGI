@@ -881,42 +881,21 @@ def _load_workflow_map(proj_path: Path) -> dict:
     return {f"/{w.name}": w for w in workflows}
 
 
-# ── Subagent server modes ──────────────────────────────────────────────────────
+# ── Subagent IPC server mode ──────────────────────────────────────────────────
 
-def _run_pty_viewer(log_path: Path) -> None:
-    """Tail a subagent log file and display it in this terminal window."""
-    import time
-
-    console.print(
-        Panel(
-            "[bold cyan]Driverless AGI — Subagent Viewer[/bold cyan]\n"
-            f"[dim]Log: {log_path}[/dim]\n"
-            "[dim]Ctrl-C to close this viewer (subagent continues running)[/dim]",
-            border_style="cyan",
-            padding=(0, 2),
-        )
-    )
-    pos = 0
-    try:
-        while True:
-            if log_path.exists():
-                text = log_path.read_text(encoding="utf-8", errors="replace")
-                if len(text) > pos:
-                    print(text[pos:], end="", flush=True)
-                    pos = len(text)
-            time.sleep(0.1)
-    except KeyboardInterrupt:
-        console.print("\n[dim]Viewer closed.[/dim]")
-
-
-def _run_subagent_server_loop(
+def _run_subagent_ipc_loop(
+    ipc_dir: str,
     model: Optional[str],
     verbose: bool,
     sync: bool,
     project: Optional[str],
 ) -> None:
-    """Run cli.py in subagent mode: read tasks from stdin, run them, print SENTINEL after each."""
-    from agent.pty_channel import SENTINEL
+    """Run cli.py as a file-based IPC subagent server.
+
+    The parent agent writes task_<n>.json; this loop picks it up, runs it via
+    AgentLoop, and writes result_<n>.json. The exit sentinel stops the loop.
+    """
+    from agent.ipc import IpcChannel
 
     cli_cfg = load_cli_config()
     effective_verbose = verbose or cli_cfg.verbose
@@ -926,22 +905,29 @@ def _run_subagent_server_loop(
     conversation_msgs: list = []
     active_loop: "AgentLoop | None" = None
 
+    ipc = IpcChannel(Path(ipc_dir))
+
     console.print(
         Panel(
             "[bold cyan]Driverless AGI — Subagent Terminal[/bold cyan]\n"
-            "[dim]Controlled by parent agent via ConPTY stdin/stdout.[/dim]\n"
-            "[dim]Do not type here — prompts arrive automatically.[/dim]",
+            f"[dim]IPC dir: {ipc_dir}[/dim]\n"
+            "[dim]Controlled by parent agent via file-based IPC. Do not type here.[/dim]",
             border_style="cyan",
             padding=(0, 2),
         )
     )
 
-    for line in sys.stdin:
-        task = line.strip()
-        if not task or task == "<<<DAGI_EXIT>>>":
+    # Signal parent that this subagent is ready
+    ipc.write_ready()
+
+    seq = 1
+    while True:
+        task_data = ipc.poll_task(seq)  # blocks; returns None on exit sentinel
+        if task_data is None:
             break
 
-        console.print(f"\n[bold cyan]Task:[/bold cyan] {task[:120]}")
+        task = task_data.get("task", "")
+        console.print(f"\n[bold cyan]Task #{seq}:[/bold cyan] {task[:120]}")
 
         try:
             existing_tracker = active_loop.tracker if active_loop is not None else None
@@ -957,11 +943,28 @@ def _run_subagent_server_loop(
                 project_path,
                 existing_tracker=existing_tracker,
             )
-        except Exception:
+            # Grab the final assistant message as the result
+            result_text = ""
+            for msg in reversed(active_loop._messages):
+                if msg.get("role") == "assistant":
+                    content = msg.get("content", "")
+                    if isinstance(content, list):
+                        parts = [
+                            blk.get("text", "")
+                            for blk in content
+                            if isinstance(blk, dict) and blk.get("type") == "text"
+                        ]
+                        result_text = "\n".join(parts).strip()
+                    elif isinstance(content, str):
+                        result_text = content.strip()
+                    if result_text:
+                        break
+            ipc.write_result(seq, status="ok", result=result_text)
+        except Exception as exc:  # noqa: BLE001
             console.print_exception()
+            ipc.write_result(seq, status="error", error=str(exc))
 
-        # Sentinel printed with bare print() — must not be ANSI-decorated
-        print(f"\n{SENTINEL}", flush=True)
+        seq += 1
 
     if active_loop is not None:
         active_loop.finish()
@@ -988,22 +991,15 @@ def run(
         None, "--project", "-p",
         help="Project directory to work in (default: current directory).",
     ),
-    subagent_mode: bool = typer.Option(
-        False, "--subagent-mode",
-        help="[Internal] Run as a ConPTY subagent: read tasks from stdin, emit sentinel on completion.",
-        hidden=True,
-    ),
-    pty_viewer: Optional[str] = typer.Option(
-        None, "--pty-viewer",
-        help="[Internal] Tail a subagent log file and display it.",
+    subagent_ipc_dir: Optional[str] = typer.Option(
+        None, "--subagent-ipc-dir",
+        help="[Internal] Run as an IPC subagent server, polling for tasks in this directory.",
         hidden=True,
     ),
 ) -> None:
-    if pty_viewer:
-        _run_pty_viewer(Path(pty_viewer))
-        return
-    if subagent_mode:
-        _run_subagent_server_loop(
+    if subagent_ipc_dir:
+        _run_subagent_ipc_loop(
+            ipc_dir=subagent_ipc_dir,
             model=model,
             verbose=verbose,
             sync=sync,

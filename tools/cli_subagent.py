@@ -1,35 +1,37 @@
-"""tools/cli_subagent.py — Spawn a dagi agent via ConPTY and control it from the main agent."""
+"""tools/cli_subagent.py — Spawn a dagi subagent terminal and control it via file-based IPC."""
 from __future__ import annotations
 
 import atexit
 import os
 import subprocess
+import sys
+import tempfile
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
 
 from agent.base_tool import BaseTool
-from agent.pty_channel import EXIT_CMD, PtyChannel, PtyTimeoutError
+from agent.ipc import IpcChannel, IpcTimeoutError
 
 _DAGI_ROOT = Path(__file__).parent.parent
 _CLI_PATH = _DAGI_ROOT / "cli.py"
-_LOG_DIR = _DAGI_ROOT / ".dagi" / "subagent_logs"
 
 
 @dataclass
 class _Handle:
     subagent_id: str
-    channel: PtyChannel
-    log_file: Path
+    ipc: IpcChannel
+    proc: subprocess.Popen
+    seq: int = 0
     alive: bool = True
 
 
 class CliSubAgentTool(BaseTool):
-    """Spawn a visible dagi subagent terminal via ConPTY and exchange tasks with it."""
+    """Spawn a visible dagi subagent terminal and exchange tasks with it via file-based IPC."""
 
     name = "cli_subagent"
     description = (
-        "Spawn a new terminal window running a full dagi agent via ConPTY. "
+        "Spawn a new terminal window running a full dagi agent. "
         "Send it a task prompt and receive its final response. "
         "Set persistent=true to keep the terminal alive for follow-up tasks "
         "(capture the returned subagent_id and pass it in the next call). "
@@ -75,7 +77,6 @@ class CliSubAgentTool(BaseTool):
     def __init__(self, project_path: Path, model: str | None = None) -> None:
         self._project_path = project_path
         self._model = model
-        _LOG_DIR.mkdir(parents=True, exist_ok=True)
         atexit.register(self._cleanup_all)
 
     def run(
@@ -88,9 +89,10 @@ class CliSubAgentTool(BaseTool):
     ) -> str:
         effective_model = model or self._model
 
+        # ── Reuse or spawn ────────────────────────────────────────────────────
         if subagent_id and subagent_id in self._active:
             handle = self._active[subagent_id]
-            if not handle.alive or not handle.channel.isalive():
+            if not handle.alive or handle.proc.poll() is not None:
                 handle.alive = False
                 return (
                     f"[cli_subagent error] Subagent {subagent_id!r} is no longer alive. "
@@ -98,67 +100,83 @@ class CliSubAgentTool(BaseTool):
                 )
         else:
             subagent_id = uuid.uuid4().hex[:8]
-            log_file = _LOG_DIR / f"{subagent_id}.log"
-            argv = self._build_argv(effective_model)
-            channel = PtyChannel(argv=argv, log_file=log_file)
-            handle = _Handle(subagent_id=subagent_id, channel=channel, log_file=log_file)
+            ipc_dir = Path(tempfile.gettempdir()) / "dagi_ipc" / subagent_id
+            ipc = IpcChannel(ipc_dir)
+
+            argv = self._build_argv(str(ipc_dir), effective_model)
+            proc = subprocess.Popen(
+                argv,
+                creationflags=(
+                    subprocess.CREATE_NEW_CONSOLE
+                    | subprocess.CREATE_NEW_PROCESS_GROUP
+                ),
+            )
+            handle = _Handle(subagent_id=subagent_id, ipc=ipc, proc=proc)
             self._active[subagent_id] = handle
-            self._launch_viewer(log_file, subagent_id)
 
-        handle.channel.write(task + "\n")
+            # Wait for the subagent to signal it's ready to accept tasks
+            try:
+                handle.ipc.poll_ready(timeout=60.0)
+            except IpcTimeoutError:
+                handle.alive = False
+                proc.terminate()
+                return (
+                    f"[cli_subagent error] Subagent {subagent_id!r} did not become ready "
+                    "within 60s. Check that cli.py starts correctly."
+                )
 
+        # ── Send task ─────────────────────────────────────────────────────────
+        handle.seq += 1
+        seq = handle.seq
+        handle.ipc.write_task(seq, task)
+
+        # ── Wait for result ───────────────────────────────────────────────────
         try:
-            result = handle.channel.read_until_sentinel(timeout=float(timeout))
-        except PtyTimeoutError:
+            result_data = handle.ipc.poll_result(seq, timeout=float(timeout))
+        except IpcTimeoutError:
             handle.alive = False
-            return f"[cli_subagent error] Timeout after {timeout}s (subagent_id: {subagent_id})"
+            return (
+                f"[cli_subagent error] Timeout after {timeout}s waiting for result "
+                f"(subagent_id: {subagent_id}, seq: {seq})"
+            )
 
+        result_text = result_data.get("result", "")
+        if result_data.get("status") == "error":
+            result_text = f"[cli_subagent error] {result_data.get('error', result_text)}"
+
+        # ── Persist or close ──────────────────────────────────────────────────
         if not persistent:
-            handle.channel.write(EXIT_CMD + "\n")
-            handle.channel.terminate()
+            handle.ipc.write_exit()
+            try:
+                handle.proc.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                handle.proc.terminate()
             handle.alive = False
             del self._active[subagent_id]
-            return result
+            return result_text
 
-        return f"[subagent_id: {subagent_id}]\n\n{result}"
+        return f"[subagent_id: {subagent_id}]\n\n{result_text}"
 
-    def _build_argv(self, model: str | None) -> list[str]:
-        import sys
-        # Use the running interpreter directly: sys.executable is the fully-resolved
-        # path to the conda env's python.exe (e.g. miniconda3\envs\dagi\python.exe).
-        # This avoids `conda run`, which is a .bat shim that CreateProcess cannot
-        # execute without routing through cmd.exe. The child inherits the parent's
-        # environment so all packages are available automatically.
+    def _build_argv(self, ipc_dir: str, model: str | None) -> list[str]:
+        # sys.executable is the real .exe for the active conda env — no shim needed.
         argv = [
             sys.executable, str(_CLI_PATH),
-            "--subagent-mode",
+            "--subagent-ipc-dir", ipc_dir,
             "--project", str(self._project_path),
         ]
         if model:
             argv += ["--model", model]
         return argv
 
-    def _launch_viewer(self, log_file: Path, subagent_id: str) -> None:
-        """Open a visible terminal window that tails the subagent log."""
-        import sys
-        # Same logic as _build_argv: sys.executable is a real .exe, no conda
-        # shim needed. CREATE_NEW_CONSOLE gives the process its own window.
-        subprocess.Popen(
-            [sys.executable, str(_CLI_PATH), "--pty-viewer", str(log_file)],
-            creationflags=(
-                subprocess.CREATE_NEW_CONSOLE
-                | subprocess.CREATE_NEW_PROCESS_GROUP
-                | subprocess.DETACHED_PROCESS
-            ),
-            close_fds=True,
-        )
-
     def _cleanup_all(self) -> None:
         for handle in list(self._active.values()):
             if handle.alive:
                 try:
-                    handle.channel.write(EXIT_CMD + "\n")
-                    handle.channel.terminate()
+                    handle.ipc.write_exit()
+                    handle.proc.wait(timeout=5)
                 except Exception:
-                    pass
+                    try:
+                        handle.proc.terminate()
+                    except Exception:
+                        pass
         self._active.clear()
