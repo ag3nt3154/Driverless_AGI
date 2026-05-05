@@ -30,9 +30,9 @@
   - **Source:** Session `2026-04-26_15-20-10` · [review_2026-04-26_15-20-10.md](.dagi/self-review/review_2026-04-26_15-20-10.md) · [plan_2026-04-26_15-20-10.md](.dagi/self-review/plan_2026-04-26_15-20-10.md)
 
 - **Multi-agent / parallel clones** · `priority:medium` · `impact:high` · `in-progress`
-  - **Current:** `cli_subagent` tool spawns visible terminal windows (via `subprocess.CREATE_NEW_CONSOLE`) running a full dagi agent. Parent controls them via file-based IPC: numbered `task_<n>.json` / `result_<n>.json` files with atomic rename writes in `%TEMP%/dagi_ipc/<uuid>/`. `persistent=true` enables multi-turn control of the same terminal. No native ConPTY/pywinpty dependency.
-  - **Ideal:** Parallel spawning (multiple subagents concurrently); task queue / manifest structure; multi-pane UI in the main terminal showing all subagent outputs.
-  - **Next:** Prototype parallel dispatch (multiple `cli_subagent` calls in one agent turn); add a task manifest so subagents can coordinate without conflicts.
+  - **Current:** ALL subagents (`web_research`, `explore_files`, `plan`) spawn visible terminal windows via `subprocess.CREATE_NEW_CONSOLE`. Parent communicates via file-based IPC (`agent/ipc.py`); main terminal shows a Rich live spinner while waiting. Each terminal uses the appropriate model tier (worker / advanced) resolved from `config.yaml`. Terminal persists 5 minutes after task completion with a countdown banner. `cli_subagent.py` kept as a standalone tool for full-agent terminal use.
+  - **Ideal:** Parallel spawning (multiple subagents concurrently); task queue / manifest structure; multi-pane UI in the main terminal showing all subagent outputs simultaneously.
+  - **Next:** Prototype parallel dispatch (multiple terminal subagents in one agent turn); add a task manifest so subagents can coordinate without conflicts.
 
 - **Dynamic tool descriptions** · `priority:medium` · `impact:medium`
   - **Current:** Tool schemas are static — same description regardless of model or context.
@@ -93,6 +93,7 @@
 
 ## Done
 
+- [x] Terminal-spawned subagents with 5-minute persistence — `web_research`, `explore_files`, and `plan` subagents now spawn in visible `CREATE_NEW_CONSOLE` terminal windows instead of running in-process. Each terminal uses the correct model tier (worker/advanced) resolved from `config.yaml`. Main terminal shows a Rich live spinner with elapsed time. After each task, the terminal displays a 5-minute countdown and auto-closes. Shared spawning logic in `tools/_terminal_subagent.py`; tool registry for subprocess in `agent/tools.build_subagent_registry()`; `cli.py` extended with `--subagent-type` and `--plan-file` hidden args.
 - [x] BM25 wiki retrieval in memory-query skill — `agent/memory_retriever.py` provides BM25 helpers; `.dagi/skills/memory-query/bm25_query.py` is a self-contained CLI script the agent runs in Step 3. Returns ranked `{score, path}` JSON. SKILL.md updated to call the script, review scores, and fall back to grep if needed. System prompt updated to encourage memory-query after receiving any substantive task.
 - [x] Auto compaction for long contexts — Pi-style compaction in `agent/loop.py` (`_compact_context`). Summarizes middle history, preserves system prompt + recent tail, carries forward prior summaries.
 - [x] Plan mode — Full read-only planning mode in `agent/loop.py` (`plan_mode` flag, `plan_file` path). BashTool omitted, WriteTool/EditTool restricted to plan document.

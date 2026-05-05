@@ -171,7 +171,7 @@ Driverless_AGI/
 │   ├── ipc.py             # File-based IPC channel — atomic task/result exchange for subagents
 │   ├── skills.py          # SkillLoader — loads .dagi/skills/
 │   ├── workflows.py       # WorkflowLoader — loads .dagi/workflow/
-│   └── sub_agent.py       # Spawns independent sub-agent loops (in-process)
+│   └── sub_agent.py       # SubAgentRunner — legacy in-process subagent (used by cli_subagent)
 │
 ├── tools/
 │   ├── read.py            # Read files (text + image)
@@ -184,9 +184,10 @@ Driverless_AGI/
 │   ├── workflow.py        # Workflow content loader and lister (CLI helpers)
 │   ├── web_search.py      # DuckDuckGo web search
 │   ├── web_fetch.py       # Fetch and parse a URL
-│   ├── web_research.py    # Multi-page web research
-│   ├── explore_files.py   # Large-scale codebase scanning
-│   ├── cli_subagent.py    # Subagent terminal — spawn visible window, control via file IPC
+│   ├── web_research.py    # Multi-page web research (spawns visible terminal subagent)
+│   ├── explore_files.py   # Large-scale codebase scanning (spawns visible terminal subagent)
+│   ├── _terminal_subagent.py # Shared helper — spawn typed subagent terminals via file IPC
+│   ├── cli_subagent.py    # Full-agent terminal tool (legacy, kept for direct use)
 │   ├── compact.py         # Trigger context compaction
 │   ├── plan_mode.py       # Enter / exit read-only plan mode
 │   ├── switch_model.py    # Swap models mid-session
@@ -201,8 +202,7 @@ Driverless_AGI/
 │   │   ├── explore_files/ #   exploration agent prompt
 │   │   ├── web_research/  #   web research agent prompt
 │   │   ├── plan/          #   plan-writing agent prompt
-│   │   └── cli/           #   ConPTY terminal subagent prompt
-│   ├── subagent_logs/     # Per-subagent ConPTY output logs (<id>.log)
+│   │   └── cli/           #   full-agent terminal prompt (cli_subagent tool)
 │   ├── skills/            # Structured guidance documents (memory-*, create-skill, review-session, …)
 │   ├── workflow/          # User-directed workflows (.dagi/workflow/<name>/workflow.md)
 │   ├── memory/wiki/       # Topic-organized persistent wiki (infrastructure built)
@@ -231,9 +231,8 @@ Driverless_AGI/
 | `skill` | Load a `.dagi/skills/<name>/SKILL.md` guidance document and return it for execution |
 | `web_search` | DuckDuckGo web search. Returns titles, URLs, and snippets |
 | `web_fetch` | Fetch and parse a URL. Returns cleaned page text |
-| `web_research` | Multi-page research task: searches, fetches, and synthesizes results |
-| `explore_files` | Large-scale codebase scan: reads many files and returns a structured summary |
-| `cli_subagent` | Spawn a visible terminal window running a full dagi agent. Communicates via file-based IPC (atomic JSON files). `persistent=true` keeps the terminal alive for multi-turn; `persistent=false` (default) closes it after the task |
+| `web_research` | Multi-page research task: searches, fetches, and synthesizes results. Runs in a **visible terminal window** using the worker model; parent shows a spinner while waiting. Terminal persists 5 minutes after completion |
+| `explore_files` | Large-scale codebase scan: reads many files and returns a structured summary. Runs in a **visible terminal window** using the worker model; 5-minute persistence after completion |
 | `compact` | Manually trigger Pi-style context compaction |
 | `switch_model` | Swap to a different model (from `config.yaml`) mid-session |
 | `ask_user` | Pause and ask the user a clarifying question with optional choices |

@@ -170,11 +170,8 @@ def create_tool_registry(
             from tools.switch_model import SwitchModelTool
             reg.register(SwitchModelTool())
         if config is not None:
-            from tools.cli_subagent import CliSubAgentTool
             from tools.explore_files import ExploreFilesTool
             from tools.web_research import WebResearchTool
-
-            reg.register(CliSubAgentTool(project_path=cwd, model=config.model))
 
             web_tool = WebResearchTool(
                 config=config, callbacks=callbacks,
@@ -212,4 +209,60 @@ def create_tool_registry(
             if skill_roots:
                 _effective_memory_root = memory_root or cwd / "dagi-memory"
                 reg.register(SkillTool(skill_roots=skill_roots, dagi_root=_DAGI_ROOT, cwd=cwd, memory_root=_effective_memory_root))
+    return reg
+
+
+def build_subagent_registry(
+    subagent_type: str,
+    config: "AgentConfig",
+    project_path: Path,
+    plan_file: Path | None = None,
+    callbacks: "AgentCallbacks | None" = None,
+    tracker: "SessionTracker | None" = None,
+) -> ToolRegistry:
+    """Build a restricted ToolRegistry for a typed terminal subagent.
+
+    Called by the subprocess (cli.py --subagent-type) to reconstruct the same
+    tool scoping that the former in-process SubAgentRunner enforced.
+
+    Args:
+        subagent_type: "web_research" | "explore_files" | "plan"
+        config:        Resolved AgentConfig for this subagent (worker or advanced tier).
+        project_path:  Project root; used for cwd and allowed_roots.
+        plan_file:     Required for "plan" type — the single file the agent may write.
+        callbacks:     Subprocess-side callbacks; used by ShowPlanTool for on_ask_user.
+        tracker:       Optional session tracker for sub-subagent nesting.
+    """
+    effective_roots = [_DAGI_ROOT, project_path]
+    reg = ToolRegistry()
+
+    if subagent_type == "web_research":
+        from tools.web_fetch import WebFetchTool
+        from tools.web_search import WebSearchTool
+        reg.register(WebSearchTool())
+        reg.register(WebFetchTool())
+
+    elif subagent_type == "explore_files":
+        reg.register(ReadTool(cwd=project_path, allowed_roots=effective_roots))
+        reg.register(GrepTool(cwd=project_path, allowed_roots=effective_roots))
+        reg.register(FindTool(cwd=project_path, allowed_roots=effective_roots))
+
+    elif subagent_type == "plan":
+        if plan_file is None:
+            raise ValueError("plan_file is required for subagent_type='plan'")
+        from tools.show_plan import ShowPlanTool
+        from tools.web_research import WebResearchTool
+        reg.register(ReadTool(cwd=project_path, allowed_roots=effective_roots))
+        reg.register(GrepTool(cwd=project_path, allowed_roots=effective_roots))
+        reg.register(FindTool(cwd=project_path, allowed_roots=effective_roots))
+        reg.register(WriteTool(cwd=project_path, allowed_roots=[plan_file]))
+        reg.register(WebResearchTool(
+            config=config, callbacks=callbacks,
+            cwd=project_path, allowed_roots=effective_roots, tracker=tracker,
+        ))
+        reg.register(ShowPlanTool(plan_file=plan_file, callbacks=callbacks))
+
+    else:
+        raise ValueError(f"Unknown subagent_type: {subagent_type!r}")
+
     return reg

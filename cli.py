@@ -883,33 +883,205 @@ def _load_workflow_map(proj_path: Path) -> dict:
 
 # ── Subagent IPC server mode ──────────────────────────────────────────────────
 
+_SUBAGENT_LABELS = {
+    "web_research":   "Web Research Subagent",
+    "explore_files":  "File Explorer Subagent",
+    "plan":           "Planning Subagent",
+}
+
+_PERSISTENCE_SECONDS = 300  # 5 minutes
+
+
+def _apply_worker_config(config: "AgentConfig") -> "AgentConfig":
+    """Return a flattened config that uses worker_model (falls back to default)."""
+    from dataclasses import replace
+    w = config.worker_config or config
+    return replace(
+        config,
+        model=w.model,
+        base_url=w.base_url,
+        api_key=w.api_key,
+        thinking=w.thinking,
+        context_window=w.context_window,
+        reserve_tokens=w.reserve_tokens,
+        keep_recent_tokens=w.keep_recent_tokens,
+        plan_mode=False,
+        plan_file=None,
+        worker_config=None,
+        advanced_config=None,
+    )
+
+
+def _apply_advanced_config(config: "AgentConfig") -> "AgentConfig":
+    """Return a flattened config that uses advanced_model (falls back to default)."""
+    from dataclasses import replace
+    a = config.advanced_config or config
+    return replace(
+        config,
+        model=a.model,
+        base_url=a.base_url,
+        api_key=a.api_key,
+        thinking=a.thinking,
+        context_window=a.context_window,
+        reserve_tokens=a.reserve_tokens,
+        keep_recent_tokens=a.keep_recent_tokens,
+        plan_mode=True,
+        plan_file=None,
+        worker_config=None,
+        advanced_config=None,
+    )
+
+
+def _extract_final_assistant_text(messages: list) -> str:
+    """Return the last non-empty assistant text from a message list."""
+    for msg in reversed(messages):
+        if msg.get("role") == "assistant":
+            content = msg.get("content", "")
+            if isinstance(content, list):
+                parts = [
+                    blk.get("text", "")
+                    for blk in content
+                    if isinstance(blk, dict) and blk.get("type") == "text"
+                ]
+                text = "\n".join(parts).strip()
+            else:
+                text = (content or "").strip()
+            if text:
+                return text
+    return ""
+
+
+def _start_persistence_countdown(ipc: "IpcChannel", seconds: int = _PERSISTENCE_SECONDS):
+    """Start a daemon thread that prints a countdown and exits the process when it fires.
+
+    Returns a threading.Event the caller can set to cancel the countdown early
+    (e.g. when a new task arrives before the window expires).
+    """
+    import threading
+    import time
+
+    stop_event = threading.Event()
+
+    def _run() -> None:
+        deadline = time.monotonic() + seconds
+        while not stop_event.is_set():
+            remaining = int(deadline - time.monotonic())
+            if remaining <= 0:
+                console.print(
+                    "\n[dim]5-minute persistence window expired. Closing terminal.[/dim]"
+                )
+                sys.exit(0)
+            mins, secs = divmod(remaining, 60)
+            console.print(
+                f"\r[dim]  Window closes in {mins}m {secs:02d}s — awaiting next task…[/dim]",
+                end="",
+                highlight=False,
+            )
+            stop_event.wait(timeout=5)
+
+    t = threading.Thread(target=_run, daemon=True)
+    t.start()
+    return stop_event
+
+
+def _run_typed_subagent_task(
+    task: str,
+    subagent_type: str,
+    config: "AgentConfig",
+    project_path: Path,
+    plan_file_path: Optional[str],
+    force_sync: bool,
+) -> str:
+    """Run one task for a typed subagent terminal. Returns final assistant text."""
+    import time as _time
+
+    from agent.prompts import load_subagent_prompt
+    from agent.tools import build_subagent_registry
+
+    plan_file = Path(plan_file_path) if plan_file_path else None
+    stats = _Stats()
+    model_name = config.model or "unknown"
+    get_cwd: Callable[[], Path] = lambda: project_path
+
+    use_threaded = not force_sync
+    system_prompt = load_subagent_prompt(subagent_type)
+
+    if use_threaded:
+        q: queue.Queue = queue.Queue()
+        callbacks = _make_threaded_callbacks(q, stats)
+    else:
+        callbacks = _make_sync_callbacks(stats, model_name, verbose=False, get_cwd=get_cwd)
+
+    registry = build_subagent_registry(
+        subagent_type=subagent_type,
+        config=config,
+        project_path=project_path,
+        plan_file=plan_file,
+        callbacks=callbacks,
+    )
+
+    loop = AgentLoop(
+        config=config,
+        callbacks=callbacks,
+        initial_messages=[{"role": "system", "content": system_prompt}],
+        _registry=registry,
+    )
+
+    if use_threaded:
+        def _agent_thread() -> None:
+            try:
+                loop.run(task)
+            except Exception:
+                pass
+            finally:
+                q.put(None)
+
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            executor.submit(_agent_thread)
+            _render_queue(q, stats, model_name, verbose=False, get_cwd=get_cwd)
+    else:
+        try:
+            loop.run(task)
+        except Exception:
+            console.print_exception()
+
+    loop.finish()
+    return _extract_final_assistant_text(loop._messages)
+
+
 def _run_subagent_ipc_loop(
     ipc_dir: str,
     model: Optional[str],
     verbose: bool,
     sync: bool,
     project: Optional[str],
+    subagent_type: Optional[str] = None,
+    plan_file_path: Optional[str] = None,
 ) -> None:
     """Run cli.py as a file-based IPC subagent server.
 
     The parent agent writes task_<n>.json; this loop picks it up, runs it via
     AgentLoop, and writes result_<n>.json. The exit sentinel stops the loop.
+
+    When subagent_type is set, a restricted tool registry is used (web_research,
+    explore_files, or plan) with the appropriate model tier (worker or advanced).
+    After each task, the terminal stays open for _PERSISTENCE_SECONDS before closing.
     """
     from agent.ipc import IpcChannel
 
     cli_cfg = load_cli_config()
     effective_verbose = verbose or cli_cfg.verbose
     project_path = Path(project).resolve() if project else Path.cwd()
-    model_name = get_model_display_name(model)
     stats = _Stats()
     conversation_msgs: list = []
     active_loop: "AgentLoop | None" = None
 
     ipc = IpcChannel(Path(ipc_dir))
 
+    label = _SUBAGENT_LABELS.get(subagent_type or "", "Subagent Terminal")
     console.print(
         Panel(
-            "[bold cyan]Driverless AGI — Subagent Terminal[/bold cyan]\n"
+            f"[bold cyan]Driverless AGI — {label}[/bold cyan]\n"
             f"[dim]IPC dir: {ipc_dir}[/dim]\n"
             "[dim]Controlled by parent agent via file-based IPC. Do not type here.[/dim]",
             border_style="cyan",
@@ -917,53 +1089,74 @@ def _run_subagent_ipc_loop(
         )
     )
 
+    # Resolve model tier for typed subagents up front
+    typed_config: "AgentConfig | None" = None
+    if subagent_type:
+        base_config = resolve_model_config(model)
+        base_config.project_path = project_path
+        if subagent_type == "plan":
+            typed_config = _apply_advanced_config(base_config)
+            typed_config.project_path = project_path
+        else:
+            typed_config = _apply_worker_config(base_config)
+            typed_config.project_path = project_path
+        model_name = typed_config.model or "unknown"
+        console.print(f"[dim]Model: {model_name}[/dim]")
+
     # Signal parent that this subagent is ready
     ipc.write_ready()
 
     seq = 1
+    stop_event = None
     while True:
-        task_data = ipc.poll_task(seq)  # blocks; returns None on exit sentinel
+        # Poll slightly longer than persistence window so the countdown fires first
+        task_data = ipc.poll_task(seq, timeout=float(_PERSISTENCE_SECONDS + 15))
+        if stop_event is not None:
+            stop_event.set()  # cancel any running countdown
+            stop_event = None
+
         if task_data is None:
             break
 
         task = task_data.get("task", "")
-        console.print(f"\n[bold cyan]Task #{seq}:[/bold cyan] {task[:120]}")
+        console.print(f"\n[bold cyan]Task #{seq}:[/bold cyan] {task[:200]}")
 
         try:
-            existing_tracker = active_loop.tracker if active_loop is not None else None
-            conversation_msgs, active_loop = _run_task(
-                task,
-                conversation_msgs,
-                cli_cfg,
-                model,
-                model_name,
-                effective_verbose,
-                sync,
-                stats,
-                project_path,
-                existing_tracker=existing_tracker,
-            )
-            # Grab the final assistant message as the result
-            result_text = ""
-            for msg in reversed(active_loop._messages):
-                if msg.get("role") == "assistant":
-                    content = msg.get("content", "")
-                    if isinstance(content, list):
-                        parts = [
-                            blk.get("text", "")
-                            for blk in content
-                            if isinstance(blk, dict) and blk.get("type") == "text"
-                        ]
-                        result_text = "\n".join(parts).strip()
-                    elif isinstance(content, str):
-                        result_text = content.strip()
-                    if result_text:
-                        break
+            if typed_config is not None and subagent_type:
+                # Typed subagent: restricted toolset + resolved model tier
+                result_text = _run_typed_subagent_task(
+                    task=task,
+                    subagent_type=subagent_type,
+                    config=typed_config,
+                    project_path=project_path,
+                    plan_file_path=plan_file_path,
+                    force_sync=sync,
+                )
+            else:
+                # Full-agent path (existing cli_subagent behaviour)
+                existing_tracker = active_loop.tracker if active_loop is not None else None
+                model_name = get_model_display_name(model)
+                conversation_msgs, active_loop = _run_task(
+                    task,
+                    conversation_msgs,
+                    cli_cfg,
+                    model,
+                    model_name,
+                    effective_verbose,
+                    sync,
+                    stats,
+                    project_path,
+                    existing_tracker=existing_tracker,
+                )
+                result_text = _extract_final_assistant_text(active_loop._messages)
+
             ipc.write_result(seq, status="ok", result=result_text)
         except Exception as exc:  # noqa: BLE001
             console.print_exception()
             ipc.write_result(seq, status="error", error=str(exc))
 
+        # Start 5-minute persistence window — cancelled if another task arrives
+        stop_event = _start_persistence_countdown(ipc, seconds=_PERSISTENCE_SECONDS)
         seq += 1
 
     if active_loop is not None:
@@ -996,6 +1189,16 @@ def run(
         help="[Internal] Run as an IPC subagent server, polling for tasks in this directory.",
         hidden=True,
     ),
+    subagent_type: Optional[str] = typer.Option(
+        None, "--subagent-type",
+        help="[Internal] Typed subagent profile: web_research | explore_files | plan.",
+        hidden=True,
+    ),
+    subagent_plan_file: Optional[str] = typer.Option(
+        None, "--plan-file",
+        help="[Internal] Absolute path to plan file (required for --subagent-type plan).",
+        hidden=True,
+    ),
 ) -> None:
     if subagent_ipc_dir:
         _run_subagent_ipc_loop(
@@ -1004,6 +1207,8 @@ def run(
             verbose=verbose,
             sync=sync,
             project=project,
+            subagent_type=subagent_type,
+            plan_file_path=subagent_plan_file,
         )
         return
 

@@ -23,7 +23,7 @@ Guidelines:
 - Never stop mid-task. Keep calling tools until the task is fully complete before returning a plain-text response.
 - If you have completed one step but further steps remain, call the next required tool immediately — do not summarize partial progress as a final answer.
 - A response with no tool calls signals task completion. Only emit one when every required action has been taken and the result is ready to present.
-- Memory query: Before starting any non-trivial task or entering plan mode, invoke skill("memory-query") to check whether the wiki holds relevant prior context, decisions, or known pitfalls. Skip only for simple one-liner requests where prior context is obviously irrelevant.
+- Memory query: After receiving a substantive task (anything beyond a greeting or a quick factual question), invoke skill("memory-query") before taking any action. This surfaces prior context, past decisions, and known pitfalls from the wiki. The skill uses BM25 scoring internally — just provide the task text as the query. Skip if the request is clearly conversational (e.g. "hello", "what does X mean?") or if there is obviously no relevant prior knowledge to retrieve.
 - Memory add: When you notice something substantial worth preserving across sessions (future tasks, improvement ideas, open questions, reflections), invoke skill("memory-add"). Use sparingly — significant insights only.
 
 ## Agents.md — Session Context Documents

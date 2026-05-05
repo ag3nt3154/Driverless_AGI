@@ -4,13 +4,9 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 from uuid import uuid4
 
-from agent.prompts import load_subagent_prompt
-
 if TYPE_CHECKING:
     from agent.loop import AgentCallbacks, AgentConfig
     from agent.session import SessionTracker
-
-_PLAN_SUBAGENT_SYSTEM_PROMPT = load_subagent_prompt("plan")
 
 
 def build_plan_agent_config(
@@ -61,32 +57,10 @@ class PlanSubAgent:
         self._tracker = tracker
 
     def run(self, task: str) -> str:
-        from agent.sub_agent import SubAgentConfig, SubAgentRunner
-        from tools.find import FindTool
-        from tools.grep import GrepTool
-        from tools.read import ReadTool
-        from tools.show_plan import ShowPlanTool
-        from tools.web_research import WebResearchTool
-        from tools.write import WriteTool
+        from tools._terminal_subagent import spawn_terminal_subagent
 
         config = self._config
         project_path = config.project_path
-        dagi_root = Path(__file__).parent.parent
-        effective_roots = [dagi_root, project_path]
-
-        subagent_cfg = build_plan_agent_config(
-            config, self._plan_file, project_path, plan_mode_initiated_by="dagi"
-        )
-
-        sub_tools = [
-            ReadTool(cwd=project_path, allowed_roots=effective_roots),
-            GrepTool(cwd=project_path, allowed_roots=effective_roots),
-            FindTool(cwd=project_path, allowed_roots=effective_roots),
-            # WriteTool scoped to only the plan file via single-file allowed_root
-            WriteTool(cwd=project_path, allowed_roots=[self._plan_file]),
-            WebResearchTool(config=subagent_cfg, callbacks=self._callbacks, cwd=project_path, tracker=self._tracker),
-            ShowPlanTool(plan_file=self._plan_file, callbacks=self._callbacks),
-        ]
 
         subagent_id = uuid4().hex[:8]
         depth = (self._tracker._depth if self._tracker else 0)
@@ -94,16 +68,13 @@ class PlanSubAgent:
         if self._tracker:
             self._tracker.record_subagent_start(subagent_id, "plan_subagent", task, depth)
 
-        runner = SubAgentRunner(
-            config=subagent_cfg,
-            tools=sub_tools,
-            system_prompt=_PLAN_SUBAGENT_SYSTEM_PROMPT,
-            callbacks=self._callbacks,
-            sub_cfg=SubAgentConfig(prefix="[plan]"),
-            parent_tracker=self._tracker,
-            subagent_id=subagent_id,
+        result = spawn_terminal_subagent(
+            subagent_type="plan",
+            task=task,
+            project_path=project_path,
+            plan_file=self._plan_file,
+            timeout=600,   # planning is slower than typical tasks
         )
-        result = runner.run(task)
 
         if self._tracker:
             self._tracker.record_subagent_end(subagent_id, result, depth)

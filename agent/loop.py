@@ -160,7 +160,7 @@ class AgentLoop:
         else:
             self.tracker = SessionTracker(model=config.model, thread_id=config.thread_id)
 
-        effective_memory_root = (
+        self._effective_memory_root = (
             config.memory_root if config.memory_root is not None
             else config.project_path / "dagi-memory"
         ).resolve()
@@ -188,7 +188,7 @@ class AgentLoop:
                 config=config,
                 callbacks=self.callbacks,
                 tracker=self.tracker,
-                memory_root=effective_memory_root,
+                memory_root=self._effective_memory_root,
             )
 
         # ── Build system prompt ───────────────────────────────────────────
@@ -198,7 +198,7 @@ class AgentLoop:
             readme_path=readme_path,
             tools_and_skills=tools_and_skills_section,
             cwd=str(config.project_path.resolve()),
-            memory_root=str(effective_memory_root),
+            memory_root=str(self._effective_memory_root),
             dagi_root=str(dagi_root.resolve()),
         ))
 

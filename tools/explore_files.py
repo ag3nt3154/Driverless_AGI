@@ -5,12 +5,9 @@ from typing import TYPE_CHECKING
 from uuid import uuid4
 
 from agent.base_tool import BaseTool
-from agent.prompts import load_subagent_prompt
 
 if TYPE_CHECKING:
     from agent.session import SessionTracker
-
-_SYSTEM_PROMPT = load_subagent_prompt("explore_files")
 
 
 class ExploreFilesTool(BaseTool):
@@ -49,35 +46,22 @@ class ExploreFilesTool(BaseTool):
 
     def run(self, task: str, paths: str | None = None) -> str:
         try:
-            from agent.sub_agent import SubAgentConfig, SubAgentRunner
-            from tools.find import FindTool
-            from tools.grep import GrepTool
-            from tools.read import ReadTool
+            from tools._terminal_subagent import spawn_terminal_subagent
 
-            effective_roots = self._allowed_roots or [self._cwd]
-            sub_tools = [
-                ReadTool(cwd=self._cwd, allowed_roots=effective_roots),
-                GrepTool(cwd=self._cwd, allowed_roots=effective_roots),
-                FindTool(cwd=self._cwd, allowed_roots=effective_roots),
-            ]
             full_task = task if not paths else f"{task}\n\nFocus on these paths: {paths}"
 
-            subagent_id = uuid4().hex
+            subagent_id = uuid4().hex[:8]
             depth = self._tracker._depth if self._tracker else 0
 
             if self._tracker:
                 self._tracker.record_subagent_start(subagent_id, "explore_files", full_task, depth)
 
-            runner = SubAgentRunner(
-                config=self._config,
-                tools=sub_tools,
-                system_prompt=_SYSTEM_PROMPT,
-                callbacks=self._callbacks,
-                sub_cfg=SubAgentConfig(prefix="[explore-files]"),
-                parent_tracker=self._tracker,
-                subagent_id=subagent_id,
+            result = spawn_terminal_subagent(
+                subagent_type="explore_files",
+                task=full_task,
+                project_path=self._config.project_path,
+                timeout=300,
             )
-            result = runner.run(full_task)
 
             if self._tracker:
                 self._tracker.record_subagent_end(subagent_id, result, depth)

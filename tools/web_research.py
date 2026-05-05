@@ -5,12 +5,9 @@ from typing import TYPE_CHECKING
 from uuid import uuid4
 
 from agent.base_tool import BaseTool
-from agent.prompts import load_subagent_prompt
 
 if TYPE_CHECKING:
     from agent.session import SessionTracker
-
-_SYSTEM_PROMPT = load_subagent_prompt("web_research")
 
 
 class WebResearchTool(BaseTool):
@@ -39,26 +36,20 @@ class WebResearchTool(BaseTool):
 
     def run(self, task: str) -> str:
         try:
-            from agent.sub_agent import SubAgentConfig, SubAgentRunner
-            from tools.web_fetch import WebFetchTool
-            from tools.web_search import WebSearchTool
+            from tools._terminal_subagent import spawn_terminal_subagent
 
-            subagent_id = uuid4().hex
+            subagent_id = uuid4().hex[:8]
             depth = self._tracker._depth if self._tracker else 0
 
             if self._tracker:
                 self._tracker.record_subagent_start(subagent_id, "web_research", task, depth)
 
-            runner = SubAgentRunner(
-                config=self._config,
-                tools=[WebSearchTool(), WebFetchTool()],
-                system_prompt=_SYSTEM_PROMPT,
-                callbacks=self._callbacks,
-                sub_cfg=SubAgentConfig(prefix="[web-research]"),
-                parent_tracker=self._tracker,
-                subagent_id=subagent_id,
+            result = spawn_terminal_subagent(
+                subagent_type="web_research",
+                task=task,
+                project_path=self._config.project_path,
+                timeout=300,
             )
-            result = runner.run(task)
 
             if self._tracker:
                 self._tracker.record_subagent_end(subagent_id, result, depth)

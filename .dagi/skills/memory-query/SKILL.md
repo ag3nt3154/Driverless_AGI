@@ -68,36 +68,38 @@ wiki has been initialised. If not found, stop and tell the user:
 
 ---
 
-## Step 3 — Navigate via root index.md (semantic routing)
+## Step 3 — BM25 topic retrieval (run bm25_query.py)
 
-`read {memory_root}/wiki/index.md`
+Run the BM25 retrieval script to get the top ranked wiki pages for the query:
 
-Scan the topic table for entries whose description matches the query's key terms or
-likely topic areas. Identify candidate topic folders to drill into.
+```
+bash: conda run -n dagi python "{dagi_root}/.dagi/skills/memory-query/bm25_query.py" --query "<your query>" --wiki-root "{memory_root}" --top-n 5
+```
 
-If the root index has no entries yet, skip to Step 5 (grep fallback).
+The script outputs a JSON array of `{"score": float, "path": str}` objects ranked by
+BM25 relevance. Use these paths directly in Step 6 to read the relevant pages.
 
----
-
-## Step 4 — Drill into topic index.md files
-
-For each candidate topic identified in Step 3:
-
-`read {memory_root}/wiki/{topic}/index.md`
-
-Scan "Sub-topics" and "Pages in this folder" for entries relevant to the query.
-Identify specific pages to read.
-
-If a sub-topic looks relevant, read its index.md too:
-`read {memory_root}/wiki/{topic}/{subtopic}/index.md`
-
-Limit depth: stop at the first level that surfaces specific page names.
+- If the output is an empty array `[]`, skip to Step 5 (grep fallback).
+- Pass the actual query text, not a paraphrase — BM25 scores on term overlap.
+- The `--wiki-root` is the **memory root** directory (contains `wiki/`, `raw/`, `sources/`).
 
 ---
 
-## Step 5 — grep fallback (if index routing fails)
+## Step 4 — Review BM25 results
 
-If Steps 3–4 do not surface relevant pages, use grep:
+Examine the returned paths and scores:
+
+- High-scoring results (score > 0.3) are strong matches — read all of them.
+- Low-scoring results (score < 0.1) may be noise from the fallback pass — use judgement.
+- If multiple paths look clearly relevant, read them in score order.
+- If results look off-topic (e.g. the query is very domain-specific and scores are all near
+  zero), fall through to Step 5 for grep.
+
+---
+
+## Step 5 — grep fallback (if BM25 yields no useful results)
+
+If Step 3 produced an empty array or all scores are near zero, use grep directly:
 
 `grep "{key term}" {memory_root}/wiki/**/*.md`
 
