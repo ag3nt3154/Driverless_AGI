@@ -971,12 +971,6 @@ def _start_persistence_countdown(ipc: "IpcChannel", seconds: int = _PERSISTENCE_
                     "\n[dim]5-minute persistence window expired. Closing terminal.[/dim]"
                 )
                 sys.exit(0)
-            mins, secs = divmod(remaining, 60)
-            console.print(
-                f"\r[dim]  Window closes in {mins}m {secs:02d}s — awaiting next task…[/dim]",
-                end="",
-                highlight=False,
-            )
             stop_event.wait(timeout=5)
 
     t = threading.Thread(target=_run, daemon=True)
