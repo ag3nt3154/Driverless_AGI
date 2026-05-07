@@ -111,30 +111,13 @@ def _poll_with_spinner(
     seq: int,
     timeout: int,
 ) -> dict:
-    """Poll for the IPC result while showing a Rich live spinner in the parent terminal."""
-    try:
-        from rich.console import Console
-        from rich.live import Live
-        from rich.spinner import Spinner
-
-        console = Console()
-        t0 = time.monotonic()
-        deadline = t0 + timeout
-
-        with Live(console=console, refresh_per_second=4) as live:
-            while True:
-                remaining = deadline - time.monotonic()
-                if remaining <= 0:
-                    raise IpcTimeoutError(f"Timeout after {timeout}s")
-                elapsed = int(time.monotonic() - t0)
-                live.update(
-                    Spinner("dots", text=f"  [dim]{subagent_type} subagent running… {elapsed}s[/dim]")
-                )
-                try:
-                    return ipc.poll_result(seq, timeout=min(_POLL_INTERVAL, remaining))
-                except IpcTimeoutError:
-                    continue  # update spinner and retry
-
-    except ImportError:
-        # Fallback if Rich is not available
-        return ipc.poll_result(seq, timeout=float(timeout))
+    """Poll for the IPC result while the subagent runs."""
+    deadline = time.monotonic() + timeout
+    while True:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise IpcTimeoutError(f"Timeout after {timeout}s")
+        try:
+            return ipc.poll_result(seq, timeout=min(_POLL_INTERVAL, remaining))
+        except IpcTimeoutError:
+            continue
