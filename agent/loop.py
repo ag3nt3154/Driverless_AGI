@@ -180,7 +180,7 @@ class AgentLoop:
             # ── Build registry bound to project path ──────────────────────────
             self.registry = create_tool_registry(
                 cwd=config.project_path,
-                allowed_roots=[dagi_root, config.project_path],
+                allowed_roots=[dagi_root, config.project_path, self._effective_memory_root],
                 skill_roots=skill_roots,
                 plan_mode=config.plan_mode,
                 plan_file=Path(config.plan_file) if config.plan_file else None,

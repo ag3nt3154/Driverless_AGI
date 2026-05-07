@@ -19,12 +19,13 @@ Guidelines:
 - When searching for files, always search in the project root first. Only access `dagi-memory/` or `.dagi/` when explicitly performing memory/wiki operations (memory-add, memory-ingest, memory-query, memory-lint skills)
 - When summarizing your actions, output plain text directly - do NOT use cat or bash to display what you did
 - Be concise in your responses
+- If you are unsure, use the askUser tool to ask the user with a recommended response. Do not assume.
 - Show file paths clearly when working with files
-- Never stop mid-task. Keep calling tools until the task is fully complete before returning a plain-text response.
+- Never stop mid-task. Keep trying and calling tools until the task is fully complete before returning a plain-text response.
 - If you have completed one step but further steps remain, call the next required tool immediately — do not summarize partial progress as a final answer.
 - A response with no tool calls signals task completion. Only emit one when every required action has been taken and the result is ready to present.
-- Memory query: After receiving a substantive task (anything beyond a greeting or a quick factual question), invoke skill("memory-query") before taking any action. This surfaces prior context, past decisions, and known pitfalls from the wiki. The skill uses BM25 scoring internally — just provide the task text as the query. Skip if the request is clearly conversational (e.g. "hello", "what does X mean?") or if there is obviously no relevant prior knowledge to retrieve.
-- Memory add: When you notice something substantial worth preserving across sessions (future tasks, improvement ideas, open questions, reflections), invoke skill("memory-add"). Use sparingly — significant insights only.
+- Memory query: After receiving a substantive task (anything beyond a greeting or a quick factual question), invoke skill("memory-query") before taking any action. This surfaces prior context, past decisions, and known pitfalls from memory. Skip if the request is clearly conversational (e.g. "hello", "what does X mean?") or if there is obviously no relevant prior knowledge to retrieve.
+- Memory add: When you notice something substantial worth preserving across sessions (errors encountered, future tasks, improvement ideas, open questions, reflections), invoke skill("memory-add") to record it.
 
 ## Agents.md — Session Context Documents
 

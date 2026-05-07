@@ -4,7 +4,7 @@
 
 ## Description
 
-dagi is a self-contained agentic coding assistant engine. It runs an OpenAI-compatible agentic loop that can read, write, edit, and execute code across a local project. It is also capable of self-improvement — extending its own tools, skills, and prompts.
+dagi is a self-contained agentic coding assistant engine. It runs an agentic loop that can read, write, edit, and execute code across a local project. It is also capable of self-improvement — extending its own tools, skills, and prompts.
 
 ## Objectives
 
