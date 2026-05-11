@@ -273,6 +273,10 @@ class AgentLoop:
             on_compaction=self.callbacks.on_compaction,
         )
 
+        # Switch to plan tier immediately when starting in user-initiated plan mode
+        if config.plan_mode and config.advanced_config is not None:
+            self._handle_switch_model("plan", {"reason": "user-initiated plan mode"})
+
     def _compact_context(self) -> CompactionResult:
         """Delegates to CompactTool.compact()."""
         return self.compact_tool.compact()
@@ -402,12 +406,6 @@ class AgentLoop:
     # ── Plan mode transitions ─────────────────────────────────────────────────
 
     def _handle_enter_plan_mode(self, args: dict) -> str:
-        from tools.plan_subagent import PlanSubAgent
-
-        # Snapshot whether plan mode was user-initiated (harness pre-set plan_mode=True)
-        # before we rebuild back to normal mode below.
-        was_user_initiated = self.config.plan_mode
-
         reason = args.get("reason", "")
         dagi_root = Path(__file__).parent.parent
         plans_dir = self.config.project_path / ".dagi" / "plans"
@@ -426,64 +424,33 @@ class AgentLoop:
             encoding="utf-8",
         )
 
+        self._handle_switch_model("plan", {"reason": f"entering plan mode: {reason}"})
+        to_name = self.config.display_name or self.config.model
+
         self.callbacks.on_assistant_text(
-            f"Entering plan mode — spawning plan subagent.\n\n"
+            f"Entering plan mode — switching to advanced model ({to_name}).\n\n"
             f"**Plan file:** `{plan_file}`\n\n**Reason:** {reason}"
         )
 
-        self._handle_switch_model("plan", {"reason": f"entering plan mode: {reason}"})
+        self._rebuild_for_plan_mode(dagi_root, plan_file)
 
-        subagent = PlanSubAgent(
-            config=self.config,
-            plan_file=plan_file,
-            callbacks=self.callbacks,
-            tracker=self.tracker,
+        return (
+            f"Plan mode activated. You are now running on the advanced model ({to_name}).\n\n"
+            f"Plan file: {plan_file}\n"
+            f"Reason: {reason}\n\n"
+            f"Explore the codebase thoroughly with read/grep/find tools, then write your "
+            f"complete implementation plan to the plan file above. Your tools are now "
+            f"restricted to: read, grep, find, write/edit (plan file only), web_research, "
+            f"exit_plan_mode.\n\n"
+            f"When the plan is complete, call exit_plan_mode(summary=\"...\")."
         )
-        task = (
-            f"Write a comprehensive implementation plan for the following task:\n\n"
-            f"{reason}\n\n"
-            f"Project root: {self.config.project_path}\n"
-            f"Plan file path: {plan_file}\n\n"
-            f"Explore the codebase thoroughly, then overwrite the scaffold at {plan_file} "
-            f"with your complete plan document."
-        )
-        subagent.run(task)
-
-        self._handle_switch_model("default", {"reason": "returning from plan mode"})
-
-        try:
-            plan_contents = plan_file.read_text(encoding="utf-8")
-        except Exception:
-            plan_contents = "(plan file could not be read)"
-
-        self.config.active_plan_file = str(plan_file)
-        self.exited_plan_file = str(plan_file)
-        self._rebuild_for_normal_mode(dagi_root)
-
-        if was_user_initiated:
-            # show_plan tool already displayed the plan and ran the modification loop.
-            self.plan_mode_exited = True
-            return f"Plan written to {plan_file}. Awaiting user review."
-        else:
-            # DAGI-initiated: return plan contents as tool result so the agent
-            # continues executing in the same turn.
-            if _is_plan_empty(plan_file):
-                return (
-                    f"The plan document at {plan_file} is empty. "
-                    "Stop immediately and ask the user for further directions "
-                    "before doing anything else."
-                )
-            return (
-                f"Plan written to {plan_file}. Returning to normal mode to execute.\n\n"
-                f"{plan_contents}"
-            )
 
     def _handle_exit_plan_mode(self, args: dict) -> str:
-        summary = args.get("summary", "")
         saved_plan = self.config.plan_file
-        self.plan_mode_exited = True
-        self.exited_plan_file = saved_plan
         dagi_root = Path(__file__).parent.parent
+        self._handle_switch_model("default", {"reason": "plan complete, returning to normal mode"})
+        self.config.active_plan_file = saved_plan
+        self.exited_plan_file = saved_plan
         self._rebuild_for_normal_mode(dagi_root)
         if saved_plan and _is_plan_empty(Path(saved_plan)):
             return (
@@ -491,10 +458,13 @@ class AgentLoop:
                 "Stop immediately and ask the user for further directions "
                 "before doing anything else."
             )
+        try:
+            plan_contents = Path(saved_plan).read_text(encoding="utf-8")
+        except Exception:
+            plan_contents = "(plan file could not be read)"
         return (
-            f"Plan complete. Awaiting user review before implementation begins.\n"
-            f"Plan summary: {summary}\n"
-            f"Plan document: {saved_plan}"
+            f"Plan written to {saved_plan}. Returning to normal mode — begin execution now.\n\n"
+            f"{plan_contents}"
         )
 
     def _handle_switch_model(self, target: str, args: dict) -> str:
@@ -609,6 +579,45 @@ class AgentLoop:
                 f"- If you deviate from the plan, update the plan document to reflect reality."
             )
 
+        self._messages[0] = {"role": "system", "content": new_system}
+        self.compact_tool.bind(
+            self._messages, self.config, self.client,
+            on_compaction=self.callbacks.on_compaction,
+        )
+
+    def _rebuild_for_plan_mode(self, dagi_root: Path, plan_file: Path) -> None:
+        from agent.tools import create_tool_registry
+
+        self.config.plan_mode = True
+        self.config.plan_file = str(plan_file)
+        self.config.plan_mode_initiated_by = "dagi"
+
+        skill_roots = [
+            dagi_root / ".dagi" / "skills",
+            self.config.project_path / ".dagi" / "skills",
+        ]
+        self.registry = create_tool_registry(
+            cwd=self.config.project_path,
+            allowed_roots=[dagi_root, self.config.project_path, self._effective_memory_root],
+            skill_roots=skill_roots,
+            plan_mode=True,
+            plan_file=plan_file,
+            plan_mode_initiated_by="dagi",
+            config=self.config,
+            callbacks=self.callbacks,
+            tracker=self.tracker,
+            memory_root=self._effective_memory_root,
+        )
+        tools_and_skills = _format_tools_and_skills(self.registry, self.skills)
+        readme_path = (dagi_root / "README.md").resolve()
+        new_system = self.config.system_prompt.format_map(_SafeDict(
+            readme_path=readme_path,
+            tools_and_skills=tools_and_skills,
+            cwd=str(self.config.project_path.resolve()),
+            memory_root=str(self._effective_memory_root),
+            dagi_root=str(dagi_root.resolve()),
+        ))
+        new_system += f"\n\n---\n\nProject root: {self.config.project_path}"
         self._messages[0] = {"role": "system", "content": new_system}
         self.compact_tool.bind(
             self._messages, self.config, self.client,

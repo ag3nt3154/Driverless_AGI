@@ -887,6 +887,9 @@ _SUBAGENT_LABELS = {
     "web_research":   "Web Research Subagent",
     "explore_files":  "File Explorer Subagent",
     "plan":           "Planning Subagent",
+    "review":         "Review Subagent",
+    "worker":         "Worker Subagent",
+    "custom":         "Custom Subagent",
 }
 
 _PERSISTENCE_SECONDS = 300  # 5 minutes
@@ -912,7 +915,7 @@ def _apply_worker_config(config: "AgentConfig") -> "AgentConfig":
     )
 
 
-def _apply_advanced_config(config: "AgentConfig") -> "AgentConfig":
+def _apply_advanced_config(config: "AgentConfig", plan_mode: bool = False) -> "AgentConfig":
     """Return a flattened config that uses advanced_model (falls back to default)."""
     from dataclasses import replace
     a = config.advanced_config or config
@@ -925,7 +928,7 @@ def _apply_advanced_config(config: "AgentConfig") -> "AgentConfig":
         context_window=a.context_window,
         reserve_tokens=a.reserve_tokens,
         keep_recent_tokens=a.keep_recent_tokens,
-        plan_mode=True,
+        plan_mode=plan_mode,
         plan_file=None,
         worker_config=None,
         advanced_config=None,
@@ -985,6 +988,7 @@ def _run_typed_subagent_task(
     project_path: Path,
     plan_file_path: Optional[str],
     force_sync: bool,
+    system_prompt_file: Optional[str] = None,
 ) -> str:
     """Run one task for a typed subagent terminal. Returns final assistant text."""
     import time as _time
@@ -998,7 +1002,10 @@ def _run_typed_subagent_task(
     get_cwd: Callable[[], Path] = lambda: project_path
 
     use_threaded = not force_sync
-    system_prompt = load_subagent_prompt(subagent_type)
+    if system_prompt_file:
+        system_prompt = Path(system_prompt_file).read_text(encoding="utf-8")
+    else:
+        system_prompt = load_subagent_prompt(subagent_type)
 
     if use_threaded:
         q: queue.Queue = queue.Queue()
@@ -1051,6 +1058,7 @@ def _run_subagent_ipc_loop(
     project: Optional[str],
     subagent_type: Optional[str] = None,
     plan_file_path: Optional[str] = None,
+    system_prompt_file: Optional[str] = None,
 ) -> None:
     """Run cli.py as a file-based IPC subagent server.
 
@@ -1086,14 +1094,28 @@ def _run_subagent_ipc_loop(
     # Resolve model tier for typed subagents up front
     typed_config: "AgentConfig | None" = None
     if subagent_type:
+        import yaml as _yaml
         base_config = resolve_model_config(model)
         base_config.project_path = project_path
-        if subagent_type == "plan":
-            typed_config = _apply_advanced_config(base_config)
-            typed_config.project_path = project_path
+
+        # Determine model tier: prefer config.yaml, fall back to hardcoded legacy types
+        config_yaml = project_path / ".dagi" / "subagents" / subagent_type / "config.yaml"
+        if config_yaml.exists():
+            sa_cfg = _yaml.safe_load(config_yaml.read_text(encoding="utf-8")) or {}
+            model_tier = sa_cfg.get("model_tier", "worker")
+        elif subagent_type in ("plan", "custom"):
+            model_tier = "advanced"
+        else:
+            model_tier = "worker"
+
+        if model_tier == "advanced":
+            typed_config = _apply_advanced_config(
+                base_config,
+                plan_mode=(subagent_type == "plan"),
+            )
         else:
             typed_config = _apply_worker_config(base_config)
-            typed_config.project_path = project_path
+        typed_config.project_path = project_path
         model_name = typed_config.model or "unknown"
         console.print(f"[dim]Model: {model_name}[/dim]")
 
@@ -1125,6 +1147,7 @@ def _run_subagent_ipc_loop(
                     project_path=project_path,
                     plan_file_path=plan_file_path,
                     force_sync=sync,
+                    system_prompt_file=system_prompt_file,
                 )
             else:
                 # Full-agent path (existing cli_subagent behaviour)
@@ -1193,6 +1216,11 @@ def run(
         help="[Internal] Absolute path to plan file (required for --subagent-type plan).",
         hidden=True,
     ),
+    subagent_system_prompt_file: Optional[str] = typer.Option(
+        None, "--system-prompt-file",
+        help="[Internal] Path to a file containing the system prompt for --subagent-type custom.",
+        hidden=True,
+    ),
 ) -> None:
     if subagent_ipc_dir:
         _run_subagent_ipc_loop(
@@ -1203,6 +1231,7 @@ def run(
             project=project,
             subagent_type=subagent_type,
             plan_file_path=subagent_plan_file,
+            system_prompt_file=subagent_system_prompt_file,
         )
         return
 
