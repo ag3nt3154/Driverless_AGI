@@ -443,16 +443,22 @@ class AgentLoop:
         plans_dir = self.config.project_path / ".dagi" / "plans"
         plans_dir.mkdir(parents=True, exist_ok=True)
         ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-        plan_file = plans_dir / f"plan_{ts}.md"
+        plan_dir = plans_dir / f"plan_{ts}"
+        plan_dir.mkdir(parents=True, exist_ok=True)
+        plan_file = plan_dir / "plan.md"
         plan_file.write_text(
-            f"# Plan — {ts}\n\n"
+            f"# Plan: \n\n"
             "## Context\n\n\n"
-            "## Approach\n\n\n"
-            "## Files to Modify\n\n\n"
-            "## Implementation Steps\n\n\n"
-            "## Todo List\n\n"
-            "- [ ] \n\n"
-            "## Verification\n\n",
+            "## Architecture / Overview\n\n\n"
+            "## Requirements & Acceptance Criteria\n\n"
+            "### Tests\n\n\n"
+            "## Subtasks\n\n"
+            "### Subtask 1: \n"
+            "- **Goal**: \n"
+            "- **Requirements**: \n"
+            "- **Acceptance Criteria**: \n"
+            "- **Status**: [ ] pending\n\n"
+            "## Notes\n\n",
             encoding="utf-8",
         )
 

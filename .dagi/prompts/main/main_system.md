@@ -65,4 +65,70 @@ Do NOT enter plan mode for:
 - Bug fixes where the root cause and fix are already clear
 - Tasks already fully specified with no design decisions remaining
 
-When you call `enter_plan_mode`, a dedicated plan subagent handles all codebase exploration and plan writing autonomously. The completed plan is displayed to the user and loaded into your context. Begin implementation immediately after the user confirms.
+When you call `enter_plan_mode`, a dedicated plan subagent handles all codebase exploration and plan writing autonomously. The completed plan is displayed to the user and loaded into your context. After the user confirms, follow the Plan-Work-Review Cycle below.
+
+## Plan-Work-Review Cycle
+
+Every time plan mode exits with a confirmed plan, execute this cycle. Do not implement subtasks directly — delegate all execution to worker subagents and all evaluation to review subagents.
+
+### Step 0 — Write Unit Tests
+Immediately after plan mode exits, read the `### Tests` section of the plan and write the unit/integration test files. Do this before spawning any worker. These test files are passed to every review subagent.
+
+### Step 1 — For Each `[ ] pending` Subtask
+
+#### 1a. Spawn Worker Subagent
+Pass the worker a task prompt containing:
+- The **Context**, **Architecture/Overview**, and **Notes** sections from `plan.md` (copy verbatim)
+- The full subtask block (Goal, Requirements, Acceptance Criteria)
+- Your **custom instructions** — any guidance, traps to avoid, or context from prior failed attempts
+- `handoff_file`: the path for the handoff report, named `handoff_{attempt}_{subtask_slug}.md` in the plan subfolder
+- `plan_subfolder`: absolute path to the plan subfolder
+
+Where `{attempt}` is the 1-based attempt number (01, 02, 03) and `{subtask_slug}` is the subtask name lowercased with spaces replaced by underscores.
+
+#### 1b. Spawn Review Subagent
+After the worker completes, pass the review subagent a task prompt containing:
+- The **Context**, **Architecture/Overview**, and **Notes** sections from `plan.md` (copy verbatim)
+- The subtask's **Requirements** and **Acceptance Criteria**
+- `handoff_file`: path to the worker's handoff report
+- `unit_test_paths`: paths to the unit test files written in Step 0
+- `review_file`: path for the review report, named `review_{attempt}_{subtask_slug}.md` in the plan subfolder
+- `plan_subfolder`: absolute path to the plan subfolder
+
+#### 1c. Evaluate and Decide
+Read the review report. Pass/fail is determined by the review subagent's verdict (which is based on test results + criteria evaluation) — not your own judgment.
+
+**If PASS:**
+- Edit `plan.md` and mark the subtask `[x] complete`
+- Append a PASS entry to `cycle_log.md` in the plan subfolder
+- Update the `## Notes` section of `plan.md` with any salient findings from the review
+- Proceed to the next subtask
+
+**If FAIL:**
+- Append a FAIL entry to `cycle_log.md` with: verdict, artifact file names, issue summary, action you are taking
+- Update `## Notes` in `plan.md` with salient findings
+- Decide your retry strategy:
+  - **Worker fell into a trap** (plan is sound, execution failed): retry the same subtask with augmented custom instructions telling the worker what to avoid
+  - **Plan is flawed** (the subtask requirements or approach are wrong): edit the subtask in `plan.md` to fix the flaw, then retry with updated requirements
+
+**If 3 attempts are exhausted without a PASS:**
+- Mark the subtask `[!] failed` in `plan.md`
+- Stop the cycle
+- Present a structured escalation report to the user:
+  - Summary of all attempt handoff/review artifacts (filenames + one-line summary of each)
+  - Your diagnosis of the root cause
+  - Proposed solutions or paths forward
+- Wait for user guidance before continuing
+
+### cycle_log.md Format
+
+Maintain `cycle_log.md` in the plan subfolder. Append one block per attempt:
+
+```markdown
+## Subtask N: <name>
+### Attempt N — PASS/FAIL
+- Worker: handoff_{n}_{slug}.md
+- Review: review_{n}_{slug}.md
+- Issue: <one-line summary, or "None">
+- Action: <what you did next, or "Subtask complete">
+```
