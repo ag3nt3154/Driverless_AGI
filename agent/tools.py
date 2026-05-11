@@ -280,6 +280,8 @@ def create_tool_registry(
         if config is not None and (config.advanced_config is not None or config.worker_config is not None):
             from tools.switch_model import SwitchModelTool
             reg.register(SwitchModelTool())
+        from tools.reload_skills import ReloadSkillsTool
+        reg.register(ReloadSkillsTool())
         if config is not None:
             # Auto-discover predefined subagent types from .dagi/subagents/
             # A valid type directory must contain both prompt.md and config.yaml.

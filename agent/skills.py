@@ -56,6 +56,22 @@ class SkillLoader:
                 seen[skill.name] = skill  # project skills win: last root overwrites earlier
         return list(seen.values())
 
+    def load_all_with_errors(
+        self, roots: list[Path], dagi_root: Path | None = None
+    ) -> tuple[list[Skill], list[tuple[str, str]]]:
+        """Like load_all(), but also returns [(path, reason)] for files that failed."""
+        seen: dict[str, Skill] = {}
+        errors: list[tuple[str, str]] = []
+        for root in roots:
+            source = "builtin" if (dagi_root and root == dagi_root / ".dagi" / "skills") else "project"
+            for skill_file in sorted(root.rglob("SKILL.md")) if root.exists() else []:
+                skill, error = self._load_file_checked(skill_file, source)
+                if skill:
+                    seen[skill.name] = skill
+                elif error:
+                    errors.append((str(skill_file), error))
+        return list(seen.values()), errors
+
     def _load_from_root(self, root: Path, source: str) -> list[Skill]:
         if not root.exists():
             return []
@@ -67,19 +83,22 @@ class SkillLoader:
         return skills
 
     def _load_file(self, path: Path, source: str) -> Skill | None:
+        skill, _ = self._load_file_checked(path, source)
+        return skill
+
+    def _load_file_checked(self, path: Path, source: str) -> tuple["Skill | None", "str | None"]:
         try:
             text = path.read_text(encoding="utf-8")
-        except OSError:
-            return None
+        except OSError as e:
+            return None, f"cannot read file: {e}"
 
         meta, body = _parse_frontmatter(text)
         body = body.strip()
 
-        # Derive name: frontmatter > parent directory name
         name = meta.get("name") or path.parent.name
         name = name.strip().lower().replace(" ", "-")
         if not name:
-            return None
+            return None, "missing 'name' field and directory name is empty"
 
         description = meta.get("description", "").strip()
         raw_triggers = meta.get("triggers", "")
@@ -92,7 +111,7 @@ class SkillLoader:
             file_path=str(path),
             content=body,
             source=source,
-        )
+        ), None
 
 
 def format_skills_for_prompt(skills: list[Skill]) -> str:
