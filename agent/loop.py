@@ -14,6 +14,7 @@ from agent.session import SessionTracker, ToolCallRecord
 from agent.skills import Skill, SkillLoader
 from tools.compact import CompactTool, CompactionResult
 from tools.plan_mode import ENTER_PLAN_MODE_SENTINEL, EXIT_PLAN_MODE_SENTINEL
+from tools.reload_skills import RELOAD_SKILLS_SENTINEL
 from tools.switch_model import parse_switch_sentinel
 
 
@@ -60,6 +61,26 @@ def _format_tools_and_skills(registry: ToolRegistry, skills: list[Skill]) -> str
                 quoted = ", ".join(f'"{t}"' for t in s.triggers)
                 lines.append(f"  Triggers: {quoted}")
 
+    return "\n".join(lines)
+
+
+def _format_reload_notification(
+    total: int,
+    added: set[str],
+    removed: set[str],
+    errors: list[tuple[str, str]],
+) -> str:
+    lines = [f"[System: Skills reloaded. {total} skill(s) loaded."]
+    if added:
+        lines.append(f"  New: {', '.join(sorted(added))}")
+    if removed:
+        lines.append(f"  Removed: {', '.join(sorted(removed))}")
+    if errors:
+        for path, reason in errors:
+            lines.append(f"  Error: {path} — {reason}")
+    if not added and not removed and not errors:
+        lines.append("  No changes detected.")
+    lines.append("]")
     return "\n".join(lines)
 
 
@@ -282,6 +303,13 @@ class AgentLoop:
         return self.compact_tool.compact()
 
     def run(self, task: str) -> str:
+        if task.strip().lower() == "/reload":
+            added, removed, errors = self._rebuild_for_reload()
+            notification = _format_reload_notification(len(self.skills), added, removed, errors)
+            self._messages.append({"role": "system", "content": notification})
+            self.callbacks.on_assistant_text(notification)
+            return notification
+
         self._messages.append({"role": "user", "content": task})
         self.tracker.record_user(task)
 
@@ -355,6 +383,10 @@ class AgentLoop:
                         result = self._handle_enter_plan_mode(json.loads(tc.function.arguments))
                     elif result == EXIT_PLAN_MODE_SENTINEL:
                         result = self._handle_exit_plan_mode(json.loads(tc.function.arguments))
+                    elif result == RELOAD_SKILLS_SENTINEL:
+                        added, removed, errors = self._rebuild_for_reload()
+                        result = _format_reload_notification(len(self.skills), added, removed, errors)
+                        self._messages.append({"role": "system", "content": result})
                     else:
                         _switch_target = parse_switch_sentinel(result)
                         if _switch_target is not None:
@@ -623,6 +655,29 @@ class AgentLoop:
             self._messages, self.config, self.client,
             on_compaction=self.callbacks.on_compaction,
         )
+
+    def _rebuild_for_reload(self) -> tuple[set[str], set[str], list[tuple[str, str]]]:
+        """Hot-reload skills from disk, rebuild registry + system prompt preserving current mode.
+
+        Returns (added_names, removed_names, errors) for notification formatting.
+        """
+        dagi_root = Path(__file__).parent.parent
+        skill_roots = [
+            dagi_root / ".dagi" / "skills",
+            self.config.project_path / ".dagi" / "skills",
+        ]
+
+        before_names = {s.name for s in self.skills}
+        new_skills, errors = SkillLoader().load_all_with_errors(skill_roots, dagi_root=dagi_root)
+        self.skills = new_skills
+        after_names = {s.name for s in self.skills}
+
+        if self.config.plan_mode and self.config.plan_file:
+            self._rebuild_for_plan_mode(dagi_root, Path(self.config.plan_file))
+        else:
+            self._rebuild_for_normal_mode(dagi_root)
+
+        return after_names - before_names, before_names - after_names, errors
 
     def finish(self) -> None:
         """Finalize the session — write session_end to JSONL. Called by the CLI at session end."""
