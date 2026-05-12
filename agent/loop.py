@@ -133,8 +133,8 @@ class AgentCallbacks:
     on_reasoning:      Callable[[str], None]                    = field(default=lambda text: None)
     on_compaction:     Callable[[int, int], None]               = field(default=lambda kept, removed: None)
     on_model_switch:   Callable[[str, str], None]               = field(default=lambda f, t: None)
-    on_ask_user:       Callable[[str, list], str]               = field(
-        default=lambda question, options: next(
+    on_ask_user:       Callable[[str, list, "float | None"], str] = field(
+        default=lambda question, options, timeout: next(
             (o["label"] for o in options if o.get("recommended")),
             options[0]["label"] if options else "",
         )
@@ -479,7 +479,7 @@ class AgentLoop:
             f"Explore the codebase thoroughly with read/grep/find tools, then write your "
             f"complete implementation plan to the plan file above. Your tools are now "
             f"restricted to: read, grep, find, write/edit (plan file only), web_research, "
-            f"exit_plan_mode.\n\n"
+            f"skill, run_skill_script, ask_user (60 s timeout), exit_plan_mode.\n\n"
             f"When the plan is complete, call exit_plan_mode(summary=\"...\")."
         )
 

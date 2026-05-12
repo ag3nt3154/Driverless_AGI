@@ -186,7 +186,7 @@ def _load_project_tools(project_path: Path) -> list[BaseTool]:
     return loaded
 
 
-def _default_ask_user(question: str, options: list[dict]) -> str:  # noqa: ARG001
+def _default_ask_user(question: str, options: list[dict], timeout: "float | None") -> str:  # noqa: ARG001
     """Fallback on_ask_user for tests / headless callers (no callbacks supplied)."""
     return next(
         (o["label"] for o in options if o.get("recommended")),
@@ -232,8 +232,11 @@ def create_tool_registry(
             reg.register(EditTool(cwd=cwd, allowed_roots=[plan_file]))
         # BashTool always omitted in plan mode
         if plan_mode_initiated_by == "dagi":
+            from tools.ask_user import AskUserTool
             from tools.plan_mode import ExitPlanModeTool
+            _on_ask = callbacks.on_ask_user if callbacks else _default_ask_user
             reg.register(ExitPlanModeTool())
+            reg.register(AskUserTool(on_ask_user=_on_ask, timeout=60))
         if plan_mode_initiated_by == "user":
             from tools.ask_user import AskUserTool
             from tools.plan_mode import ExitPlanModeTool
@@ -249,6 +252,8 @@ def create_tool_registry(
         if skill_roots:
             _effective_memory_root = memory_root or cwd / "dagi-memory"
             reg.register(SkillTool(skill_roots=skill_roots, dagi_root=_DAGI_ROOT, cwd=cwd, memory_root=_effective_memory_root))
+            from tools.run_skill_script import RunSkillScriptTool
+            reg.register(RunSkillScriptTool(skill_roots=skill_roots, dagi_root=_DAGI_ROOT))
         # Web research — available in plan mode for information gathering
         if config is not None:
             from tools.spawn_subagent import SpawnSubagentTool

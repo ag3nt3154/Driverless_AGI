@@ -197,7 +197,7 @@ def _make_sync_callbacks(
     def on_done(_result: str) -> None:
         console.print(f"[dim]{stats.footer(model_name, cwd=get_cwd(), plan_mode=plan_mode)}[/dim]")
 
-    def on_ask_user(question: str, options: list[dict]) -> str:
+    def on_ask_user(question: str, options: list[dict], effective_timeout: float | None) -> str:
         console.print()
         console.print(Panel(
             question,
@@ -214,11 +214,9 @@ def _make_sync_callbacks(
                 rec = " [bold green](recommended)[/bold green]" if opt.get("recommended") else ""
                 table.add_row(str(i), opt["label"] + rec, opt.get("description", ""))
             console.print(table)
-            raw = console.input("[dim]Enter option number or label: [/dim]").strip()
-            return _resolve_option(raw, options)
-        else:
-            raw = console.input("[dim]Your answer: [/dim]").strip()
-            return raw
+        timeout_hint = f" — auto-selects in {int(effective_timeout)}s" if effective_timeout is not None else ""
+        raw = console.input(f"[dim]Your answer{timeout_hint}: [/dim]").strip()
+        return raw
 
     return AgentCallbacks(
         on_tool_start=on_tool_start,
@@ -254,15 +252,15 @@ def _make_threaded_callbacks(q: queue.Queue, stats: _Stats) -> AgentCallbacks:
     def put(tag: str, *payload) -> None:
         q.put((tag, *payload))
 
-    def on_ask_user(question: str, options: list[dict]) -> str:
+    def on_ask_user(question: str, options: list[dict], effective_timeout: float | None) -> str:
         response_event = threading.Event()
         answer_container: list[str] = []
-        q.put((_EVT_ASK_USER, question, options, response_event, answer_container))
-        # Main thread resolves within 300 s; 360 s here is a safety net only
-        response_event.wait(timeout=360)
+        q.put((_EVT_ASK_USER, question, options, response_event, answer_container, effective_timeout))
+        safety = (effective_timeout + 60) if effective_timeout is not None else None
+        response_event.wait(timeout=safety)
         if answer_container:
             return answer_container[0]
-        return _resolve_option("", options)
+        return next((o["label"] for o in options if o.get("recommended")), options[0]["label"] if options else "")
 
     return AgentCallbacks(
         on_tool_start     = lambda n, d, a: put(_EVT_TOOL_START, n, d, a),
@@ -370,7 +368,7 @@ def _render_queue(
 
             elif tag == _EVT_ASK_USER:
                 import threading as _threading
-                question, options, response_event, answer_container = payload
+                question, options, response_event, answer_container, effective_timeout = payload
                 live.stop()
                 try:
                     console.print()
@@ -389,9 +387,8 @@ def _render_queue(
                             rec = " [bold green](recommended)[/bold green]" if opt.get("recommended") else ""
                             tbl.add_row(str(i), opt["label"] + rec, opt.get("description", ""))
                         console.print(tbl)
-                        console.print("[dim]Enter option number or label — auto-selects in 5 min[/dim]")
-                    else:
-                        console.print("[dim]Type your answer — auto-selects in 5 min[/dim]")
+                    timeout_hint = f" — auto-selects in {int(effective_timeout)}s" if effective_timeout is not None else ""
+                    console.print(f"[dim]Type your answer{timeout_hint}[/dim]")
 
                     user_answer: list[str] = []
                     input_done = _threading.Event()
@@ -406,10 +403,15 @@ def _render_queue(
                             input_done.set()
 
                     _threading.Thread(target=_get_input, daemon=True).start()
-                    timed_out = not input_done.wait(timeout=300)
+                    timed_out = not input_done.wait(timeout=effective_timeout)
 
-                    chosen = _resolve_option(user_answer[0] if user_answer else "", options)
-                    if timed_out or not user_answer:
+                    if user_answer and not timed_out:
+                        chosen = user_answer[0]
+                    else:
+                        chosen = next(
+                            (o["label"] for o in options if o.get("recommended")),
+                            options[0]["label"] if options else "[timed out]",
+                        )
                         console.print(f"[dim]No response — auto-selected: {chosen}[/dim]")
                     answer_container.append(chosen)
                 finally:
