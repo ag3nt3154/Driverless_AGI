@@ -5,10 +5,15 @@ cli:
 context_window: 128000
 keep_recent_tokens: 20000
 max_iterations: 20
+reserve_tokens: 16384
 
 default_model: minimax-2.7-openrouter
-# worker_model: glm-5-turbo-openrouter     # cheaper LLM for sub-agents; omit to use default_model
-# advanced_model: kimi-2.6-openrouter    # advanced LLM for planning; omit to use default_model
+# worker_model: glm-5-turbo-openrouter       # cheaper LLM for sub-agents; omit to use default_model
+advanced_model: deepseek-v4-pro-openrouter   # advanced LLM for planning; omit to use default_model
+
+# Absolute path to the dagi-memory directory (wiki/raw/sources).
+# Omit to use the default: {current working directory}/dagi-memory
+memory_root: "G:\\My Drive\\black_grimoire\\dagi-memory"
 thinking: high          # none | low | medium | high — reasoning effort for models that support it
 
 models:
@@ -57,4 +62,4 @@ models:
     api_url: https://openrouter.ai/api/v1
     model: deepseek/deepseek-v4-pro
     name: Deepseek v4 (OpenRouter)
-reserve_tokens: 16384
+
