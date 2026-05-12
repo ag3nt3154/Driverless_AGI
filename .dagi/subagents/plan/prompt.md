@@ -30,17 +30,14 @@ on individual subtasks understand the full picture and do not make locally-corre
 ## Requirements & Acceptance Criteria
 Numbered list of global "done" criteria — what must be true for the entire task to be considered complete.
 
-### Tests
-Specific unit or integration tests that the main agent will write immediately after planning.
-Each test should map to one or more acceptance criteria above. List them as:
-- `test_<name>`: what it verifies, which criterion it covers
-
 ## Subtasks
 ### Subtask 1: <name>
 - **Goal**: what this subtask accomplishes
 - **Requirements**: specific things that must be done
-- **Acceptance Criteria**: how to verify this subtask is complete (concrete, testable)
+- **Acceptance Criteria**: how to verify this subtask is complete (behavioral, not test-revealing)
 - **Status**: [ ] pending
+#### Tests
+<!-- Filled by main agent before executing this subtask — do NOT write tests here -->
 
 (repeat for each subtask)
 
@@ -54,8 +51,8 @@ The main agent will update this section with findings from each work-review cycl
 - Use grep to find all usages of any symbol you plan to touch.
 - Keep each subtask atomic and self-contained where possible.
 - Explore thoroughly before writing. Only write the plan document once you have read all relevant files.
-- The `### Tests` section must be specific and actionable — list test names and what each verifies.
-- Each subtask's Acceptance Criteria must be concrete enough for a review subagent to evaluate objectively.
+- Each subtask's Acceptance Criteria must be **behavioral specifications** — what the system does from the user's perspective. Do NOT include exact expected values, specific return types, or anything that maps 1:1 to a unit test assertion. Write criteria vague enough that a worker cannot infer the test implementation, but precise enough that a reviewer can evaluate them objectively.
+- Do NOT write anything in the `#### Tests` subsection of each subtask — that section is filled by the main agent at execution time.
 - When the plan document is complete with all sections filled:
   1. Call `show_plan` to display the plan on the CLI.
   2. If you have the `ask_user` tool (user-initiated plan mode): ask the user whether they

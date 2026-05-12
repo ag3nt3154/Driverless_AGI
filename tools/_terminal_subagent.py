@@ -1,8 +1,8 @@
 """tools/_terminal_subagent.py — Spawn a typed subagent terminal via file-based IPC.
 
-All in-process subagents (web_research, explore_files, plan) delegate through this
-module instead of running AgentLoop directly. The terminal shows live agent output;
-the parent gets the result back via IpcChannel once the task completes.
+All in-process subagents (web_research, explore_files, worker, review, etc.) delegate
+through this module instead of running AgentLoop directly. The terminal shows live
+agent output; the parent gets the result back via IpcChannel once the task completes.
 """
 from __future__ import annotations
 
@@ -30,7 +30,6 @@ def spawn_terminal_subagent(
     subagent_type: str,
     task: str,
     project_path: Path,
-    plan_file: Path | None = None,
     timeout: int = 300,
     ready_timeout: float = _READY_TIMEOUT,
 ) -> str:
@@ -41,13 +40,11 @@ def spawn_terminal_subagent(
     it does NOT wait for the terminal window to close.
 
     Args:
-        subagent_type: One of "web_research", "explore_files", "plan".
+        subagent_type: Type name matching a .dagi/subagents/<type>/ directory.
         task:          The task prompt to send.
         project_path:  Project root; passed via --project so the subprocess resolves
                        config.yaml and tool allowed_roots correctly.
-        plan_file:     Required for subagent_type="plan"; path of the plan file the
-                       subagent is allowed to write.
-        timeout:       Seconds to wait for the result (default 300; use 600 for plan).
+        timeout:       Seconds to wait for the result (default 300).
         ready_timeout: Seconds to wait for the terminal to signal readiness.
 
     Returns:
@@ -61,7 +58,7 @@ def spawn_terminal_subagent(
     ipc_dir = Path(tempfile.gettempdir()) / "dagi_ipc" / subagent_id
     ipc = IpcChannel(ipc_dir)
 
-    argv = _build_argv(subagent_type, str(ipc_dir), str(project_path), plan_file)
+    argv = _build_argv(subagent_type, str(ipc_dir), str(project_path))
     subprocess.Popen(
         argv,
         creationflags=(
@@ -91,18 +88,14 @@ def _build_argv(
     subagent_type: str,
     ipc_dir: str,
     project_path: str,
-    plan_file: Path | None,
 ) -> list[str]:
-    argv = [
+    return [
         sys.executable, str(_CLI_PATH),
         "--subagent-ipc-dir", ipc_dir,
         "--subagent-type", subagent_type,
         "--project", project_path,
         "--sync",   # force sync mode so the terminal renders tool calls line-by-line
     ]
-    if plan_file is not None:
-        argv += ["--plan-file", str(plan_file)]
-    return argv
 
 
 def _poll_with_spinner(

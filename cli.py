@@ -1052,6 +1052,40 @@ def _run_typed_subagent_task(
     return _extract_final_assistant_text(loop._messages)
 
 
+def _render_task_prompt(console: "Console", seq: int, task: str) -> None:
+    """Render a subagent task prompt as structured Rich panels.
+
+    Splits the task string on '## ' headings and renders each section as a
+    labeled Panel with Markdown content. Falls back to a single panel when no
+    headings are found.
+    """
+    import re
+    from rich.markdown import Markdown
+    from rich.panel import Panel
+
+    console.print()
+    console.print(Panel(f"[bold cyan]Task #{seq}[/bold cyan]", border_style="cyan", padding=(0, 2)))
+
+    # Split on lines that start with '## ' (top-level markdown section headings)
+    parts = re.split(r"(?m)^(## .+)$", task)
+    if len(parts) <= 1:
+        # No ## headings found — render full task in one panel
+        console.print(Panel(Markdown(task.strip()), border_style="dim", padding=(0, 1)))
+        return
+
+    # parts alternates: [preamble, heading, body, heading, body, ...]
+    preamble = parts[0].strip()
+    if preamble:
+        console.print(Panel(Markdown(preamble), title="[dim]Preamble[/dim]", border_style="dim", padding=(0, 1)))
+
+    it = iter(parts[1:])
+    for heading in it:
+        body = next(it, "").strip()
+        title = heading.lstrip("# ").strip()
+        content = Markdown(body) if body else ""
+        console.print(Panel(content, title=f"[bold]{title}[/bold]", border_style="dim", padding=(0, 1)))
+
+
 def _run_subagent_ipc_loop(
     ipc_dir: str,
     model: Optional[str],
@@ -1105,16 +1139,13 @@ def _run_subagent_ipc_loop(
         if config_yaml.exists():
             sa_cfg = _yaml.safe_load(config_yaml.read_text(encoding="utf-8")) or {}
             model_tier = sa_cfg.get("model_tier", "worker")
-        elif subagent_type in ("plan", "custom"):
+        elif subagent_type == "custom":
             model_tier = "advanced"
         else:
             model_tier = "worker"
 
         if model_tier == "advanced":
-            typed_config = _apply_advanced_config(
-                base_config,
-                plan_mode=(subagent_type == "plan"),
-            )
+            typed_config = _apply_advanced_config(base_config)
         else:
             typed_config = _apply_worker_config(base_config)
         typed_config.project_path = project_path
@@ -1137,7 +1168,7 @@ def _run_subagent_ipc_loop(
             break
 
         task = task_data.get("task", "")
-        console.print(f"\n[bold cyan]Task #{seq}:[/bold cyan] {task[:200]}")
+        _render_task_prompt(console, seq, task)
 
         try:
             if typed_config is not None and subagent_type:
@@ -1210,12 +1241,7 @@ def run(
     ),
     subagent_type: Optional[str] = typer.Option(
         None, "--subagent-type",
-        help="[Internal] Typed subagent profile: web_research | explore_files | plan.",
-        hidden=True,
-    ),
-    subagent_plan_file: Optional[str] = typer.Option(
-        None, "--plan-file",
-        help="[Internal] Absolute path to plan file (required for --subagent-type plan).",
+        help="[Internal] Typed subagent profile: web_research | explore_files | custom.",
         hidden=True,
     ),
     subagent_system_prompt_file: Optional[str] = typer.Option(
@@ -1232,7 +1258,7 @@ def run(
             sync=sync,
             project=project,
             subagent_type=subagent_type,
-            plan_file_path=subagent_plan_file,
+            plan_file_path=None,
             system_prompt_file=subagent_system_prompt_file,
         )
         return
@@ -1269,10 +1295,26 @@ def run(
 
         if plan_mode:
             from agent.config_loader import load_raw_config
-            from tools.plan_subagent import build_plan_agent_config
-            plan_cfg = build_plan_agent_config(
-                resolve_model_config(model), plan_file, project_path,
+            from agent.prompts import load_subagent_prompt
+            from dataclasses import replace as _dc_replace
+            _base = resolve_model_config(model)
+            _adv = _base.advanced_config or _base
+            plan_cfg = _dc_replace(
+                _base,
+                model=_adv.model,
+                base_url=_adv.base_url,
+                api_key=_adv.api_key,
+                thinking=_adv.thinking,
+                context_window=_adv.context_window,
+                reserve_tokens=_adv.reserve_tokens,
+                keep_recent_tokens=_adv.keep_recent_tokens,
+                system_prompt=load_subagent_prompt("plan"),
+                plan_mode=True,
+                plan_file=str(plan_file),
                 plan_mode_initiated_by="user",
+                project_path=project_path,
+                worker_config=None,
+                advanced_config=None,
             )
             plan_model_name = get_model_display_name(load_raw_config().get("advanced_model"))
             if plan_model_name != model_name:

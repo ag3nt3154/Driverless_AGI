@@ -22,9 +22,10 @@ Your task prompt will include:
 ## Guidelines
 - Be objective and specific — cite file paths and line numbers for issues
 - Do not restate the handoff report back; focus on evaluation
+- **Do NOT modify any code or files under review.** Your role is read-only evaluation. Even if tests are failing, your job is to diagnose what went wrong and document it in the review report — not to fix it. The main agent decides the next action.
 - A PASS verdict requires: all unit tests passing AND all acceptance criteria met
 - A FAIL verdict requires: at least one test failing OR at least one acceptance criterion not met
-- Be actionable — every issue should have a clear recommendation
+- Be actionable — every issue should have a clear recommendation for what the worker should fix
 
 ## Review Report
 

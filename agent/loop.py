@@ -110,7 +110,7 @@ class AgentConfig:
     plan_mode_initiated_by: str = "user"  # "user" | "dagi"
     # Worker model (cheaper LLM for sub-agents); None = use this config as-is
     worker_config: AgentConfig | None = field(default=None)
-    # Advanced model (dedicated LLM for the plan subagent); None = use this config as-is
+    # Advanced model (dedicated LLM for plan mode); None = use this config as-is
     advanced_config: AgentConfig | None = field(default=None)
     # Active plan file persisted in system prompt after plan mode exits
     active_plan_file: str | None = None
@@ -447,17 +447,18 @@ class AgentLoop:
         plan_dir.mkdir(parents=True, exist_ok=True)
         plan_file = plan_dir / "plan.md"
         plan_file.write_text(
-            f"# Plan: \n\n"
+            "# Plan: \n\n"
             "## Context\n\n\n"
             "## Architecture / Overview\n\n\n"
-            "## Requirements & Acceptance Criteria\n\n"
-            "### Tests\n\n\n"
+            "## Requirements & Acceptance Criteria\n\n\n"
             "## Subtasks\n\n"
             "### Subtask 1: \n"
             "- **Goal**: \n"
             "- **Requirements**: \n"
             "- **Acceptance Criteria**: \n"
-            "- **Status**: [ ] pending\n\n"
+            "- **Status**: [ ] pending\n"
+            "#### Tests\n"
+            "<!-- Filled by main agent before executing this subtask — do NOT write tests here -->\n\n"
             "## Notes\n\n",
             encoding="utf-8",
         )
@@ -624,6 +625,7 @@ class AgentLoop:
         )
 
     def _rebuild_for_plan_mode(self, dagi_root: Path, plan_file: Path) -> None:
+        from agent.prompts import load_subagent_prompt
         from agent.tools import create_tool_registry
 
         self.config.plan_mode = True
@@ -648,7 +650,8 @@ class AgentLoop:
         )
         tools_and_skills = _format_tools_and_skills(self.registry, self.skills)
         readme_path = (dagi_root / "README.md").resolve()
-        new_system = self.config.system_prompt.format_map(_SafeDict(
+        plan_prompt = load_subagent_prompt("plan")
+        new_system = plan_prompt.format_map(_SafeDict(
             readme_path=readme_path,
             tools_and_skills=tools_and_skills,
             cwd=str(self.config.project_path.resolve()),

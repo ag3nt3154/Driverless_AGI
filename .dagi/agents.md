@@ -17,14 +17,14 @@ dagi is a self-contained agentic coding assistant engine. It runs an agentic loo
 ```
 Driverless_AGI/
 ├── agent/              # Core engine — loop, registry, tools, prompts, session tracking
-├── tools/              # Built-in tools (compact, plan_subagent, explore_files, web_research, etc.)
+├── tools/              # Built-in tools (compact, explore_files, web_research, spawn_subagent, etc.)
 ├── scripts/            # Utility scripts (dagi_freeze, build_api_tools, etc.)
 ├── projects/           # Experimental sub-projects (prompt_opt, etc.)
 ├── .dagi/
 │   ├── agents.md       # This file — dagi engine context loaded every session
 │   ├── prompts/
 │   │   ├── main/       # main_system.md — primary agent system prompt
-│   │   ├── subagents/  # plan_subagent, explore_files, web_research prompts
+│   │   ├── subagents/  # explore_files, web_research, worker, review prompts
 │   │   └── compact/    # compact_system, compact_user prompts
 │   ├── skills/         # Built-in skills (memory-add, memory-ingest, review-session, etc.)
 │   ├── workflow/       # Built-in workflows (improve-yourself)

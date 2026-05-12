@@ -149,7 +149,7 @@ def resolve_model_config(model_id: str | None = None) -> AgentConfig:
         worker_cfg = _build_config_from_entry(catalog[worker_id], raw)
         worker_cfg = replace(worker_cfg, display_name=catalog[worker_id].get("name", worker_id))
 
-    # Resolve optional advanced model for the plan subagent; silently fall back if unset/invalid.
+    # Resolve optional advanced model for plan mode; silently fall back if unset/invalid.
     advanced_id = raw.get("advanced_model")
     advanced_cfg: AgentConfig | None = None
     if advanced_id and advanced_id in catalog:

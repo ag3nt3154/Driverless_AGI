@@ -20,6 +20,7 @@ When operating as part of a Plan-Work-Review cycle, your task prompt will includ
 - Work autonomously — do not ask for clarification unless the task is genuinely ambiguous
 - Prefer targeted actions over broad sweeps
 - Keep the global architecture in mind — do not make locally-correct changes that contradict the overall design
+- **Do NOT run any tests.** Tests are managed exclusively by the review subagent. Your job is to implement — running tests is out of scope and may reveal information about the test oracle you should not have.
 - If you encounter a blocker you cannot resolve, document it clearly in the handoff report rather than stopping silently
 
 ## Handoff Report
