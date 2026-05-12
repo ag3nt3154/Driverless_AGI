@@ -4,6 +4,10 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 from uuid import uuid4
 
+from agent.prompts import load_subagent_prompt
+
+_PLAN_SUBAGENT_SYSTEM_PROMPT = load_subagent_prompt("plan")
+
 if TYPE_CHECKING:
     from agent.loop import AgentCallbacks, AgentConfig
     from agent.session import SessionTracker
