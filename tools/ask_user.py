@@ -13,11 +13,11 @@ class AskUserTool(BaseTool):
         "Pause and present the user with a question. "
         "Use to resolve ambiguities, choose between approaches, "
         "confirm architectural decisions, or collect free-text feedback. "
-        "Optionally provide 2-4 concrete options; omit options entirely to ask a free-text question. "
-        "Mark the strongest option with recommended=true to set a default. "
-        "If the user does not respond within 5 minutes, the recommended option is chosen "
-        "automatically (or '[no-response - timed out]' for free-text questions). "
-        "Returns the chosen option label and description as JSON, or the answer as JSON."
+        "Optionally provide 2-4 options with labels, descriptions, and a recommended flag — "
+        "these are displayed as hints, but the user always responds in free text. "
+        "Set no_timeout=true to wait indefinitely for the user's answer. "
+        "By default, auto-proceeds after the session timeout using the recommended option. "
+        "Returns the original question, the full options list, and the user's verbatim answer as JSON."
     )
     _parameters = {
         "type": "object",
@@ -28,7 +28,10 @@ class AskUserTool(BaseTool):
             },
             "options": {
                 "type": "array",
-                "description": "List of options for the user to choose from (2-4 items).",
+                "description": (
+                    "Optional hint options shown to the user (2-4 items). "
+                    "The user always responds in free text regardless."
+                ),
                 "items": {
                     "type": "object",
                     "properties": {
@@ -53,37 +56,42 @@ class AskUserTool(BaseTool):
                 "minItems": 0,
                 "maxItems": 4,
             },
+            "no_timeout": {
+                "type": "boolean",
+                "description": (
+                    "If true, the terminal waits indefinitely for the user's answer. "
+                    "If false (default), auto-proceeds after the session timeout."
+                ),
+            },
         },
         "required": ["question"],
     }
 
-    def __init__(self, on_ask_user: Callable[[str, list[dict]], str], timeout: int = 300) -> None:
+    def __init__(
+        self,
+        on_ask_user: Callable[[str, list[dict], float | None], str],
+        timeout: int | None = 300,
+    ) -> None:
         self._on_ask_user = on_ask_user
         self._timeout = timeout
 
     def _fallback(self, options: list[dict]) -> str:
-        """Recommended option, first option, or timed-out sentinel for free-text."""
         if not options:
             return "[no-response - timed out]"
         recommended = next((o["label"] for o in options if o.get("recommended")), None)
         return recommended if recommended is not None else options[0]["label"]
 
-    def run(self, question: str, options: list[dict] | None = None) -> str:
+    def run(self, question: str, options: list[dict] | None = None, no_timeout: bool = False) -> str:
         options = options or []
+        effective_timeout: float | None = None if no_timeout else self._timeout
         result: list[str] = []
 
         def _ask() -> None:
-            result.append(self._on_ask_user(question, options))
+            result.append(self._on_ask_user(question, options, effective_timeout))
 
         t = threading.Thread(target=_ask, daemon=True)
         t.start()
-        t.join(timeout=self._timeout)
+        t.join(timeout=effective_timeout)
 
-        chosen = result[0] if result else self._fallback(options)
-        matched_desc = next(
-            (o.get("description", "") for o in options if o["label"] == chosen),
-            None,
-        )
-        if matched_desc is not None:
-            return json.dumps({"chosen": chosen, "description": matched_desc})
-        return json.dumps({"answer": chosen})
+        answer = result[0] if result else self._fallback(options)
+        return json.dumps({"question": question, "options": options, "answer": answer})
