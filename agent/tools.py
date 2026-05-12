@@ -348,43 +348,20 @@ def build_subagent_registry(
     Called by the subprocess (cli.py --subagent-type) to reconstruct the
     tool scope defined in .dagi/subagents/<type>/config.yaml.
 
-    Legacy types without config.yaml ("plan", "custom") are handled explicitly:
-      - "plan":   read_only + write (plan file only) + web_research + show_plan
+    The "custom" type is handled explicitly:
       - "custom": full scope (used by SpawnCliSubagentTool)
 
     Args:
         subagent_type: Type name matching a .dagi/subagents/<type>/ directory,
-                       or "plan" / "custom" for legacy types.
+                       or "custom" for full-scope dynamic subagents.
         config:        Resolved AgentConfig for this subagent.
         project_path:  Project root; used for cwd and allowed_roots.
-        plan_file:     Required for "plan" type only.
-        callbacks:     Subprocess-side callbacks for ShowPlanTool.
+        plan_file:     Unused; kept for signature compatibility.
+        callbacks:     Subprocess-side callbacks.
         tracker:       Optional session tracker.
     """
     effective_roots = [_DAGI_ROOT, project_path]
     reg = ToolRegistry()
-
-    # ── Legacy: plan type (no config.yaml, special tool scope) ───────────────
-    if subagent_type == "plan":
-        if plan_file is None:
-            raise ValueError("plan_file is required for subagent_type='plan'")
-        from tools.show_plan import ShowPlanTool
-        from tools.spawn_subagent import SpawnSubagentTool
-        reg.register(ReadTool(cwd=project_path, allowed_roots=effective_roots))
-        reg.register(GrepTool(cwd=project_path, allowed_roots=effective_roots))
-        reg.register(FindTool(cwd=project_path, allowed_roots=effective_roots))
-        reg.register(WriteTool(cwd=project_path, allowed_roots=[plan_file]))
-        reg.register(SpawnSubagentTool(
-            type_name="web_research",
-            description="Search the web and fetch page content.",
-            config=config,
-            callbacks=callbacks,
-            cwd=project_path,
-            allowed_roots=effective_roots,
-            tracker=tracker,
-        ))
-        reg.register(ShowPlanTool(plan_file=plan_file, callbacks=callbacks))
-        return reg
 
     # ── Custom: full scope for dynamic SpawnCliSubagentTool subagents ─────────
     if subagent_type == "custom":

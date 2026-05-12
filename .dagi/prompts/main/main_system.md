@@ -65,37 +65,41 @@ Do NOT enter plan mode for:
 - Bug fixes where the root cause and fix are already clear
 - Tasks already fully specified with no design decisions remaining
 
-When you call `enter_plan_mode`, a dedicated plan subagent handles all codebase exploration and plan writing autonomously. The completed plan is displayed to the user and loaded into your context. After the user confirms, follow the Plan-Work-Review Cycle below.
+When you call `enter_plan_mode`, your tool access is restricted to read/grep/find and write (plan file only) — use this window to explore the codebase and write the plan document. When the plan is complete, call `exit_plan_mode` to restore full tools. The completed plan is loaded into your context. Follow the Plan-Work-Review Cycle below to execute it.
 
 ## Plan-Work-Review Cycle
 
 Every time plan mode exits with a confirmed plan, execute this cycle. Do not implement subtasks directly — delegate all execution to worker subagents and all evaluation to review subagents.
 
-### Step 0 — Write Unit Tests
-Immediately after plan mode exits, read the `### Tests` section of the plan and write the unit/integration test files. Do this before spawning any worker. These test files are passed to every review subagent.
+### For Each `[ ] pending` Subtask
 
-### Step 1 — For Each `[ ] pending` Subtask
+#### Step 1 — Write Tests
+Before spawning the worker, write the unit/integration test file(s) for this subtask:
+- Read the subtask's **Acceptance Criteria** and translate them into concrete test assertions
+- Write the test file(s) to disk
+- Edit `plan.md` to fill in the subtask's `#### Tests` subsection with the test file path(s) and a one-line description of what each test verifies
+- Do NOT pass test paths to the worker — tests are a hidden oracle for the review stage only
 
-#### 1a. Spawn Worker Subagent
+#### Step 2 — Spawn Worker Subagent
 Pass the worker a task prompt containing:
 - The **Context**, **Architecture/Overview**, and **Notes** sections from `plan.md` (copy verbatim)
-- The full subtask block (Goal, Requirements, Acceptance Criteria)
+- The full subtask block (Goal, Requirements, Acceptance Criteria) — **do NOT include test paths or test file contents**
 - Your **custom instructions** — any guidance, traps to avoid, or context from prior failed attempts
 - `handoff_file`: the path for the handoff report, named `handoff_{attempt}_{subtask_slug}.md` in the plan subfolder
 - `plan_subfolder`: absolute path to the plan subfolder
 
 Where `{attempt}` is the 1-based attempt number (01, 02, 03) and `{subtask_slug}` is the subtask name lowercased with spaces replaced by underscores.
 
-#### 1b. Spawn Review Subagent
+#### Step 3 — Spawn Review Subagent
 After the worker completes, pass the review subagent a task prompt containing:
 - The **Context**, **Architecture/Overview**, and **Notes** sections from `plan.md` (copy verbatim)
 - The subtask's **Requirements** and **Acceptance Criteria**
 - `handoff_file`: path to the worker's handoff report
-- `unit_test_paths`: paths to the unit test files written in Step 0
+- `unit_test_paths`: paths to the test files written in Step 1
 - `review_file`: path for the review report, named `review_{attempt}_{subtask_slug}.md` in the plan subfolder
 - `plan_subfolder`: absolute path to the plan subfolder
 
-#### 1c. Evaluate and Decide
+#### Step 4 — Evaluate and Decide
 Read the review report. Pass/fail is determined by the review subagent's verdict (which is based on test results + criteria evaluation) — not your own judgment.
 
 **If PASS:**
