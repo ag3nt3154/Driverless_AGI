@@ -93,6 +93,8 @@
 
 ## Done
 
+- [x] Prompt architecture refactor — `main_system.md` trimmed to harness-only (tools, plan mode trigger). Behavioral guidelines, memory rules, and Plan-Work-Review Cycle moved to `.dagi/agents.md`. Persona stays in `soul.md`. Unified behavioral rules merged from `temp_system_prompt.txt` (ambiguity calibration, invariants checklist, hard stops, token budgets). Redundant "read agents.md" instruction removed — both files are auto-prepended by `loop.py`.
+
 - [x] Terminal-spawned subagents with 5-minute persistence — `web_research`, `explore_files`, and `plan` subagents now spawn in visible `CREATE_NEW_CONSOLE` terminal windows instead of running in-process. Each terminal uses the correct model tier (worker/advanced) resolved from `config.yaml`. Main terminal shows a Rich live spinner with elapsed time. After each task, the terminal displays a 5-minute countdown and auto-closes. Shared spawning logic in `tools/_terminal_subagent.py`; tool registry for subprocess in `agent/tools.build_subagent_registry()`; `cli.py` extended with `--subagent-type` and `--plan-file` hidden args.
 - [x] BM25 wiki retrieval in memory-query skill — `agent/memory_retriever.py` provides BM25 helpers; `.dagi/skills/memory-query/bm25_query.py` is a self-contained CLI script the agent runs in Step 3. Returns ranked `{score, path}` JSON. SKILL.md updated to call the script, review scores, and fall back to grep if needed. System prompt updated to encourage memory-query after receiving any substantive task.
 - [x] Auto compaction for long contexts — Pi-style compaction in `agent/loop.py` (`_compact_context`). Summarizes middle history, preserves system prompt + recent tail, carries forward prior summaries.
