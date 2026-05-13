@@ -123,9 +123,15 @@ Currently all content is `human` unless the caller explicitly states otherwise.
 **4b.** If topic exists: `read {memory_root}/wiki/{topic}/index.md` — scan for
 related pages and sub-topics.
 
-**4c.** For each significant entity from Step 2, check for an existing page:
+**4c.** For each significant entity from Step 2, check for an existing page or prior mention:
 `grep "{entity name}" {memory_root}/wiki/**/*.md`
-Note which entities already have pages (to update) vs. which are new (to create).
+
+Classify each entity as one of three states:
+- **`has_page`** — a dedicated entity file (`type: entity`) already exists → update it (Step 7, branch A)
+- **`has_wikilink`** — the entity appears as an inline wikilink `[[...]]` in one or more existing nodes, but no dedicated page exists yet → promote to a page (Step 7, branch B)
+- **`new`** — no prior mention found → add as inline wikilink only; do not create a page (Step 7, branch C)
+
+Note all file paths where `has_wikilink` entities appear — you will need them in Step 7.
 
 ---
 
@@ -146,20 +152,50 @@ to surface any pages not yet indexed or with different slug names.
 Assess semantic similarity: do the existing node and the new content cover the
 same core idea, entity, or claim?
 
-**4.5d.** If a strong match exists (same core subject, substantial overlap), present
-the choice to the user:
+**4.5d.** If a strong match exists (same core subject, substantial overlap), classify
+the relationship between the existing node and the incoming content:
+
+- **Supportive** — the new content corroborates, extends, or adds evidence to the existing node's claims
+- **Contradictory** — the new content directly disputes or is irreconcilable with a claim in the existing node
+
+**4.5e. If supportive:** present the choice to the user:
 
   "Found existing node: `{memory_root}/wiki/{topic}/{existing-slug}.md`
    — {one-sentence description of what it covers}.
    A) Add to the existing node (applies support rule to confidence)
    B) Create a new node"
 
-**4.5e. If the user chooses A (update mode):**
-  1. Note the existing node path — use it in Step 6 instead of the new slug path.
-  2. Mark this operation as **update mode** for Steps 6 and 7.
-  3. Record the existing node's current `confidence` value.
+  - If user chooses A (update mode):
+    1. Note the existing node path — use it in Step 6 instead of the new slug path.
+    2. Mark this operation as **update mode** for Steps 6 and 7.
+    3. Record the existing node's current `confidence` value.
+  - If user chooses B: proceed to Step 5 normally.
 
-**4.5f. If the user chooses B, or no match is found:** proceed to Step 5 normally.
+**4.5f. If contradictory:** call `ask_user` with no options (free text only, default timeout):
+
+  ```
+  ask_user(
+    question: "Contradiction detected in [{existing-slug}].
+               Existing claim: '{...}'.  Incoming claim: '{...}'.
+               Default: append a Contradicting Evidence section and reduce both
+               confidence scores by 0.5 × the lower score (floor 0.2).
+               Reply with instructions to override, or leave — auto-proceeds in 5 min."
+  )
+  ```
+
+  - **On timeout** (answer is `"[no-response - timed out]"`) or blank reply → proceed with default action.
+  - **Default action:**
+    1. Compute `reduction = 0.5 × min(existing_score, incoming_score)`.
+    2. Reduce `existing_score` and `incoming_score` each by `reduction`, clamped to floor `0.2`.
+    3. Update the existing node's `confidence` and `confidence_last_updated` via `edit`.
+    4. Append a `## Contradicting Evidence` section to the existing node containing a summary of the incoming claim and the updated score.
+    5. The incoming content will still be written as a new node in Step 6 with its (reduced) confidence score.
+  - **User free-text overrides:**
+    - `"keep new only"` → replace the existing claim with the incoming content; do not append a contradiction section.
+    - `"skip"` → leave the existing node entirely unchanged; do not write a new node for this content.
+    - Any other instruction → apply LLM judgment to honour the user's intent.
+
+**4.5g. If no match is found:** proceed to Step 5 normally.
 
 ---
 
@@ -192,9 +228,14 @@ A **distinct idea** qualifies for its own node if it:
 - Could be understood without the other ideas in the source
 - Is likely to be referenced or searched independently in the future
 
-**If single idea:** proceed to Step 6 with one node.
+**Always split on the info/thought boundary:** if the source contains both factual or
+research content (`info`) and personal opinion, hypothesis, or reflection (`thought`)
+about the same subject, always split into separate nodes — even if the content is brief.
+Each node gets its own file, slug, tag (`info` or `thought`), and confidence score.
 
-**If multiple distinct ideas:** list them explicitly before writing (e.g. "Idea 1: X, Idea 2: Y"). Then write one node per idea, running Step 6 for each in sequence. Assign each node its own descriptive slug (e.g. `attention-mechanism-self-attention`, `attention-mechanism-multi-head`) rather than `part-1`, `part-2` suffixes where possible.
+**If single idea (or pure info / pure thought):** proceed to Step 6 with one node.
+
+**If multiple distinct ideas:** list them explicitly before writing (e.g. "Idea 1: X, Idea 2: Y"). Then write one node per idea, running Step 6 for each in sequence. Assign each node its own descriptive slug (e.g. `attention-mechanism-self-attention`, `attention-mechanism-multi-head`) rather than `part-1`, `part-2` suffixes where possible. Splitting is unbounded — there is no minimum length requirement.
 
 **Linking split nodes:** every node in a split set must include a "Part of series" block in its Related Pages section:
 
@@ -210,7 +251,6 @@ A **distinct idea** qualifies for its own node if it:
 **When NOT to split:**
 - A unified list of facts or tips on one subject (keep together)
 - Ideas that are tightly interdependent and lose meaning when separated
-- Input shorter than 3 paragraphs — splitting would produce stub nodes
 
 ---
 
@@ -401,24 +441,33 @@ process entity pages once — do not create duplicate entity pages for the same 
 appearing in multiple sibling nodes. Each entity page's `## Sources` section should
 reference all sibling nodes that mention it.
 
-For each **significant entity** identified in Step 2:
+For each **significant entity** identified in Step 2, use the state classified in Step 4c:
 
-**Entity already has a page** (found via grep in Step 4c):
+---
+
+**Branch A — `has_page`** (dedicated entity file already exists):
 1. `read` the existing page
 2. Add new information from this content using `edit`
 3. Append to the page's `## Sources` section (create it if absent):
    `- [[{topic}/{slug}]] — {one sentence on what this content adds about this entity}`
 4. Update `last_updated` in frontmatter to today
+5. If this entity now spans multiple topics, update `topic` in frontmatter to a list
 
-**No page exists yet** and the entity is significant enough to warrant one:
-Create `{memory_root}/wiki/{topic}/{EntityName}.md`:
+---
+
+**Branch B — `has_wikilink`** (entity appears as an inline wikilink in existing nodes but no dedicated page exists yet):
+1. Determine the **closest related topic** for the entity page — choose the topic most central to the entity's identity, even if it differs from the current node's topic.
+2. Create `{memory_root}/wiki/{closest-topic}/{EntityName}.md`:
 
 ```yaml
 ---
 type: entity
-topic: {topic}
+topic:
+  - {closest-topic}
+  - {current-topic}    # include only if different from closest-topic
 sources:
-  - {topic}/{slug}.md
+  - {closest-topic or original-topic}/{original-slug}.md   # the node that had the inline wikilink
+  - {current-topic}/{new-slug}.md                          # the node triggering promotion
 last_updated: YYYY-MM-DD
 ---
 ```
@@ -426,16 +475,24 @@ last_updated: YYYY-MM-DD
 ```markdown
 # {Entity Name}
 
-{2–3 sentence description based on what this content says.}
+{2–3 sentence description synthesising what both the original and new nodes say.}
 
 ## Sources
 
-- [[{topic}/{slug}]] — {what this content says about this entity}
+- [[{original-topic}/{original-slug}]] — {what the original node said about this entity}
+- [[{current-topic}/{new-slug}]] — {what this content adds about this entity}
 ```
 
-**When to create a dedicated page:** the entity is central to this content AND
-likely to appear in future additions. Peripheral mentions stay as inline wikilinks
-in the wiki node.
+3. For each node that contained the inline wikilink (noted in Step 4c): `read` it, then `edit` to replace the inline wikilink text with a proper cross-topic page link pointing to the new entity file.
+
+---
+
+**Branch C — `new`** (no prior mention):
+Add the entity as an inline wikilink `[[{entity-name}]]` within the wiki node body. Do **not** create a dedicated page — this will happen on the next significant mention (Branch B).
+
+---
+
+**When to create a dedicated page (Branch B trigger):** the entity appears as an inline wikilink in a prior node AND the current content also mentions it significantly. Peripheral mentions stay as inline wikilinks only.
 
 ---
 
@@ -516,9 +573,10 @@ If nothing synthesis-level applies, skip this step.
 
 ---
 
-## Step 11 — Generate and append one open question
+## Step 11 — Generate and append open questions
 
-Derive ONE open question from the content just added. The question should:
+Derive open questions from the content just added. Generate as many as the content
+genuinely raises — there is no cap. Each question should:
 - Be **relevant to the topic** but **not directly answered** by the wiki node you just created
 - Represent a genuine research gap, next investigation, or unverified claim raised by the content
 - Be concrete and actionable — not "what else is there?" but specific enough to research
@@ -530,8 +588,8 @@ Derive ONE open question from the content just added. The question should:
 
 **Process:**
 1. `read {memory_root}/wiki/open_questions.md`
-2. Count existing Pending rows (exclude placeholder). Assign next sequential number N.
-3. Append to the Pending table:
+2. Count existing Pending rows (exclude placeholder). Assign next sequential numbers starting at N.
+3. For each question, append a row to the Pending table:
    `| {N} | {Question} | {One-sentence context} | [[{topic}/{slug}]] | {YYYY-MM-DD} |`
 4. Replace placeholder `| — | — | — | — | — |` if still present in the Pending section.
 5. Update `> **Last updated:**` date.
@@ -550,7 +608,7 @@ Tell the user:
 - Entity/concept pages created: `{list or "none"}`
 - Pages updated: `{list or "none"}`
 - index.md files updated: `{list}`
-- Open question(s) added to open_questions.md: `"{question text}"` (one per node if split)
+- Open questions added to open_questions.md: list each question text (may be zero or many per node)
 - Any index.md approaching 50 rows (if applicable)
 
 ---

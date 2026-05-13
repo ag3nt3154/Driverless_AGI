@@ -581,7 +581,7 @@ class AgentLoop:
         ]
         self.registry = create_tool_registry(
             cwd=self.config.project_path,
-            allowed_roots=[dagi_root, self.config.project_path],
+            allowed_roots=[dagi_root, self.config.project_path, self._effective_memory_root],
             skill_roots=skill_roots,
             plan_mode=False,
             plan_file=None,
