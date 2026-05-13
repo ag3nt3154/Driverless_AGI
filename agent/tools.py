@@ -30,6 +30,7 @@ from tools.find import FindTool
 from tools.grep import GrepTool
 from tools.read import ReadTool
 from tools.skill import SkillTool
+from tools.copy import CopyTool
 from tools.write import WriteTool
 
 if TYPE_CHECKING:
@@ -60,6 +61,7 @@ def _scope_tools(
     write_tools: list[BaseTool] = [
         WriteTool(cwd=cwd, allowed_roots=allowed_roots),
         EditTool(cwd=cwd, allowed_roots=allowed_roots),
+        CopyTool(cwd=cwd, allowed_roots=allowed_roots),
     ]
     web_tools: list[BaseTool] = [WebSearchTool(), WebFetchTool()]
     bash_tools: list[BaseTool] = [BashTool(cwd=cwd)]
@@ -276,6 +278,7 @@ def create_tool_registry(
     else:
         reg.register(WriteTool(cwd=cwd, allowed_roots=effective_roots))
         reg.register(EditTool(cwd=cwd, allowed_roots=effective_roots))
+        reg.register(CopyTool(cwd=cwd, allowed_roots=effective_roots))
         reg.register(BashTool(cwd=cwd))
         from tools.plan_mode import EnterPlanModeTool
         reg.register(EnterPlanModeTool())
