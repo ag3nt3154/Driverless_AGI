@@ -1,0 +1,156 @@
+"""tools/_plan_parser.py — Utility for parsing plan markdown files.
+
+Plan file format:
+    # Plan — <title>
+
+    ## Context
+    ...
+
+    ## Approach
+    ...
+
+    ## Files to Modify
+    ...
+
+    ## Subtasks
+
+    ### Subtask 1: <name>
+    ...
+    #### Tests
+    ...
+
+    ### Subtask 2: <name>
+    ...
+
+    ## Notes
+    ...
+
+    ## Verification
+    ...
+"""
+from __future__ import annotations
+
+import re
+
+
+# ---------------------------------------------------------------------------
+# Internal helpers
+# ---------------------------------------------------------------------------
+
+def _split_into_sections(plan_text: str) -> list[tuple[str, str]]:
+    """Return a list of (heading_line, body_text) pairs for every ## section.
+
+    The heading_line includes the leading ``##`` marker.  body_text is
+    everything from the line after the heading up to (but not including) the
+    next ``##`` heading or EOF.
+    """
+    sections: list[tuple[str, str]] = []
+    # Match ## headings (not ### or deeper)
+    pattern = re.compile(r'^(##\s+.+)$', re.MULTILINE)
+    matches = list(pattern.finditer(plan_text))
+
+    for i, match in enumerate(matches):
+        heading = match.group(1).strip()
+        start = match.end()
+        end = matches[i + 1].start() if i + 1 < len(matches) else len(plan_text)
+        body = plan_text[start:end].strip()
+        sections.append((heading, body))
+
+    return sections
+
+
+# ---------------------------------------------------------------------------
+# Public API
+# ---------------------------------------------------------------------------
+
+_GLOBAL_SECTION_NAMES = {"context", "approach", "notes"}
+
+
+def extract_global_sections(plan_text: str) -> str:
+    """Return the concatenated text of the ## Context, ## Approach, and ## Notes sections.
+
+    Sections are separated by a blank line.  Returns an empty string if none
+    of the three sections are present.
+    """
+    parts: list[str] = []
+    for heading, body in _split_into_sections(plan_text):
+        # Strip '## ' prefix and normalise to lowercase for matching
+        section_name = re.sub(r'^##\s+', '', heading).strip().lower()
+        if section_name in _GLOBAL_SECTION_NAMES:
+            parts.append(f"{heading}\n{body}" if body else heading)
+
+    return "\n\n".join(parts)
+
+
+def extract_subtask(plan_text: str, subtask_name: str, include_tests: bool = True) -> str:
+    """Return the ``### Subtask N: <name>`` block that contains *subtask_name*.
+
+    Matching is case-insensitive substring: the function checks whether
+    *subtask_name* appears anywhere in the ``###`` heading line.
+
+    When *include_tests* is ``False``, the ``#### Tests`` subsection (and
+    everything under it up to the next ``####``, ``###``, ``##`` heading or
+    EOF) is stripped before returning.
+
+    Returns an empty string if no matching subtask is found.
+    """
+    # Split on ### headings; ## headings also terminate a subtask block
+    # Strategy: find all ### or ## heading positions and extract the block.
+    heading_pattern = re.compile(r'^(#{2,3}\s+.+)$', re.MULTILINE)
+    matches = list(heading_pattern.finditer(plan_text))
+
+    target_idx: int | None = None
+    for i, match in enumerate(matches):
+        line = match.group(1)
+        # Only consider ### headings that contain subtask_name (case-insensitive)
+        if line.startswith('###') and subtask_name.lower() in line.lower():
+            target_idx = i
+            break
+
+    if target_idx is None:
+        return ""
+
+    # Determine the body extent: ends at the next ### or ## heading, or EOF
+    start = matches[target_idx].start()
+    end = len(plan_text)
+    for j in range(target_idx + 1, len(matches)):
+        next_line = matches[j].group(1)
+        # Any ## or ### heading ends this subtask
+        if next_line.startswith('##'):
+            end = matches[j].start()
+            break
+
+    block = plan_text[start:end].rstrip()
+
+    if not include_tests:
+        block = _strip_tests_subsection(block)
+
+    return block
+
+
+def _strip_tests_subsection(block: str) -> str:
+    """Remove the ``#### Tests`` subsection from a subtask block.
+
+    Everything from the ``#### Tests`` heading up to (but not including) the
+    next ``####``, ``###``, or ``##`` heading — or the end of the block — is
+    removed.
+    """
+    # Find #### Tests heading
+    tests_pattern = re.compile(r'^####\s+Tests\s*$', re.MULTILINE | re.IGNORECASE)
+    m = tests_pattern.search(block)
+    if not m:
+        return block
+
+    tests_start = m.start()
+
+    # Find the end of the Tests subsection: next ####/###/## heading or EOF
+    next_heading = re.compile(r'^#{2,4}\s+', re.MULTILINE)
+    after = next_heading.search(block, m.end())
+    if after:
+        tests_end = after.start()
+    else:
+        tests_end = len(block)
+
+    # Stitch together the block without the Tests portion, trimming trailing whitespace
+    stripped = block[:tests_start].rstrip() + block[tests_end:]
+    return stripped.rstrip()
