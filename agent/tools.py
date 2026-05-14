@@ -68,6 +68,7 @@ def _scope_tools(
 
     presets: dict[str, list[BaseTool]] = {
         "read_only":  read_tools,
+        "read_bash":  read_tools + bash_tools,
         "web_only":   web_tools,
         "read_write": read_tools + write_tools,
         "full":       read_tools + write_tools + bash_tools + web_tools,
