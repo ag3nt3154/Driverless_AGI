@@ -379,7 +379,7 @@ class AgentLoop:
                     result = self.registry.dispatch(
                         tc.function.name, json.loads(tc.function.arguments)
                     )
-                    if result == ENTER_PLAN_MODE_SENTINEL:
+                    if isinstance(result, str) and result.startswith(ENTER_PLAN_MODE_SENTINEL):
                         result = self._handle_enter_plan_mode(json.loads(tc.function.arguments))
                     elif result == EXIT_PLAN_MODE_SENTINEL:
                         result = self._handle_exit_plan_mode(json.loads(tc.function.arguments))
@@ -438,7 +438,8 @@ class AgentLoop:
     # ── Plan mode transitions ─────────────────────────────────────────────────
 
     def _handle_enter_plan_mode(self, args: dict) -> str:
-        reason = args.get("reason", "")
+        mode = args.get("mode", "interactive")
+        interactive = mode != "autonomous"
         dagi_root = Path(__file__).parent.parent
         plans_dir = self.config.project_path / ".dagi" / "plans"
         plans_dir.mkdir(parents=True, exist_ok=True)
@@ -449,39 +450,37 @@ class AgentLoop:
         plan_file.write_text(
             "# Plan: \n\n"
             "## Context\n\n\n"
-            "## Architecture / Overview\n\n\n"
-            "## Requirements & Acceptance Criteria\n\n\n"
+            "## Approach\n\n\n"
+            "## Files to Modify\n\n\n"
             "## Subtasks\n\n"
             "### Subtask 1: \n"
-            "- **Goal**: \n"
-            "- **Requirements**: \n"
-            "- **Acceptance Criteria**: \n"
-            "- **Status**: [ ] pending\n"
+            "**Goal:** \n"
+            "**Requirements:**\n"
+            "- \n"
+            "**Acceptance Criteria:**\n"
+            "- \n"
             "#### Tests\n"
             "<!-- Filled by main agent before executing this subtask — do NOT write tests here -->\n\n"
-            "## Notes\n\n",
+            "## Notes\n\n"
+            "## Verification\n\n",
             encoding="utf-8",
         )
 
-        self._handle_switch_model("plan", {"reason": f"entering plan mode: {reason}"})
+        self._handle_switch_model("plan", {"reason": "entering plan mode"})
         to_name = self.config.display_name or self.config.model
 
         self.callbacks.on_assistant_text(
             f"Entering plan mode — switching to advanced model ({to_name}).\n\n"
-            f"**Plan file:** `{plan_file}`\n\n**Reason:** {reason}"
+            f"**Plan file:** `{plan_file}`\n\n**Mode:** {mode}"
         )
 
-        self._rebuild_for_plan_mode(dagi_root, plan_file)
+        self._rebuild_for_plan_mode(dagi_root, plan_file, interactive=interactive)
 
         return (
-            f"Plan mode activated. You are now running on the advanced model ({to_name}).\n\n"
-            f"Plan file: {plan_file}\n"
-            f"Reason: {reason}\n\n"
-            f"Explore the codebase thoroughly with read/grep/find tools, then write your "
-            f"complete implementation plan to the plan file above. Your tools are now "
-            f"restricted to: read, grep, find, write/edit (plan file only), web_research, "
-            f"skill, run_skill_script, ask_user (60 s timeout), exit_plan_mode.\n\n"
-            f"When the plan is complete, call exit_plan_mode(summary=\"...\")."
+            f"Plan mode activated ({mode} mode). Advanced model: {to_name}.\n\n"
+            f"Plan file: {plan_file}\n\n"
+            f"Tools restricted to: read, grep, find, write/edit (plan file only), "
+            f"web_research, skill, run_skill_script, ask_user, show_plan, exit_plan_mode."
         )
 
     def _handle_exit_plan_mode(self, args: dict) -> str:
@@ -502,7 +501,7 @@ class AgentLoop:
         except Exception:
             plan_contents = "(plan file could not be read)"
         return (
-            f"Plan written to {saved_plan}. Returning to normal mode — begin execution now.\n\n"
+            f"Plan mode exited. Full tools restored. Plan file: {saved_plan}\n\n"
             f"{plan_contents}"
         )
 
@@ -624,13 +623,13 @@ class AgentLoop:
             on_compaction=self.callbacks.on_compaction,
         )
 
-    def _rebuild_for_plan_mode(self, dagi_root: Path, plan_file: Path) -> None:
-        from agent.prompts import load_subagent_prompt
+    def _rebuild_for_plan_mode(self, dagi_root: Path, plan_file: Path, interactive: bool = True) -> None:
         from agent.tools import create_tool_registry
 
+        initiated_by = "user" if interactive else "dagi"
         self.config.plan_mode = True
         self.config.plan_file = str(plan_file)
-        self.config.plan_mode_initiated_by = "dagi"
+        self.config.plan_mode_initiated_by = initiated_by
 
         skill_roots = [
             dagi_root / ".dagi" / "skills",
@@ -642,7 +641,7 @@ class AgentLoop:
             skill_roots=skill_roots,
             plan_mode=True,
             plan_file=plan_file,
-            plan_mode_initiated_by="dagi",
+            plan_mode_initiated_by=initiated_by,
             config=self.config,
             callbacks=self.callbacks,
             tracker=self.tracker,
@@ -650,12 +649,15 @@ class AgentLoop:
         )
         tools_and_skills = _format_tools_and_skills(self.registry, self.skills)
         readme_path = (dagi_root / "README.md").resolve()
-        plan_prompt = load_subagent_prompt("plan")
-        new_system = plan_prompt.format_map(_SafeDict(
+        effective_memory_root = (
+            self.config.memory_root if self.config.memory_root is not None
+            else self.config.project_path / "dagi-memory"
+        ).resolve()
+        new_system = self.config.system_prompt.format_map(_SafeDict(
             readme_path=readme_path,
             tools_and_skills=tools_and_skills,
             cwd=str(self.config.project_path.resolve()),
-            memory_root=str(self._effective_memory_root),
+            memory_root=str(effective_memory_root),
             dagi_root=str(dagi_root.resolve()),
         ))
         new_system += f"\n\n---\n\nProject root: {self.config.project_path}"

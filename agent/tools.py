@@ -233,24 +233,15 @@ def create_tool_registry(
             reg.register(WriteTool(cwd=cwd, allowed_roots=[plan_file]))
             reg.register(EditTool(cwd=cwd, allowed_roots=[plan_file]))
         # BashTool always omitted in plan mode
-        if plan_mode_initiated_by == "dagi":
-            from tools.ask_user import AskUserTool
-            from tools.plan_mode import ExitPlanModeTool
-            _on_ask = callbacks.on_ask_user if callbacks else _default_ask_user
-            reg.register(ExitPlanModeTool())
-            reg.register(AskUserTool(on_ask_user=_on_ask, timeout=60))
-        if plan_mode_initiated_by == "user":
-            from tools.ask_user import AskUserTool
-            from tools.plan_mode import ExitPlanModeTool
-            from tools.show_plan import ShowPlanTool
-            _on_ask = callbacks.on_ask_user if callbacks else _default_ask_user
-            reg.register(AskUserTool(on_ask_user=_on_ask))
-            if plan_file:
-                _show_plan = ShowPlanTool(plan_file=plan_file, callbacks=callbacks)
-                reg.register(_show_plan)
-                reg.register(ExitPlanModeTool(show_plan_tool=_show_plan))
-            else:
-                reg.register(ExitPlanModeTool())
+        from tools.ask_user import AskUserTool
+        from tools.plan_mode import ExitPlanModeTool
+        from tools.show_plan import ShowPlanTool
+        _on_ask = callbacks.on_ask_user if callbacks else _default_ask_user
+        interactive = plan_mode_initiated_by == "user"
+        reg.register(AskUserTool(on_ask_user=_on_ask, timeout=None if interactive else 60))
+        reg.register(ExitPlanModeTool())
+        if plan_file:
+            reg.register(ShowPlanTool(plan_file=plan_file, callbacks=callbacks, interactive=interactive))
         if skill_roots:
             _effective_memory_root = memory_root or cwd / "dagi-memory"
             reg.register(SkillTool(skill_roots=skill_roots, dagi_root=_DAGI_ROOT, cwd=cwd, memory_root=_effective_memory_root))
