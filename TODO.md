@@ -13,7 +13,7 @@
   - **Next:** Add `allowed_paths` / `blocked_commands` keys to `config.yaml` and read them in `agent/tools.py`.
 
 - **Error Handling & Retries** · `priority:high` · `impact:high`
-  - **Current:** `ToolRegistry.dispatch()` catches exceptions. `EditTool` returns errors rather than raising. BashTool times out but doesn't kill process group.
+  - **Current:** `ToolRegistry.dispatch()` catches exceptions. `EditTool` returns errors rather than raising. BashTool times out but doesn't kill process group. Continuation (mid-task stall recovery) implemented.
   - **Ideal:** Exponential backoff for 429/5xx (initial 1s, max 60s, 3 attempts); fail-fast for 401/400; `os.killpg` on BashTool timeout; actionable empty-API-key error.
   - **Next:** Add retry loop with backoff to `agent/loop.py`; add `os.killpg` to `tools/bash.py`.
 
@@ -97,6 +97,10 @@
 ---
 
 ## Done
+
+- [x] Continuation via `<<TASK_END>>` flag — agent must include `<<TASK_END>>` in its final response; if it stops without the flag the harness auto-injects `"continue"` and resumes (safety valve: `max_continuations`, default 10). Implemented in `agent/loop.py`; prompt instruction in `.dagi/prompts/main/main_system.md`; 7 unit tests in `tests/test_continuation.py`.
+
+- [x] GNHF skill — cross-session iterative development with committed milestones. New `tools/git.py` adds `git_status`, `git_commit`, `git_rollback` tools (branch-guarded to `dagi` branch). Skill at `.dagi/skills/gnhf/SKILL.md` teaches the loop: init → plan milestone → implement → verify → commit + append note → repeat. Scripts at `.dagi/skills/gnhf/scripts/init.py` and `append_note.py` manage `.dagi/gnhf/notes.md` — a per-commit freeform log that carries context across sessions.
 
 - [x] Prompt architecture refactor — `main_system.md` trimmed to harness-only (tools, plan mode trigger). Behavioral guidelines, memory rules, and Plan-Work-Review Cycle moved to `.dagi/agents.md`. Persona stays in `soul.md`. Unified behavioral rules merged from `temp_system_prompt.txt` (ambiguity calibration, invariants checklist, hard stops, token budgets). Redundant "read agents.md" instruction removed — both files are auto-prepended by `loop.py`.
 
