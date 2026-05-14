@@ -77,23 +77,26 @@ Before spawning the worker, write the unit/integration test file(s) for this sub
 - Do NOT pass test paths to the worker — tests are a hidden oracle for the review stage only
 
 ### Step 2 — Spawn Worker Subagent
-Call `spawn_subagent(type="worker", task=...)` with a prompt containing:
-- The **Context**, **Approach**, and **Notes** sections from `plan.md` (copy verbatim)
-- The full subtask block (Goal, Requirements, Acceptance Criteria) — **do NOT include test paths or test file contents**
-- Your **custom instructions** — any guidance, traps to avoid, or context from prior failed attempts
+Call `spawn_worker_subagent(...)` with:
+- `subtask_name`: the subtask name exactly as it appears in `plan.md` (e.g. `"Subtask 1: Add login endpoint"`)
 - `handoff_file`: path for the handoff report, named `handoff_{attempt}_{subtask_slug}.md` in the plan subfolder
-- `plan_subfolder`: absolute path to the plan subfolder
+- `custom_instructions` (optional): any guidance, traps to avoid, or context from prior failed attempts
+
+The tool automatically injects the plan context (Context, Approach, Notes sections) and the subtask details into the subagent's context — do NOT duplicate this manually.
 
 Where `{attempt}` is the 1-based attempt number (01, 02, 03) and `{subtask_slug}` is the subtask name lowercased with spaces replaced by underscores.
 
 ### Step 3 — Spawn Review Subagent
-Call `spawn_subagent(type="review", task=...)` with a prompt containing:
-- The **Context**, **Approach**, and **Notes** sections from `plan.md` (copy verbatim)
-- The subtask's **Requirements** and **Acceptance Criteria**
-- `handoff_file`: path to the worker's handoff report
-- `unit_test_paths`: paths to the test files written in Step 1
+Call `spawn_review_subagent(...)` with:
+- `subtask_name`: the subtask name exactly as it appears in `plan.md`
+- `handoff_report_path`: path to the worker's handoff report from Step 2
+- `unit_test_paths`: list of paths to test files written in Step 1
 - `review_file`: path for the review report, named `review_{attempt}_{subtask_slug}.md` in the plan subfolder
-- `plan_subfolder`: absolute path to the plan subfolder
+- `custom_instructions` (optional): any additional evaluation guidance
+
+The tool automatically injects plan context and the subtask block (including the Tests section) — do NOT duplicate this manually.
+
+Where `{attempt}` is the 1-based attempt number (01, 02, 03) and `{subtask_slug}` is the subtask name lowercased with spaces replaced by underscores.
 
 ### Step 4 — Evaluate and Decide
 Read the review report. Pass/fail is determined by the review subagent's verdict — not your own judgment.
