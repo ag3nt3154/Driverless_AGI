@@ -34,6 +34,11 @@
   - **Ideal:** Parallel spawning (multiple subagents concurrently); task queue / manifest structure; multi-pane UI in the main terminal showing all subagent outputs simultaneously.
   - **Next:** Prototype parallel dispatch (multiple terminal subagents in one agent turn); add a task manifest so subagents can coordinate without conflicts.
 
+- **Subagent polling** · `priority:medium` · `impact:medium`
+  - **Current:** Subagents run until completion with no oversight from the main agent.
+  - **Ideal:** Main agent should be able to periodically inspect a running subagent's terminal output and make a judgment on whether it is stuck, then intervene or kill it.
+  - **Next:** Design a polling mechanism (time-based or event-based); implement inspection tool in `agent/ipc.py`; add retry/kill logic to worker/review spawn wrappers.
+
 - **Dynamic tool descriptions** · `priority:medium` · `impact:medium`
   - **Current:** Tool schemas are static — same description regardless of model or context.
   - **Ideal:** Tool descriptions tailored per model or context at runtime.
