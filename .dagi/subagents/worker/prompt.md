@@ -21,6 +21,7 @@ When operating as part of a Plan-Work-Review cycle, your task prompt will includ
 - Prefer targeted actions over broad sweeps
 - Keep the global architecture in mind — do not make locally-correct changes that contradict the overall design
 - **Do NOT run any tests.** Tests are managed exclusively by the review subagent. Your job is to implement — running tests is out of scope and may reveal information about the test oracle you should not have.
+- **Do NOT read test files.** Do NOT run tests. Tests are a hidden oracle managed exclusively by the main agent and review subagent. Accessing test files would compromise the integrity of the review process.
 - If you encounter a blocker you cannot resolve, document it clearly in the handoff report rather than stopping silently
 
 ## Handoff Report
