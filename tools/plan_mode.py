@@ -9,58 +9,43 @@ EXIT_PLAN_MODE_SENTINEL = "__EXIT_PLAN_MODE__"
 class EnterPlanModeTool(BaseTool):
     name = "enter_plan_mode"
     description = (
-        "Switch into plan mode before executing a complex task. "
-        "Use this autonomously when the task requires 3 or more distinct implementation steps "
-        "across different files, involves architectural trade-offs, or has ambiguous requirements "
-        "that risk wasted implementation work. "
-        "In plan mode your write/edit access is restricted to the plan document only and bash is "
-        "unavailable. Explore the codebase freely with read/grep/find, write the plan, then call "
-        "exit_plan_mode to restore full tools and begin implementation immediately. "
-        "Do NOT use for single-file edits, clearly scoped bug fixes, or fully-specified tasks."
+        "Switch to plan mode. Restricts tools to read/grep/find and plan-file write only. "
+        "Pass mode='interactive' when invoked by the user (plan requires approval before execution). "
+        "Pass mode='autonomous' when DAGI initiates internally (plan is auto-approved)."
     )
     _parameters = {
         "type": "object",
         "properties": {
-            "reason": {
+            "mode": {
                 "type": "string",
-                "description": "Brief explanation of why planning is needed before execution.",
+                "enum": ["interactive", "autonomous"],
+                "description": "interactive: user must approve the plan. autonomous: plan is auto-approved.",
             }
         },
-        "required": ["reason"],
+        "required": ["mode"],
     }
 
-    def run(self, reason: str) -> str:  # noqa: ARG002
-        return ENTER_PLAN_MODE_SENTINEL
+    def run(self, mode: str) -> str:
+        return f"{ENTER_PLAN_MODE_SENTINEL}:{mode}"
 
 
 class ExitPlanModeTool(BaseTool):
     name = "exit_plan_mode"
     description = (
-        "Exit plan mode and restore full tool access (write, edit, bash). "
-        "In DAGI-initiated plan mode: call this when the plan is complete to return to the main agent. "
-        "In user-initiated plan mode: do NOT call this — the user exits plan mode manually via /exit-plan. "
-        "After show_plan confirms approval, simply output your final response and stop."
+        "Restore full tool access. "
+        "Call after the user approves the plan (before proceeding to execution) "
+        "or when aborting (cancel path)."
     )
     _parameters = {
         "type": "object",
         "properties": {
             "summary": {
                 "type": "string",
-                "description": "One-sentence summary of what the plan covers.",
+                "description": "One-sentence summary of what the plan covers, or 'cancelled' if aborting.",
             }
         },
         "required": ["summary"],
     }
 
-    def __init__(self, show_plan_tool: "object | None" = None) -> None:
-        self._show_plan_tool = show_plan_tool
-
     def run(self, summary: str) -> str:  # noqa: ARG002
-        if self._show_plan_tool is not None:
-            # User-initiated plan mode: exit is controlled by the user via /exit-plan in the CLI.
-            return (
-                "Do not call this tool. "
-                "The user exits plan mode by typing /exit-plan in the CLI. "
-                "Simply output your final response and stop."
-            )
         return EXIT_PLAN_MODE_SENTINEL

@@ -489,55 +489,6 @@ def _run_task(
     return loop._messages, loop
 
 
-def _run_plan_turn(
-    task: str,
-    plan_cfg: "AgentConfig",
-    initial_messages: "list | None",
-    cli_cfg: CliConfig,
-    model_name: str,
-    verbose: bool,
-    force_sync: bool,
-    stats: "_Stats",
-    project_path: Path,
-    existing_tracker: "SessionTracker | None" = None,
-) -> tuple[list, "AgentLoop"]:
-    """Run one user turn in plan mode. Creates a fresh AgentLoop each turn so tool
-    callbacks (AskUserTool, ShowPlanTool) are bound to the current queue/sink.
-    Conversation history is preserved by passing previous _messages as initial_messages."""
-    use_threaded = (cli_cfg.threading == "threaded") and not force_sync
-    get_cwd: Callable[[], Path] = lambda: project_path
-    if use_threaded:
-        q: queue.Queue = queue.Queue()
-        callbacks = _make_threaded_callbacks(q, stats)
-        loop = AgentLoop(
-            plan_cfg, callbacks,
-            initial_messages=initial_messages,
-            _tracker=existing_tracker,
-        )
-
-        def _agent_thread() -> None:
-            try:
-                loop.run(task)
-            except Exception:
-                pass
-            finally:
-                q.put(None)
-
-        with ThreadPoolExecutor(max_workers=1) as executor:
-            executor.submit(_agent_thread)
-            _render_queue(q, stats, model_name, verbose, get_cwd, plan_mode=True)
-    else:
-        callbacks = _make_sync_callbacks(stats, model_name, verbose, get_cwd, plan_mode=True)
-        loop = AgentLoop(
-            plan_cfg, callbacks,
-            initial_messages=initial_messages,
-            _tracker=existing_tracker,
-        )
-        try:
-            loop.run(task)
-        except Exception:
-            console.print_exception()
-    return loop._messages, loop
 
 
 # ── Slash commands ─────────────────────────────────────────────────────────────
@@ -791,35 +742,6 @@ def _cmd_compact(
         console.print("[dim]Nothing to compact.[/dim]")
 
 
-def _cmd_plan(project_path: Path) -> tuple[bool, Path]:
-    """Enter plan mode: create the plan document scaffold. Returns (True, plan_path)."""
-    plans_dir = project_path / ".dagi" / "plans"
-    plans_dir.mkdir(parents=True, exist_ok=True)
-    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-    plan_path = plans_dir / f"plan_{ts}.md"
-    plan_path.write_text(
-        f"# Plan — {ts}\n\n"
-        "## Context\n\n\n"
-        "## Approach\n\n\n"
-        "## Files to Modify\n\n\n"
-        "## Implementation Steps\n\n\n"
-        "## Todo List\n\n"
-        "- [ ] \n\n"
-        "## Verification\n\n",
-        encoding="utf-8",
-    )
-    console.print(
-        Panel(
-            f"[bold cyan]Plan mode active[/bold cyan]\n"
-            f"[dim]Plan document: {plan_path}[/dim]\n\n"
-            "[dim]Describe your task. The agent will ask clarifying questions and "
-            "explore the codebase before writing a plan.\n"
-            "Run [bold]/exit-plan[/bold] when ready to begin implementation.[/dim]",
-            border_style="cyan",
-            padding=(0, 2),
-        )
-    )
-    return True, plan_path
 
 
 def _handle_slash_command(
@@ -1290,66 +1212,8 @@ def run(
     )
 
     def run_one(t: str) -> None:
-        nonlocal conversation_msgs, active_loop, plan_mode, plan_file, plan_loop
+        nonlocal conversation_msgs, active_loop
         console.print()
-
-        if plan_mode:
-            from agent.config_loader import load_raw_config
-            from agent.prompts import load_subagent_prompt
-            from dataclasses import replace as _dc_replace
-            _base = resolve_model_config(model)
-            _adv = _base.advanced_config or _base
-            plan_cfg = _dc_replace(
-                _base,
-                model=_adv.model,
-                base_url=_adv.base_url,
-                api_key=_adv.api_key,
-                thinking=_adv.thinking,
-                context_window=_adv.context_window,
-                reserve_tokens=_adv.reserve_tokens,
-                keep_recent_tokens=_adv.keep_recent_tokens,
-                system_prompt=load_subagent_prompt("plan"),
-                plan_mode=True,
-                plan_file=str(plan_file),
-                plan_mode_initiated_by="user",
-                project_path=project_path,
-                worker_config=None,
-                advanced_config=None,
-            )
-            plan_model_name = get_model_display_name(load_raw_config().get("advanced_model"))
-            if plan_model_name != model_name:
-                console.print(
-                    f"[bold cyan]⇄ Model switch:[/bold cyan] [dim]{model_name}[/dim] → [bold]{plan_model_name}[/bold]"
-                )
-            plan_messages = plan_loop._messages if plan_loop is not None else None
-            plan_tracker = plan_loop.tracker if plan_loop is not None else None
-            _, plan_loop = _run_plan_turn(
-                t, plan_cfg, plan_messages, cli_cfg, plan_model_name,
-                effective_verbose, sync, stats, project_path,
-                existing_tracker=plan_tracker,
-            )
-
-            if plan_loop.plan_mode_exited:
-                exited_file = plan_loop.exited_plan_file
-                plan_mode = False
-                plan_file = None
-                plan_loop = None
-                switch_back = (
-                    f"[dim]Returning to: {model_name}[/dim]\n"
-                    if plan_model_name != model_name else ""
-                )
-                console.print(
-                    Panel(
-                        "[bold cyan]Plan complete.[/bold cyan]\n"
-                        + (f"[dim]Plan document: {exited_file}[/dim]\n\n" if exited_file else "")
-                        + switch_back
-                        + "[dim]The plan is loaded into context. "
-                        "Continue with your next instruction to begin implementation.[/dim]",
-                        border_style="cyan",
-                        padding=(0, 2),
-                    )
-                )
-            return
 
         existing_tracker = active_loop.tracker if active_loop is not None else None
         conversation_msgs, active_loop = _run_task(
@@ -1360,7 +1224,6 @@ def run(
             existing_tracker=existing_tracker,
         )
         if active_loop.plan_mode_exited and active_loop.exited_plan_file:
-            # Agent-initiated plan mode: subagent wrote the plan and returned to normal.
             had_plan_model = active_loop.config.advanced_config is not None
             plan_label = (
                 active_loop.config.advanced_config.display_name
@@ -1372,11 +1235,9 @@ def run(
             )
             console.print(
                 Panel(
-                    "[bold cyan]Plan complete.[/bold cyan]\n"
+                    "[bold cyan]Plan mode exited.[/bold cyan]\n"
                     f"[dim]Plan document: {active_loop.exited_plan_file}[/dim]\n\n"
-                    + switch_back
-                    + "[dim]The plan is loaded into context. "
-                    "Continue with your next instruction to begin implementation.[/dim]",
+                    + switch_back,
                     border_style="cyan",
                     padding=(0, 2),
                 )
@@ -1404,34 +1265,21 @@ def run(
                 cmd_lower = user_input.split()[0].lower()
 
                 if cmd_lower == "/plan":
-                    already_in_plan = plan_mode or (
-                        active_loop is not None and active_loop.config.plan_mode
-                    )
-                    if already_in_plan:
-                        console.print(
-                            "[yellow]Already in plan mode.[/yellow] "
-                            "[dim]Use /exit-plan to finish the current plan.[/dim]"
-                        )
-                    else:
-                        plan_mode, plan_file = _cmd_plan(project_path)
+                    args_str = user_input.split(maxsplit=1)[1] if " " in user_input else ""
+                    task_msg = "Invoke the 'plan-work-review' skill."
+                    if args_str:
+                        task_msg += f" {args_str}"
+                    run_one(task_msg)
                     continue
 
                 if cmd_lower == "/exit-plan":
                     if not plan_mode:
                         console.print("[dim]Not in plan mode — nothing to exit.[/dim]")
                         continue
-                    saved_plan_file = plan_file
                     plan_mode = False
                     plan_file = None
                     console.print(
-                        "[bold green]✓ Exiting plan mode — beginning implementation[/bold green]"
-                    )
-                    run_one(
-                        f"Plan mode complete. Read and implement the plan at {saved_plan_file}. "
-                        "If you discover a better approach mid-execution, rewrite the plan "
-                        "document on the fly so it always reflects your actual strategy and "
-                        "actions. Keep the todo list in sync — check off completed items and "
-                        "add or revise items as needed."
+                        "[bold yellow]Plan cancelled — returning to clean state.[/bold yellow]"
                     )
                     continue
 
