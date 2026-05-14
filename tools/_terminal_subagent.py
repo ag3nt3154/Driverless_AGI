@@ -30,7 +30,7 @@ def spawn_terminal_subagent(
     subagent_type: str,
     task: str,
     project_path: Path,
-    timeout: int = 300,
+    timeout: int | None = None,
     ready_timeout: float = _READY_TIMEOUT,
 ) -> str:
     """Spawn a typed subagent terminal, send one task, and return the result string.
@@ -44,7 +44,7 @@ def spawn_terminal_subagent(
         task:          The task prompt to send.
         project_path:  Project root; passed via --project so the subprocess resolves
                        config.yaml and tool allowed_roots correctly.
-        timeout:       Seconds to wait for the result (default 300).
+        timeout:       Seconds to wait for the result, or None to wait indefinitely.
         ready_timeout: Seconds to wait for the terminal to signal readiness.
 
     Returns:
@@ -102,15 +102,24 @@ def _poll_with_spinner(
     ipc: IpcChannel,
     subagent_type: str,
     seq: int,
-    timeout: int,
+    timeout: int | None,
 ) -> dict:
-    """Poll for the IPC result while the subagent runs."""
-    deadline = time.monotonic() + timeout
+    """Poll for the IPC result while the subagent runs.
+
+    When timeout is None, polls indefinitely in _POLL_INTERVAL chunks until a
+    result appears — no deadline is set.  When timeout is an integer, raises
+    IpcTimeoutError if the deadline is exceeded.
+    """
+    deadline = None if timeout is None else time.monotonic() + timeout
     while True:
-        remaining = deadline - time.monotonic()
-        if remaining <= 0:
-            raise IpcTimeoutError(f"Timeout after {timeout}s")
+        if deadline is not None:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise IpcTimeoutError(f"Timeout after {timeout}s")
+            poll_timeout = min(_POLL_INTERVAL, remaining)
+        else:
+            poll_timeout = _POLL_INTERVAL  # poll in chunks, yield to OS
         try:
-            return ipc.poll_result(seq, timeout=min(_POLL_INTERVAL, remaining))
+            return ipc.poll_result(seq, timeout=poll_timeout)
         except IpcTimeoutError:
             continue
