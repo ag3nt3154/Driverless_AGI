@@ -17,6 +17,8 @@ from tools.plan_mode import ENTER_PLAN_MODE_SENTINEL, EXIT_PLAN_MODE_SENTINEL
 from tools.reload_skills import RELOAD_SKILLS_SENTINEL
 from tools.switch_model import parse_switch_sentinel
 
+TASK_END_FLAG = "<<TASK_END>>"
+
 
 def _is_plan_empty(path: Path) -> bool:
     """Return True if the plan file has no meaningful content beyond scaffold boilerplate."""
@@ -116,6 +118,8 @@ class AgentConfig:
     active_plan_file: str | None = None
     # Human-readable label from the config catalog (e.g. "GPT-4o (OpenAI)")
     display_name: str = ""
+    # Continuation: max times the harness injects "continue" before giving up
+    max_continuations: int = 10
 
 
 @dataclass
@@ -287,6 +291,9 @@ class AgentLoop:
         self.plan_mode_exited: bool = False
         self.exited_plan_file: str | None = None
 
+        # Counts how many "continue" injections have happened this run()
+        self._continuation_count: int = 0
+
         # ── Compaction tool (internal-only, not in ToolRegistry) ──────────
         self.compact_tool = CompactTool()
         self.compact_tool.bind(
@@ -338,7 +345,6 @@ class AgentLoop:
                     # store assistant turn as dict to keep _messages serialisable
                     self._messages.append({"role": "assistant", "content": message.content})
                     result = message.content or ""
-                    self.callbacks.on_assistant_text(result)
                     _thinking_tok = (
                         getattr(getattr(response.usage, "completion_tokens_details", None), "reasoning_tokens", None)
                         or 0
@@ -350,8 +356,22 @@ class AgentLoop:
                         _thinking_tok,
                     )
                     self.tracker.record_assistant(message.content, response.usage, tool_records)
-                    self.callbacks.on_done(result)
-                    return result
+
+                    if TASK_END_FLAG in result:
+                        # Task complete — strip flag before surfacing to caller
+                        clean = result.replace(TASK_END_FLAG, "").strip()
+                        self.callbacks.on_assistant_text(clean)
+                        self.callbacks.on_done(clean)
+                        return clean
+
+                    # Task not complete — inject "continue" and keep looping
+                    self.callbacks.on_assistant_text(result)
+                    if self._continuation_count >= self.config.max_continuations:
+                        self.callbacks.on_done(result)
+                        return result
+                    self._continuation_count += 1
+                    self._messages.append({"role": "user", "content": "continue"})
+                    continue  # next while True iteration
 
                 # Interleave: each tool call is immediately followed by its result.
                 # First call carries the assistant's text content; subsequent ones get None.

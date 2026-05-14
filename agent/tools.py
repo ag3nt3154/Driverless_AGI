@@ -26,6 +26,7 @@ from agent.base_tool import BaseTool
 from agent.registry import ToolRegistry
 from tools.bash import BashTool
 from tools.edit import EditTool
+from tools.git import GitCommitTool, GitRollbackTool, GitStatusTool
 from tools.find import FindTool
 from tools.grep import GrepTool
 from tools.read import ReadTool
@@ -272,6 +273,9 @@ def create_tool_registry(
         reg.register(EditTool(cwd=cwd, allowed_roots=effective_roots))
         reg.register(CopyTool(cwd=cwd, allowed_roots=effective_roots))
         reg.register(BashTool(cwd=cwd))
+        reg.register(GitStatusTool(cwd=cwd))
+        reg.register(GitCommitTool(cwd=cwd))
+        reg.register(GitRollbackTool(cwd=cwd))
         from tools.plan_mode import EnterPlanModeTool
         reg.register(EnterPlanModeTool())
         from tools.ask_user import AskUserTool

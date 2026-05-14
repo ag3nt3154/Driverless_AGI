@@ -17,6 +17,8 @@ Plan → Act → Observe → Repeat
 
 When the conversation exceeds the model's context window, **Pi-style context compaction** kicks in — the middle of the history is summarized and replaced, preserving the system prompt and recent messages. This lets the agent handle arbitrarily long tasks without crashing.
 
+If the model stops producing tool calls before outputting `<<TASK_END>>`, the harness automatically injects a `"continue"` user message and re-enters the loop — recovering from mid-task stalls without human intervention. A safety valve (`max_continuations`, default 10) prevents infinite loops.
+
 At session start, **BM25 memory injection** automatically retrieves relevant pages from the wiki knowledge base and prepends them as context before the first API call — giving the agent instant access to accumulated knowledge without any manual skill invocation.
 
 ---
@@ -90,6 +92,7 @@ Exit with `q`, `exit`, or `quit`. Conversation history carries across turns.
 ```yaml
 default_model: gpt-4o-openai        # used if --model isn't passed
 max_iterations: 20                   # hard cap on loop iterations
+max_continuations: 10                # max "continue" injections before giving up
 
 models:
   gpt-4o-openai:
@@ -178,6 +181,7 @@ Driverless_AGI/
 │   ├── write.py           # Write / overwrite files
 │   ├── edit.py            # Exact-text replacement
 │   ├── bash.py            # Run shell commands
+│   ├── git.py             # git_status, git_commit, git_rollback (branch-guarded to dagi branch)
 │   ├── grep.py            # Regex search across files (ripgrep)
 │   ├── find.py            # Glob-pattern file finder
 │   ├── skill.py           # Load a .dagi/skills/ guidance document
@@ -203,10 +207,11 @@ Driverless_AGI/
 │   │   ├── web_research/  #   web research agent prompt
 │   │   ├── plan/          #   plan-writing agent prompt
 │   │   └── cli/           #   full-agent terminal prompt (cli_subagent tool)
-│   ├── skills/            # Structured guidance documents (memory-*, create-skill, review-session, …)
+│   ├── skills/            # Structured guidance documents (gnhf, memory-*, create-skill, review-session, …)
 │   ├── workflow/          # User-directed workflows (.dagi/workflow/<name>/workflow.md)
 │   ├── memory/wiki/       # Topic-organized persistent wiki (infrastructure built)
 │   ├── tools/             # Project-local tools (auto-loaded at startup)
+│   ├── gnhf/              # GNHF session artifacts (notes.md — committed to dagi branch)
 │   ├── plans/             # Generated plan files
 │   ├── logs/              # Session JSONL files
 │   └── self-review/       # Session review reports and improvement plans
