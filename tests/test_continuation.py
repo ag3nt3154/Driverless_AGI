@@ -7,7 +7,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from agent.loop import AgentConfig, AgentCallbacks, AgentLoop, TASK_END_FLAG
+from agent.loop import AgentConfig, AgentCallbacks, AgentLoop, TASK_END_FLAG, WAIT_FOR_USER_FLAG
 
 
 # ---------------------------------------------------------------------------
@@ -177,3 +177,61 @@ class TestTaskEndFlag:
 
         assert len(done_results) == 1
         assert TASK_END_FLAG not in done_results[0]
+
+
+class TestWaitForUserFlag:
+    def test_wait_flag_exits_loop_cleanly(self):
+        """<<WAIT_FOR_USER_RESPONSE>> must exit the loop without injecting 'continue'."""
+        loop = _make_loop()
+        loop.client = MagicMock()
+        loop.client.chat.completions.create.return_value = _make_response(
+            f"Please tell me your name. {WAIT_FOR_USER_FLAG}"
+        )
+
+        result = loop.run("do something")
+
+        assert loop.client.chat.completions.create.call_count == 1
+        assert WAIT_FOR_USER_FLAG not in result
+        assert "Please tell me your name." in result
+
+    def test_wait_flag_stripped_from_result(self):
+        """Flag must be stripped before the result is returned."""
+        loop = _make_loop()
+        loop.client = MagicMock()
+        loop.client.chat.completions.create.return_value = _make_response(
+            f"What is your goal? {WAIT_FOR_USER_FLAG}"
+        )
+
+        result = loop.run("do something")
+
+        assert WAIT_FOR_USER_FLAG not in result
+
+    def test_wait_flag_fires_on_done_callback(self):
+        """on_done must fire when the wait flag exits the loop."""
+        done_results = []
+        callbacks = AgentCallbacks(on_done=lambda r: done_results.append(r))
+
+        loop = _make_loop()
+        loop.client = MagicMock()
+        loop.callbacks = callbacks
+        loop.client.chat.completions.create.return_value = _make_response(
+            f"Awaiting your input. {WAIT_FOR_USER_FLAG}"
+        )
+
+        loop.run("do something")
+
+        assert len(done_results) == 1
+        assert WAIT_FOR_USER_FLAG not in done_results[0]
+
+    def test_wait_flag_does_not_inject_continue(self):
+        """No 'continue' user message must appear in history after wait flag."""
+        loop = _make_loop()
+        loop.client = MagicMock()
+        loop.client.chat.completions.create.return_value = _make_response(
+            f"Your move. {WAIT_FOR_USER_FLAG}"
+        )
+
+        loop.run("do something")
+
+        continue_msgs = [m for m in loop._messages if m.get("content") == "continue"]
+        assert len(continue_msgs) == 0

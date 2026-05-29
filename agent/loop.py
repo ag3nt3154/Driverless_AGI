@@ -18,6 +18,7 @@ from tools.reload_skills import RELOAD_SKILLS_SENTINEL
 from tools.switch_model import parse_switch_sentinel
 
 TASK_END_FLAG = "<<TASK_END>>"
+WAIT_FOR_USER_FLAG = "<<WAIT_FOR_USER_RESPONSE>>"
 
 
 def _is_plan_empty(path: Path) -> bool:
@@ -356,6 +357,13 @@ class AgentLoop:
                         _thinking_tok,
                     )
                     self.tracker.record_assistant(message.content, response.usage, tool_records)
+
+                    if WAIT_FOR_USER_FLAG in result:
+                        # Agent wants to pause and await user input — exit cleanly
+                        clean = result.replace(WAIT_FOR_USER_FLAG, "").strip()
+                        self.callbacks.on_assistant_text(clean)
+                        self.callbacks.on_done(clean)
+                        return clean
 
                     if TASK_END_FLAG in result:
                         # Task complete — strip flag before surfacing to caller
