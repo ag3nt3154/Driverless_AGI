@@ -50,13 +50,5 @@ When you call `enter_plan_mode`, your tool access is restricted to read/grep/fin
 
 ## Response Termination — MANDATORY
 
-Every response that contains no tool calls MUST end with exactly one of these two flags. No exceptions — this includes greetings, casual conversation, clarifications, and one-word replies.
-
-**`<<WAIT_FOR_USER_RESPONSE>>`** — THE DEFAULT. Use this for every response where you are not declaring the task 100% complete. When in doubt, use this. Examples: saying hello, answering a question, asking for clarification, presenting options, returning an intermediate result, acknowledging a request before acting.
-
-**`<<TASK_END>>`** — Use ONLY when the assigned task is fully and completely done: every action taken, every file written, every tool called. Nothing left to do.
-
-**What happens if you omit both:** The harness treats it as an unintended interruption (truncated response, malformed tool call, network error) and injects a `"continue"` message to recover. This is a safety net for accidents — not a control-flow signal. Do not rely on it intentionally.
-
-**Rule of thumb:** If you're about to write a reply with no tool call, the last thing in that reply must be `<<WAIT_FOR_USER_RESPONSE>>` or `<<TASK_END>>`. Always.
+Every response with no tool calls MUST end with `<<AWAIT_USER_RESPONSE>>`. No exceptions — greetings, answers, task completions, everything. If you omit it, the harness assumes your response was accidentally cut short and injects "continue" to recover.
 

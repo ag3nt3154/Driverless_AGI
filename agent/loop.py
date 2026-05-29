@@ -17,8 +17,8 @@ from tools.plan_mode import ENTER_PLAN_MODE_SENTINEL, EXIT_PLAN_MODE_SENTINEL
 from tools.reload_skills import RELOAD_SKILLS_SENTINEL
 from tools.switch_model import parse_switch_sentinel
 
-TASK_END_FLAG = "<<TASK_END>>"
-WAIT_FOR_USER_FLAG = "<<WAIT_FOR_USER_RESPONSE>>"
+TASK_END_FLAG = "<<TASK_END>>"           # legacy alias — still recognised
+AWAIT_USER_FLAG = "<<AWAIT_USER_RESPONSE>>"
 
 
 def _is_plan_empty(path: Path) -> bool:
@@ -358,16 +358,14 @@ class AgentLoop:
                     )
                     self.tracker.record_assistant(message.content, response.usage, tool_records)
 
-                    if WAIT_FOR_USER_FLAG in result:
-                        # Agent wants to pause and await user input — exit cleanly
-                        clean = result.replace(WAIT_FOR_USER_FLAG, "").strip()
-                        self.callbacks.on_assistant_text(clean)
-                        self.callbacks.on_done(clean)
-                        return clean
-
-                    if TASK_END_FLAG in result:
-                        # Task complete — strip flag before surfacing to caller
-                        clean = result.replace(TASK_END_FLAG, "").strip()
+                    # Check for either exit flag (TASK_END_FLAG kept as legacy alias)
+                    _exit_flag = (
+                        AWAIT_USER_FLAG if AWAIT_USER_FLAG in result else
+                        TASK_END_FLAG   if TASK_END_FLAG   in result else
+                        None
+                    )
+                    if _exit_flag:
+                        clean = result.replace(_exit_flag, "").strip()
                         self.callbacks.on_assistant_text(clean)
                         self.callbacks.on_done(clean)
                         return clean
