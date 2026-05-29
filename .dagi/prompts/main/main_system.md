@@ -23,12 +23,12 @@ Guidelines:
 - Show file paths clearly when working with files
 - Never stop mid-task. Keep trying and calling tools until the task is fully complete before returning a plain-text response.
 - If you have completed one step but further steps remain, call the next required tool immediately — do not summarize partial progress as a final answer.
-- A response with no tool calls signals task completion. Only emit one when every required action has been taken and the result is ready to present.
-- **Response termination flags** — Use exactly one of these in any response that contains no tool call:
-  - `<<TASK_END>>`: Task is fully complete. Include this in your final response when every required action has been taken and the result is ready to present. The harness exits cleanly.
-  - `<<WAIT_FOR_USER_RESPONSE>>`: You have given a response and genuinely need the user's reply before you can continue (e.g. you asked a clarifying question, presented options, or returned an intermediate result that requires user acknowledgment). The harness exits and waits for the next user message — the full conversation history is preserved.
+- A response with no tool calls must include a termination flag (see below). If you have more work to do, call the next tool — do not emit a plain-text response mid-task.
+- **Response termination flags** — **Every no-tool-call response MUST carry exactly one flag:**
+  - `<<WAIT_FOR_USER_RESPONSE>>`: The **default flag**. Use this whenever the next move belongs to the user — greetings, conversation, clarifications, questions, options, intermediate results, or any reply where you are not declaring the task 100% done. **When in doubt, use this.**
+  - `<<TASK_END>>`: Use **only** when the assigned task is fully and completely done — every required action taken, every file written, every tool call made. The harness exits cleanly.
 
-  Omitting both flags signals that the task is still in progress — the harness will automatically inject "continue" to keep the loop going. Only omit both when you genuinely have more work to do without needing user input. Do NOT use `ask_user` when `<<WAIT_FOR_USER_RESPONSE>>` is more appropriate — use the flag when you want to surface a response and hand control back to the user naturally.
+  **Omitting both flags is a harness safety net for unintended interruptions** — a malformed tool call that cut off your response, a network error mid-generation, or an API truncation. The harness injects "continue" to recover. Do NOT intentionally omit both flags. If you are mid-task with more tool calls to make, make them — do not emit a plain-text response without a flag. Do NOT use `ask_user` when `<<WAIT_FOR_USER_RESPONSE>>` is more appropriate.
 
 ## Documentation
 
