@@ -116,7 +116,8 @@ class TestTaskEndFlag:
         assert "Finished." in result
 
     def test_continue_message_appended_to_history(self):
-        """A 'continue' user message must appear in _messages after continuation."""
+        """A continuation user message must appear in _messages after an incomplete response."""
+        from agent.loop import CONTINUE_PROMPT
         loop = _make_loop(max_continuations=1)
         loop.client = MagicMock()
         loop.client.chat.completions.create.side_effect = [
@@ -127,9 +128,8 @@ class TestTaskEndFlag:
         loop.run("do something")
 
         roles = [m["role"] for m in loop._messages]
-        # The injected "continue" must appear as a user turn
         assert "user" in roles
-        continue_msgs = [m for m in loop._messages if m.get("content") == "continue"]
+        continue_msgs = [m for m in loop._messages if m.get("content") == CONTINUE_PROMPT]
         assert len(continue_msgs) == 1
 
     def test_safety_valve_exits_at_max_continuations(self):
@@ -233,5 +233,6 @@ class TestWaitForUserFlag:
 
         loop.run("do something")
 
-        continue_msgs = [m for m in loop._messages if m.get("content") == "continue"]
+        from agent.loop import CONTINUE_PROMPT
+        continue_msgs = [m for m in loop._messages if m.get("content") == CONTINUE_PROMPT]
         assert len(continue_msgs) == 0

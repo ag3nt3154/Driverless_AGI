@@ -88,6 +88,7 @@ def _format_reload_notification(
 
 
 DEFAULT_SYSTEM_PROMPT = load_prompt("main/main_system.md")
+CONTINUE_PROMPT = load_prompt("main/continue.md")
 
 
 @dataclass
@@ -376,7 +377,7 @@ class AgentLoop:
                         self.callbacks.on_done(result)
                         return result
                     self._continuation_count += 1
-                    self._messages.append({"role": "user", "content": "continue"})
+                    self._messages.append({"role": "user", "content": CONTINUE_PROMPT})
                     continue  # next while True iteration
 
                 # Interleave: each tool call is immediately followed by its result.
