@@ -98,7 +98,7 @@
 
 ## Done
 
-- [x] Continuation flags — `<<TASK_END>>` signals clean task completion; `<<WAIT_FOR_USER_RESPONSE>>` exits the loop and waits for the next user message without injecting "continue". Neither flag = auto-inject "continue" (safety valve: `max_continuations`, default 10). Implemented in `agent/loop.py`; prompt instructions in `.dagi/prompts/main/main_system.md`; 11 unit tests in `tests/test_continuation.py`.
+- [x] Single response flag — every no-tool-call response must end with `<<AWAIT_USER_RESPONSE>>` (applies to greetings, answers, and completions alike). `<<TASK_END>>` kept as a silent legacy alias. Recovery injection replaced hardcoded `"continue"` with a proper prompt in `.dagi/prompts/main/continue.md`. Flag rules placed at the end of `main_system.md` for reliable model compliance. 11 unit tests in `tests/test_continuation.py`.
 - [x] Direct `api_key` in config.yaml — model entries now support `api_key: "sk-..."` as an alternative to `api_key_env`. Direct key takes precedence; empty string falls through to env var lookup. Prevents silent fallback to `OPENAI_API_KEY` env var. 3 unit tests in `tests/test_config_loader.py`.
 
 - [x] GNHF skill — cross-session iterative development with committed milestones. New `tools/git.py` adds `git_status`, `git_commit`, `git_rollback` tools (branch-guarded to `dagi` branch). Skill at `.dagi/skills/gnhf/SKILL.md` teaches the loop: init → plan milestone → implement → verify → commit + append note → repeat. Scripts at `.dagi/skills/gnhf/scripts/init.py` and `append_note.py` manage `.dagi/gnhf/notes.md` — a per-commit freeform log that carries context across sessions.
