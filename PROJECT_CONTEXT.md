@@ -67,12 +67,17 @@ cli.py / main.py          ← entry points (Rich REPL or single-shot)
 | `soul.md` | DAGI persona definition |
 | `tests/test_continuation.py` | Unit tests for `<<TASK_END>>` and `<<WAIT_FOR_USER_RESPONSE>>` loop logic |
 | `tests/test_config_loader.py` | Unit tests for direct `api_key` and `api_key_env` resolution |
+| `requirements.txt` | Exact pip freeze of the `dagi` conda env (23 packages). **Does not match `pyproject.toml`** — see Notable Points. |
 
 ## Encountered Errors & Solutions
 
 - **2026-05-29 Error**: `api_key` field in config.yaml silently ignored; dagi fell back to OpenAI env vars causing auth errors when `OPENAI_API_KEY` was unset.
   **Cause**: `_build_config_from_entry()` only read `api_key_env` (env var pointer), never a direct `api_key` literal.
   **Fix**: Added direct-key check first (`entry.get("api_key", "")`); falls back to `api_key_env` path only when empty. Warning block in `resolve_model_config()` similarly skips warning when direct key present.
+
+- **2026-05-29 Error**: DAGI did not return `<<WAIT_FOR_USER_RESPONSE>>` on conversational/greeting responses, causing the harness to inject "continue" and confuse the model.
+  **Cause**: System prompt listed `<<WAIT_FOR_USER_RESPONSE>>` examples only as "clarifying questions / options / intermediate results" — the model's pattern-matching excluded greetings and casual replies. The instruction was present but under-specified.
+  **Fix**: Rewrote the flag section in `.dagi/prompts/main/main_system.md` to make the rule unconditional — every no-tool-call response must carry a flag; `<<WAIT_FOR_USER_RESPONSE>>` is now explicitly listed as the catch-all including greetings and conversational turns.
 
 - **2026-05-29 Error**: Agent responses that ask a question or surface intermediate results immediately triggered auto-continue injection, preventing genuine conversational turns.
   **Cause**: Only two exit conditions existed — `<<TASK_END>>` (done) and no flag (inject "continue").
@@ -87,6 +92,7 @@ cli.py / main.py          ← entry points (Rich REPL or single-shot)
 - **Subagents run in `CREATE_NEW_CONSOLE` terminal windows** on Windows; parent polls via `agent/ipc.py` file-based IPC. This is Windows-specific and will not work on Linux/macOS without changes.
 - **`pyproject.toml` is incomplete**: `typer` and `rich` are missing from declared deps. `pip install -e .` will fail on a clean environment for CLI use.
 - **There is a stale test directory** `C:UsersalexrDriverless_AGItests` (bad path) at the repo root — likely a Windows path mangling artifact, harmless but odd.
+- **`requirements.txt` ≠ `pyproject.toml`**: `requirements.txt` is a `pip freeze` of the actual `dagi` conda env (23 packages). `pyproject.toml` declares ~10 additional runtime deps (`ddgs`, `crawl4ai`, `beautifulsoup4`, `nicegui`, `markdown`, `matplotlib`, `typer`, `rich`) that are **not** present in the env. The project cannot use web search, web fetch, or the interactive CLI on a clean install from `requirements.txt` alone.
 
 ## Terms & Language
 
@@ -116,7 +122,7 @@ cli.py / main.py          ← entry points (Rich REPL or single-shot)
 ### Project Shortcomings
 
 - **No retry/backoff for transient API errors** — a single 429 or 5xx will abort the task. The TODO acknowledges this but it hasn't been implemented. Long tasks in production will hit rate limits.
-- **`pyproject.toml` missing `typer` and `rich`** — `pip install -e .` on a clean environment will fail for CLI users. Low risk for a personal tool but notable.
+- **Dependency split between `requirements.txt` and `pyproject.toml`** — `requirements.txt` (pip freeze of actual `dagi` conda env) has only 23 packages; `pyproject.toml` declares ~10 more (`ddgs`, `crawl4ai`, `beautifulsoup4`, `nicegui`, `markdown`, `matplotlib`, `typer`, `rich`). Neither file alone produces a working install. The `dagi` conda env is missing several declared runtime deps, meaning tools like `web_search`, `web_fetch`, and the Rich CLI may silently fail until those packages are installed.
 - **BashTool is unsandboxed** — no command blacklist, no process group kill on timeout. An agent could run destructive bash commands. Path guard protects file tools but not bash.
 - **Subagent architecture is Windows-only** (`CREATE_NEW_CONSOLE`). Cross-platform support would require a different IPC mechanism.
 - **No integration tests** — all tests are unit tests with mocked LLM clients. There is no end-to-end test that runs a real agent loop against a live or recorded API response.
