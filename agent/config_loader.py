@@ -9,6 +9,7 @@ config.yaml schema:
         model: "provider/model-name"   # sent verbatim to the API
         api_url: "https://..."
         api_key_env: "ENV_VAR_NAME"    # pointer into .env — never the key itself
+        api_key: "sk-..."              # optional: inline key (overrides api_key_env)
 """
 from __future__ import annotations
 
@@ -74,8 +75,12 @@ def list_model_ids() -> list[str]:
 
 def _build_config_from_entry(entry: dict, raw: dict) -> AgentConfig:
     """Build an AgentConfig from a catalog entry dict and the top-level raw config."""
-    api_key_env = entry.get("api_key_env", "OPENAI_API_KEY")
-    api_key = os.environ.get(api_key_env, "")
+    direct_key = entry.get("api_key", "")
+    if direct_key:
+        api_key = direct_key
+    else:
+        api_key_env = entry.get("api_key_env", "OPENAI_API_KEY")
+        api_key = os.environ.get(api_key_env, "")
 
     context_window     = entry.get("context_window")      or raw.get("context_window",      128_000)
     reserve_tokens     = entry.get("reserve_tokens")      or raw.get("reserve_tokens",       16_384)
@@ -128,14 +133,15 @@ def resolve_model_config(model_id: str | None = None) -> AgentConfig:
         )
 
     entry = catalog.get(chosen_id, _FALLBACK_ENTRY)
-    api_key_env = entry.get("api_key_env", "OPENAI_API_KEY")
-    if not os.environ.get(api_key_env, ""):
-        print(
-            f"Warning: env var '{api_key_env}' is not set "
-            f"(required for model '{chosen_id}'). "
-            "Set it in .env.",
-            file=sys.stderr,
-        )
+    if not entry.get("api_key", ""):
+        api_key_env = entry.get("api_key_env", "OPENAI_API_KEY")
+        if not os.environ.get(api_key_env, ""):
+            print(
+                f"Warning: env var '{api_key_env}' is not set "
+                f"(required for model '{chosen_id}'). "
+                "Set it in .env or add api_key directly in config.yaml.",
+                file=sys.stderr,
+            )
 
     from dataclasses import replace
 
