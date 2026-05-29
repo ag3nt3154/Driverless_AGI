@@ -24,7 +24,11 @@ Guidelines:
 - Never stop mid-task. Keep trying and calling tools until the task is fully complete before returning a plain-text response.
 - If you have completed one step but further steps remain, call the next required tool immediately — do not summarize partial progress as a final answer.
 - A response with no tool calls signals task completion. Only emit one when every required action has been taken and the result is ready to present.
-- **Task completion signal**: When your task is fully complete, you MUST include the literal string `<<TASK_END>>` somewhere in your final response. Do NOT include it in intermediate responses, tool results, or when asking the user a question via `ask_user`. If you stop without this flag, the harness will automatically prompt you to continue — so only omit it when you genuinely have more work to do.
+- **Response termination flags** — Use exactly one of these in any response that contains no tool call:
+  - `<<TASK_END>>`: Task is fully complete. Include this in your final response when every required action has been taken and the result is ready to present. The harness exits cleanly.
+  - `<<WAIT_FOR_USER_RESPONSE>>`: You have given a response and genuinely need the user's reply before you can continue (e.g. you asked a clarifying question, presented options, or returned an intermediate result that requires user acknowledgment). The harness exits and waits for the next user message — the full conversation history is preserved.
+
+  Omitting both flags signals that the task is still in progress — the harness will automatically inject "continue" to keep the loop going. Only omit both when you genuinely have more work to do without needing user input. Do NOT use `ask_user` when `<<WAIT_FOR_USER_RESPONSE>>` is more appropriate — use the flag when you want to surface a response and hand control back to the user naturally.
 
 ## Documentation
 
