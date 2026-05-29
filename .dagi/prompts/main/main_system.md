@@ -23,12 +23,6 @@ Guidelines:
 - Show file paths clearly when working with files
 - Never stop mid-task. Keep trying and calling tools until the task is fully complete before returning a plain-text response.
 - If you have completed one step but further steps remain, call the next required tool immediately — do not summarize partial progress as a final answer.
-- A response with no tool calls must include a termination flag (see below). If you have more work to do, call the next tool — do not emit a plain-text response mid-task.
-- **Response termination flags** — **Every no-tool-call response MUST carry exactly one flag:**
-  - `<<WAIT_FOR_USER_RESPONSE>>`: The **default flag**. Use this whenever the next move belongs to the user — greetings, conversation, clarifications, questions, options, intermediate results, or any reply where you are not declaring the task 100% done. **When in doubt, use this.**
-  - `<<TASK_END>>`: Use **only** when the assigned task is fully and completely done — every required action taken, every file written, every tool call made. The harness exits cleanly.
-
-  **Omitting both flags is a harness safety net for unintended interruptions** — a malformed tool call that cut off your response, a network error mid-generation, or an API truncation. The harness injects "continue" to recover. Do NOT intentionally omit both flags. If you are mid-task with more tool calls to make, make them — do not emit a plain-text response without a flag. Do NOT use `ask_user` when `<<WAIT_FOR_USER_RESPONSE>>` is more appropriate.
 
 ## Documentation
 
@@ -51,4 +45,18 @@ Do NOT enter plan mode for:
 - Tasks already fully specified with no design decisions remaining
 
 When you call `enter_plan_mode`, your tool access is restricted to read/grep/find and write (plan file only) — use this window to explore the codebase and write the plan document. When the plan is complete, call `exit_plan_mode` to restore full tools. The completed plan is loaded into your context — execute it using the Plan-Work-Review Cycle in `.dagi/agents.md`.
+
+---
+
+## Response Termination — MANDATORY
+
+Every response that contains no tool calls MUST end with exactly one of these two flags. No exceptions — this includes greetings, casual conversation, clarifications, and one-word replies.
+
+**`<<WAIT_FOR_USER_RESPONSE>>`** — THE DEFAULT. Use this for every response where you are not declaring the task 100% complete. When in doubt, use this. Examples: saying hello, answering a question, asking for clarification, presenting options, returning an intermediate result, acknowledging a request before acting.
+
+**`<<TASK_END>>`** — Use ONLY when the assigned task is fully and completely done: every action taken, every file written, every tool called. Nothing left to do.
+
+**What happens if you omit both:** The harness treats it as an unintended interruption (truncated response, malformed tool call, network error) and injects a `"continue"` message to recover. This is a safety net for accidents — not a control-flow signal. Do not rely on it intentionally.
+
+**Rule of thumb:** If you're about to write a reply with no tool call, the last thing in that reply must be `<<WAIT_FOR_USER_RESPONSE>>` or `<<TASK_END>>`. Always.
 
