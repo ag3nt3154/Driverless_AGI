@@ -19,7 +19,7 @@ class ShowPlanTool(BaseTool):
     )
     _parameters = {"type": "object", "properties": {}, "required": []}
 
-    def __init__(self, plan_file: Path, callbacks: "AgentCallbacks", interactive: bool = True) -> None:
+    def __init__(self, plan_file: Path, callbacks: "AgentCallbacks | None", interactive: bool = True) -> None:
         self._plan_file = plan_file
         self._callbacks = callbacks
         self._interactive = interactive
@@ -30,12 +30,16 @@ class ShowPlanTool(BaseTool):
         except Exception as exc:
             return f"[show_plan] Could not read plan file: {exc}"
 
-        self._callbacks.on_assistant_text(f"\n---\n\n## Plan Complete\n\n{contents}")
+        if self._callbacks is not None:
+            self._callbacks.on_assistant_text(f"\n---\n\n## Plan Complete\n\n{contents}")
 
         if not self._interactive:
             return "Plan rendered. Auto-approved (autonomous mode). Proceed to execution."
 
-        answer = self._callbacks.on_ask_user("Do you have any modifications?", [])
+        if self._callbacks is None:
+            return "Plan approved by the user. Call exit_plan_mode, then proceed to Phase 2 execution."
+
+        answer = self._callbacks.on_ask_user("Do you have any modifications?", [], None)
         answer_clean = answer.strip().lower()
         if answer_clean in {"", "n", "no", "nope", "none", "no modifications", "no changes",
                             "looks good", "good", "proceed", "ok", "okay", "approved", "approve"}:
