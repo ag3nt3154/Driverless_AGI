@@ -790,6 +790,13 @@ def _handle_slash_command(
 
 # ── Skill slash-command map ───────────────────────────────────────────────────
 
+def _skill_invocation_message(skill_name: str, user_arg: str) -> str:
+    msg = f"Invoke the `{skill_name}` skill."
+    if user_arg:
+        msg += f"\n\n{user_arg}"
+    return msg
+
+
 def _load_skill_map(proj_path: Path) -> dict:
     from agent.skills import SkillLoader
     dagi_root = Path(__file__).parent
@@ -1266,9 +1273,7 @@ def run(
 
                 if cmd_lower == "/plan":
                     args_str = user_input.split(maxsplit=1)[1] if " " in user_input else ""
-                    task_msg = "Invoke the 'plan-work-review' skill."
-                    if args_str:
-                        task_msg += f" {args_str}"
+                    task_msg = _skill_invocation_message("plan-work-review", args_str)
                     run_one(task_msg)
                     continue
 
@@ -1299,9 +1304,7 @@ def run(
                 if cmd_lower in skill_slash_map:
                     skill = skill_slash_map[cmd_lower]
                     args_str = user_input.split(maxsplit=1)[1] if " " in user_input else ""
-                    task_msg = f"Invoke the '{skill.name}' skill."
-                    if args_str:
-                        task_msg += f" {args_str}"
+                    task_msg = _skill_invocation_message(skill.name, args_str)
                     run_one(task_msg)
                     continue
 

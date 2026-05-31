@@ -38,7 +38,7 @@ High-level strategy and key decisions.
 
 ## Subtasks
 
-### Subtask 1: <name>
+### Subtask 1: [ ] <name>
 **Goal:** One sentence.
 **Requirements:**
 - ...
@@ -46,6 +46,10 @@ High-level strategy and key decisions.
 - ...
 #### Tests
 <!-- filled in by main agent before spawning worker -->
+
+> **Status marker format:** Each subtask heading must include a status marker immediately
+> after the colon: `### Subtask N: [marker] name`. Valid markers:
+> `[ ]` pending · `[~]` in-progress · `[x]` complete · `[!]` failed
 ```
 
 ## Notes
@@ -77,6 +81,12 @@ Before spawning the worker, write the unit/integration test file(s) for this sub
 - Do NOT pass test paths to the worker — tests are a hidden oracle for the review stage only
 
 ### Step 2 — Spawn Worker Subagent
+Before spawning, edit `plan.md` to change the subtask heading marker from `[ ]` to `[~]`
+(in-progress). This updates the TUI sidebar immediately so the user can see work has begun.
+
+> **Note:** `[~]` persists if execution is interrupted. On resume, the user or agent must
+> inspect the subtask to determine whether to retry or mark complete.
+
 Call `spawn_worker_subagent(...)` with:
 - `subtask_name`: the subtask name exactly as it appears in `plan.md` (e.g. `"Subtask 1: Add login endpoint"`)
 - `handoff_file`: path for the handoff report, named `handoff_{attempt}_{subtask_slug}.md` in the plan subfolder

@@ -1,6 +1,6 @@
 # PROJECT_CONTEXT.md
 
-> Last updated: 2026-05-31 (session 4) | [README](README.md) | [TODO](TODO.md)
+> Last updated: 2026-05-31 (session 8) | [README](README.md) | [TODO](TODO.md)
 
 ---
 
@@ -72,6 +72,8 @@ tui.py / cli.py / main.py ← entry points (Textual TUI | Rich REPL | single-sho
 | `tests/test_continuation.py` | Unit tests for `<<TASK_END>>` and `<<WAIT_FOR_USER_RESPONSE>>` loop logic |
 | `tests/test_config_loader.py` | Unit tests for direct `api_key` and `api_key_env` resolution |
 | `requirements.txt` | Exact pip freeze of the `dagi` conda env (23 packages). **Does not match `pyproject.toml`** — see Notable Points. |
+| `tools/emote.py` | `EmoteTool(BaseTool)` — agent calls `emote(emote)` to update sidebar face; fires `on_emote` callback |
+| `.dagi/emotes/` | Five emote face files (`default`, `confused`, `happy`, `serious`, `funny`), one line each, plain text |
 
 ## Encountered Errors & Solutions
 
@@ -93,17 +95,24 @@ tui.py / cli.py / main.py ← entry points (Textual TUI | Rich REPL | single-sho
   **Cause**: `_continuation_count = 0` was set only in `__init__`, never at the start of `run()`. Accumulated across all tasks in a multi-turn session, silently eroding the continuation budget.
   **Fix**: Added `self._continuation_count = 0` at the top of `run()` (after `tracker.record_user`). Updated notable point to reflect corrected behavior.
 
+- **2026-05-31 Bug**: Ghost-response cascade — DAGI silently ran 10 continuation loops and went idle after a null API response.
+  **Cause**: DeepSeek v4 Flash via OpenRouter returned HTTP 200 with `content=None`, no tool calls, and `usage=None`. The loop appended `{"role":"assistant","content":null}` to `_messages`, causing every subsequent call to also return empty (malformed history triggered consistent null responses). The outer loop consumed all 10 `max_continuations` slots silently.
+  **Fix**: Wrapped the API call in an inner ghost-response retry loop. Ghost = `content=None` AND `prompt_tokens==0`. On ghost: discard the response, do NOT append to `_messages`, retry up to `null_response_retries` (default 3, configurable in `config.yaml`). After all retries fail: surface "Error: model returned null N times" in TUI and return — user sees the error and can retry.
+
 - **2026-05-31 Bug**: `plan_mode_exited` field was dead code — initialized `False` in `__init__`, never set `True` anywhere. The check at the end of the tool-call loop could never trigger.
   **Cause**: `_handle_exit_plan_mode` set `self.exited_plan_file` (a different field) rather than `self.plan_mode_exited`. Plan mode exit worked incidentally via the extra API round-trip.
   **Fix**: Removed the `plan_mode_exited` field and its unreachable check block. Accepted the natural flow (extra API call, agent reads plan context and starts implementing) as canonical.
 
 - **2026-05-31 Feature**: ESC pause button added to TUI. `AgentLoop` now has `_pause_event: threading.Event` (set = running), checked at the top of each `while True` iteration. `pause()` clears the event; `inject_and_resume(message)` appends the user message to `_messages` then sets the event. TUI wires ESC to `action_pause()` and re-enables input; next typed message calls `inject_and_resume()` to unblock the loop. This is semantically equivalent to a user-initiated `ask_user` without a question.
 
+- **2026-05-31 Refactor**: Unified skill invocation entry points. Previously, user slash commands (`/plan-work-review`, etc.) eagerly loaded full skill content into the user message via `_inject_skill_content()` (cli.py) / `_inject_skill()` (tui.py), bypassing the `skill` tool entirely. Now, slash commands produce a plain instruction (`"Invoke the \`skill-name\` skill."`) and the LLM calls `skill()` itself — identical to mid-task internal invocations. Removed both helper functions; added `_skill_invocation_message()` in cli.py as the single shared formatter, imported by tui.py.
+
 ## Notable Points
 
 - **Flag ordering matters**: `WAIT_FOR_USER_FLAG` is checked *before* `TASK_END_FLAG` in the loop. If both appear in a response (accidental), `WAIT_FOR_USER_RESPONSE` wins.
 - **`api_key` vs `api_key_env`**: Direct `api_key` in config.yaml overrides env var lookup. Empty string `""` still falls through to env var — only a truthy value short-circuits. Security note: putting the key in yaml means it could be committed; prefer `api_key_env` for production use.
 - **Multi-turn message history**: The CLI passes `loop._messages` as `conversation_msgs` into the next `_run_task()` call. `<<WAIT_FOR_USER_RESPONSE>>` works without any CLI changes because of this existing design.
+- **`null_response_retries` is per-API-call** — the inner retry loop resets for every new LLM call. A ghost response during tool-call processing (e.g. after a large skill result) retries that specific call up to N times. This is independent of `max_continuations`.
 - **`max_continuations` is per-`run()` call** — `_continuation_count` resets to 0 at the start of each `run()` call, so every task gets a fresh budget of `max_continuations` (default 10).
 - **Subagents run in `CREATE_NEW_CONSOLE` terminal windows** on Windows; parent polls via `agent/ipc.py` file-based IPC. This is Windows-specific and will not work on Linux/macOS without changes.
 - **`pyproject.toml` is incomplete**: `typer`, `rich`, and now `textual` are missing from declared deps. `pip install -e .` will fail on a clean environment for CLI/TUI use.
@@ -114,6 +123,9 @@ tui.py / cli.py / main.py ← entry points (Textual TUI | Rich REPL | single-sho
 - **`[~]` orphan semantics**: The plan-work-review skill marks a subtask `[~]` before spawning a worker subagent. If the loop is interrupted mid-execution, `[~]` persists in plan.md indefinitely — no auto-reset. On session resume, the user or agent must inspect the subtask and decide whether to retry or mark complete. The TUI sidebar displays `[~]` in amber as "interrupted."
 - **TUI plan panel poll**: `DagiApp` runs a 2 s `set_interval` poll (`_poll_plan`) that reads `loop.config.plan_file or loop.config.active_plan_file` on the Textual main thread. Both attributes are plain strings set once by the agent thread; Python's GIL makes the read safe without an explicit lock. The poll is a no-op when no loop is active.
 - **TUI scrolling**: `RichLog.auto_scroll = True` by default. Textual pauses auto-scroll when the user scrolls up and resumes when they reach the bottom — this is built-in behaviour requiring no custom scroll handling.
+- **Skill slash commands are LLM-delegated**: `/skill-name [args]` no longer pre-injects skill content. It produces `"Invoke the \`skill-name\` skill.\n\n{args}"` and sends it as the user message. The agent must call `skill("skill-name")` to load the content — same path as mid-task internal invocations. This means one extra LLM round-trip per slash command, but both code paths are now unified through `SkillTool`.
+- **Sidebar emote system**: The sidebar logo is no longer a static constant. `Sidebar._logo_panel()` calls `_load_face()` on every `refresh()`, which reads `.dagi/emotes/{_emote}.md` (one-line plain text face expression). The hair/border markup is assembled in Python; only the face glyph comes from the file. Falls back to `(◉ ᴗ ◉)` on `OSError`. The agent can switch emotes via `EmoteTool` → `AgentCallbacks.on_emote` → `App.call_from_thread(sidebar.update_emote, emote)`. Emote files are live-editable — changes take effect on next sidebar `refresh()` without restart. Controlled by `emote_tool: true/false` in `config.yaml` (`AgentConfig.emote_tool`).
+- **ANSI `[blue]` renders as purple**: Rich's `[blue]` maps to ANSI color 4, which most modern terminal emulators render as violet/purple (inherited from CGA). Use hex colors (`[#4da6ff]`) or `[bright_blue]` (ANSI 12) for a perceptually blue result. This bit the sidebar logo — all color markup now uses hex.
 - **Plan mode revision loop**: After writing a plan, the agent is instructed (via `main_system.md`) to call `show_plan` before `exit_plan_mode`. `show_plan` shows the plan, asks "Do you have any modifications?", and returns either "Plan approved — call `exit_plan_mode`" or "Modifications requested — revise and call `show_plan` again." The revision cycle repeats until approval. After `exit_plan_mode`, the agent outputs one implementation-start sentence and immediately begins tool calls without waiting for user confirmation.
 - **`/hist` in TUI writes to hidden buffer**: `hist.run()` calls `console.print()` which writes to a Rich console that is not the Textual RichLog. Output appears in the terminal's hidden scroll buffer (behind Textual). This is a known limitation — `/hist` is functional but not displayed in the conversation pane.
 - **There is a stale test directory** `C:UsersalexrDriverless_AGItests` (bad path) at the repo root — likely a Windows path mangling artifact, harmless but odd.
@@ -130,6 +142,7 @@ tui.py / cli.py / main.py ← entry points (Textual TUI | Rich REPL | single-sho
 - **GNHF**: "Good and not horrible feedback" — dagi's self-improvement workflow. Committed milestones, iterative development, freeform notes log at `.dagi/gnhf/notes.md`.
 - **BM25**: Sparse keyword ranking algorithm used for memory retrieval in `agent/memory_retriever.py`.
 - **IPC**: File-based inter-process communication (`agent/ipc.py`) used between main agent and terminal subagents.
+- **emote**: One of five named expressions (`default`, `confused`, `happy`, `serious`, `funny`) dagi-chan can display in the sidebar. Stored as plain-text `.md` files in `.dagi/emotes/`; switched by the agent via the `emote` tool.
 
 ---
 
@@ -147,6 +160,7 @@ tui.py / cli.py / main.py ← entry points (Textual TUI | Rich REPL | single-sho
 - Engages deeply in design grilling before implementation — responds well to adversarial questioning about trade-offs and commits to concrete choices before coding begins. Does not want vague or open-ended design left to implementation time.
 - Prefers pause semantics that preserve agent context (inject & resume) over simpler cancel-and-restart approaches, even at slightly higher implementation cost. Favours architectural correctness over convenience shortcuts.
 - Will accept dead-code cleanup (removal) when shown the evidence; prefers the simpler behavior (accept the extra round-trip) over adding new flag logic when the outcome is equivalent.
+- Prefers behavioral unification over performance micro-optimisation — accepted Option C (one extra LLM round-trip per slash command) because it eliminates divergent code paths, rather than synthetic-prefill options that would save the round-trip at the cost of message-history surgery.
 
 ### Project Shortcomings
 
@@ -159,6 +173,10 @@ tui.py / cli.py / main.py ← entry points (Textual TUI | Rich REPL | single-sho
 - **No integration tests** — all tests are unit tests with mocked LLM clients. There is no end-to-end test that runs a real agent loop against a live or recorded API response.
 - **`temp_system_prompt.txt`, `temp_test.ipynb`, `plan.md` at root** are stale scratch files that should be cleaned up or archived.
 - **`show_plan` tool was underused** — it already implemented the full plan revision loop (show → ask → revise → repeat), but `main_system.md` never instructed the agent to call it before `exit_plan_mode`. The tool was wired correctly; the orchestration was missing from the prompt.
+
+- **2026-05-31 Bug**: Input pane invisible/disabled during `ask_user` tool invocation — user could see the question but could not type an answer.
+  **Cause**: `_dispatch_agent()` disables the input pane (line 644 in `tui.py`) when the agent starts. `_show_ask_user()` displayed the question but never called `_enable_input()`, so the input remained disabled for the duration of the ask. The input was only re-enabled in the `finally` block when the agent finished entirely.
+  **Fix**: Added `self._enable_input()` at the end of `_show_ask_user()`. Added `self.query_one("#prompt", PromptInput).disabled = True` in `on_prompt_input_submitted()` after the pending-ask branch resolves, so the input is disabled again while the agent continues running.
 
 ### Assumptions to Challenge
 
@@ -176,10 +194,12 @@ tui.py / cli.py / main.py ← entry points (Textual TUI | Rich REPL | single-sho
 ### Potential Areas of Exploration
 
 - **Fix `/hist` in TUI**: reimplement `_cmd_hist()` in `tui.py` to write session history directly to `ConversationPane` rather than calling `hist.run()` (which uses a bare `rich.Console`).
-- **`ask_user` UX in TUI**: now that `PromptInput` has no placeholder support, there is no visual cue distinguishing a normal prompt from an `ask_user` question prompt. A small indicator (e.g., a highlighted label or border colour change on `#prompt`) would improve clarity during agent-initiated Q&A.
+- **`ask_user` UX in TUI**: the input pane is now correctly re-enabled during `ask_user`. However, since `PromptInput` has no placeholder support, there is still no visual cue distinguishing a normal prompt from an `ask_user` question prompt. A small indicator (e.g., a highlighted label or border colour change on `#prompt`) would improve clarity during agent-initiated Q&A.
 - **Parallel subagent dispatch**: the `[~]` in-progress state was introduced with parallel multi-agent future in mind. The IPC layer (`agent/ipc.py`) would need to support multiple concurrent polls; the plan panel would then show multiple subtasks as `[~]` simultaneously.
 - **Pause during subagent execution**: current pause only stops the *parent* loop at its checkpoint. If a subagent is running (terminal subprocess), it continues unaffected. A future improvement could write an IPC `pause` sentinel to the subagent's channel.
 - **Streaming responses**: the TUI sidebar's token counter currently only updates after each full API response. Streaming would enable per-token updates and reduce perceived latency. The `ConversationPane` could stream assistant text incrementally using `RichLog.write()` calls on each chunk.
 - **Structured output / tool-call validation**: the agent currently relies on the model to produce valid JSON for tool arguments. A schema-level validator at the registry layer would catch malformed calls early.
 - **Session replay / dry-run mode**: the JSONL session log has everything needed to replay a session deterministically — useful for debugging and regression testing.
 - **Cross-platform subagent spawning**: replacing `CREATE_NEW_CONSOLE` with a platform-agnostic approach (e.g., tmux panes, named pipes, or asyncio subprocess) would open dagi to Linux/macOS users.
+- **Emote animation**: `_logo_panel()` already re-runs on every `refresh()`. Animating the hair glyphs (e.g., cycling `≋ → ≈ → ∼` during "running" status) requires only a branch on `self._status` inside `_logo_panel()` — no new state or callbacks needed.
+- **Emote tool in CLI mode**: `EmoteTool` is registered in the CLI path too (when `emote_tool: true`), but `on_emote=None` is passed since there is no sidebar. The tool still returns `"*emote*"` in text; the callback is silently a no-op. No separate CLI wiring required.

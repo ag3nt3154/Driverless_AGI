@@ -219,6 +219,9 @@ class PromptInput(TextArea):
 
 # ── Sidebar ───────────────────────────────────────────────────────────────────
 
+_EMOTE_FALLBACK = "(◉ ᴗ ◉)"
+
+
 class Sidebar(Widget):
     """Always-visible right panel: status, token stats, context breakdown."""
 
@@ -246,6 +249,7 @@ class Sidebar(Widget):
         self._project_path = project_path
         self._subtasks: list[dict] = []
         self._plan_title: str = ""
+        self._emote: str = "default"
 
     def set_status(self, status: str) -> None:
         self._status = status
@@ -273,9 +277,33 @@ class Sidebar(Widget):
         self.refresh()
 
     def render(self):
-        panels = [self._model_panel(), self._token_panel(), self._context_panel(),
-                  self._plan_panel()]
+        panels = [self._logo_panel(), self._model_panel(), self._token_panel(),
+                  self._context_panel(), self._plan_panel()]
         return Group(*[p for p in panels if p is not None])
+
+    def update_emote(self, emote: str) -> None:
+        self._emote = emote
+        self.refresh()
+
+    def _load_face(self) -> str:
+        path = self._dagi_root / ".dagi" / "emotes" / f"{self._emote}.md"
+        try:
+            return path.read_text(encoding="utf-8").strip()
+        except OSError:
+            return _EMOTE_FALLBACK
+
+    def _logo_panel(self):
+        face = self._load_face()
+        art = (
+            "[#4da6ff]╭[/#4da6ff]"
+            "[#4da6ff]≋[/#4da6ff][#1a6bbf]≋[/#1a6bbf]"
+            "[#4da6ff]≋[/#4da6ff][#1a6bbf]≋[/#1a6bbf]"
+            "[#4da6ff]≋[/#4da6ff][#1a6bbf]≋[/#1a6bbf]"
+            "[#4da6ff]≋[/#4da6ff]"
+            f"[#4da6ff]╮[/#4da6ff]\n"
+            f"[#1a6bbf]≋[/#1a6bbf]{face}[#4da6ff]≋[/#4da6ff]"
+        )
+        return Panel(Text.from_markup(art, justify="center"), border_style="#4da6ff", padding=(0, 1))
 
     def _model_panel(self):
         if self._status == "running":
@@ -760,13 +788,16 @@ class DagiApp(App[None]):
             return next((o["label"] for o in options if o.get("recommended")),
                         options[0]["label"] if options else "")
 
+        def on_emote(emote: str) -> None:
+            self.call_from_thread(sidebar.update_emote, emote)
+
         return AgentCallbacks(
             on_tool_start=on_tool_start, on_tool_end=on_tool_end,
             on_assistant_text=on_assistant_text, on_token_update=on_token_update,
             on_iteration=lambda _: None, on_done=lambda _: None, on_error=on_error,
             on_api_call=on_api_call, on_reasoning=on_reasoning,
             on_compaction=on_compaction, on_model_switch=on_model_switch,
-            on_ask_user=on_ask_user,
+            on_ask_user=on_ask_user, on_emote=on_emote,
         )
 
 

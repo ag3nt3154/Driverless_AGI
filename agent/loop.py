@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import threading
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -122,6 +123,11 @@ class AgentConfig:
     display_name: str = ""
     # Continuation: max times the harness injects "continue" before giving up
     max_continuations: int = 10
+    # Ghost-response retries: how many times to silently retry an API call that
+    # returns content=None with zero token usage before surfacing an error.
+    null_response_retries: int = 3
+    # Emote tool: when False the emote tool is not registered in the tool list.
+    emote_tool: bool = True
 
 
 @dataclass
@@ -145,6 +151,7 @@ class AgentCallbacks:
             options[0]["label"] if options else "",
         )
     )
+    on_emote:          Callable[[str], None] | None              = None
 
 
 def _extract_reasoning(message) -> str:
@@ -289,11 +296,9 @@ class AgentLoop:
 
         self.tracker.record_system(system)
 
-        # Set when DAGI calls exit_plan_mode; signals run() to stop iterating
-        self.plan_mode_exited: bool = False
         self.exited_plan_file: str | None = None
 
-        # Counts how many "continue" injections have happened this run()
+        # Reset at the start of each run() call — counts "continue" injections for that task only
         self._continuation_count: int = 0
 
         # ── Compaction tool (internal-only, not in ToolRegistry) ──────────
@@ -306,6 +311,17 @@ class AgentLoop:
         # Switch to plan tier immediately when starting in user-initiated plan mode
         if config.plan_mode and config.advanced_config is not None:
             self._handle_switch_model("plan", {"reason": "user-initiated plan mode"})
+
+        # Pause/resume: set = running (default), clear = paused
+        self._pause_event = threading.Event()
+        self._pause_event.set()
+
+    def pause(self) -> None:
+        self._pause_event.clear()
+
+    def inject_and_resume(self, message: str) -> None:
+        self._messages.append({"role": "user", "content": message})
+        self._pause_event.set()
 
     def _compact_context(self) -> CompactionResult:
         """Delegates to CompactTool.compact()."""
@@ -321,22 +337,54 @@ class AgentLoop:
 
         self._messages.append({"role": "user", "content": task})
         self.tracker.record_user(task)
+        self._continuation_count = 0
 
         try:
             iteration = 0
             while True:
                 iteration += 1
                 self.callbacks.on_iteration(iteration)
+                self._pause_event.wait()  # blocks here when paused; instant no-op otherwise
 
-                self.callbacks.on_api_call(list(self._messages))
-                response = self.client.chat.completions.create(
-                    model=self.config.model,
-                    messages=self._messages,
-                    tools=self.registry.get_openai_tools_list(),
-                    parallel_tool_calls=False,
-                    **(dict(extra_body=self._reasoning_extra) if self._reasoning_extra else {}),
-                )
-                message = response.choices[0].message
+                # ── API call with ghost-response retry ───────────────────────
+                # A ghost response is HTTP 200 with content=None, no tool calls,
+                # and usage=None (prompt_tokens=0). This is an API anomaly — not a
+                # real model turn. We retry the same context up to null_response_retries
+                # times, discarding each ghost without appending it to _messages.
+                # Appending a null-content message would cascade: every subsequent
+                # call would also return empty because the malformed history confuses
+                # the model (or triggers provider-side filtering).
+                _null_retries = 0
+                while True:
+                    self.callbacks.on_api_call(list(self._messages))
+                    response = self.client.chat.completions.create(
+                        model=self.config.model,
+                        messages=self._messages,
+                        tools=self.registry.get_openai_tools_list(),
+                        parallel_tool_calls=False,
+                        **(dict(extra_body=self._reasoning_extra) if self._reasoning_extra else {}),
+                    )
+                    message = response.choices[0].message
+                    _prompt_tok = getattr(response.usage, "prompt_tokens", 0) or 0
+                    _is_ghost = (
+                        not message.tool_calls
+                        and not (message.content or "").strip()
+                        and _prompt_tok == 0
+                    )
+                    if not _is_ghost:
+                        break  # valid response — proceed
+                    _null_retries += 1
+                    if _null_retries >= self.config.null_response_retries:
+                        error_msg = (
+                            f"Error: model returned a null response "
+                            f"{_null_retries} time(s) in a row. "
+                            "Check your model endpoint and retry your task."
+                        )
+                        self.callbacks.on_error(Exception(error_msg))
+                        return error_msg
+                    # else: discard ghost, retry with identical context
+                # ─────────────────────────────────────────────────────────────
+
                 _reasoning = _extract_reasoning(message)
                 if _reasoning:
                     self.callbacks.on_reasoning(_reasoning)
@@ -344,15 +392,17 @@ class AgentLoop:
                 tool_records: list[ToolCallRecord] = []
 
                 if not message.tool_calls:
-                    # store assistant turn as dict to keep _messages serialisable
-                    self._messages.append({"role": "assistant", "content": message.content})
                     result = message.content or ""
+
+                    # Store assistant turn. Use result (never None) so that _messages
+                    # stays well-formed for all subsequent API calls.
+                    self._messages.append({"role": "assistant", "content": result})
                     _thinking_tok = (
                         getattr(getattr(response.usage, "completion_tokens_details", None), "reasoning_tokens", None)
                         or 0
                     )
                     self.callbacks.on_token_update(
-                        getattr(response.usage, "prompt_tokens", 0) or 0,
+                        _prompt_tok,
                         getattr(response.usage, "completion_tokens", 0) or 0,
                         getattr(response.usage, "cost", None),
                         _thinking_tok,
@@ -444,10 +494,6 @@ class AgentLoop:
                     _thinking_tok,
                 )
 
-                if self.plan_mode_exited:
-                    self.callbacks.on_done("")
-                    return ""
-
                 # ── Compaction trigger ────────────────────────────────────────
                 _prompt_tok = getattr(response.usage, "prompt_tokens", 0) or 0
                 if (
@@ -480,7 +526,7 @@ class AgentLoop:
             "## Approach\n\n\n"
             "## Files to Modify\n\n\n"
             "## Subtasks\n\n"
-            "### Subtask 1: \n"
+            "### Subtask 1: [ ] \n"
             "**Goal:** \n"
             "**Requirements:**\n"
             "- \n"

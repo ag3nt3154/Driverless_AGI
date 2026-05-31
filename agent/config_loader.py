@@ -82,13 +82,16 @@ def _build_config_from_entry(entry: dict, raw: dict) -> AgentConfig:
         api_key_env = entry.get("api_key_env", "OPENAI_API_KEY")
         api_key = os.environ.get(api_key_env, "")
 
-    context_window     = entry.get("context_window")      or raw.get("context_window",      128_000)
-    reserve_tokens     = entry.get("reserve_tokens")      or raw.get("reserve_tokens",       16_384)
-    keep_recent_tokens = entry.get("keep_recent_tokens")  or raw.get("keep_recent_tokens",   20_000)
+    context_window       = entry.get("context_window")        or raw.get("context_window",        128_000)
+    reserve_tokens       = entry.get("reserve_tokens")        or raw.get("reserve_tokens",         16_384)
+    keep_recent_tokens   = entry.get("keep_recent_tokens")    or raw.get("keep_recent_tokens",     20_000)
+    null_response_retries = int(raw.get("null_response_retries", 3))
     thinking = entry.get("thinking") or raw.get("thinking", "none") or "none"
 
     raw_memory_root = raw.get("memory_root")
     memory_root = Path(raw_memory_root).expanduser() if raw_memory_root else None
+
+    emote_tool = bool(raw.get("emote_tool", True))
 
     return AgentConfig(
         model=entry["model"],
@@ -98,7 +101,9 @@ def _build_config_from_entry(entry: dict, raw: dict) -> AgentConfig:
         context_window=int(context_window),
         reserve_tokens=int(reserve_tokens),
         keep_recent_tokens=int(keep_recent_tokens),
+        null_response_retries=null_response_retries,
         memory_root=memory_root,
+        emote_tool=emote_tool,
     )
 
 

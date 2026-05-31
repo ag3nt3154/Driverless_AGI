@@ -98,6 +98,8 @@
 
 ## Done
 
+- [x] Unified skill invocation — slash commands (`/plan-work-review`, etc.) in both CLI and TUI no longer eagerly inject skill content into the user message. They now produce a plain `"Invoke the \`skill-name\` skill."` instruction, causing the LLM to call `skill()` itself — identical to mid-task internal invocations. Removed `_inject_skill_content()` (cli.py) and `_inject_skill()` (tui.py); added single shared `_skill_invocation_message()` in cli.py imported by tui.py.
+
 - [x] Plan mode revision loop — after writing a plan, agent calls `show_plan` to present it to the user. User can request revisions; agent revises and calls `show_plan` again until approved. On approval, agent calls `exit_plan_mode`, outputs one implementation-start sentence ("Starting implementation — Phase 1: …"), and immediately begins tool calls. Wired via `main_system.md` update; `show_plan` tool already handled the loop mechanics. Two bugs fixed in the same session: `_continuation_count` was never reset between `run()` calls (now reset at the start of each `run()`), and `plan_mode_exited` was dead code (field and check removed).
 
 - [x] TUI text wrap + multi-line input — `ConversationPane(RichLog)` now renders with `wrap=True` so long lines fold instead of truncating. Input replaced with `PromptInput(TextArea)`: Enter submits the full (possibly multi-line) message; Shift+Enter inserts a newline. Input box height increased to 5 rows.

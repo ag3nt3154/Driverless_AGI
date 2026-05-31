@@ -128,6 +128,45 @@ def extract_subtask(plan_text: str, subtask_name: str, include_tests: bool = Tru
     return block
 
 
+def parse_subtask_statuses(plan_text: str) -> list[dict]:
+    """Return a list of subtask status dicts parsed from ``### Subtask N: [marker] name`` headings.
+
+    Each dict has keys:
+        ``name``   — the subtask name string (everything after the marker, stripped)
+        ``status`` — one of ``"pending"``, ``"in_progress"``, ``"complete"``,
+                     ``"failed"``, or ``"unknown"``
+
+    Headings without a status marker (e.g. ``### Subtask 1: name``) are returned
+    with ``status="unknown"`` rather than being silently dropped.
+    Returns an empty list for empty or malformed input.
+    """
+    if not plan_text:
+        return []
+
+    _MARKER_MAP = {" ": "pending", "~": "in_progress", "x": "complete", "!": "failed"}
+    _WITH_MARKER = re.compile(
+        r'^###\s+Subtask\s+\d+:\s*\[([ ~x!])\]\s*(.+)$', re.MULTILINE
+    )
+    _WITHOUT_MARKER = re.compile(
+        r'^###\s+Subtask\s+\d+:(?!\s*\[[ ~x!]\])\s*(.+)$', re.MULTILINE
+    )
+
+    results: list[dict] = []
+
+    for m in _WITH_MARKER.finditer(plan_text):
+        marker, name = m.group(1), m.group(2).strip()
+        results.append({"name": name, "status": _MARKER_MAP.get(marker, "unknown"),
+                         "_pos": m.start()})
+
+    for m in _WITHOUT_MARKER.finditer(plan_text):
+        name = m.group(1).strip()
+        if name:
+            results.append({"name": name, "status": "unknown", "_pos": m.start()})
+
+    results.sort(key=lambda d: d.pop("_pos"))
+    return results
+
+
 def _strip_tests_subsection(block: str) -> str:
     """Remove the ``#### Tests`` subsection from a subtask block.
 

@@ -44,7 +44,12 @@ Do NOT enter plan mode for:
 - Bug fixes where the root cause and fix are already clear
 - Tasks already fully specified with no design decisions remaining
 
-When you call `enter_plan_mode`, your tool access is restricted to read/grep/find and write (plan file only) — use this window to explore the codebase and write the plan document. When the plan is complete, call `exit_plan_mode` to restore full tools. The completed plan is loaded into your context — execute it using the Plan-Work-Review Cycle in `.dagi/agents.md`.
+When you call `enter_plan_mode`, your tool access is restricted to read/grep/find and write (plan file only) — use this window to explore the codebase and write the plan document. When the plan is complete:
+
+1. Call `show_plan` to present the plan to the user.
+2. If the user requests changes, revise the plan file and call `show_plan` again. Repeat until the user approves.
+3. Once approved, call `exit_plan_mode` to restore full tools.
+4. Output exactly one sentence — "Starting implementation — Phase 1: [first subtask name]." — then immediately proceed with tool calls. Do NOT output `<<AWAIT_USER_RESPONSE>>`.
 
 ---
 
