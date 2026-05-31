@@ -1,6 +1,6 @@
 # PROJECT_CONTEXT.md
 
-> Last updated: 2026-05-31 (session 8) | [README](README.md) | [TODO](TODO.md)
+> Last updated: 2026-05-31 (session 10) | [README](README.md) | [TODO](TODO.md)
 
 ---
 
@@ -18,6 +18,15 @@ Non-goals: cloud hosting, multi-user auth, UI beyond CLI/Rich.
 
 ```
 tui.py / cli.py / main.py ← entry points (Textual TUI | Rich REPL | single-shot)
+    │
+    tui.py → tui/ package:
+        tui/app.py           ← DagiApp (lifecycle, threading)
+        tui/commands.py      ← SlashCommandsMixin (_handle_slash + _cmd_*)
+        tui/callbacks.py     ← build_callbacks() free function
+        tui/conversation.py  ← ConversationPane(RichLog)
+        tui/sidebar.py       ← Sidebar(Widget)
+        tui/prompt_input.py  ← PromptInput(TextArea)
+        tui/utils.py         ← helpers + _Stats
     │
     └── AgentLoop (agent/loop.py)
             │
@@ -62,7 +71,14 @@ tui.py / cli.py / main.py ← entry points (Textual TUI | Rich REPL | single-sho
 | `tools/_terminal_subagent.py` | Spawns `CREATE_NEW_CONSOLE` terminal for subagents |
 | `tools/compact.py` | Pi-style context compaction |
 | `tools/ask_user.py` | Blocking user-input tool with optional timeout |
-| `tui.py` | Textual TUI — `DagiApp(App)`, `ConversationPane(RichLog, wrap=True)`, `PromptInput(TextArea)`, `Sidebar(Widget)`; 2 s plan-poll via `set_interval` |
+| `tui.py` | Thin launcher (~30 lines) — loads `.env`, imports `DagiApp` from `tui/`, defines typer entry point |
+| `tui/app.py` | `DagiApp(SlashCommandsMixin, App[None])` — lifecycle only: compose, on_mount, dispatch, callbacks wiring, poll; ~180 lines |
+| `tui/commands.py` | `SlashCommandsMixin` — `_handle_slash` + all `_cmd_*` methods + `_load_maps`; mixed into `DagiApp` via MRO |
+| `tui/callbacks.py` | `build_callbacks(app, loop_ref) → AgentCallbacks` free function; uses `TYPE_CHECKING` guard to avoid circular import |
+| `tui/conversation.py` | `ConversationPane(RichLog, wrap=True)` — scrollable Rich log widget |
+| `tui/sidebar.py` | `Sidebar(Widget)` — status, tokens, context, plan, emote; 2 s plan-poll via `set_interval` in `DagiApp.on_mount` |
+| `tui/prompt_input.py` | `PromptInput(TextArea)` + inner `Submitted` message |
+| `tui/utils.py` | `_colour`, `_truncate`, `_resolve_option`, `_breakdown`, `_system_breakdown`, `_Stats`, `_TOOL_COLOURS`, `_SLASH_HELP` |
 | `cli.py` | Rich REPL with threaded/sync modes, plan mode, slash commands |
 | `config.yaml` | Model catalog, API config, context window settings |
 | `.dagi/prompts/main/main_system.md` | Agent system prompt (tools, termination flags, plan mode trigger) |
@@ -116,7 +132,9 @@ tui.py / cli.py / main.py ← entry points (Textual TUI | Rich REPL | single-sho
 - **`max_continuations` is per-`run()` call** — `_continuation_count` resets to 0 at the start of each `run()` call, so every task gets a fresh budget of `max_continuations` (default 10).
 - **Subagents run in `CREATE_NEW_CONSOLE` terminal windows** on Windows; parent polls via `agent/ipc.py` file-based IPC. This is Windows-specific and will not work on Linux/macOS without changes.
 - **`pyproject.toml` is incomplete**: `typer`, `rich`, and now `textual` are missing from declared deps. `pip install -e .` will fail on a clean environment for CLI/TUI use.
-- **TUI thread safety**: `tui.py` runs `AgentLoop` on a daemon `threading.Thread`. All widget mutations from callbacks use `App.call_from_thread()`. The Sidebar widget uses instance attributes + `self.refresh()` — NOT Textual `reactive` — because Textual's reactive equality check on dicts can miss updates when the dict reference changes but content matches. Always use `dict(buckets)` (copy) when updating `_buckets` to force reference inequality.
+- **TUI thread safety**: `tui/app.py` runs `AgentLoop` on a daemon `threading.Thread`. All widget mutations from callbacks use `App.call_from_thread()`. The Sidebar widget uses instance attributes + `self.refresh()` — NOT Textual `reactive` — because Textual's reactive equality check on dicts can miss updates when the dict reference changes but content matches. Always use `dict(buckets)` (copy) when updating `_buckets` to force reference inequality.
+- **`SlashCommandsMixin` accesses `DagiApp` state freely**: `tui/commands.py` defines `SlashCommandsMixin` with no `__init__`. Its methods reference `self._active_loop`, `self._project_path`, `self.query_one(...)`, etc. — these resolve to `DagiApp` instance attributes at runtime via Python's MRO. Adding new instance attributes in the mixin requires no boilerplate; they must be initialized in `DagiApp.__init__` as usual.
+- **`build_callbacks` circular import guard**: `tui/callbacks.py` imports `DagiApp` only inside `if TYPE_CHECKING:` to enable the type annotation `app: DagiApp`. At runtime no import of `tui/app.py` occurs from `callbacks.py`, breaking the cycle. The function accesses `app._stats`, `app._verbose`, `app.query_one(...)`, and `app.call_from_thread(...)` — all resolved dynamically.
 - **TUI pause state**: ESC pauses at end-of-iteration (safe checkpoint). `_current_loop_ref: list` on `DagiApp` holds the running loop reference during execution (populated once `AgentLoop` is constructed in the worker thread). `action_pause()` guards against: idle (no live worker), pending `ask_user`, already paused. Resume requires explicit user input — no silent resume. The input branch in `on_prompt_input_submitted` detects paused state via `not loop._pause_event.is_set()` and routes to `inject_and_resume()` rather than spawning a new `AgentLoop`.
 - **`PromptInput` replaces `Input`**: The TUI input widget is now `PromptInput(TextArea)` — a custom subclass that intercepts `enter` (submit, clears via `load_text("")`) and `shift+enter` (insert `"\n"` for multi-line composition). `TextArea` has no `.placeholder` attribute — the `_show_ask_user` and pending-ask branches no longer set a placeholder. The message handler is `on_prompt_input_submitted` (Textual routing: `on_{class_snake}_{message_snake}`).
 - **Plan subtask status format**: `### Subtask N: [marker] name` in plan.md headings. Four valid markers: `[ ]` pending, `[~]` in-progress, `[x]` complete, `[!]` failed. The plan skeleton pre-populates `[ ]` at `enter_plan_mode` time. `parse_subtask_statuses()` in `tools/_plan_parser.py` parses these.
@@ -127,6 +145,7 @@ tui.py / cli.py / main.py ← entry points (Textual TUI | Rich REPL | single-sho
 - **Sidebar emote system**: The sidebar logo is no longer a static constant. `Sidebar._logo_panel()` calls `_load_face()` on every `refresh()`, which reads `.dagi/emotes/{_emote}.md` (one-line plain text face expression). The hair/border markup is assembled in Python; only the face glyph comes from the file. Falls back to `(◉ ᴗ ◉)` on `OSError`. The agent can switch emotes via `EmoteTool` → `AgentCallbacks.on_emote` → `App.call_from_thread(sidebar.update_emote, emote)`. Emote files are live-editable — changes take effect on next sidebar `refresh()` without restart. Controlled by `emote_tool: true/false` in `config.yaml` (`AgentConfig.emote_tool`).
 - **ANSI `[blue]` renders as purple**: Rich's `[blue]` maps to ANSI color 4, which most modern terminal emulators render as violet/purple (inherited from CGA). Use hex colors (`[#4da6ff]`) or `[bright_blue]` (ANSI 12) for a perceptually blue result. This bit the sidebar logo — all color markup now uses hex.
 - **Plan mode revision loop**: After writing a plan, the agent is instructed (via `main_system.md`) to call `show_plan` before `exit_plan_mode`. `show_plan` shows the plan, asks "Do you have any modifications?", and returns either "Plan approved — call `exit_plan_mode`" or "Modifications requested — revise and call `show_plan` again." The revision cycle repeats until approval. After `exit_plan_mode`, the agent outputs one implementation-start sentence and immediately begins tool calls without waiting for user confirmation.
+- **Running indicator lifecycle**: `tui/app.py` has a 1-line `Static` widget (`#running-indicator`, `display: none` by default) between `#main-row` and `#prompt`. It is shown by `_show_running_indicator()` and hidden by `_hide_running_indicator()` (called from `_enable_input()`). The braille spinner (`_SPINNER` class var, 10 frames) is advanced by a `set_interval(0.1, _tick_spinner)` timer that no-ops when the bar is hidden. Show/hide call sites: `_dispatch_agent` (new task), `on_prompt_input_submitted` inject-and-resume branch (pause → resume), `on_prompt_input_submitted` ask_user answer branch (agent resumes after answer), `action_pause` (explicit hide without enabling input). Because `_enable_input` is always called via `call_from_thread`, `_hide_running_indicator` runs on the Textual main thread — safe.
 - **`/hist` in TUI writes to hidden buffer**: `hist.run()` calls `console.print()` which writes to a Rich console that is not the Textual RichLog. Output appears in the terminal's hidden scroll buffer (behind Textual). This is a known limitation — `/hist` is functional but not displayed in the conversation pane.
 - **There is a stale test directory** `C:UsersalexrDriverless_AGItests` (bad path) at the repo root — likely a Windows path mangling artifact, harmless but odd.
 - **`requirements.txt` ≠ `pyproject.toml`**: `requirements.txt` is a `pip freeze` of the actual `dagi` conda env (23 packages). `pyproject.toml` declares ~10 additional runtime deps (`ddgs`, `crawl4ai`, `beautifulsoup4`, `nicegui`, `markdown`, `matplotlib`, `typer`, `rich`) that are **not** present in the env. The project cannot use web search, web fetch, or the interactive CLI on a clean install from `requirements.txt` alone.
@@ -152,6 +171,7 @@ tui.py / cli.py / main.py ← entry points (Textual TUI | Rich REPL | single-sho
 
 ### User Tendencies
 
+- Invests in structural cleanup (refactoring tui.py → tui/ package) proactively once a module exceeds ~800 lines, rather than waiting for it to become unmanageable. Refactors are purely organizational — behaviour is preserved exactly.
 - Ships incrementally and tests at each step; does not batch large refactors.
 - Has a strong preference for maintaining backward compatibility — new features are additive, never breaking (`cli.py` kept alongside `tui.py`).
 - Tends to work directly on `main` rather than feature branches.

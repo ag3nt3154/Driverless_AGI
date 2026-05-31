@@ -98,6 +98,8 @@
 
 ## Done
 
+- [x] TUI submodule refactor — `tui.py` (819 lines) decomposed into a `tui/` package: `utils.py` (helpers + `_Stats`), `conversation.py` (`ConversationPane`), `prompt_input.py` (`PromptInput`), `sidebar.py` (`Sidebar`), `commands.py` (`SlashCommandsMixin`), `callbacks.py` (`build_callbacks()` free function), `app.py` (`DagiApp`, ~180 lines), `__init__.py`. Root `tui.py` is now a 30-line launcher. All behaviour preserved; `python tui.py --help` and all imports verified.
+
 - [x] Unified skill invocation — slash commands (`/plan-work-review`, etc.) in both CLI and TUI no longer eagerly inject skill content into the user message. They now produce a plain `"Invoke the \`skill-name\` skill."` instruction, causing the LLM to call `skill()` itself — identical to mid-task internal invocations. Removed `_inject_skill_content()` (cli.py) and `_inject_skill()` (tui.py); added single shared `_skill_invocation_message()` in cli.py imported by tui.py.
 
 - [x] Plan mode revision loop — after writing a plan, agent calls `show_plan` to present it to the user. User can request revisions; agent revises and calls `show_plan` again until approved. On approval, agent calls `exit_plan_mode`, outputs one implementation-start sentence ("Starting implementation — Phase 1: …"), and immediately begins tool calls. Wired via `main_system.md` update; `show_plan` tool already handled the loop mechanics. Two bugs fixed in the same session: `_continuation_count` was never reset between `run()` calls (now reset at the start of each `run()`), and `plan_mode_exited` was dead code (field and check removed).

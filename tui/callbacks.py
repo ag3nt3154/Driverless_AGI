@@ -1,0 +1,82 @@
+from __future__ import annotations
+
+import threading
+from typing import TYPE_CHECKING
+
+from agent.loop import AgentCallbacks
+
+from .conversation import ConversationPane
+from .sidebar import Sidebar
+from .utils import _breakdown
+
+if TYPE_CHECKING:
+    from .app import DagiApp
+
+
+def build_callbacks(app: DagiApp, loop_ref: list) -> AgentCallbacks:
+    """Build AgentCallbacks wired to the live TUI widgets."""
+    sidebar = app.query_one(Sidebar)
+    conv = app.query_one(ConversationPane)
+    stats = app._stats
+    verbose = app._verbose
+
+    def on_tool_start(name, _desc, args):
+        app.call_from_thread(conv.append_tool_start, name, args, verbose)
+
+    def on_tool_end(name, result):
+        stats.record_tool(name)
+        app.call_from_thread(conv.append_tool_end, name, result, verbose)
+
+    def on_assistant_text(text):
+        if text.strip():
+            app.call_from_thread(conv.append_assistant, text)
+
+    def on_token_update(inp, out, cost, thinking=0):
+        stats.update_tokens(inp, out, cost, thinking)
+        app.call_from_thread(
+            sidebar.update_stats, stats.input_tok, stats.output_tok, stats.cost, stats.thinking_tok
+        )
+
+    def on_reasoning(text):
+        if text.strip():
+            app.call_from_thread(conv.append_reasoning, text)
+
+    def on_compaction(kept, removed):
+        app.call_from_thread(conv.append_info,
+            f"[yellow]⚡ Context compacted — removed {removed} messages, kept {kept}[/yellow]")
+        if loop_ref:
+            app.call_from_thread(sidebar.update_context, _breakdown(loop_ref[0]._messages))
+
+    def on_model_switch(from_name, to_name):
+        app.call_from_thread(conv.append_info,
+            f"[bold cyan]⇄ Model switch:[/bold cyan] [dim]{from_name}[/dim] → [bold]{to_name}[/bold]")
+        app.call_from_thread(sidebar.update_model, to_name)
+
+    def on_error(exc):
+        app.call_from_thread(conv.append_error, str(exc))
+
+    def on_api_call(messages):
+        app.call_from_thread(sidebar.update_context, _breakdown(messages))
+
+    def on_ask_user(question, options, timeout):
+        evt = threading.Event()
+        container: list = []
+        app.call_from_thread(app._show_ask_user, question, options, timeout, evt, container)
+        safety = (timeout + 60) if timeout is not None else None
+        evt.wait(timeout=safety)
+        if container:
+            return container[0]
+        return next((o["label"] for o in options if o.get("recommended")),
+                    options[0]["label"] if options else "")
+
+    def on_emote(emote: str) -> None:
+        app.call_from_thread(sidebar.update_emote, emote)
+
+    return AgentCallbacks(
+        on_tool_start=on_tool_start, on_tool_end=on_tool_end,
+        on_assistant_text=on_assistant_text, on_token_update=on_token_update,
+        on_iteration=lambda _: None, on_done=lambda _: None, on_error=on_error,
+        on_api_call=on_api_call, on_reasoning=on_reasoning,
+        on_compaction=on_compaction, on_model_switch=on_model_switch,
+        on_ask_user=on_ask_user, on_emote=on_emote,
+    )
