@@ -19,7 +19,7 @@ from tools.reload_skills import RELOAD_SKILLS_SENTINEL
 from tools.switch_model import parse_switch_sentinel
 
 TASK_END_FLAG = "<<TASK_END>>"           # legacy alias — still recognised
-AWAIT_USER_FLAG = "<<AWAIT_USER_RESPONSE>>"
+AWAIT_USER_FLAG = "<<END_OF_RESPONSE>>"
 
 
 def _is_plan_empty(path: Path) -> bool:

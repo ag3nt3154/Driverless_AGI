@@ -17,7 +17,7 @@ Plan → Act → Observe → Repeat
 
 When the conversation exceeds the model's context window, **Pi-style context compaction** kicks in — the middle of the history is summarized and replaced, preserving the system prompt and recent messages. This lets the agent handle arbitrarily long tasks without crashing.
 
-Every agent response with no tool calls must end with `<<AWAIT_USER_RESPONSE>>` — this applies to greetings, answers, and completed tasks alike. If the flag is absent, the harness treats the response as accidentally truncated and injects a recovery prompt (`.dagi/prompts/main/continue.md`) as a user message to resume the loop. A safety valve (`max_continuations`, default 10) prevents runaway recovery loops. `<<TASK_END>>` is kept as a silent legacy alias.
+Every agent response with no tool calls must end with `<<END_OF_RESPONSE>>` — this applies to greetings, answers, and completed tasks alike. If the flag is absent, the harness treats the response as accidentally truncated and injects a recovery prompt (`.dagi/prompts/main/continue.md`) as a user message to resume the loop. A safety valve (`max_continuations`, default 10) prevents runaway recovery loops. `<<TASK_END>>` is kept as a silent legacy alias.
 
 At session start, **BM25 memory injection** automatically retrieves relevant pages from the wiki knowledge base and prepends them as context before the first API call — giving the agent instant access to accumulated knowledge without any manual skill invocation.
 

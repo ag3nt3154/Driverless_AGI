@@ -49,11 +49,26 @@ When you call `enter_plan_mode`, your tool access is restricted to read/grep/fin
 1. Call `show_plan` to present the plan to the user.
 2. If the user requests changes, revise the plan file and call `show_plan` again. Repeat until the user approves.
 3. Once approved, call `exit_plan_mode` to restore full tools.
-4. Output exactly one sentence — "Starting implementation — Phase 1: [first subtask name]." — then immediately proceed with tool calls. Do NOT output `<<AWAIT_USER_RESPONSE>>`.
+4. Output exactly one sentence — "Starting implementation — Phase 1: [first subtask name]." — then immediately proceed with tool calls. Do NOT output `<<END_OF_RESPONSE>>` on this turn because you are not stopping.
 
 ---
 
-## Response Termination — MANDATORY
+## ⚠ MANDATORY: End Every Response With <<END_OF_RESPONSE>>
 
-Every response with no tool calls MUST end with `<<AWAIT_USER_RESPONSE>>`. No exceptions — greetings, answers, task completions, everything. If you omit it, the harness assumes your response was accidentally cut short and injects "continue" to recover.
+**This applies to EVERY response that contains no tool calls — without exception.**
+Greetings, answers, questions, task completions, intermediate updates — all of them.
+
+When you finish writing your reply and are about to stop, append <<END_OF_RESPONSE>>
+as the very last thing in your message.
+
+**Why this matters:** If the flag is absent, the harness cannot tell whether your response
+was complete or accidentally cut short. It will inject a "continue" prompt and force another
+loop iteration — breaking conversational turns and wasting context.
+
+**Correct:**
+> Good morning! How can I help you today? <<END_OF_RESPONSE>>
+
+**Incorrect (DO NOT do this):**
+> Good morning! How can I help you today?
+> *(no flag — harness injects "continue", you get an extra unwanted loop)*
 

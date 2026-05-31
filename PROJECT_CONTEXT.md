@@ -1,6 +1,6 @@
 # PROJECT_CONTEXT.md
 
-> Last updated: 2026-05-31 (session 10) | [README](README.md) | [TODO](TODO.md)
+> Last updated: 2026-05-31 (session 11) | [README](README.md) | [TODO](TODO.md)
 
 ---
 
@@ -52,7 +52,7 @@ tui.py / cli.py / main.py ← entry points (Textual TUI | Rich REPL | single-sho
    - Calls the LLM with current `_messages`
    - If tool calls present → dispatch each tool, append results, loop again
    - If no tool calls → check response for termination flags:
-     - `<<AWAIT_USER_RESPONSE>>` → strip flag, surface response, exit loop (wait for next user turn)
+     - `<<END_OF_RESPONSE>>` → strip flag, surface response, exit loop (wait for next user turn)
      - `<<TASK_END>>` → strip flag, surface response, call `on_done`, return (legacy alias)
      - Neither → inject continue prompt, loop again (up to `max_continuations`)
 5. Context compaction triggers mid-loop if token count exceeds threshold
@@ -107,6 +107,10 @@ tui.py / cli.py / main.py ← entry points (Textual TUI | Rich REPL | single-sho
 
 - **2026-05-30 Note**: `conda run -n dagi python -c "..."` with multi-line strings fails on Windows with `NotImplementedError` (newlines in args not supported). Write multi-line scripts to a temp file and run that instead.
 
+- **2026-05-31 Change**: Renamed `<<AWAIT_USER_RESPONSE>>` → `<<END_OF_RESPONSE>>`.
+  **Cause**: Models kept omitting the flag on conversational turns (greetings, etc.) because `AWAIT_USER_RESPONSE` reads as something said only after asking a question. The instruction was also too soft.
+  **Fix**: Renamed the flag to `<<END_OF_RESPONSE>>` (semantically: "I am done with my turn") and rewrote the system-prompt instruction block with examples, explicit consequences, and a bold header. Constant renamed in `agent/loop.py`; tests were unaffected (they import the constant).
+
 - **2026-05-31 Bug**: `_continuation_count` never reset between `run()` calls — PROJECT_CONTEXT.md incorrectly stated it reset per task; the code did not.
   **Cause**: `_continuation_count = 0` was set only in `__init__`, never at the start of `run()`. Accumulated across all tasks in a multi-turn session, silently eroding the continuation budget.
   **Fix**: Added `self._continuation_count = 0` at the top of `run()` (after `tracker.record_user`). Updated notable point to reflect corrected behavior.
@@ -125,7 +129,7 @@ tui.py / cli.py / main.py ← entry points (Textual TUI | Rich REPL | single-sho
 
 ## Notable Points
 
-- **Flag ordering matters**: `WAIT_FOR_USER_FLAG` is checked *before* `TASK_END_FLAG` in the loop. If both appear in a response (accidental), `WAIT_FOR_USER_RESPONSE` wins.
+- **Flag ordering matters**: `AWAIT_USER_FLAG` (`<<END_OF_RESPONSE>>`) is checked *before* `TASK_END_FLAG` in the loop. If both appear in a response (accidental), `<<END_OF_RESPONSE>>` wins.
 - **`api_key` vs `api_key_env`**: Direct `api_key` in config.yaml overrides env var lookup. Empty string `""` still falls through to env var — only a truthy value short-circuits. Security note: putting the key in yaml means it could be committed; prefer `api_key_env` for production use.
 - **Multi-turn message history**: The CLI passes `loop._messages` as `conversation_msgs` into the next `_run_task()` call. `<<WAIT_FOR_USER_RESPONSE>>` works without any CLI changes because of this existing design.
 - **`null_response_retries` is per-API-call** — the inner retry loop resets for every new LLM call. A ghost response during tool-call processing (e.g. after a large skill result) retries that specific call up to N times. This is independent of `max_continuations`.
@@ -152,8 +156,8 @@ tui.py / cli.py / main.py ← entry points (Textual TUI | Rich REPL | single-sho
 
 ## Terms & Language
 
-- **TASK_END / `<<TASK_END>>`**: Legacy sentinel string for task completion; kept as alias for `<<AWAIT_USER_RESPONSE>>`.
-- **AWAIT_USER_RESPONSE / `<<AWAIT_USER_RESPONSE>>`**: Primary sentinel the agent includes when it wants to surface a response and pause for user input without triggering auto-continue.
+- **TASK_END / `<<TASK_END>>`**: Legacy sentinel string for task completion; kept as alias for `<<END_OF_RESPONSE>>`.
+- **END_OF_RESPONSE / `<<END_OF_RESPONSE>>`**: Primary sentinel the agent appends to every no-tool-call response to signal it has finished its turn. The harness strips it before displaying output and exits the run loop cleanly. Formerly `<<AWAIT_USER_RESPONSE>>`.
 - **continuation**: The harness injecting a `"continue"` user message when the agent stops without a termination flag — recovery mechanism for mid-task stalls.
 - **compaction**: Pi-style summarization of the middle of `_messages` when context exceeds the token budget, preserving system prompt and recent tail.
 - **tier**: One of `default`, `worker`, `plan` — the three model slots in `config.yaml` (`default_model`, `worker_model`, `advanced_model`). The loop switches tiers via `switch_model` sentinel.
