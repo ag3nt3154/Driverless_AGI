@@ -21,6 +21,7 @@ from rich.table import Table
 from rich.text import Text
 from textual import events
 from textual.app import App, ComposeResult
+from textual.message import Message
 from textual.containers import Horizontal
 from textual.widget import Widget
 from textual.widgets import RichLog, TextArea
