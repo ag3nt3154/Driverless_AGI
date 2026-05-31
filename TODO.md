@@ -30,9 +30,9 @@
   - **Source:** Session `2026-04-26_15-20-10` · [review_2026-04-26_15-20-10.md](.dagi/self-review/review_2026-04-26_15-20-10.md) · [plan_2026-04-26_15-20-10.md](.dagi/self-review/plan_2026-04-26_15-20-10.md)
 
 - **Multi-agent / parallel clones** · `priority:medium` · `impact:high` · `in-progress`
-  - **Current:** ALL subagents (`web_research`, `explore_files`, `plan`) spawn visible terminal windows via `subprocess.CREATE_NEW_CONSOLE`. Parent communicates via file-based IPC (`agent/ipc.py`); main terminal shows a Rich live spinner while waiting. Each terminal uses the appropriate model tier (worker / advanced) resolved from `config.yaml`. Terminal persists 5 minutes after task completion with a countdown banner. `cli_subagent.py` kept as a standalone tool for full-agent terminal use.
+  - **Current:** ALL subagents (`web_research`, `explore_files`, `plan`) spawn visible terminal windows via `subprocess.CREATE_NEW_CONSOLE`. Parent communicates via file-based IPC (`agent/ipc.py`); main terminal shows a Rich live spinner while waiting. Each terminal uses the appropriate model tier (worker / advanced) resolved from `config.yaml`. Terminal persists 5 minutes after task completion with a countdown banner. `cli_subagent.py` kept as a standalone tool for full-agent terminal use. TUI sidebar now shows subtask `[~]` in-progress state (2 s poll) — groundwork for parallel visibility.
   - **Ideal:** Parallel spawning (multiple subagents concurrently); task queue / manifest structure; multi-pane UI in the main terminal showing all subagent outputs simultaneously.
-  - **Next:** Prototype parallel dispatch (multiple terminal subagents in one agent turn); add a task manifest so subagents can coordinate without conflicts.
+  - **Next:** Prototype parallel dispatch (multiple terminal subagents in one agent turn); add a task manifest so subagents can coordinate without conflicts. IPC layer needs concurrent poll support for parallel `[~]` display.
 
 - **Subagent polling** · `priority:medium` · `impact:medium`
   - **Current:** Subagents run until completion with no oversight from the main agent.
@@ -97,6 +97,14 @@
 ---
 
 ## Done
+
+- [x] Plan mode revision loop — after writing a plan, agent calls `show_plan` to present it to the user. User can request revisions; agent revises and calls `show_plan` again until approved. On approval, agent calls `exit_plan_mode`, outputs one implementation-start sentence ("Starting implementation — Phase 1: …"), and immediately begins tool calls. Wired via `main_system.md` update; `show_plan` tool already handled the loop mechanics. Two bugs fixed in the same session: `_continuation_count` was never reset between `run()` calls (now reset at the start of each `run()`), and `plan_mode_exited` was dead code (field and check removed).
+
+- [x] TUI text wrap + multi-line input — `ConversationPane(RichLog)` now renders with `wrap=True` so long lines fold instead of truncating. Input replaced with `PromptInput(TextArea)`: Enter submits the full (possibly multi-line) message; Shift+Enter inserts a newline. Input box height increased to 5 rows.
+
+- [x] ESC pause button in TUI — pressing ESC pauses the agent at the end of the current iteration (safe checkpoint: all tool calls in one LLM response complete before blocking). `AgentLoop._pause_event: threading.Event` (set = running) is checked at the top of each `while True` iteration. `pause()` clears it; `inject_and_resume(message)` appends the user message to `_messages` then sets it. TUI sidebar shows `⏸ Paused`; re-enabling input lets the user type a redirect message to continue.
+
+- [x] Full Textual TUI (`tui.py`) — vertical split layout with always-visible sidebar showing live token stats, context window breakdown by role (system/user/assistant/tools/reserve) with `~` estimates and 80%/95% colour warnings, model status indicator, and `/model <id>` switching. `ConversationPane(RichLog)` preserves Rich panel style and scrolls freely during agent runs. Agent runs on a daemon thread with `call_from_thread` bridging all `AgentCallbacks` to the Textual main loop. `cli.py` retained for piped/non-interactive use.
 
 - [x] Single response flag — every no-tool-call response must end with `<<AWAIT_USER_RESPONSE>>` (applies to greetings, answers, and completions alike). `<<TASK_END>>` kept as a silent legacy alias. Recovery injection replaced hardcoded `"continue"` with a proper prompt in `.dagi/prompts/main/continue.md`. Flag rules placed at the end of `main_system.md` for reliable model compliance. 11 unit tests in `tests/test_continuation.py`.
 - [x] Direct `api_key` in config.yaml — model entries now support `api_key: "sk-..."` as an alternative to `api_key_env`. Direct key takes precedence; empty string falls through to env var lookup. Prevents silent fallback to `OPENAI_API_KEY` env var. 3 unit tests in `tests/test_config_loader.py`.

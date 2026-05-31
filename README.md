@@ -63,9 +63,41 @@ echo "Add type hints to agent/" | python main.py
 | `--max-iter` | Override max iterations |
 | `--project` | Path to a project directory to scope file access |
 
+### Interactive TUI (`tui.py`) — recommended
+
+Full Textual TUI with a persistent sidebar showing live token stats, context window breakdown, and current model. Conversation area preserves the Rich panel style, wraps long lines, and scrolls freely while the agent is running.
+
+```bash
+conda run --no-capture-output -n dagi python tui.py
+conda run --no-capture-output -n dagi python tui.py --project /path/to/project
+conda run --no-capture-output -n dagi python tui.py -m deepseek-v4-pro-openrouter -v
+```
+
+| Flag | Description |
+|------|-------------|
+| `--model` / `-m` | Model ID from `config.yaml` |
+| `--verbose` / `-v` | Show full tool input/output |
+| `--project` / `-p` | Project directory |
+
+**Keyboard shortcuts:**
+- `Enter` — submit the input box contents as a task (single or multi-line)
+- `Shift+Enter` — insert a newline in the input box for multi-line messages
+- `Esc` — pause the running agent at the end of the current iteration (after all tool calls in the current LLM response complete). Status changes to `⏸ Paused`. Type any message and press Enter to inject it into the agent's context and resume. ESC has no effect when idle or during an `ask_user` prompt.
+- `Ctrl-C` — quit the TUI entirely
+
+**Sidebar panels:**
+- **Status** — `● Running` / `⏸ Paused` / `○ Idle` + active model name
+- **Tokens** — cumulative `in / think / out / cost` (updated after each API call)
+- **Context** — live `~token` breakdown by role (`system`, `user`, `assistant`, `tools`, `reserve`) with fill bars and colour warnings at 80%/95% usage
+- **Plan** — subtask list with live status icons, polled every 2 s from the active `plan.md`; appears only when a plan is active. Icons: `[ ]` pending · `[~]` in-progress (amber) · `[x]` complete (green) · `[!]` failed (red)
+
+**Slash commands:** `/help`, `/exit`, `/clear`, `/wd`, `/compact`, `/model <id>`, `/plan`, `/tools`, `/skills`, `/workflows`, `/hist`, `/init`
+
+Exit with `/exit`, `exit`, `quit`, or `Ctrl-C`. Conversation history carries across turns.
+
 ### Interactive CLI (`cli.py`)
 
-Multi-turn REPL with Rich rendering, live spinners, and tool call panels. Uses typer.
+Lightweight scrolling REPL — useful for piped/scripted use or when a full TUI is not needed.
 
 ```bash
 python cli.py                          # start REPL
@@ -241,6 +273,7 @@ Driverless_AGI/
 | `compact` | Manually trigger Pi-style context compaction |
 | `switch_model` | Swap to a different model (from `config.yaml`) mid-session |
 | `ask_user` | Pause and ask the user a clarifying question with optional choices |
+| `show_plan` | In plan mode: render the current plan document and ask the user for revisions. Returns "Plan approved" (call `exit_plan_mode`) or "Modifications requested" (revise and call `show_plan` again). In autonomous mode, auto-approves immediately |
 
 File tools (`read`, `write`, `edit`, `grep`, `find`) are sandboxed to allowed roots via `tools/_path_guard.py`. `bash` is intentionally unsandboxed.
 

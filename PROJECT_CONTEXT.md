@@ -1,6 +1,6 @@
 # PROJECT_CONTEXT.md
 
-> Last updated: 2026-05-29 | [README](README.md) | [TODO](TODO.md)
+> Last updated: 2026-05-31 (session 4) | [README](README.md) | [TODO](TODO.md)
 
 ---
 
@@ -17,7 +17,7 @@ Non-goals: cloud hosting, multi-user auth, UI beyond CLI/Rich.
 ## Architecture
 
 ```
-cli.py / main.py          ← entry points (Rich REPL or single-shot)
+tui.py / cli.py / main.py ← entry points (Textual TUI | Rich REPL | single-shot)
     │
     └── AgentLoop (agent/loop.py)
             │
@@ -25,12 +25,13 @@ cli.py / main.py          ← entry points (Rich REPL or single-shot)
             ├── SessionTracker (agent/session.py)  ← logs all turns to JSONL
             ├── CompactTool (tools/compact.py)     ← Pi-style context compaction
             ├── SkillLoader (.dagi/skills/)         ← BM25/guidance docs
-            └── AgentCallbacks                     ← CLI rendering hooks
+            └── AgentCallbacks                     ← rendering hooks (TUI/CLI)
 ```
 
 **Config:** `config.yaml` → `agent/config_loader.py` → `AgentConfig` dataclass  
 **Memory:** `dagi-memory/{raw,wiki,sources}/` + BM25 retrieval at session start  
-**Subagents:** IPC-based terminal spawning (`agent/ipc.py` + `tools/_terminal_subagent.py`)
+**Subagents:** IPC-based terminal spawning (`agent/ipc.py` + `tools/_terminal_subagent.py`)  
+**TUI rendering bridge:** `AgentCallbacks` fire on agent thread → `App.call_from_thread()` → Textual main loop → widget `refresh()`
 
 ## Process Flow
 
@@ -38,12 +39,13 @@ cli.py / main.py          ← entry points (Rich REPL or single-shot)
 2. `resolve_model_config()` reads `config.yaml`, resolves API key (direct or via env var), builds `AgentConfig`
 3. `AgentLoop.__init__()` loads skills, builds `ToolRegistry`, constructs system prompt
 4. `AgentLoop.run(task)` enters `while True` loop:
+   - Checks `_pause_event` at top of each iteration — blocks if user pressed ESC (TUI only)
    - Calls the LLM with current `_messages`
    - If tool calls present → dispatch each tool, append results, loop again
    - If no tool calls → check response for termination flags:
-     - `<<WAIT_FOR_USER_RESPONSE>>` → strip flag, surface response, exit loop (wait for next user turn)
-     - `<<TASK_END>>` → strip flag, surface response, call `on_done`, return
-     - Neither → inject `"continue"` user message, loop again (up to `max_continuations`)
+     - `<<AWAIT_USER_RESPONSE>>` → strip flag, surface response, exit loop (wait for next user turn)
+     - `<<TASK_END>>` → strip flag, surface response, call `on_done`, return (legacy alias)
+     - Neither → inject continue prompt, loop again (up to `max_continuations`)
 5. Context compaction triggers mid-loop if token count exceeds threshold
 6. Session ends; `SessionTracker.finish()` writes summary to `.dagi/logs/`
 
@@ -51,7 +53,7 @@ cli.py / main.py          ← entry points (Rich REPL or single-shot)
 
 | Path | Purpose |
 |------|---------|
-| `agent/loop.py` | Core agent loop, `AgentConfig`, `AgentCallbacks`, `TASK_END_FLAG`, `WAIT_FOR_USER_FLAG` |
+| `agent/loop.py` | Core agent loop, `AgentConfig`, `AgentCallbacks`, `TASK_END_FLAG`, `AWAIT_USER_FLAG`; pause/resume via `_pause_event` |
 | `agent/config_loader.py` | Reads `config.yaml`; resolves `api_key` (direct or env var) and model catalog |
 | `agent/tools.py` | Wires all tools into `ToolRegistry`; defines plan-mode and subagent registry variants |
 | `agent/registry.py` | Tool dispatch; OpenAI function-schema generation |
@@ -60,9 +62,11 @@ cli.py / main.py          ← entry points (Rich REPL or single-shot)
 | `tools/_terminal_subagent.py` | Spawns `CREATE_NEW_CONSOLE` terminal for subagents |
 | `tools/compact.py` | Pi-style context compaction |
 | `tools/ask_user.py` | Blocking user-input tool with optional timeout |
+| `tui.py` | Textual TUI — `DagiApp(App)`, `ConversationPane(RichLog, wrap=True)`, `PromptInput(TextArea)`, `Sidebar(Widget)`; 2 s plan-poll via `set_interval` |
 | `cli.py` | Rich REPL with threaded/sync modes, plan mode, slash commands |
 | `config.yaml` | Model catalog, API config, context window settings |
 | `.dagi/prompts/main/main_system.md` | Agent system prompt (tools, termination flags, plan mode trigger) |
+| `tools/_plan_parser.py` | Utilities for parsing plan.md: `extract_global_sections`, `extract_subtask`, `parse_subtask_statuses` |
 | `.dagi/agents.md` | Behavioral guidelines, Plan-Work-Review cycle instructions |
 | `soul.md` | DAGI persona definition |
 | `tests/test_continuation.py` | Unit tests for `<<TASK_END>>` and `<<WAIT_FOR_USER_RESPONSE>>` loop logic |
@@ -83,24 +87,46 @@ cli.py / main.py          ← entry points (Rich REPL or single-shot)
   **Cause**: Only two exit conditions existed — `<<TASK_END>>` (done) and no flag (inject "continue").
   **Fix**: Added `<<WAIT_FOR_USER_RESPONSE>>` as a third flag: exits the loop cleanly like `<<TASK_END>>` but semantically signals "waiting for user reply." CLI multi-turn history is preserved across `run()` calls, so the conversation continues naturally.
 
+- **2026-05-30 Note**: `conda run -n dagi python -c "..."` with multi-line strings fails on Windows with `NotImplementedError` (newlines in args not supported). Write multi-line scripts to a temp file and run that instead.
+
+- **2026-05-31 Bug**: `_continuation_count` never reset between `run()` calls — PROJECT_CONTEXT.md incorrectly stated it reset per task; the code did not.
+  **Cause**: `_continuation_count = 0` was set only in `__init__`, never at the start of `run()`. Accumulated across all tasks in a multi-turn session, silently eroding the continuation budget.
+  **Fix**: Added `self._continuation_count = 0` at the top of `run()` (after `tracker.record_user`). Updated notable point to reflect corrected behavior.
+
+- **2026-05-31 Bug**: `plan_mode_exited` field was dead code — initialized `False` in `__init__`, never set `True` anywhere. The check at the end of the tool-call loop could never trigger.
+  **Cause**: `_handle_exit_plan_mode` set `self.exited_plan_file` (a different field) rather than `self.plan_mode_exited`. Plan mode exit worked incidentally via the extra API round-trip.
+  **Fix**: Removed the `plan_mode_exited` field and its unreachable check block. Accepted the natural flow (extra API call, agent reads plan context and starts implementing) as canonical.
+
+- **2026-05-31 Feature**: ESC pause button added to TUI. `AgentLoop` now has `_pause_event: threading.Event` (set = running), checked at the top of each `while True` iteration. `pause()` clears the event; `inject_and_resume(message)` appends the user message to `_messages` then sets the event. TUI wires ESC to `action_pause()` and re-enables input; next typed message calls `inject_and_resume()` to unblock the loop. This is semantically equivalent to a user-initiated `ask_user` without a question.
+
 ## Notable Points
 
 - **Flag ordering matters**: `WAIT_FOR_USER_FLAG` is checked *before* `TASK_END_FLAG` in the loop. If both appear in a response (accidental), `WAIT_FOR_USER_RESPONSE` wins.
 - **`api_key` vs `api_key_env`**: Direct `api_key` in config.yaml overrides env var lookup. Empty string `""` still falls through to env var — only a truthy value short-circuits. Security note: putting the key in yaml means it could be committed; prefer `api_key_env` for production use.
 - **Multi-turn message history**: The CLI passes `loop._messages` as `conversation_msgs` into the next `_run_task()` call. `<<WAIT_FOR_USER_RESPONSE>>` works without any CLI changes because of this existing design.
-- **`max_continuations` is per-`run()` call**, not per session — resets to 0 on each new task.
+- **`max_continuations` is per-`run()` call** — `_continuation_count` resets to 0 at the start of each `run()` call, so every task gets a fresh budget of `max_continuations` (default 10).
 - **Subagents run in `CREATE_NEW_CONSOLE` terminal windows** on Windows; parent polls via `agent/ipc.py` file-based IPC. This is Windows-specific and will not work on Linux/macOS without changes.
-- **`pyproject.toml` is incomplete**: `typer` and `rich` are missing from declared deps. `pip install -e .` will fail on a clean environment for CLI use.
+- **`pyproject.toml` is incomplete**: `typer`, `rich`, and now `textual` are missing from declared deps. `pip install -e .` will fail on a clean environment for CLI/TUI use.
+- **TUI thread safety**: `tui.py` runs `AgentLoop` on a daemon `threading.Thread`. All widget mutations from callbacks use `App.call_from_thread()`. The Sidebar widget uses instance attributes + `self.refresh()` — NOT Textual `reactive` — because Textual's reactive equality check on dicts can miss updates when the dict reference changes but content matches. Always use `dict(buckets)` (copy) when updating `_buckets` to force reference inequality.
+- **TUI pause state**: ESC pauses at end-of-iteration (safe checkpoint). `_current_loop_ref: list` on `DagiApp` holds the running loop reference during execution (populated once `AgentLoop` is constructed in the worker thread). `action_pause()` guards against: idle (no live worker), pending `ask_user`, already paused. Resume requires explicit user input — no silent resume. The input branch in `on_prompt_input_submitted` detects paused state via `not loop._pause_event.is_set()` and routes to `inject_and_resume()` rather than spawning a new `AgentLoop`.
+- **`PromptInput` replaces `Input`**: The TUI input widget is now `PromptInput(TextArea)` — a custom subclass that intercepts `enter` (submit, clears via `load_text("")`) and `shift+enter` (insert `"\n"` for multi-line composition). `TextArea` has no `.placeholder` attribute — the `_show_ask_user` and pending-ask branches no longer set a placeholder. The message handler is `on_prompt_input_submitted` (Textual routing: `on_{class_snake}_{message_snake}`).
+- **Plan subtask status format**: `### Subtask N: [marker] name` in plan.md headings. Four valid markers: `[ ]` pending, `[~]` in-progress, `[x]` complete, `[!]` failed. The plan skeleton pre-populates `[ ]` at `enter_plan_mode` time. `parse_subtask_statuses()` in `tools/_plan_parser.py` parses these.
+- **`[~]` orphan semantics**: The plan-work-review skill marks a subtask `[~]` before spawning a worker subagent. If the loop is interrupted mid-execution, `[~]` persists in plan.md indefinitely — no auto-reset. On session resume, the user or agent must inspect the subtask and decide whether to retry or mark complete. The TUI sidebar displays `[~]` in amber as "interrupted."
+- **TUI plan panel poll**: `DagiApp` runs a 2 s `set_interval` poll (`_poll_plan`) that reads `loop.config.plan_file or loop.config.active_plan_file` on the Textual main thread. Both attributes are plain strings set once by the agent thread; Python's GIL makes the read safe without an explicit lock. The poll is a no-op when no loop is active.
+- **TUI scrolling**: `RichLog.auto_scroll = True` by default. Textual pauses auto-scroll when the user scrolls up and resumes when they reach the bottom — this is built-in behaviour requiring no custom scroll handling.
+- **Plan mode revision loop**: After writing a plan, the agent is instructed (via `main_system.md`) to call `show_plan` before `exit_plan_mode`. `show_plan` shows the plan, asks "Do you have any modifications?", and returns either "Plan approved — call `exit_plan_mode`" or "Modifications requested — revise and call `show_plan` again." The revision cycle repeats until approval. After `exit_plan_mode`, the agent outputs one implementation-start sentence and immediately begins tool calls without waiting for user confirmation.
+- **`/hist` in TUI writes to hidden buffer**: `hist.run()` calls `console.print()` which writes to a Rich console that is not the Textual RichLog. Output appears in the terminal's hidden scroll buffer (behind Textual). This is a known limitation — `/hist` is functional but not displayed in the conversation pane.
 - **There is a stale test directory** `C:UsersalexrDriverless_AGItests` (bad path) at the repo root — likely a Windows path mangling artifact, harmless but odd.
 - **`requirements.txt` ≠ `pyproject.toml`**: `requirements.txt` is a `pip freeze` of the actual `dagi` conda env (23 packages). `pyproject.toml` declares ~10 additional runtime deps (`ddgs`, `crawl4ai`, `beautifulsoup4`, `nicegui`, `markdown`, `matplotlib`, `typer`, `rich`) that are **not** present in the env. The project cannot use web search, web fetch, or the interactive CLI on a clean install from `requirements.txt` alone.
 
 ## Terms & Language
 
-- **TASK_END / `<<TASK_END>>`**: Sentinel string the agent includes in its final response to signal task completion to the harness.
-- **WAIT_FOR_USER_RESPONSE / `<<WAIT_FOR_USER_RESPONSE>>`**: Sentinel the agent includes when it wants to surface a response and pause for user input without triggering auto-continue.
+- **TASK_END / `<<TASK_END>>`**: Legacy sentinel string for task completion; kept as alias for `<<AWAIT_USER_RESPONSE>>`.
+- **AWAIT_USER_RESPONSE / `<<AWAIT_USER_RESPONSE>>`**: Primary sentinel the agent includes when it wants to surface a response and pause for user input without triggering auto-continue.
 - **continuation**: The harness injecting a `"continue"` user message when the agent stops without a termination flag — recovery mechanism for mid-task stalls.
 - **compaction**: Pi-style summarization of the middle of `_messages` when context exceeds the token budget, preserving system prompt and recent tail.
 - **tier**: One of `default`, `worker`, `plan` — the three model slots in `config.yaml` (`default_model`, `worker_model`, `advanced_model`). The loop switches tiers via `switch_model` sentinel.
+- **TUI**: The new Textual-based terminal UI (`tui.py`). "Full TUI" in this project means a fixed-canvas multi-pane layout (unlike `cli.py` which is a scrolling REPL). Requires `textual>=0.80.0`.
 - **GNHF**: "Good and not horrible feedback" — dagi's self-improvement workflow. Committed milestones, iterative development, freeform notes log at `.dagi/gnhf/notes.md`.
 - **BM25**: Sparse keyword ranking algorithm used for memory retrieval in `agent/memory_retriever.py`.
 - **IPC**: File-based inter-process communication (`agent/ipc.py`) used between main agent and terminal subagents.
@@ -114,19 +140,25 @@ cli.py / main.py          ← entry points (Rich REPL or single-shot)
 ### User Tendencies
 
 - Ships incrementally and tests at each step; does not batch large refactors.
-- Has a strong preference for maintaining backward compatibility — new features are additive, never breaking.
-- Tends to work directly on `main` rather than feature branches; all three fixes today were committed to main without a PR.
+- Has a strong preference for maintaining backward compatibility — new features are additive, never breaking (`cli.py` kept alongside `tui.py`).
+- Tends to work directly on `main` rather than feature branches.
 - README and TODO are kept scrupulously up-to-date — the user treats them as living documents, not afterthoughts.
 - Prefers explicit, non-magical configuration (env var pointers in yaml rather than magic env var names) but occasionally wants the escape hatch of inlining secrets directly.
+- Engages deeply in design grilling before implementation — responds well to adversarial questioning about trade-offs and commits to concrete choices before coding begins. Does not want vague or open-ended design left to implementation time.
+- Prefers pause semantics that preserve agent context (inject & resume) over simpler cancel-and-restart approaches, even at slightly higher implementation cost. Favours architectural correctness over convenience shortcuts.
+- Will accept dead-code cleanup (removal) when shown the evidence; prefers the simpler behavior (accept the extra round-trip) over adding new flag logic when the outcome is equivalent.
 
 ### Project Shortcomings
 
+- **`/hist` slash command in TUI is broken** — it writes to a `rich.Console` behind Textual's canvas. Needs reimplementing to write to `ConversationPane`.
+- **`PromptInput` has no placeholder**: Textual's `TextArea` (which `PromptInput` subclasses) does not expose a `.placeholder` property. The "Your answer…" cue shown during `ask_user` prompts was silently dropped. A future improvement could overlay a `Label` or use the TUI's conversation pane to communicate prompt context.
 - **No retry/backoff for transient API errors** — a single 429 or 5xx will abort the task. The TODO acknowledges this but it hasn't been implemented. Long tasks in production will hit rate limits.
 - **Dependency split between `requirements.txt` and `pyproject.toml`** — `requirements.txt` (pip freeze of actual `dagi` conda env) has only 23 packages; `pyproject.toml` declares ~10 more (`ddgs`, `crawl4ai`, `beautifulsoup4`, `nicegui`, `markdown`, `matplotlib`, `typer`, `rich`). Neither file alone produces a working install. The `dagi` conda env is missing several declared runtime deps, meaning tools like `web_search`, `web_fetch`, and the Rich CLI may silently fail until those packages are installed.
 - **BashTool is unsandboxed** — no command blacklist, no process group kill on timeout. An agent could run destructive bash commands. Path guard protects file tools but not bash.
 - **Subagent architecture is Windows-only** (`CREATE_NEW_CONSOLE`). Cross-platform support would require a different IPC mechanism.
 - **No integration tests** — all tests are unit tests with mocked LLM clients. There is no end-to-end test that runs a real agent loop against a live or recorded API response.
 - **`temp_system_prompt.txt`, `temp_test.ipynb`, `plan.md` at root** are stale scratch files that should be cleaned up or archived.
+- **`show_plan` tool was underused** — it already implemented the full plan revision loop (show → ask → revise → repeat), but `main_system.md` never instructed the agent to call it before `exit_plan_mode`. The tool was wired correctly; the orchestration was missing from the prompt.
 
 ### Assumptions to Challenge
 
@@ -143,7 +175,11 @@ cli.py / main.py          ← entry points (Rich REPL or single-shot)
 
 ### Potential Areas of Exploration
 
-- **Streaming responses**: currently using non-streaming API calls; streaming would enable real-time token display and reduce perceived latency for long responses.
+- **Fix `/hist` in TUI**: reimplement `_cmd_hist()` in `tui.py` to write session history directly to `ConversationPane` rather than calling `hist.run()` (which uses a bare `rich.Console`).
+- **`ask_user` UX in TUI**: now that `PromptInput` has no placeholder support, there is no visual cue distinguishing a normal prompt from an `ask_user` question prompt. A small indicator (e.g., a highlighted label or border colour change on `#prompt`) would improve clarity during agent-initiated Q&A.
+- **Parallel subagent dispatch**: the `[~]` in-progress state was introduced with parallel multi-agent future in mind. The IPC layer (`agent/ipc.py`) would need to support multiple concurrent polls; the plan panel would then show multiple subtasks as `[~]` simultaneously.
+- **Pause during subagent execution**: current pause only stops the *parent* loop at its checkpoint. If a subagent is running (terminal subprocess), it continues unaffected. A future improvement could write an IPC `pause` sentinel to the subagent's channel.
+- **Streaming responses**: the TUI sidebar's token counter currently only updates after each full API response. Streaming would enable per-token updates and reduce perceived latency. The `ConversationPane` could stream assistant text incrementally using `RichLog.write()` calls on each chunk.
 - **Structured output / tool-call validation**: the agent currently relies on the model to produce valid JSON for tool arguments. A schema-level validator at the registry layer would catch malformed calls early.
 - **Session replay / dry-run mode**: the JSONL session log has everything needed to replay a session deterministically — useful for debugging and regression testing.
 - **Cross-platform subagent spawning**: replacing `CREATE_NEW_CONSOLE` with a platform-agnostic approach (e.g., tmux panes, named pipes, or asyncio subprocess) would open dagi to Linux/macOS users.
