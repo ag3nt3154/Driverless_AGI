@@ -427,6 +427,7 @@ class DagiApp(App[None]):
             self._pending_ask = None
             container.append(_resolve_option(raw, options))
             ask_evt.set()
+            self.query_one("#prompt", PromptInput).disabled = True
             return
         if (
             self._worker and self._worker.is_alive()
@@ -470,7 +471,8 @@ class DagiApp(App[None]):
         elif cmd == "/compact":
             self._cmd_compact()
         elif cmd == "/plan":
-            self._dispatch_agent(f"Invoke the 'plan-work-review' skill. {arg or ''}")
+            from cli import _skill_invocation_message
+            self._dispatch_agent(_skill_invocation_message("plan-work-review", arg or ""))
         elif cmd == "/help":
             self._cmd_help()
         elif cmd == "/tools":
@@ -485,7 +487,8 @@ class DagiApp(App[None]):
             from cli import _cmd_init
             _cmd_init(self._project_path)
         elif cmd in self._skill_map:
-            self._dispatch_agent(f"Invoke the '{self._skill_map[cmd].name}' skill. {arg or ''}")
+            from cli import _skill_invocation_message
+            self._dispatch_agent(_skill_invocation_message(self._skill_map[cmd].name, arg or ""))
         elif cmd in self._workflow_map:
             from tools.workflow import load_workflow_content
             wf = load_workflow_content(
@@ -700,6 +703,7 @@ class DagiApp(App[None]):
     ) -> None:
         self.query_one(ConversationPane).append_question(question, options, timeout)
         self._pending_ask = (evt, container, options, timeout)
+        self._enable_input()
 
     def _build_callbacks(self, loop_ref: list) -> AgentCallbacks:
         sidebar = self.query_one(Sidebar)
