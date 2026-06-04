@@ -12,6 +12,7 @@ class EmoteTool(BaseTool):
     description = (
         "Display an emote on the sidebar to express your current state or mood. "
         "Use this to react to what is happening — a task result, user feedback, or your own situation."
+        "Available emotes: " + ", ".join(EMOTES)
     )
     _parameters = {
         "type": "object",

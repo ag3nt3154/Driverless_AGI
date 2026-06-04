@@ -6,7 +6,6 @@ from pathlib import Path
 from rich.panel import Panel
 from rich.text import Text
 from textual.app import App, ComposeResult
-from textual.containers import Horizontal, Vertical
 from textual.widgets import Static
 
 from agent.config_loader import get_model_display_name, resolve_model_config
@@ -22,13 +21,11 @@ from .utils import _resolve_option, _Stats
 
 class DagiApp(SlashCommandsMixin, App[None]):
     CSS = """
-    Screen   { layout: vertical; }
-    #main-row { height: 1fr; }
-    #conversation-col { width: 75%; }
+    Screen           { layout: vertical; }
     ConversationPane { height: 1fr; }
-    Sidebar  { width: 25%; border-left: solid $panel; padding: 0 1; }
+    Sidebar          { height: 12; border-bottom: solid $panel; }
     #running-indicator { height: 1; display: none; color: $success; text-align: center; }
-    #prompt  { dock: bottom; height: 5; border-top: solid $panel; }
+    #prompt          { dock: bottom; height: 5; border-top: solid $panel; }
     """
 
     _SPINNER = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
@@ -53,14 +50,12 @@ class DagiApp(SlashCommandsMixin, App[None]):
     def compose(self) -> ComposeResult:
         cfg = resolve_model_config(self._model_id)
         dagi_root = Path(__file__).parent.parent
-        with Horizontal(id="main-row"):
-            with Vertical(id="conversation-col"):
-                yield ConversationPane(id="conversation", highlight=True, markup=True, wrap=True)
-                yield Static("", id="running-indicator")
-            yield Sidebar(
-                self._model_name, cfg.context_window, cfg.reserve_tokens,
-                dagi_root=dagi_root, project_path=self._project_path,
-            )
+        yield Sidebar(
+            self._model_name, cfg.context_window, cfg.reserve_tokens,
+            dagi_root=dagi_root, project_path=self._project_path,
+        )
+        yield ConversationPane(id="conversation", highlight=True, markup=True, wrap=True)
+        yield Static("", id="running-indicator")
         yield PromptInput(id="prompt")
 
     def on_mount(self) -> None:

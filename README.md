@@ -65,7 +65,7 @@ echo "Add type hints to agent/" | python main.py
 
 ### Interactive TUI (`tui.py`) — recommended
 
-Full Textual TUI with a persistent sidebar showing live token stats, context window breakdown, and current model. Conversation area preserves the Rich panel style, wraps long lines, and scrolls freely while the agent is running.
+Full Textual TUI with a fixed 6-line top header (status/emote, tokens+context, plan) and a full-width conversation area below. Conversation preserves the Rich panel style, wraps long lines, and scrolls freely while the agent is running.
 
 ```bash
 conda run --no-capture-output -n dagi python tui.py
@@ -85,11 +85,10 @@ conda run --no-capture-output -n dagi python tui.py -m deepseek-v4-pro-openroute
 - `Esc` — pause the running agent at the end of the current iteration (after all tool calls in the current LLM response complete). Status changes to `⏸ Paused`. Type any message and press Enter to inject it into the agent's context and resume. ESC has no effect when idle or during an `ask_user` prompt.
 - `Ctrl-C` — quit the TUI entirely
 
-**Sidebar panels:**
-- **Status** — `● Running` / `⏸ Paused` / `○ Idle` + active model name
-- **Tokens** — cumulative `in / think / out / cost` (updated after each API call)
-- **Context** — live `~token` breakdown by role (`system`, `user`, `assistant`, `tools`, `reserve`) with fill bars and colour warnings at 80%/95% usage
-- **Plan** — subtask list with live status icons, polled every 2 s from the active `plan.md`; appears only when a plan is active. Icons: `[ ]` pending · `[~]` in-progress (amber) · `[x]` complete (green) · `[!]` failed (red)
+**Header panels (left → center → right):**
+- **Status** (left) — emote face · `● Running` / `⏸ Paused` / `○ Idle` · active model name
+- **Tokens + Context** (center) — cumulative `in / think / out / cost`; condensed context breakdown (sys / msgs / reserve / total) with colour warnings at 80%/95% usage
+- **Plan** (right) — subtask list polled every 2 s; shown only when a plan is active. Icons: `[ ]` pending · `[~]` in-progress (amber) · `[x]` complete (green) · `[!]` failed (red)
 
 **Slash commands:** `/help`, `/exit`, `/clear`, `/wd`, `/compact`, `/model <id>`, `/plan`, `/tools`, `/skills`, `/workflows`, `/hist`, `/init`
 
