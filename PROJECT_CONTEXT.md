@@ -1,6 +1,6 @@
 # PROJECT_CONTEXT.md
 
-> Last updated: 2026-06-05 (session 14) | [README](README.md) | [TODO](TODO.md)
+> Last updated: 2026-06-05 (session 15) | [README](README.md) | [TODO](TODO.md)
 
 ---
 
@@ -152,6 +152,8 @@ tui.py / cli.py / main.py ← entry points (Textual TUI | Rich REPL | single-sho
 - **Plan mode revision loop**: After writing a plan, the agent is instructed (via `main_system.md`) to call `show_plan` before `exit_plan_mode`. `show_plan` shows the plan, asks "Do you have any modifications?", and returns either "Plan approved — call `exit_plan_mode`" or "Modifications requested — revise and call `show_plan` again." The revision cycle repeats until approval. After `exit_plan_mode`, the agent outputs one implementation-start sentence and immediately begins tool calls without waiting for user confirmation.
 - **Running indicator lifecycle**: `tui/app.py` has a 1-line `Static` widget (`#running-indicator`, `display: none` by default) between `#main-row` and `#prompt`. It is shown by `_show_running_indicator()` and hidden by `_hide_running_indicator()` (called from `_enable_input()`). The braille spinner (`_SPINNER` class var, 10 frames) is advanced by a `set_interval(0.1, _tick_spinner)` timer that no-ops when the bar is hidden. Show/hide call sites: `_dispatch_agent` (new task), `on_prompt_input_submitted` inject-and-resume branch (pause → resume), `on_prompt_input_submitted` ask_user answer branch (agent resumes after answer), `action_pause` (explicit hide without enabling input). Because `_enable_input` is always called via `call_from_thread`, `_hide_running_indicator` runs on the Textual main thread — safe.
 - **`/hist` in TUI writes to hidden buffer**: `hist.run()` calls `console.print()` which writes to a Rich console that is not the Textual RichLog. Output appears in the terminal's hidden scroll buffer (behind Textual). This is a known limitation — `/hist` is functional but not displayed in the conversation pane.
+- **Compaction summary is now a first-class JSONL record**: After the 2026-06-05 fix, each compaction fires `on_summary` → `tracker.record_user(summary_content)`, writing a `{"type": "message", "entity": "user", "content": "[CONTEXT SUMMARY ..."}` record into the JSONL stream. Previously the summary only appeared inside `session_end.raw_messages`. Parsing tools (`parse_jsonl_logs.py`, `parse_session_log.py`) will now encounter this record in the message stream — they already handle user messages correctly, so no changes needed there.
+
 - **There is a stale test directory** `C:UsersalexrDriverless_AGItests` (bad path) at the repo root — likely a Windows path mangling artifact, harmless but odd.
 - **`requirements.txt` now documents hard vs optional deps**: Core (openai, pyyaml, python-dotenv, rich, typer, textual) are listed as required; web tools (ddgs, crawl4ai, httpx, beautifulsoup4) are commented-out optional entries. `pyproject.toml` still declares several deps (`nicegui`, `markdown`, `matplotlib`) not in requirements.txt or the conda env.
 
@@ -201,6 +203,10 @@ tui.py / cli.py / main.py ← entry points (Textual TUI | Rich REPL | single-sho
 - **No integration tests** — all tests are unit tests with mocked LLM clients. There is no end-to-end test that runs a real agent loop against a live or recorded API response.
 - **`temp_system_prompt.txt`, `temp_test.ipynb`, `plan.md` at root** are stale scratch files that should be cleaned up or archived.
 - **`show_plan` tool was underused** — it already implemented the full plan revision loop (show → ask → revise → repeat), but `main_system.md` never instructed the agent to call it before `exit_plan_mode`. The tool was wired correctly; the orchestration was missing from the prompt.
+
+- **2026-06-05 Fix**: Compaction summary was never written to the JSONL session log.
+  **Cause**: `_compact_context()` called `compact_tool.compact()` and mutated `_messages` in-place, but never called `tracker.record_user()`. The summary only appeared in `session_end.raw_messages` (the final snapshot), not as a standalone record in the JSONL stream. Both the auto-compact trigger and the `/compact` slash command bypassed logging.
+  **Fix**: Added `_on_summary: Callable[[str], None]` callback to `CompactTool` (field in `__init__`, parameter in `bind()`). Fired inside `compact()` immediately after `msgs[head_end:tail_start] = [summary_message]`. All 4 `compact_tool.bind()` call sites in `agent/loop.py` now pass `on_summary=self.tracker.record_user`, covering both auto and manual compaction paths.
 
 - **2026-05-31 Bug**: Input pane invisible/disabled during `ask_user` tool invocation — user could see the question but could not type an answer.
   **Cause**: `_dispatch_agent()` disables the input pane (line 644 in `tui.py`) when the agent starts. `_show_ask_user()` displayed the question but never called `_enable_input()`, so the input remained disabled for the duration of the ask. The input was only re-enabled in the `finally` block when the agent finished entirely.

@@ -306,6 +306,7 @@ class AgentLoop:
         self.compact_tool.bind(
             self._messages, config, self.client,
             on_compaction=self.callbacks.on_compaction,
+            on_summary=self.tracker.record_user,
         )
 
         # Switch to plan tier immediately when starting in user-initiated plan mode
@@ -632,6 +633,7 @@ class AgentLoop:
         self.compact_tool.bind(
             self._messages, self.config, self.client,
             on_compaction=self.callbacks.on_compaction,
+            on_summary=self.tracker.record_user,
         )
 
         self._current_tier = target
@@ -694,6 +696,7 @@ class AgentLoop:
         self.compact_tool.bind(
             self._messages, self.config, self.client,
             on_compaction=self.callbacks.on_compaction,
+            on_summary=self.tracker.record_user,
         )
 
     def _rebuild_for_plan_mode(self, dagi_root: Path, plan_file: Path, interactive: bool = True) -> None:
@@ -738,6 +741,7 @@ class AgentLoop:
         self.compact_tool.bind(
             self._messages, self.config, self.client,
             on_compaction=self.callbacks.on_compaction,
+            on_summary=self.tracker.record_user,
         )
 
     def _rebuild_for_reload(self) -> tuple[set[str], set[str], list[tuple[str, str]]]:

@@ -100,6 +100,7 @@ class CompactTool(BaseTool):
         self._config: AgentConfig | None = None
         self._client: openai.OpenAI | None = None
         self._on_compaction: Callable[[int, int], None] | None = None
+        self._on_summary: Callable[[str], None] | None = None
 
     def bind(
         self,
@@ -107,12 +108,14 @@ class CompactTool(BaseTool):
         config: "AgentConfig",
         client: openai.OpenAI,
         on_compaction: Callable[[int, int], None] | None = None,
+        on_summary: Callable[[str], None] | None = None,
     ) -> None:
         """Late-bind to mutable loop state. Must be called before compact()."""
         self._messages = messages
         self._config = config
         self._client = client
         self._on_compaction = on_compaction
+        self._on_summary = on_summary
 
     # ── BaseTool interface (human-readable output) ────────────────────────
 
@@ -235,6 +238,8 @@ class CompactTool(BaseTool):
         msgs[head_end:tail_start] = [summary_message]
 
         # ── Notify observers ──────────────────────────────────────────────
+        if self._on_summary:
+            self._on_summary(summary_message["content"])
         if self._on_compaction:
             self._on_compaction(len(msgs), removed_count)
 
