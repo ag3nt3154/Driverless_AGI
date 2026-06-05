@@ -35,25 +35,21 @@ class WebResearchTool(BaseTool):
         self._tracker = tracker
 
     def run(self, task: str) -> str:
-        try:
-            from tools._terminal_subagent import spawn_terminal_subagent
+        from tools._subagent_runner import run_subagent
+        from uuid import uuid4 as _uuid4
 
-            subagent_id = uuid4().hex[:8]
-            depth = self._tracker._depth if self._tracker else 0
+        subagent_id = _uuid4().hex[:8]
+        handoff_path = self._config.project_path / ".dagi" / "handoffs" / f"web_research_{subagent_id}.md"
+        depth = self._tracker._depth if self._tracker else 0
 
-            if self._tracker:
-                self._tracker.record_subagent_start(subagent_id, "web_research", task, depth)
+        if self._tracker:
+            self._tracker.record_subagent_start(subagent_id, "web_research", task, depth)
 
-            result = spawn_terminal_subagent(
-                subagent_type="web_research",
-                task=task,
-                project_path=self._config.project_path,
-                timeout=300,
-            )
+        result = run_subagent("web_research", task, self._config.project_path, handoff_path, 300)
 
-            if self._tracker:
-                self._tracker.record_subagent_end(subagent_id, result, depth)
+        if self._tracker:
+            self._tracker.record_subagent_end(subagent_id, str(result), depth)
 
-            return result
-        except Exception as e:
-            return f"[web_research error] {e}"
+        if result["status"] == "ok":
+            return Path(result["handoff"]).read_text(encoding="utf-8")
+        return f"[web_research error] {result.get('message', result['status'])}"

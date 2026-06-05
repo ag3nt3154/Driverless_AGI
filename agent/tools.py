@@ -10,7 +10,7 @@ registered directly in the visible registry.
 
 Predefined subagent types are auto-discovered from
 <project>/.dagi/subagents/<type>/ directories that contain both prompt.md
-and config.yaml. Each becomes a SpawnSubagentTool instance in the registry.
+and subagent_config.yaml. Each becomes a SpawnSubagentTool instance in the registry.
 """
 from __future__ import annotations
 
@@ -40,68 +40,57 @@ if TYPE_CHECKING:
 
 _DAGI_ROOT = Path(__file__).parent.parent
 
-# ---------------------------------------------------------------------------
-# Scope presets — canonical mapping from preset name to tool constructors
-# ---------------------------------------------------------------------------
+def _load_subagent_config(subagent_type: str, project_path: Path) -> dict:
+    """Read and return .dagi/subagents/<type>/subagent_config.yaml as a dict."""
+    config_path = (
+        project_path / ".dagi" / "subagents" / subagent_type / "subagent_config.yaml"
+    )
+    return yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
 
-def _scope_tools(
-    preset: str,
-    extra_tools: list[str],
+
+def _tools_from_list(
+    tool_names: list[str],
     cwd: Path,
     allowed_roots: list[Path],
 ) -> list[BaseTool]:
-    """Return tool instances for a given scope preset plus any extra_tools."""
+    """Instantiate tools by name for a subagent registry."""
     from tools.web_fetch import WebFetchTool
     from tools.web_search import WebSearchTool
 
-    read_tools: list[BaseTool] = [
-        ReadTool(cwd=cwd, allowed_roots=allowed_roots),
-        GrepTool(cwd=cwd, allowed_roots=allowed_roots),
-        FindTool(cwd=cwd, allowed_roots=allowed_roots),
-    ]
-    write_tools: list[BaseTool] = [
-        WriteTool(cwd=cwd, allowed_roots=allowed_roots),
-        EditTool(cwd=cwd, allowed_roots=allowed_roots),
-        CopyTool(cwd=cwd, allowed_roots=allowed_roots),
-    ]
-    web_tools: list[BaseTool] = [WebSearchTool(), WebFetchTool()]
-    bash_tools: list[BaseTool] = [BashTool(cwd=cwd)]
-
-    presets: dict[str, list[BaseTool]] = {
-        "read_only":  read_tools,
-        "read_bash":  read_tools + bash_tools,
-        "web_only":   web_tools,
-        "read_write": read_tools + write_tools,
-        "full":       read_tools + write_tools + bash_tools + web_tools,
+    registry_map: dict[str, BaseTool] = {
+        "read":       ReadTool(cwd=cwd, allowed_roots=allowed_roots),
+        "grep":       GrepTool(cwd=cwd, allowed_roots=allowed_roots),
+        "find":       FindTool(cwd=cwd, allowed_roots=allowed_roots),
+        "write":      WriteTool(cwd=cwd, allowed_roots=allowed_roots),
+        "edit":       EditTool(cwd=cwd, allowed_roots=allowed_roots),
+        "copy":       CopyTool(cwd=cwd, allowed_roots=allowed_roots),
+        "bash":       BashTool(cwd=cwd),
+        "web_search": WebSearchTool(),
+        "web_fetch":  WebFetchTool(),
     }
-
-    base = presets.get(preset, read_tools)
-
-    # Extra tools are applied by name — currently unused in shipped configs
-    # but available for future per-type additions.
-    _ = extra_tools  # reserved for future use
-
-    return base
-
-
-def _load_subagent_config(subagent_type: str, project_path: Path) -> dict:
-    """Read and return .dagi/subagents/<type>/config.yaml as a dict."""
-    config_path = project_path / ".dagi" / "subagents" / subagent_type / "config.yaml"
-    return yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
+    result: list[BaseTool] = []
+    for name in tool_names:
+        tool = registry_map.get(name)
+        if tool is not None:
+            result.append(tool)
+        else:
+            print(
+                f"[tools] Warning: unknown tool name {name!r} in subagent_config.yaml",
+                file=sys.stderr,
+            )
+    return result
 
 
 def _discover_subagent_tools(
     cwd: Path,
     config: "AgentConfig",
     callbacks: "AgentCallbacks | None",
-    allowed_roots: list[Path],
     tracker: "SessionTracker | None",
 ) -> list["BaseTool"]:
     """Scan .dagi/subagents/ and return one SpawnSubagentTool per valid type.
 
-    A valid type directory must contain both prompt.md and config.yaml.
-    Directories missing either file (e.g. cli/, plan/) are silently skipped.
-    Import errors or malformed configs emit a warning and are skipped.
+    A valid type directory must contain both prompt.md and subagent_config.yaml.
+    Directories missing either file are silently skipped.
     """
     from tools.spawn_subagent import SpawnSubagentTool
 
@@ -109,25 +98,31 @@ def _discover_subagent_tools(
     if not subagents_dir.exists():
         return []
 
+    on_event_factory = (
+        callbacks.on_subagent_event_factory if callbacks else None
+    )
+
     tools: list[BaseTool] = []
     for type_dir in sorted(subagents_dir.iterdir()):
         if not type_dir.is_dir():
             continue
         if not (type_dir / "prompt.md").exists():
             continue
-        if not (type_dir / "config.yaml").exists():
+        if not (type_dir / "subagent_config.yaml").exists():
             continue
         type_name = type_dir.name
         try:
-            cfg = yaml.safe_load((type_dir / "config.yaml").read_text(encoding="utf-8")) or {}
+            cfg = (
+                yaml.safe_load(
+                    (type_dir / "subagent_config.yaml").read_text(encoding="utf-8")
+                ) or {}
+            )
             description = cfg.get("description", f"Spawn a {type_name} subagent.")
             tools.append(SpawnSubagentTool(
                 type_name=type_name,
                 description=description,
                 config=config,
-                callbacks=callbacks,
-                cwd=cwd,
-                allowed_roots=allowed_roots,
+                on_event_factory=on_event_factory,
                 tracker=tracker,
             ))
         except Exception as exc:  # noqa: BLE001
@@ -252,6 +247,7 @@ def create_tool_registry(
         # Web research — available in plan mode for information gathering
         if config is not None:
             from tools.spawn_subagent import SpawnSubagentTool
+            on_event_factory = callbacks.on_subagent_event_factory if callbacks else None
             try:
                 cfg = _load_subagent_config("web_research", cwd)
                 web_desc = cfg.get("description", "Search the web and fetch page content.")
@@ -260,8 +256,9 @@ def create_tool_registry(
             reg.register(SpawnSubagentTool(
                 type_name="web_research",
                 description=web_desc,
-                config=config, callbacks=callbacks,
-                cwd=cwd, allowed_roots=effective_roots, tracker=tracker,
+                config=config,
+                on_event_factory=on_event_factory,
+                tracker=tracker,
             ))
         else:
             from tools.web_fetch import WebFetchTool
@@ -292,10 +289,9 @@ def create_tool_registry(
             reg.register(EmoteTool(on_emote=_on_emote))
         if config is not None:
             # Auto-discover predefined subagent types from .dagi/subagents/
-            # A valid type directory must contain both prompt.md and config.yaml.
+            # A valid type directory must contain both prompt.md and subagent_config.yaml.
             for spawn_tool in _discover_subagent_tools(
-                cwd=cwd, config=config, callbacks=callbacks,
-                allowed_roots=effective_roots, tracker=tracker,
+                cwd=cwd, config=config, callbacks=callbacks, tracker=tracker,
             ):
                 try:
                     reg.register(spawn_tool)
@@ -305,6 +301,10 @@ def create_tool_registry(
                         f"{spawn_tool.name!r}: {exc}",
                         file=sys.stderr,
                     )
+
+            # Timeout extension for in-flight subagents
+            from tools.extend_timeout import ExtendSubagentTimeoutTool
+            reg.register(ExtendSubagentTimeoutTool())
 
             # Custom dynamic subagent (escape hatch — full registry)
             from tools.cli_subagent import SpawnCliSubagentTool
@@ -368,21 +368,24 @@ def build_subagent_registry(
 
     # ── Custom: full scope for dynamic SpawnCliSubagentTool subagents ─────────
     if subagent_type == "custom":
-        for tool in _scope_tools("full", [], project_path, effective_roots):
+        for tool in _tools_from_list(
+            ["read", "grep", "find", "write", "edit", "bash", "web_search", "web_fetch"],
+            project_path, effective_roots,
+        ):
             reg.register(tool)
         return reg
 
-    # ── Config-driven: read scope from .dagi/subagents/<type>/config.yaml ────
+    # ── Config-driven: read tools list from subagent_config.yaml ─────────────
     try:
         cfg = _load_subagent_config(subagent_type, project_path)
     except FileNotFoundError:
         raise ValueError(
-            f"No config.yaml found for subagent_type={subagent_type!r}. "
-            f"Expected: {project_path / '.dagi' / 'subagents' / subagent_type / 'config.yaml'}"
+            f"No subagent_config.yaml found for subagent_type={subagent_type!r}. "
+            f"Expected: "
+            f"{project_path / '.dagi' / 'subagents' / subagent_type / 'subagent_config.yaml'}"
         )
 
-    scope = cfg.get("scope", "read_only")
-    extra_tools = cfg.get("extra_tools", []) or []
-    for tool in _scope_tools(scope, extra_tools, project_path, effective_roots):
+    tool_names: list[str] = cfg.get("tools", ["read", "grep", "find"])
+    for tool in _tools_from_list(tool_names, project_path, effective_roots):
         reg.register(tool)
     return reg

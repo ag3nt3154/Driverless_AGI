@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+import json
 import threading
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Callable
 
 from agent.loop import AgentCallbacks
 
@@ -72,6 +73,9 @@ def build_callbacks(app: DagiApp, loop_ref: list) -> AgentCallbacks:
     def on_emote(emote: str) -> None:
         app.call_from_thread(sidebar.update_emote, emote)
 
+    def on_subagent_event_factory(subagent_type: str) -> Callable[[str], None]:
+        return build_subagent_relay_callback(app, subagent_type)
+
     return AgentCallbacks(
         on_tool_start=on_tool_start, on_tool_end=on_tool_end,
         on_assistant_text=on_assistant_text, on_token_update=on_token_update,
@@ -79,4 +83,67 @@ def build_callbacks(app: DagiApp, loop_ref: list) -> AgentCallbacks:
         on_api_call=on_api_call, on_reasoning=on_reasoning,
         on_compaction=on_compaction, on_model_switch=on_model_switch,
         on_ask_user=on_ask_user, on_emote=on_emote,
+        on_subagent_event_factory=on_subagent_event_factory,
     )
+
+
+def build_subagent_relay_callback(
+    app: "DagiApp", subagent_type: str
+) -> Callable[[str], None]:
+    """Return a callback that relays subagent stdout JSON events to the TUI."""
+    conv = app.query_one(ConversationPane)
+    label = f"[bold cyan][{subagent_type}][/bold cyan]"
+
+    def on_event(line: str) -> None:
+        try:
+            evt = json.loads(line)
+        except json.JSONDecodeError:
+            app.call_from_thread(conv.append_info, f"[dim]{line}[/dim]")
+            return
+
+        t = evt.get("type", "")
+        if t == "start":
+            app.call_from_thread(
+                conv.append_info,
+                f"[bold cyan]┌─ subagent: {subagent_type} ────────────────────────┐[/bold cyan]",
+            )
+        elif t == "tool_call":
+            name = evt.get("name", "?")
+            args = evt.get("args", "")
+            app.call_from_thread(
+                conv.append_info,
+                f"  {label} [dim cyan]▶ {name}[/dim cyan] [dim]{args[:80]}[/dim]",
+            )
+        elif t == "tool_result":
+            name = evt.get("name", "?")
+            chars = evt.get("chars", 0)
+            app.call_from_thread(
+                conv.append_info,
+                f"  {label} [dim green]✓ {name} ({chars} chars)[/dim green]",
+            )
+        elif t == "message":
+            content = evt.get("content", "")
+            if content.strip():
+                app.call_from_thread(
+                    conv.append_info,
+                    f"  {label} [#cccccc]{content}[/#cccccc]",
+                )
+        elif t == "status":
+            text = evt.get("text", "")
+            app.call_from_thread(
+                conv.append_info,
+                f"  {label} [dim yellow]{text}[/dim yellow]",
+            )
+        elif t == "error":
+            msg = evt.get("message", "")
+            app.call_from_thread(
+                conv.append_info,
+                f"  {label} [bold red]error: {msg}[/bold red]",
+            )
+        elif t == "done":
+            app.call_from_thread(
+                conv.append_info,
+                f"[bold cyan]└─ subagent: {subagent_type} done ─────────────────────┘[/bold cyan]",
+            )
+
+    return on_event

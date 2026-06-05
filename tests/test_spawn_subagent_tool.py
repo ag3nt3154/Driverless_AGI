@@ -89,11 +89,11 @@ def _make_tool(type_name: str, config, parameters: dict | None = None) -> SpawnS
 # ---------------------------------------------------------------------------
 
 class TestSchemaLoading:
-    def test_worker_schema_from_config_yaml(self, tmp_path):
-        """Schema should come from config.yaml 'parameters' key when present."""
+    def test_worker_schema_from_subagent_config_yaml(self, tmp_path):
+        """Schema should come from subagent_config.yaml 'parameters' key when present."""
         subagent_dir = tmp_path / ".dagi" / "subagents" / "worker"
         subagent_dir.mkdir(parents=True)
-        config_yaml = subagent_dir / "config.yaml"
+        config_yaml = subagent_dir / "subagent_config.yaml"
         config_yaml.write_text(
             yaml.dump({"model_tier": "worker", "parameters": WORKER_SCHEMA}),
             encoding="utf-8",
@@ -108,10 +108,10 @@ class TestSchemaLoading:
         assert tool._parameters == WORKER_SCHEMA
 
     def test_fallback_when_parameters_absent(self, tmp_path):
-        """Should fall back to task:string schema when config.yaml has no 'parameters'."""
+        """Should fall back to task:string schema when subagent_config.yaml has no 'parameters'."""
         subagent_dir = tmp_path / ".dagi" / "subagents" / "web_research"
         subagent_dir.mkdir(parents=True)
-        config_yaml = subagent_dir / "config.yaml"
+        config_yaml = subagent_dir / "subagent_config.yaml"
         config_yaml.write_text(
             yaml.dump({"model_tier": "worker", "description": "Web research"}),
             encoding="utf-8",
@@ -126,9 +126,8 @@ class TestSchemaLoading:
         assert tool._parameters == _FALLBACK_PARAMETERS
 
     def test_fallback_when_config_yaml_missing(self, tmp_path):
-        """Should fall back to task:string schema when config.yaml doesn't exist."""
+        """Should fall back to task:string schema when subagent_config.yaml doesn't exist."""
         config = _make_config(tmp_path)
-        # Patch _DAGI_ROOT so it also points to tmp_path (no config there either)
         with patch("tools.spawn_subagent._DAGI_ROOT", tmp_path):
             tool = SpawnSubagentTool(
                 type_name="nonexistent_type",
@@ -141,7 +140,7 @@ class TestSchemaLoading:
         """_parameters must be an instance attr so different instances can have different schemas."""
         subagent_dir_worker = tmp_path / ".dagi" / "subagents" / "worker"
         subagent_dir_worker.mkdir(parents=True)
-        (subagent_dir_worker / "config.yaml").write_text(
+        (subagent_dir_worker / "subagent_config.yaml").write_text(
             yaml.dump({"parameters": WORKER_SCHEMA}), encoding="utf-8"
         )
 
@@ -151,7 +150,6 @@ class TestSchemaLoading:
 
         assert worker_tool._parameters == WORKER_SCHEMA
         assert fallback_tool._parameters == _FALLBACK_PARAMETERS
-        # Confirm they are distinct objects
         assert worker_tool._parameters is not fallback_tool._parameters
 
 
@@ -170,8 +168,8 @@ class TestWorkerContext:
 
         with patch("tools.spawn_subagent._load_agents_md", return_value="Project desc"):
             composed = tool._compose_task(
+                handoff_path=Path("/tmp/handoff.md"),
                 subtask_name="Do the thing",
-                handoff_file="/tmp/handoff.md",
             )
 
         assert "#### Tests" not in composed
@@ -187,8 +185,8 @@ class TestWorkerContext:
 
         with patch("tools.spawn_subagent._load_agents_md", return_value=""):
             composed = tool._compose_task(
+                handoff_path=Path("/tmp/handoff.md"),
                 subtask_name="Do the thing",
-                handoff_file="/tmp/handoff.md",
             )
 
         assert "Implement the feature" in composed
@@ -204,8 +202,8 @@ class TestWorkerContext:
 
         with patch("tools.spawn_subagent._load_agents_md", return_value=""):
             composed = tool._compose_task(
+                handoff_path=Path("/tmp/handoff.md"),
                 subtask_name="Do the thing",
-                handoff_file="/tmp/handoff.md",
             )
 
         assert "Why this change is needed" in composed
@@ -221,8 +219,8 @@ class TestWorkerContext:
 
         with patch("tools.spawn_subagent._load_agents_md", return_value="My project description"):
             composed = tool._compose_task(
+                handoff_path=Path("/tmp/handoff.md"),
                 subtask_name="Do the thing",
-                handoff_file="/tmp/handoff.md",
             )
 
         assert "## Project Description" in composed
@@ -238,12 +236,12 @@ class TestWorkerContext:
 
         with patch("tools.spawn_subagent._load_agents_md", return_value=""):
             composed = tool._compose_task(
+                handoff_path=Path("/tmp/handoff_report.md"),
                 subtask_name="Do the thing",
-                handoff_file="/tmp/handoff_report.md",
             )
 
         assert "## Output" in composed
-        assert "/tmp/handoff_report.md" in composed
+        assert "handoff_report.md" in composed
 
     def test_worker_context_includes_custom_instructions_when_provided(self, tmp_path):
         """Worker context must include Custom Instructions section when provided."""
@@ -255,8 +253,8 @@ class TestWorkerContext:
 
         with patch("tools.spawn_subagent._load_agents_md", return_value=""):
             composed = tool._compose_task(
+                handoff_path=Path("/tmp/handoff.md"),
                 subtask_name="Do the thing",
-                handoff_file="/tmp/handoff.md",
                 custom_instructions="Be extra careful with edge cases.",
             )
 
@@ -273,8 +271,8 @@ class TestWorkerContext:
 
         with patch("tools.spawn_subagent._load_agents_md", return_value=""):
             composed = tool._compose_task(
+                handoff_path=Path("/tmp/handoff.md"),
                 subtask_name="Do the thing",
-                handoff_file="/tmp/handoff.md",
             )
 
         assert "## Custom Instructions" not in composed
@@ -295,10 +293,10 @@ class TestReviewContext:
 
         with patch("tools.spawn_subagent._load_agents_md", return_value=""):
             composed = tool._compose_task(
+                handoff_path=Path("/tmp/review.md"),
                 subtask_name="Do the thing",
                 handoff_report_path="/tmp/handoff.md",
                 unit_test_paths=["tests/test_thing.py"],
-                review_file="/tmp/review.md",
             )
 
         assert "#### Tests" in composed
@@ -314,17 +312,17 @@ class TestReviewContext:
 
         with patch("tools.spawn_subagent._load_agents_md", return_value=""):
             composed = tool._compose_task(
+                handoff_path=Path("/tmp/review.md"),
                 subtask_name="Do the thing",
                 handoff_report_path="/tmp/handoff.md",
                 unit_test_paths=["tests/test_a.py", "tests/test_b.py"],
-                review_file="/tmp/review.md",
             )
 
         assert "## Output Files" in composed
         assert "/tmp/handoff.md" in composed
         assert "tests/test_a.py" in composed
         assert "tests/test_b.py" in composed
-        assert "/tmp/review.md" in composed
+        assert "review.md" in composed
 
     def test_review_context_includes_project_description(self, tmp_path):
         """Review context must include agents.md as Project Description."""
@@ -336,10 +334,10 @@ class TestReviewContext:
 
         with patch("tools.spawn_subagent._load_agents_md", return_value="Review project desc"):
             composed = tool._compose_task(
+                handoff_path=Path("/tmp/review.md"),
                 subtask_name="Do the thing",
                 handoff_report_path="/tmp/handoff.md",
                 unit_test_paths=[],
-                review_file="/tmp/review.md",
             )
 
         assert "## Project Description" in composed
@@ -355,10 +353,10 @@ class TestReviewContext:
 
         with patch("tools.spawn_subagent._load_agents_md", return_value=""):
             composed = tool._compose_task(
+                handoff_path=Path("/tmp/review.md"),
                 subtask_name="Do the thing",
                 handoff_report_path="/tmp/handoff.md",
                 unit_test_paths=[],
-                review_file="/tmp/review.md",
                 custom_instructions="Focus on security.",
             )
 
@@ -377,7 +375,10 @@ class TestGenericSubagent:
         tool = _make_tool("web_research", config, _FALLBACK_PARAMETERS)
 
         with patch("tools.spawn_subagent._load_agents_md", return_value="ignored"):
-            composed = tool._compose_task(task="Search for Python best practices")
+            composed = tool._compose_task(
+                handoff_path=Path("/tmp/handoff.md"),
+                task="Search for Python best practices",
+            )
 
         assert composed == "Search for Python best practices"
 
@@ -387,54 +388,61 @@ class TestGenericSubagent:
         tool = _make_tool("web_research", config, _FALLBACK_PARAMETERS)
 
         with patch("tools.spawn_subagent._load_agents_md", return_value=""):
-            composed = tool._compose_task()
+            composed = tool._compose_task(handoff_path=Path("/tmp/handoff.md"))
 
         assert composed == ""
 
 
 # ---------------------------------------------------------------------------
-# run() integration tests (mock spawn_terminal_subagent)
+# run() integration tests (mock run_subagent)
 # ---------------------------------------------------------------------------
 
+_OK_RESULT = {"status": "ok", "handoff": "/tmp/handoff.md"}
+_TIMEOUT_RESULT = {"status": "timeout", "pid": 12345}
+_ERROR_RESULT = {"status": "error", "message": "something went wrong"}
+
+
 class TestRunMethod:
-    def test_run_passes_timeout_none(self, tmp_path):
-        """run() must call spawn_terminal_subagent with timeout=None."""
+    def test_run_returns_handoff_path_on_success(self, tmp_path):
+        """run() returns a message with the handoff path on success."""
         config = _make_config(tmp_path)
         tool = _make_tool("web_research", config, _FALLBACK_PARAMETERS)
 
         with patch("tools.spawn_subagent._load_agents_md", return_value=""), \
-             patch("tools._terminal_subagent.spawn_terminal_subagent", return_value="done") as mock_spawn:
-            tool.run(task="Find stuff")
+             patch("tools._subagent_runner.run_subagent", return_value=_OK_RESULT):
+            result = tool.run(task="Find stuff")
 
-        mock_spawn.assert_called_once()
-        _, call_kwargs = mock_spawn.call_args
-        assert call_kwargs.get("timeout") is None
+        assert "Handoff written to" in result
+        assert "/tmp/handoff.md" in result
 
-    def test_run_returns_result(self, tmp_path):
-        """run() returns the string from spawn_terminal_subagent."""
+    def test_run_returns_timeout_json_on_timeout(self, tmp_path):
+        """run() returns a JSON timeout dict when the subagent times out."""
+        import json
         config = _make_config(tmp_path)
         tool = _make_tool("web_research", config, _FALLBACK_PARAMETERS)
 
         with patch("tools.spawn_subagent._load_agents_md", return_value=""), \
-             patch("tools._terminal_subagent.spawn_terminal_subagent", return_value="result text"):
-            result = tool.run(task="Do something")
+             patch("tools._subagent_runner.run_subagent", return_value=_TIMEOUT_RESULT):
+            result = tool.run(task="Slow task")
 
-        assert result == "result text"
+        parsed = json.loads(result)
+        assert parsed["status"] == "timeout"
+        assert parsed["pid"] == 12345
 
-    def test_run_returns_error_string_on_exception(self, tmp_path):
-        """run() catches exceptions and returns an error string."""
+    def test_run_returns_error_string_on_error(self, tmp_path):
+        """run() returns an error string when the subagent exits without handoff."""
         config = _make_config(tmp_path)
         tool = _make_tool("web_research", config, _FALLBACK_PARAMETERS)
 
         with patch("tools.spawn_subagent._load_agents_md", return_value=""), \
-             patch("tools._terminal_subagent.spawn_terminal_subagent", side_effect=RuntimeError("boom")):
+             patch("tools._subagent_runner.run_subagent", return_value=_ERROR_RESULT):
             result = tool.run(task="Fail")
 
         assert "[web_research error]" in result
-        assert "boom" in result
+        assert "something went wrong" in result
 
     def test_run_worker_composes_context(self, tmp_path):
-        """run() for worker type composes context and passes it to spawn."""
+        """run() for worker type composes context and passes it to run_subagent."""
         plan_file = tmp_path / "plan.md"
         plan_file.write_text(SAMPLE_PLAN, encoding="utf-8")
         config = _make_config(tmp_path, plan_file=plan_file)
@@ -442,14 +450,10 @@ class TestRunMethod:
         tool = _make_tool("worker", config, WORKER_SCHEMA)
 
         with patch("tools.spawn_subagent._load_agents_md", return_value="My project"), \
-             patch("tools._terminal_subagent.spawn_terminal_subagent", return_value="ok") as mock_spawn:
-            tool.run(
-                subtask_name="Do the thing",
-                handoff_file="/tmp/handoff.md",
-            )
+             patch("tools._subagent_runner.run_subagent", return_value=_OK_RESULT) as mock_run:
+            tool.run(subtask_name="Do the thing")
 
-        mock_spawn.assert_called_once()
-        task_arg = mock_spawn.call_args[1]["task"]
+        mock_run.assert_called_once()
+        task_arg = mock_run.call_args.kwargs["task"]
         assert "My project" in task_arg
         assert "#### Tests" not in task_arg
-        assert "/tmp/handoff.md" in task_arg

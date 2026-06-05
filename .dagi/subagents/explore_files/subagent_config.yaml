@@ -1,0 +1,10 @@
+model_tier: worker
+description: >-
+  Explore the codebase with read, grep, and find. Use for open-ended
+  discovery: mapping a module, finding all usages of a symbol, or
+  understanding an unfamiliar subsystem. For targeted reads of specific
+  known files, use read/grep/find directly instead.
+tools:
+  - read
+  - grep
+  - find

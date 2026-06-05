@@ -1,0 +1,30 @@
+model_tier: default
+description: >-
+  Execute a single subtask with full tool access (read, write, edit, bash,
+  web search). Receives plan context and subtask details automatically. Writes
+  a structured handoff report when done.
+tools:
+  - read
+  - grep
+  - find
+  - write
+  - edit
+  - copy
+  - bash
+  - web_search
+  - web_fetch
+parameters:
+  type: object
+  properties:
+    subtask_name:
+      type: string
+      description: >-
+        Name of the subtask to execute — must match the heading in the plan
+        (e.g. "Add login endpoint").
+    custom_instructions:
+      type: string
+      description: >-
+        Additional guidance from the main agent: traps to avoid, prior failed
+        attempt context, or extra constraints. Optional.
+  required:
+    - subtask_name

@@ -1,61 +1,56 @@
-"""tests/test_scope_tools.py — Unit tests for _scope_tools() presets in agent/tools.py."""
+"""tests/test_scope_tools.py — Unit tests for _tools_from_list() in agent/tools.py."""
 from __future__ import annotations
 
 from pathlib import Path
 
-from agent.tools import _scope_tools
+from agent.tools import _tools_from_list
 from tools.bash import BashTool
+from tools.edit import EditTool
 from tools.find import FindTool
 from tools.grep import GrepTool
 from tools.read import ReadTool
+from tools.write import WriteTool
 
 
-def _make_tools(preset: str):
-    return _scope_tools(preset, [], Path("."), [Path(".")])
+def _make(names: list[str]):
+    return _tools_from_list(names, Path("."), [Path(".")])
 
 
-class TestReadBashPreset:
-    def test_returns_exactly_four_tools(self):
-        tools = _make_tools("read_bash")
-        assert len(tools) == 4, f"Expected 4 tools, got {len(tools)}: {tools}"
+class TestToolsFromList:
+    def test_read_bash_set(self):
+        tools = _make(["read", "grep", "find", "bash"])
+        types = {type(t) for t in tools}
+        assert types == {ReadTool, GrepTool, FindTool, BashTool}
 
-    def test_contains_read_tool(self):
-        tools = _make_tools("read_bash")
-        assert any(isinstance(t, ReadTool) for t in tools)
-
-    def test_contains_grep_tool(self):
-        tools = _make_tools("read_bash")
-        assert any(isinstance(t, GrepTool) for t in tools)
-
-    def test_contains_find_tool(self):
-        tools = _make_tools("read_bash")
-        assert any(isinstance(t, FindTool) for t in tools)
-
-    def test_contains_bash_tool(self):
-        tools = _make_tools("read_bash")
-        assert any(isinstance(t, BashTool) for t in tools)
-
-    def test_tool_types_exactly(self):
-        """Exact set of tool types — no write tools, no web tools."""
-        tools = _make_tools("read_bash")
-        expected_types = {ReadTool, GrepTool, FindTool, BashTool}
-        actual_types = {type(t) for t in tools}
-        assert actual_types == expected_types
-
-
-class TestExistingPresetsUnaffected:
-    def test_read_only_returns_three_tools(self):
-        tools = _make_tools("read_only")
+    def test_read_only_set(self):
+        tools = _make(["read", "grep", "find"])
         assert len(tools) == 3
-
-    def test_read_only_no_bash(self):
-        tools = _make_tools("read_only")
         assert not any(isinstance(t, BashTool) for t in tools)
 
-    def test_read_write_returns_six_tools(self):
-        tools = _make_tools("read_write")
+    def test_read_write_set(self):
+        tools = _make(["read", "grep", "find", "write", "edit", "copy"])
         assert len(tools) == 6
 
-    def test_full_returns_nine_tools(self):
-        tools = _make_tools("full")
-        assert len(tools) == 9
+    def test_full_set(self):
+        tools = _make(["read", "grep", "find", "write", "edit", "bash", "web_search", "web_fetch"])
+        assert len(tools) == 8
+
+    def test_unknown_name_skipped(self, capsys):
+        tools = _make(["read", "bogus_tool"])
+        assert len(tools) == 1
+        assert isinstance(tools[0], ReadTool)
+        captured = capsys.readouterr()
+        assert "bogus_tool" in captured.err
+
+    def test_empty_list(self):
+        tools = _make([])
+        assert tools == []
+
+    def test_write_tool_included(self):
+        tools = _make(["write"])
+        assert len(tools) == 1
+        assert isinstance(tools[0], WriteTool)
+
+    def test_edit_tool_included(self):
+        tools = _make(["edit"])
+        assert any(isinstance(t, EditTool) for t in tools)

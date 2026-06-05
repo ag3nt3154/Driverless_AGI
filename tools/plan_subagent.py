@@ -57,26 +57,23 @@ class PlanSubAgent:
         self._tracker = tracker
 
     def run(self, task: str) -> str:
-        from tools._terminal_subagent import spawn_terminal_subagent
+        from tools._subagent_runner import run_subagent
+        from uuid import uuid4 as _uuid4
 
-        config = self._config
-        project_path = config.project_path
-
-        subagent_id = uuid4().hex[:8]
-        depth = (self._tracker._depth if self._tracker else 0)
+        project_path = self._config.project_path
+        subagent_id = _uuid4().hex[:8]
+        handoff_path = project_path / ".dagi" / "handoffs" / f"plan_{subagent_id}.md"
+        depth = self._tracker._depth if self._tracker else 0
 
         if self._tracker:
             self._tracker.record_subagent_start(subagent_id, "plan_subagent", task, depth)
 
-        result = spawn_terminal_subagent(
-            subagent_type="plan",
-            task=task,
-            project_path=project_path,
-            plan_file=self._plan_file,
-            timeout=600,   # planning is slower than typical tasks
-        )
+        result = run_subagent("plan", task, project_path, handoff_path, 600)
 
         if self._tracker:
-            self._tracker.record_subagent_end(subagent_id, result, depth)
+            self._tracker.record_subagent_end(subagent_id, str(result), depth)
 
-        return result
+        if result["status"] == "ok":
+            from pathlib import Path as _Path
+            return _Path(result["handoff"]).read_text(encoding="utf-8")
+        return f"[plan_subagent error] {result.get('message', result['status'])}"

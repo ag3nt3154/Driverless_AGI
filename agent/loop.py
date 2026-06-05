@@ -152,6 +152,9 @@ class AgentCallbacks:
         )
     )
     on_emote:          Callable[[str], None] | None              = None
+    # Factory for subagent stdout relay: takes subagent_type, returns per-event callback.
+    # None in headless / CLI mode — subagent output is not relayed.
+    on_subagent_event_factory: Callable[[str], Callable[[str], None]] | None = None
 
 
 def _extract_reasoning(message) -> str:

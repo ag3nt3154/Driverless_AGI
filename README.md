@@ -202,7 +202,6 @@ Driverless_AGI/
 │   ├── memory_retriever.py # BM25 wiki retrieval — auto-injects context at session start
 │   ├── session.py         # SessionTracker — JSONL logs
 │   ├── prompts.py         # Loads system/user prompts from .dagi/prompts/ and .dagi/subagents/
-│   ├── ipc.py             # File-based IPC channel — atomic task/result exchange for subagents
 │   ├── skills.py          # SkillLoader — loads .dagi/skills/
 │   ├── workflows.py       # WorkflowLoader — loads .dagi/workflow/
 │   └── sub_agent.py       # SubAgentRunner — legacy in-process subagent (used by cli_subagent)
@@ -219,10 +218,11 @@ Driverless_AGI/
 │   ├── workflow.py        # Workflow content loader and lister (CLI helpers)
 │   ├── web_search.py      # DuckDuckGo web search
 │   ├── web_fetch.py       # Fetch and parse a URL
-│   ├── web_research.py    # Multi-page web research (spawns visible terminal subagent)
-│   ├── explore_files.py   # Large-scale codebase scanning (spawns visible terminal subagent)
-│   ├── _terminal_subagent.py # Shared helper — spawn typed subagent terminals via file IPC
-│   ├── cli_subagent.py    # Full-agent terminal tool (legacy, kept for direct use)
+│   ├── web_research.py    # Multi-page web research (spawns pipe subagent)
+│   ├── explore_files.py   # Large-scale codebase scanning (spawns pipe subagent)
+│   ├── _subagent_runner.py # Core runner — Popen(stdout=PIPE), JSON event relay, PID polling
+│   ├── extend_timeout.py  # ExtendSubagentTimeoutTool — resume in-flight subagent deadline
+│   ├── cli_subagent.py    # Custom subagent with caller-supplied system prompt
 │   ├── compact.py         # Trigger context compaction
 │   ├── plan_mode.py       # Enter / exit read-only plan mode
 │   ├── switch_model.py    # Swap models mid-session
@@ -233,11 +233,13 @@ Driverless_AGI/
 │   ├── prompts/           # Prompt markdown files, organized by role
 │   │   ├── main/          #   main_system.md — primary coding assistant prompt
 │   │   └── compact/       #   compact_system, compact_user (Pi-style summariser)
-│   ├── subagents/         # Per-subagent config: <name>/prompt.md
-│   │   ├── explore_files/ #   exploration agent prompt
-│   │   ├── web_research/  #   web research agent prompt
-│   │   ├── plan/          #   plan-writing agent prompt
-│   │   └── cli/           #   full-agent terminal prompt (cli_subagent tool)
+│   ├── subagents/         # Per-subagent: <name>/prompt.md + subagent_config.yaml
+│   │   ├── explore_files/ #   exploration agent (tools: read, grep, find)
+│   │   ├── web_research/  #   web research agent (tools: web_search, web_fetch)
+│   │   ├── worker/        #   full-tool worker agent
+│   │   ├── review/        #   code review agent (tools: read, grep, find, bash)
+│   │   └── plan/          #   plan-writing agent prompt
+│   ├── handoffs/          # Generated handoff files: <type>_<uuid8>.md
 │   ├── skills/            # Structured guidance documents (gnhf, memory-*, create-skill, review-session, …)
 │   ├── workflow/          # User-directed workflows (.dagi/workflow/<name>/workflow.md)
 │   ├── memory/wiki/       # Topic-organized persistent wiki (infrastructure built)
@@ -267,8 +269,9 @@ Driverless_AGI/
 | `skill` | Load a `.dagi/skills/<name>/SKILL.md` guidance document and return it for execution |
 | `web_search` | DuckDuckGo web search. Returns titles, URLs, and snippets |
 | `web_fetch` | Fetch and parse a URL. Returns cleaned page text |
-| `web_research` | Multi-page research task: searches, fetches, and synthesizes results. Runs in a **visible terminal window** using the worker model; parent shows a spinner while waiting. Terminal persists 5 minutes after completion |
-| `explore_files` | Large-scale codebase scan: reads many files and returns a structured summary. Runs in a **visible terminal window** using the worker model; 5-minute persistence after completion |
+| `web_research` | Multi-page research task: searches, fetches, and synthesizes results. Runs as a pipe subagent; output streams to the main TUI with a `[web_research]` label |
+| `explore_files` | Large-scale codebase scan: reads many files and returns a structured summary. Runs as a pipe subagent; output streams to the main TUI with an `[explore_files]` label |
+| `extend_subagent_timeout` | Extend the deadline of an in-flight subagent by PID. Called by the agent when `spawn_*` returns a timeout dict |
 | `compact` | Manually trigger Pi-style context compaction |
 | `switch_model` | Swap to a different model (from `config.yaml`) mid-session |
 | `ask_user` | Pause and ask the user a clarifying question with optional choices |
@@ -384,4 +387,4 @@ Core (from `pyproject.toml`):
 Additional (install separately if using the interactive CLI):
 
 - `typer` + `rich` — interactive CLI (`cli.py`)
-- No extra native libraries required — `cli_subagent` uses stdlib `subprocess` + file-based IPC
+- No extra native libraries required — subagents use stdlib `subprocess` with stdout pipe

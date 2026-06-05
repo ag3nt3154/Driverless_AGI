@@ -812,19 +812,7 @@ def _load_workflow_map(proj_path: Path) -> dict:
     return {f"/{w.name}": w for w in workflows}
 
 
-# ── Subagent IPC server mode ──────────────────────────────────────────────────
-
-_SUBAGENT_LABELS = {
-    "web_research":   "Web Research Subagent",
-    "explore_files":  "File Explorer Subagent",
-    "plan":           "Planning Subagent",
-    "review":         "Review Subagent",
-    "worker":         "Worker Subagent",
-    "custom":         "Custom Subagent",
-}
-
-_PERSISTENCE_SECONDS = 300  # 5 minutes
-
+# ── Subagent pipe mode ────────────────────────────────────────────────────────
 
 def _apply_worker_config(config: "AgentConfig") -> "AgentConfig":
     """Return a flattened config that uses worker_model (falls back to default)."""
@@ -885,31 +873,36 @@ def _extract_final_assistant_text(messages: list) -> str:
     return ""
 
 
-def _start_persistence_countdown(ipc: "IpcChannel", seconds: int = _PERSISTENCE_SECONDS):
-    """Start a daemon thread that prints a countdown and exits the process when it fires.
+def _build_pipe_callbacks() -> AgentCallbacks:
+    """Build callbacks that emit newline-delimited JSON events to stdout.
 
-    Returns a threading.Event the caller can set to cancel the countdown early
-    (e.g. when a new task arrives before the window expires).
+    Used by the subagent subprocess so the parent can relay events to the TUI.
     """
-    import threading
-    import time
+    import json as _json
 
-    stop_event = threading.Event()
+    def _emit(evt: dict) -> None:
+        print(_json.dumps(evt), flush=True)
 
-    def _run() -> None:
-        deadline = time.monotonic() + seconds
-        while not stop_event.is_set():
-            remaining = int(deadline - time.monotonic())
-            if remaining <= 0:
-                console.print(
-                    "\n[dim]5-minute persistence window expired. Closing terminal.[/dim]"
-                )
-                sys.exit(0)
-            stop_event.wait(timeout=5)
-
-    t = threading.Thread(target=_run, daemon=True)
-    t.start()
-    return stop_event
+    return AgentCallbacks(
+        on_tool_start=lambda name, _d, args: _emit({
+            "type": "tool_call", "name": name, "args": args[:200],
+        }),
+        on_tool_end=lambda name, result: _emit({
+            "type": "tool_result", "name": name, "chars": len(result),
+        }),
+        on_assistant_text=lambda text: (
+            _emit({"type": "message", "content": text}) if text.strip() else None
+        ),
+        on_reasoning=lambda text: (
+            _emit({"type": "reasoning", "content": text[:120]}) if text.strip() else None
+        ),
+        on_model_switch=lambda _f, to: _emit({"type": "status", "text": f"→ {to}"}),
+        on_error=lambda e: _emit({"type": "error", "message": str(e)}),
+        on_compaction=lambda kept, removed: _emit({
+            "type": "status", "text": f"compacted ({removed} msgs removed, {kept} kept)",
+        }),
+        on_token_update=lambda i, o, c, t: None,  # silent in pipe mode
+    )
 
 
 def _run_typed_subagent_task(
@@ -1015,132 +1008,83 @@ def _render_task_prompt(console: "Console", seq: int, task: str) -> None:
         console.print(Panel(content, title=f"[bold]{title}[/bold]", border_style="dim", padding=(0, 1)))
 
 
-def _run_subagent_ipc_loop(
-    ipc_dir: str,
-    model: Optional[str],
-    verbose: bool,
-    sync: bool,
+def _run_subagent_pipe_mode(
+    subagent_type: str,
+    task_file: str,
+    handoff: str,
     project: Optional[str],
-    subagent_type: Optional[str] = None,
-    plan_file_path: Optional[str] = None,
+    model: Optional[str],
     system_prompt_file: Optional[str] = None,
 ) -> None:
-    """Run cli.py as a file-based IPC subagent server.
+    """Run cli.py as a piped subagent: read task from file, emit JSON events, write handoff."""
+    import json as _json
+    import yaml as _yaml
 
-    The parent agent writes task_<n>.json; this loop picks it up, runs it via
-    AgentLoop, and writes result_<n>.json. The exit sentinel stops the loop.
+    from agent.prompts import load_subagent_prompt
+    from agent.tools import build_subagent_registry
 
-    When subagent_type is set, a restricted tool registry is used (web_research,
-    explore_files, or plan) with the appropriate model tier (worker or advanced).
-    After each task, the terminal stays open for _PERSISTENCE_SECONDS before closing.
-    """
-    from agent.ipc import IpcChannel
-
-    cli_cfg = load_cli_config()
-    effective_verbose = verbose or cli_cfg.verbose
     project_path = Path(project).resolve() if project else Path.cwd()
-    stats = _Stats()
-    conversation_msgs: list = []
-    active_loop: "AgentLoop | None" = None
+    handoff_path = Path(handoff)
+    task = Path(task_file).read_text(encoding="utf-8")
 
-    ipc = IpcChannel(Path(ipc_dir))
+    # Resolve model tier from subagent_config.yaml
+    base_config = resolve_model_config(model)
+    base_config.project_path = project_path
 
-    label = _SUBAGENT_LABELS.get(subagent_type or "", "Subagent Terminal")
-    console.print(
-        Panel(
-            f"[bold cyan]Driverless AGI — {label}[/bold cyan]\n"
-            f"[dim]IPC dir: {ipc_dir}[/dim]\n"
-            "[dim]Controlled by parent agent via file-based IPC. Do not type here.[/dim]",
-            border_style="cyan",
-            padding=(0, 2),
-        )
+    config_yaml = (
+        project_path / ".dagi" / "subagents" / subagent_type / "subagent_config.yaml"
+    )
+    if config_yaml.exists():
+        sa_cfg = _yaml.safe_load(config_yaml.read_text(encoding="utf-8")) or {}
+        model_tier = sa_cfg.get("model_tier", "worker")
+    elif subagent_type == "custom":
+        model_tier = "advanced"
+    else:
+        model_tier = "worker"
+
+    typed_config = (
+        _apply_advanced_config(base_config)
+        if model_tier == "advanced"
+        else _apply_worker_config(base_config)
+    )
+    typed_config.project_path = project_path
+
+    callbacks = _build_pipe_callbacks()
+    registry = build_subagent_registry(
+        subagent_type=subagent_type,
+        config=typed_config,
+        project_path=project_path,
+        callbacks=callbacks,
     )
 
-    # Resolve model tier for typed subagents up front
-    typed_config: "AgentConfig | None" = None
-    if subagent_type:
-        import yaml as _yaml
-        base_config = resolve_model_config(model)
-        base_config.project_path = project_path
+    if system_prompt_file:
+        system_prompt = Path(system_prompt_file).read_text(encoding="utf-8")
+    else:
+        system_prompt = load_subagent_prompt(subagent_type)
+    loop = AgentLoop(
+        config=typed_config,
+        callbacks=callbacks,
+        initial_messages=[{"role": "system", "content": system_prompt}],
+        _registry=registry,
+    )
 
-        # Determine model tier: prefer config.yaml, fall back to hardcoded legacy types
-        config_yaml = project_path / ".dagi" / "subagents" / subagent_type / "config.yaml"
-        if config_yaml.exists():
-            sa_cfg = _yaml.safe_load(config_yaml.read_text(encoding="utf-8")) or {}
-            model_tier = sa_cfg.get("model_tier", "worker")
-        elif subagent_type == "custom":
-            model_tier = "advanced"
-        else:
-            model_tier = "worker"
+    try:
+        loop.run(task)
+    except Exception as exc:
+        print(_json.dumps({"type": "error", "message": str(exc)}), flush=True)
+    finally:
+        loop.finish()
 
-        if model_tier == "advanced":
-            typed_config = _apply_advanced_config(base_config)
-        else:
-            typed_config = _apply_worker_config(base_config)
-        typed_config.project_path = project_path
-        model_name = typed_config.model or "unknown"
-        console.print(f"[dim]Model: {model_name}[/dim]")
+    # Enforce handoff — write minimal report if agent forgot
+    if not handoff_path.exists():
+        final_text = _extract_final_assistant_text(loop._messages)
+        handoff_path.parent.mkdir(parents=True, exist_ok=True)
+        handoff_path.write_text(
+            f"# Handoff\n\n{final_text or '(subagent produced no output)'}",
+            encoding="utf-8",
+        )
 
-    # Signal parent that this subagent is ready
-    ipc.write_ready()
-
-    seq = 1
-    stop_event = None
-    while True:
-        # Poll slightly longer than persistence window so the countdown fires first
-        task_data = ipc.poll_task(seq, timeout=float(_PERSISTENCE_SECONDS + 15))
-        if stop_event is not None:
-            stop_event.set()  # cancel any running countdown
-            stop_event = None
-
-        if task_data is None:
-            break
-
-        task = task_data.get("task", "")
-        _render_task_prompt(console, seq, task)
-
-        try:
-            if typed_config is not None and subagent_type:
-                # Typed subagent: restricted toolset + resolved model tier
-                result_text = _run_typed_subagent_task(
-                    task=task,
-                    subagent_type=subagent_type,
-                    config=typed_config,
-                    project_path=project_path,
-                    plan_file_path=plan_file_path,
-                    force_sync=sync,
-                    system_prompt_file=system_prompt_file,
-                )
-            else:
-                # Full-agent path (existing cli_subagent behaviour)
-                existing_tracker = active_loop.tracker if active_loop is not None else None
-                model_name = get_model_display_name(model)
-                conversation_msgs, active_loop = _run_task(
-                    task,
-                    conversation_msgs,
-                    cli_cfg,
-                    model,
-                    model_name,
-                    effective_verbose,
-                    sync,
-                    stats,
-                    project_path,
-                    existing_tracker=existing_tracker,
-                )
-                result_text = _extract_final_assistant_text(active_loop._messages)
-
-            ipc.write_result(seq, status="ok", result=result_text)
-        except Exception as exc:  # noqa: BLE001
-            console.print_exception()
-            ipc.write_result(seq, status="error", error=str(exc))
-
-        # Start 5-minute persistence window — cancelled if another task arrives
-        stop_event = _start_persistence_countdown(ipc, seconds=_PERSISTENCE_SECONDS)
-        seq += 1
-
-    if active_loop is not None:
-        active_loop.finish()
-    console.print("[dim]Subagent session ended.[/dim]")
+    print(_json.dumps({"type": "done"}), flush=True)
 
 
 # ── Typer command ─────────────────────────────────────────────────────────────
@@ -1163,32 +1107,35 @@ def run(
         None, "--project", "-p",
         help="Project directory to work in (default: current directory).",
     ),
-    subagent_ipc_dir: Optional[str] = typer.Option(
-        None, "--subagent-ipc-dir",
-        help="[Internal] Run as an IPC subagent server, polling for tasks in this directory.",
-        hidden=True,
-    ),
     subagent_type: Optional[str] = typer.Option(
         None, "--subagent-type",
-        help="[Internal] Typed subagent profile: web_research | explore_files | custom.",
+        help="[Internal] Typed subagent profile to run in pipe mode.",
         hidden=True,
     ),
-    subagent_system_prompt_file: Optional[str] = typer.Option(
+    task_file: Optional[str] = typer.Option(
+        None, "--task-file",
+        help="[Internal] Path to file containing the subagent task.",
+        hidden=True,
+    ),
+    handoff: Optional[str] = typer.Option(
+        None, "--handoff",
+        help="[Internal] Path where the subagent should write its handoff report.",
+        hidden=True,
+    ),
+    system_prompt_file: Optional[str] = typer.Option(
         None, "--system-prompt-file",
-        help="[Internal] Path to a file containing the system prompt for --subagent-type custom.",
+        help="[Internal] Path to a file containing a custom system prompt (overrides type default).",
         hidden=True,
     ),
 ) -> None:
-    if subagent_ipc_dir:
-        _run_subagent_ipc_loop(
-            ipc_dir=subagent_ipc_dir,
-            model=model,
-            verbose=verbose,
-            sync=sync,
-            project=project,
+    if subagent_type and task_file and handoff:
+        _run_subagent_pipe_mode(
             subagent_type=subagent_type,
-            plan_file_path=None,
-            system_prompt_file=subagent_system_prompt_file,
+            task_file=task_file,
+            handoff=handoff,
+            project=project,
+            model=model,
+            system_prompt_file=system_prompt_file,
         )
         return
 

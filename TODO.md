@@ -29,15 +29,15 @@
   - **Next:** Review plan · implement · mark done
   - **Source:** Session `2026-04-26_15-20-10` · [review_2026-04-26_15-20-10.md](.dagi/self-review/review_2026-04-26_15-20-10.md) · [plan_2026-04-26_15-20-10.md](.dagi/self-review/plan_2026-04-26_15-20-10.md)
 
-- **Multi-agent / parallel clones** · `priority:medium` · `impact:high` · `in-progress`
-  - **Current:** ALL subagents (`web_research`, `explore_files`, `plan`) spawn visible terminal windows via `subprocess.CREATE_NEW_CONSOLE`. Parent communicates via file-based IPC (`agent/ipc.py`); main terminal shows a Rich live spinner while waiting. Each terminal uses the appropriate model tier (worker / advanced) resolved from `config.yaml`. Terminal persists 5 minutes after task completion with a countdown banner. `cli_subagent.py` kept as a standalone tool for full-agent terminal use. TUI sidebar now shows subtask `[~]` in-progress state (2 s poll) — groundwork for parallel visibility.
-  - **Ideal:** Parallel spawning (multiple subagents concurrently); task queue / manifest structure; multi-pane UI in the main terminal showing all subagent outputs simultaneously.
-  - **Next:** Prototype parallel dispatch (multiple terminal subagents in one agent turn); add a task manifest so subagents can coordinate without conflicts. IPC layer needs concurrent poll support for parallel `[~]` display.
+- **Multi-agent / parallel clones** · `priority:medium` · `impact:high`
+  - **Current:** Subagents run sequentially as pipe subprocesses (`tools/_subagent_runner.py`). Output streams to the main TUI `ConversationPane` with a `[subagent-type]` label. Each subagent declares its own `tools:` list in `.dagi/subagents/<type>/subagent_config.yaml`. Agent can extend a timed-out subagent via `extend_subagent_timeout(pid, extra_seconds)`.
+  - **Ideal:** Parallel spawning (multiple subagents concurrently); task queue / manifest structure; each subagent's output visible in TUI with distinct label simultaneously.
+  - **Next:** Prototype parallel dispatch — agent calls `spawn_*` multiple times in one turn; `_active` dict already supports multiple PIDs concurrently; TUI relay callback already handles concurrent event streams from different subagent types.
 
-- **Subagent polling** · `priority:medium` · `impact:medium`
-  - **Current:** Subagents run until completion with no oversight from the main agent.
-  - **Ideal:** Main agent should be able to periodically inspect a running subagent's terminal output and make a judgment on whether it is stuck, then intervene or kill it.
-  - **Next:** Design a polling mechanism (time-based or event-based); implement inspection tool in `agent/ipc.py`; add retry/kill logic to worker/review spawn wrappers.
+- **Subagent pause propagation** · `priority:low` · `impact:low`
+  - **Current:** ESC pauses the parent loop at its safe checkpoint, but the subagent subprocess continues running.
+  - **Ideal:** Parent's pause signal propagates to the active subagent (e.g., via stdin signal or `proc.terminate()`).
+  - **Next:** Design and implement pause/resume signalling into `_subagent_runner.py`.
 
 - **Dynamic tool descriptions** · `priority:medium` · `impact:medium`
   - **Current:** Tool schemas are static — same description regardless of model or context.
@@ -97,6 +97,8 @@
 ---
 
 ## Done
+
+- [x] Pipe-based subagent architecture — replaced file-IPC + `CREATE_NEW_CONSOLE` terminal spawning with `subprocess.Popen(stdout=PIPE)`. Deleted `agent/ipc.py` and `tools/_terminal_subagent.py`. New `tools/_subagent_runner.py` runs the subprocess, relays newline-delimited JSON events to the main TUI `ConversationPane` (with `[subagent-type]` label), and polls `proc.poll()` every 2 s against a deadline. New `tools/extend_timeout.py` (`ExtendSubagentTimeoutTool`) lets the agent extend an in-flight subagent's deadline by PID. `SpawnSubagentTool` generates the handoff path at spawn time (`.dagi/handoffs/{type}_{uuid8}.md`), returns it as the tool result after the subagent exits. Each subagent type now declares its tools explicitly in `subagent_config.yaml`; `_scope_tools()` deleted, `_tools_from_list()` added. 81 tests pass.
 
 - [x] TUI submodule refactor — `tui.py` (819 lines) decomposed into a `tui/` package: `utils.py` (helpers + `_Stats`), `conversation.py` (`ConversationPane`), `prompt_input.py` (`PromptInput`), `sidebar.py` (`Sidebar`), `commands.py` (`SlashCommandsMixin`), `callbacks.py` (`build_callbacks()` free function), `app.py` (`DagiApp`, ~180 lines), `__init__.py`. Root `tui.py` is now a 30-line launcher. All behaviour preserved; `python tui.py --help` and all imports verified.
 

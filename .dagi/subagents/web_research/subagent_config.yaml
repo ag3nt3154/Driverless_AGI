@@ -1,0 +1,8 @@
+model_tier: worker
+description: >-
+  Search the web and fetch page content. Use for any task requiring
+  up-to-date information, documentation, or external URLs.
+  Prefer this over spawn_cli_subagent for web tasks.
+tools:
+  - web_search
+  - web_fetch

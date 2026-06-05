@@ -1,0 +1,37 @@
+model_tier: default
+description: >-
+  Review a worker's implementation: run tests, evaluate against acceptance
+  criteria, and write a structured review report. Read and bash access only —
+  does not modify code.
+tools:
+  - read
+  - grep
+  - find
+  - bash
+parameters:
+  type: object
+  properties:
+    subtask_name:
+      type: string
+      description: >-
+        Name of the subtask being reviewed — must match the heading in the plan.
+    handoff_report_path:
+      type: string
+      description: >-
+        Absolute path to the worker's handoff report. Read this to understand
+        what was implemented.
+    unit_test_paths:
+      type: array
+      items:
+        type: string
+      description: >-
+        Paths to unit/integration test files to run. Run all of them and record
+        each result.
+    custom_instructions:
+      type: string
+      description: >-
+        Additional guidance from the main agent. Optional.
+  required:
+    - subtask_name
+    - handoff_report_path
+    - unit_test_paths
