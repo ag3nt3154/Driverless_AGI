@@ -15,7 +15,7 @@ parameters:
       type: string
       description: >-
         Name of the subtask being reviewed — must match the heading in the plan.
-    handoff_report_path:
+    worker_handoff_path:
       type: string
       description: >-
         Absolute path to the worker's handoff report. Read this to understand
@@ -33,5 +33,5 @@ parameters:
         Additional guidance from the main agent. Optional.
   required:
     - subtask_name
-    - handoff_report_path
+    - worker_handoff_path
     - unit_test_paths

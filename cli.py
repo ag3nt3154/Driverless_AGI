@@ -40,6 +40,8 @@ from agent.config_loader import (
 )
 from agent.loop import AgentCallbacks, AgentLoop
 
+_DAGI_ROOT = Path(__file__).parent
+
 console = Console()
 app = typer.Typer(
     name="dagi",
@@ -1008,6 +1010,37 @@ def _render_task_prompt(console: "Console", seq: int, task: str) -> None:
         console.print(Panel(content, title=f"[bold]{title}[/bold]", border_style="dim", padding=(0, 1)))
 
 
+def _load_optional_md(path: Path) -> str:
+    try:
+        return path.read_text(encoding="utf-8").strip()
+    except (FileNotFoundError, OSError):
+        return ""
+
+
+_AGENTS_MD_TYPES = {
+    "explore_files": ["cwd"],
+    "worker": ["dagi", "cwd"],
+    "review": ["dagi", "cwd"],
+}
+
+
+def _build_subagent_system_prompt(subagent_type: str, project_path: Path) -> str:
+    from agent.prompts import load_subagent_prompt
+
+    base = load_subagent_prompt(subagent_type)
+    which = _AGENTS_MD_TYPES.get(subagent_type, [])
+    parts = [base]
+    if "dagi" in which:
+        md = _load_optional_md(_DAGI_ROOT / ".dagi" / "agents.md")
+        if md:
+            parts.append(md)
+    if "cwd" in which:
+        md = _load_optional_md(project_path / ".dagi" / "agents.md")
+        if md:
+            parts.append(md)
+    return "\n\n---\n\n".join(parts)
+
+
 def _run_subagent_pipe_mode(
     subagent_type: str,
     task_file: str,
@@ -1020,7 +1053,6 @@ def _run_subagent_pipe_mode(
     import json as _json
     import yaml as _yaml
 
-    from agent.prompts import load_subagent_prompt
     from agent.tools import build_subagent_registry
 
     project_path = Path(project).resolve() if project else Path.cwd()
@@ -1060,7 +1092,7 @@ def _run_subagent_pipe_mode(
     if system_prompt_file:
         system_prompt = Path(system_prompt_file).read_text(encoding="utf-8")
     else:
-        system_prompt = load_subagent_prompt(subagent_type)
+        system_prompt = _build_subagent_system_prompt(subagent_type, project_path)
     loop = AgentLoop(
         config=typed_config,
         callbacks=callbacks,

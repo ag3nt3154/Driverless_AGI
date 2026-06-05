@@ -34,18 +34,6 @@ _FALLBACK_PARAMETERS: dict = {
 }
 
 
-def _load_agents_md(dagi_root: Path, project_path: Path) -> str:
-    parts: list[str] = []
-    for base in (dagi_root, project_path):
-        agents_file = base / ".dagi" / "agents.md"
-        try:
-            text = agents_file.read_text(encoding="utf-8").strip()
-            if text:
-                parts.append(text)
-        except (FileNotFoundError, OSError):
-            pass
-    return "\n\n".join(parts)
-
 
 def _load_plan_text(config: "AgentConfig") -> str:
     for attr in ("plan_file", "active_plan_file"):
@@ -59,61 +47,55 @@ def _load_plan_text(config: "AgentConfig") -> str:
 
 
 def _compose_worker_context(
-    agents_md: str,
     plan_text: str,
     subtask_name: str,
     custom_instructions: str,
     handoff_file: str,
 ) -> str:
-    from tools._plan_parser import extract_global_sections, extract_subtask
+    from tools._plan_parser import extract_subtask
 
-    global_ctx = extract_global_sections(plan_text) if plan_text else ""
     subtask_ctx = extract_subtask(plan_text, subtask_name, include_tests=False) if plan_text else ""
 
     sections: list[str] = []
-    if agents_md:
-        sections.append(f"## Project Description\n{agents_md}")
-    if global_ctx:
-        sections.append(f"## Plan Context\n{global_ctx}")
     if subtask_ctx:
-        sections.append(f"## Your Subtask\n{subtask_ctx}")
+        sections.append(f"## Subtask\n{subtask_ctx}")
     if custom_instructions:
-        sections.append(f"## Custom Instructions\n{custom_instructions}")
+        sections.append(f"## Instructions\n{custom_instructions}")
     sections.append(f"## Output\nWrite your handoff report to: {handoff_file}")
 
     return "\n\n---\n\n".join(sections)
 
 
 def _compose_review_context(
-    agents_md: str,
     plan_text: str,
     subtask_name: str,
-    handoff_report_path: str,
+    worker_handoff_path: str,
     unit_test_paths: list[str],
     review_file: str,
     custom_instructions: str,
 ) -> str:
-    from tools._plan_parser import extract_global_sections, extract_subtask
+    from tools._plan_parser import extract_subtask
 
-    global_ctx = extract_global_sections(plan_text) if plan_text else ""
     subtask_ctx = extract_subtask(plan_text, subtask_name, include_tests=True) if plan_text else ""
 
     sections: list[str] = []
-    if agents_md:
-        sections.append(f"## Project Description\n{agents_md}")
-    if global_ctx:
-        sections.append(f"## Plan Context\n{global_ctx}")
     if subtask_ctx:
         sections.append(f"## Subtask Being Reviewed\n{subtask_ctx}")
+    if worker_handoff_path:
+        sections.append(
+            f"## Worker Handoff\n"
+            f"The worker's implementation report is at: {worker_handoff_path}\n"
+            f"Read it before evaluating the subtask."
+        )
     if custom_instructions:
-        sections.append(f"## Custom Instructions\n{custom_instructions}")
+        sections.append(f"## Instructions\n{custom_instructions}")
 
     unit_test_list = "\n".join(unit_test_paths) if unit_test_paths else ""
-    output_lines = [f"Handoff report path: {handoff_report_path}"]
+    output_lines = []
     if unit_test_list:
         output_lines.append(f"Unit test paths:\n{unit_test_list}")
     output_lines.append(f"Write your review report to: {review_file}")
-    sections.append("## Output Files\n" + "\n".join(output_lines))
+    sections.append("## Output\n" + "\n".join(output_lines))
 
     return "\n\n---\n\n".join(sections)
 
@@ -191,12 +173,10 @@ class SpawnSubagentTool(BaseTool):
         return f"[{self._type_name} error] {result.get('message', 'unknown error')}"
 
     def _compose_task(self, handoff_path: Path, **kwargs) -> str:
-        agents_md = _load_agents_md(_DAGI_ROOT, self._config.project_path)
         plan_text = _load_plan_text(self._config)
 
         if self._type_name == "worker":
             return _compose_worker_context(
-                agents_md=agents_md,
                 plan_text=plan_text,
                 subtask_name=kwargs.get("subtask_name", ""),
                 custom_instructions=kwargs.get("custom_instructions", ""),
@@ -207,10 +187,9 @@ class SpawnSubagentTool(BaseTool):
             if isinstance(unit_test_paths, str):
                 unit_test_paths = [unit_test_paths]
             return _compose_review_context(
-                agents_md=agents_md,
                 plan_text=plan_text,
                 subtask_name=kwargs.get("subtask_name", ""),
-                handoff_report_path=kwargs.get("handoff_report_path", ""),
+                worker_handoff_path=kwargs.get("worker_handoff_path", ""),
                 unit_test_paths=unit_test_paths,
                 review_file=str(handoff_path),
                 custom_instructions=kwargs.get("custom_instructions", ""),

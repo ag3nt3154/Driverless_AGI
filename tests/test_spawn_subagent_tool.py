@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from unittest.mock import MagicMock, patch, mock_open
+from unittest.mock import MagicMock, patch
 
 import pytest
 import yaml
@@ -43,25 +43,23 @@ WORKER_SCHEMA = {
     "properties": {
         "subtask_name": {"type": "string", "description": "Name of the subtask."},
         "custom_instructions": {"type": "string", "description": "Extra instructions."},
-        "handoff_file": {"type": "string", "description": "Path to write handoff report."},
     },
-    "required": ["subtask_name", "handoff_file"],
+    "required": ["subtask_name"],
 }
 
 REVIEW_SCHEMA = {
     "type": "object",
     "properties": {
         "subtask_name": {"type": "string", "description": "Name of the subtask being reviewed."},
-        "handoff_report_path": {"type": "string", "description": "Path to the handoff report."},
+        "worker_handoff_path": {"type": "string", "description": "Path to the worker's handoff report."},
         "unit_test_paths": {
             "type": "array",
             "items": {"type": "string"},
             "description": "Paths to unit test files.",
         },
-        "review_file": {"type": "string", "description": "Path to write the review report."},
         "custom_instructions": {"type": "string", "description": "Extra instructions."},
     },
-    "required": ["subtask_name", "handoff_report_path", "unit_test_paths", "review_file"],
+    "required": ["subtask_name", "worker_handoff_path", "unit_test_paths"],
 }
 
 
@@ -165,12 +163,10 @@ class TestWorkerContext:
         config = _make_config(tmp_path, plan_file=plan_file)
 
         tool = _make_tool("worker", config, WORKER_SCHEMA)
-
-        with patch("tools.spawn_subagent._load_agents_md", return_value="Project desc"):
-            composed = tool._compose_task(
-                handoff_path=Path("/tmp/handoff.md"),
-                subtask_name="Do the thing",
-            )
+        composed = tool._compose_task(
+            handoff_path=Path("/tmp/handoff.md"),
+            subtask_name="Do the thing",
+        )
 
         assert "#### Tests" not in composed
         assert "test_thing.py" not in composed
@@ -182,49 +178,42 @@ class TestWorkerContext:
         config = _make_config(tmp_path, plan_file=plan_file)
 
         tool = _make_tool("worker", config, WORKER_SCHEMA)
-
-        with patch("tools.spawn_subagent._load_agents_md", return_value=""):
-            composed = tool._compose_task(
-                handoff_path=Path("/tmp/handoff.md"),
-                subtask_name="Do the thing",
-            )
+        composed = tool._compose_task(
+            handoff_path=Path("/tmp/handoff.md"),
+            subtask_name="Do the thing",
+        )
 
         assert "Implement the feature" in composed
         assert "Requirement A" in composed
 
-    def test_worker_context_includes_global_sections(self, tmp_path):
-        """Worker context must include Context and Approach sections."""
+    def test_worker_context_excludes_global_sections(self, tmp_path):
+        """Worker context must NOT include global plan sections (now in system prompt)."""
         plan_file = tmp_path / "plan.md"
         plan_file.write_text(SAMPLE_PLAN, encoding="utf-8")
         config = _make_config(tmp_path, plan_file=plan_file)
 
         tool = _make_tool("worker", config, WORKER_SCHEMA)
+        composed = tool._compose_task(
+            handoff_path=Path("/tmp/handoff.md"),
+            subtask_name="Do the thing",
+        )
 
-        with patch("tools.spawn_subagent._load_agents_md", return_value=""):
-            composed = tool._compose_task(
-                handoff_path=Path("/tmp/handoff.md"),
-                subtask_name="Do the thing",
-            )
+        assert "Why this change is needed" not in composed
+        assert "High-level strategy" not in composed
 
-        assert "Why this change is needed" in composed
-        assert "High-level strategy" in composed
-
-    def test_worker_context_includes_project_description(self, tmp_path):
-        """Worker context must include agents.md content as Project Description."""
+    def test_worker_context_excludes_project_description(self, tmp_path):
+        """Worker task body must NOT contain agents.md (now in subagent system prompt)."""
         plan_file = tmp_path / "plan.md"
         plan_file.write_text(SAMPLE_PLAN, encoding="utf-8")
         config = _make_config(tmp_path, plan_file=plan_file)
 
         tool = _make_tool("worker", config, WORKER_SCHEMA)
+        composed = tool._compose_task(
+            handoff_path=Path("/tmp/handoff.md"),
+            subtask_name="Do the thing",
+        )
 
-        with patch("tools.spawn_subagent._load_agents_md", return_value="My project description"):
-            composed = tool._compose_task(
-                handoff_path=Path("/tmp/handoff.md"),
-                subtask_name="Do the thing",
-            )
-
-        assert "## Project Description" in composed
-        assert "My project description" in composed
+        assert "## Project Description" not in composed
 
     def test_worker_context_includes_handoff_output(self, tmp_path):
         """Worker context must include the handoff file path in the Output section."""
@@ -233,49 +222,43 @@ class TestWorkerContext:
         config = _make_config(tmp_path, plan_file=plan_file)
 
         tool = _make_tool("worker", config, WORKER_SCHEMA)
-
-        with patch("tools.spawn_subagent._load_agents_md", return_value=""):
-            composed = tool._compose_task(
-                handoff_path=Path("/tmp/handoff_report.md"),
-                subtask_name="Do the thing",
-            )
+        composed = tool._compose_task(
+            handoff_path=Path("/tmp/handoff_report.md"),
+            subtask_name="Do the thing",
+        )
 
         assert "## Output" in composed
         assert "handoff_report.md" in composed
 
-    def test_worker_context_includes_custom_instructions_when_provided(self, tmp_path):
-        """Worker context must include Custom Instructions section when provided."""
+    def test_worker_context_includes_instructions_when_provided(self, tmp_path):
+        """Worker context must include Instructions section when custom_instructions provided."""
         plan_file = tmp_path / "plan.md"
         plan_file.write_text(SAMPLE_PLAN, encoding="utf-8")
         config = _make_config(tmp_path, plan_file=plan_file)
 
         tool = _make_tool("worker", config, WORKER_SCHEMA)
+        composed = tool._compose_task(
+            handoff_path=Path("/tmp/handoff.md"),
+            subtask_name="Do the thing",
+            custom_instructions="Be extra careful with edge cases.",
+        )
 
-        with patch("tools.spawn_subagent._load_agents_md", return_value=""):
-            composed = tool._compose_task(
-                handoff_path=Path("/tmp/handoff.md"),
-                subtask_name="Do the thing",
-                custom_instructions="Be extra careful with edge cases.",
-            )
-
-        assert "## Custom Instructions" in composed
+        assert "## Instructions" in composed
         assert "Be extra careful with edge cases." in composed
 
-    def test_worker_context_omits_custom_instructions_when_absent(self, tmp_path):
-        """Worker context must omit Custom Instructions section when not provided."""
+    def test_worker_context_omits_instructions_when_absent(self, tmp_path):
+        """Worker context must omit Instructions section when not provided."""
         plan_file = tmp_path / "plan.md"
         plan_file.write_text(SAMPLE_PLAN, encoding="utf-8")
         config = _make_config(tmp_path, plan_file=plan_file)
 
         tool = _make_tool("worker", config, WORKER_SCHEMA)
+        composed = tool._compose_task(
+            handoff_path=Path("/tmp/handoff.md"),
+            subtask_name="Do the thing",
+        )
 
-        with patch("tools.spawn_subagent._load_agents_md", return_value=""):
-            composed = tool._compose_task(
-                handoff_path=Path("/tmp/handoff.md"),
-                subtask_name="Do the thing",
-            )
-
-        assert "## Custom Instructions" not in composed
+        assert "## Instructions" not in composed
 
 
 # ---------------------------------------------------------------------------
@@ -290,77 +273,68 @@ class TestReviewContext:
         config = _make_config(tmp_path, plan_file=plan_file)
 
         tool = _make_tool("review", config, REVIEW_SCHEMA)
-
-        with patch("tools.spawn_subagent._load_agents_md", return_value=""):
-            composed = tool._compose_task(
-                handoff_path=Path("/tmp/review.md"),
-                subtask_name="Do the thing",
-                handoff_report_path="/tmp/handoff.md",
-                unit_test_paths=["tests/test_thing.py"],
-            )
+        composed = tool._compose_task(
+            handoff_path=Path("/tmp/review.md"),
+            subtask_name="Do the thing",
+            worker_handoff_path="/tmp/handoff.md",
+            unit_test_paths=["tests/test_thing.py"],
+        )
 
         assert "#### Tests" in composed
         assert "test_thing.py" in composed
 
-    def test_review_context_includes_output_files(self, tmp_path):
-        """Review context must include Output Files with all paths."""
+    def test_review_context_includes_worker_handoff_section(self, tmp_path):
+        """Review context must include Worker Handoff section with the path."""
         plan_file = tmp_path / "plan.md"
         plan_file.write_text(SAMPLE_PLAN, encoding="utf-8")
         config = _make_config(tmp_path, plan_file=plan_file)
 
         tool = _make_tool("review", config, REVIEW_SCHEMA)
+        composed = tool._compose_task(
+            handoff_path=Path("/tmp/review.md"),
+            subtask_name="Do the thing",
+            worker_handoff_path="/tmp/handoff.md",
+            unit_test_paths=["tests/test_a.py", "tests/test_b.py"],
+        )
 
-        with patch("tools.spawn_subagent._load_agents_md", return_value=""):
-            composed = tool._compose_task(
-                handoff_path=Path("/tmp/review.md"),
-                subtask_name="Do the thing",
-                handoff_report_path="/tmp/handoff.md",
-                unit_test_paths=["tests/test_a.py", "tests/test_b.py"],
-            )
-
-        assert "## Output Files" in composed
+        assert "## Worker Handoff" in composed
         assert "/tmp/handoff.md" in composed
         assert "tests/test_a.py" in composed
         assert "tests/test_b.py" in composed
         assert "review.md" in composed
 
-    def test_review_context_includes_project_description(self, tmp_path):
-        """Review context must include agents.md as Project Description."""
+    def test_review_context_excludes_project_description(self, tmp_path):
+        """Review task body must NOT contain agents.md (now in subagent system prompt)."""
         plan_file = tmp_path / "plan.md"
         plan_file.write_text(SAMPLE_PLAN, encoding="utf-8")
         config = _make_config(tmp_path, plan_file=plan_file)
 
         tool = _make_tool("review", config, REVIEW_SCHEMA)
+        composed = tool._compose_task(
+            handoff_path=Path("/tmp/review.md"),
+            subtask_name="Do the thing",
+            worker_handoff_path="/tmp/handoff.md",
+            unit_test_paths=[],
+        )
 
-        with patch("tools.spawn_subagent._load_agents_md", return_value="Review project desc"):
-            composed = tool._compose_task(
-                handoff_path=Path("/tmp/review.md"),
-                subtask_name="Do the thing",
-                handoff_report_path="/tmp/handoff.md",
-                unit_test_paths=[],
-            )
-
-        assert "## Project Description" in composed
-        assert "Review project desc" in composed
+        assert "## Project Description" not in composed
 
     def test_review_context_custom_instructions(self, tmp_path):
-        """Review context includes Custom Instructions when provided."""
+        """Review context includes Instructions section when provided."""
         plan_file = tmp_path / "plan.md"
         plan_file.write_text(SAMPLE_PLAN, encoding="utf-8")
         config = _make_config(tmp_path, plan_file=plan_file)
 
         tool = _make_tool("review", config, REVIEW_SCHEMA)
+        composed = tool._compose_task(
+            handoff_path=Path("/tmp/review.md"),
+            subtask_name="Do the thing",
+            worker_handoff_path="/tmp/handoff.md",
+            unit_test_paths=[],
+            custom_instructions="Focus on security.",
+        )
 
-        with patch("tools.spawn_subagent._load_agents_md", return_value=""):
-            composed = tool._compose_task(
-                handoff_path=Path("/tmp/review.md"),
-                subtask_name="Do the thing",
-                handoff_report_path="/tmp/handoff.md",
-                unit_test_paths=[],
-                custom_instructions="Focus on security.",
-            )
-
-        assert "## Custom Instructions" in composed
+        assert "## Instructions" in composed
         assert "Focus on security." in composed
 
 
@@ -374,11 +348,10 @@ class TestGenericSubagent:
         config = _make_config(tmp_path)
         tool = _make_tool("web_research", config, _FALLBACK_PARAMETERS)
 
-        with patch("tools.spawn_subagent._load_agents_md", return_value="ignored"):
-            composed = tool._compose_task(
-                handoff_path=Path("/tmp/handoff.md"),
-                task="Search for Python best practices",
-            )
+        composed = tool._compose_task(
+            handoff_path=Path("/tmp/handoff.md"),
+            task="Search for Python best practices",
+        )
 
         assert composed == "Search for Python best practices"
 
@@ -387,8 +360,7 @@ class TestGenericSubagent:
         config = _make_config(tmp_path)
         tool = _make_tool("web_research", config, _FALLBACK_PARAMETERS)
 
-        with patch("tools.spawn_subagent._load_agents_md", return_value=""):
-            composed = tool._compose_task(handoff_path=Path("/tmp/handoff.md"))
+        composed = tool._compose_task(handoff_path=Path("/tmp/handoff.md"))
 
         assert composed == ""
 
@@ -408,8 +380,7 @@ class TestRunMethod:
         config = _make_config(tmp_path)
         tool = _make_tool("web_research", config, _FALLBACK_PARAMETERS)
 
-        with patch("tools.spawn_subagent._load_agents_md", return_value=""), \
-             patch("tools._subagent_runner.run_subagent", return_value=_OK_RESULT):
+        with patch("tools._subagent_runner.run_subagent", return_value=_OK_RESULT):
             result = tool.run(task="Find stuff")
 
         assert "Handoff written to" in result
@@ -421,8 +392,7 @@ class TestRunMethod:
         config = _make_config(tmp_path)
         tool = _make_tool("web_research", config, _FALLBACK_PARAMETERS)
 
-        with patch("tools.spawn_subagent._load_agents_md", return_value=""), \
-             patch("tools._subagent_runner.run_subagent", return_value=_TIMEOUT_RESULT):
+        with patch("tools._subagent_runner.run_subagent", return_value=_TIMEOUT_RESULT):
             result = tool.run(task="Slow task")
 
         parsed = json.loads(result)
@@ -434,26 +404,25 @@ class TestRunMethod:
         config = _make_config(tmp_path)
         tool = _make_tool("web_research", config, _FALLBACK_PARAMETERS)
 
-        with patch("tools.spawn_subagent._load_agents_md", return_value=""), \
-             patch("tools._subagent_runner.run_subagent", return_value=_ERROR_RESULT):
+        with patch("tools._subagent_runner.run_subagent", return_value=_ERROR_RESULT):
             result = tool.run(task="Fail")
 
         assert "[web_research error]" in result
         assert "something went wrong" in result
 
-    def test_run_worker_composes_context(self, tmp_path):
-        """run() for worker type composes context and passes it to run_subagent."""
+    def test_run_worker_composes_subtask_context(self, tmp_path):
+        """run() for worker type includes subtask content in the task sent to run_subagent."""
         plan_file = tmp_path / "plan.md"
         plan_file.write_text(SAMPLE_PLAN, encoding="utf-8")
         config = _make_config(tmp_path, plan_file=plan_file)
 
         tool = _make_tool("worker", config, WORKER_SCHEMA)
 
-        with patch("tools.spawn_subagent._load_agents_md", return_value="My project"), \
-             patch("tools._subagent_runner.run_subagent", return_value=_OK_RESULT) as mock_run:
+        with patch("tools._subagent_runner.run_subagent", return_value=_OK_RESULT) as mock_run:
             tool.run(subtask_name="Do the thing")
 
         mock_run.assert_called_once()
         task_arg = mock_run.call_args.kwargs["task"]
-        assert "My project" in task_arg
+        assert "Implement the feature" in task_arg
         assert "#### Tests" not in task_arg
+        assert "## Project Description" not in task_arg
