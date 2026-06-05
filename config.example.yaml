@@ -1,65 +1,136 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# dagi — configuration example
+# Copy this file to config.yaml and fill in your values.
+# ─────────────────────────────────────────────────────────────────────────────
+
+# ── CLI settings ─────────────────────────────────────────────────────────────
 cli:
-  threading: threaded   # "threaded" | "sync"
-  verbose: false        # true = show full tool output
+  threading: threaded   # "threaded" = non-blocking REPL (agent runs in background thread)
+                        # "sync"     = blocks the REPL until the task finishes
+  verbose: false        # true = display full tool call input/output in the CLI
 
-context_window: 128000
-keep_recent_tokens: 20000
-max_iterations: 20
-reserve_tokens: 16384
+# ── Context window & compaction ──────────────────────────────────────────────
+# Controls when and how dagi compacts its message history to stay within the
+# model's token limit (Pi-style: summarise the middle, preserve head + tail).
+# All three values can also be overridden per-model in the catalog below.
 
-default_model: minimax-2.7-openrouter
-# worker_model: glm-5-turbo-openrouter       # cheaper LLM for sub-agents; omit to use default_model
-advanced_model: deepseek-v4-pro-openrouter   # advanced LLM for planning; omit to use default_model
+context_window: 128000      # Model's hard token limit (prompt + response combined).
+                             # Set this to the actual context length of your model.
+reserve_tokens: 16384        # Tokens held back for the assistant's next reply and the
+                             # compaction summary itself. Compaction fires when
+                             # prompt_tokens > context_window - reserve_tokens.
+keep_recent_tokens: 20000    # Minimum number of recent message tokens preserved verbatim
+                             # (tail of the conversation) during compaction.
 
-# Absolute path to the dagi-memory directory (wiki/raw/sources).
+# ── Loop behaviour ────────────────────────────────────────────────────────────
+max_continuations: 10   # Maximum number of times the harness auto-injects "continue"
+                        # before giving up and returning the last response. A higher
+                        # value allows longer uninterrupted tool chains; a lower value
+                        # surfaces stalled tasks sooner. Resets per run() call.
+
+null_response_retries: 3  # How many times to silently retry an API call that returns
+                          # an empty/null response (HTTP 200 but content=None, usage=None).
+                          # Increase for flaky providers (e.g. 5). Each retry replays the
+                          # same context — the ghost response is never appended to history.
+
+# ── Model selection ───────────────────────────────────────────────────────────
+# All values must match a key defined under the `models:` catalog below.
+
+default_model: gpt-4o-openai        # Primary model used for all regular tasks.
+
+# worker_model: gpt-4o-mini-openai  # Optional: cheaper/faster model for sub-agents
+                                    # (spawned by the plan-work-review workflow).
+                                    # Omit to use default_model for sub-agents.
+
+# advanced_model: gpt-4o-openai     # Optional: higher-capability model activated
+                                    # automatically when the agent enters plan mode.
+                                    # Omit to use default_model during planning.
+
+# ── Reasoning / thinking ──────────────────────────────────────────────────────
+thinking: none    # Extended reasoning effort for models that support it (e.g. DeepSeek,
+                  # Claude 3+ Opus via OpenRouter's `reasoning` extension).
+                  # Values: none | low | medium | high
+                  # Can be overridden per-model in the catalog below.
+
+# ── Memory ────────────────────────────────────────────────────────────────────
+# Absolute path to the dagi-memory directory containing wiki/, raw/, and sources/
+# sub-directories used for persistent knowledge retrieval (BM25).
 # Omit to use the default: {current working directory}/dagi-memory
-memory_root: "G:\\My Drive\\black_grimoire\\dagi-memory"
-thinking: high          # none | low | medium | high — reasoning effort for models that support it
+# memory_root: /absolute/path/to/dagi-memory
+
+# ── Tools ─────────────────────────────────────────────────────────────────────
+emote_tool: true   # true  = register the `emote` tool so dagi can update the TUI
+                   #         sidebar face expression during tasks.
+                   # false = hide the emote tool (leaner tool list, fewer tokens).
+
+# ── Model catalog ─────────────────────────────────────────────────────────────
+# Define every model you want available to dagi here.
+# The map key (e.g. "gpt-4o-openai") is the model ID referenced by default_model,
+# worker_model, and advanced_model above, and by the /model slash command.
+#
+# Required fields per entry:
+#   name        Human-readable label shown in the TUI sidebar and session logs.
+#   model       Model identifier string sent verbatim to the provider API.
+#   api_url     Provider API base URL (must be an OpenAI-compatible endpoint).
+#   api_key_env Name of the environment variable holding the API key.
+#               Recommended approach — keeps secrets out of this file.
+#
+# Optional fields per entry:
+#   api_key           Inline API key (overrides api_key_env). Avoid committing
+#                     this file if api_key is set here.
+#   context_window    Per-model override for the token budget (overrides top-level).
+#   reserve_tokens    Per-model override for the compaction reserve (overrides top-level).
+#   keep_recent_tokens  Per-model override for the compaction tail (overrides top-level).
+#   thinking          Per-model override for the reasoning effort (overrides top-level).
 
 models:
-  claude-opus-openrouter:
-    api_key_env: OPENROUTER_API_KEY
-    api_url: https://openrouter.ai/api/v1
-    model: anthropic/claude-opus-4-6
-    name: Claude Opus 4.6 (OpenRouter)
-  claude-sonnet-openrouter:
-    api_key_env: OPENROUTER_API_KEY
-    api_url: https://openrouter.ai/api/v1
-    model: anthropic/claude-sonnet-4-6
-    name: Claude Sonnet 4.6 (OpenRouter)
-  glm-5-turbo-openrouter:
-    api_key_env: OPENROUTER_API_KEY
-    api_url: https://openrouter.ai/api/v1
-    model: z-ai/glm-5-turbo
-    name: GLM-5 Turbo (OpenRouter)
-  gpt-4o-mini-openai:
-    api_key_env: OPENAI_API_KEY
-    api_url: https://api.openai.com/v1
-    model: gpt-4o-mini
-    name: GPT-4o Mini (OpenAI)
   gpt-4o-openai:
     api_key_env: OPENAI_API_KEY
     api_url: https://api.openai.com/v1
     model: gpt-4o
     name: GPT-4o (OpenAI)
-  minimax-2.7-openrouter:
+
+  gpt-4o-mini-openai:
+    api_key_env: OPENAI_API_KEY
+    api_url: https://api.openai.com/v1
+    model: gpt-4o-mini
+    name: GPT-4o Mini (OpenAI)
+
+  claude-sonnet-openrouter:
     api_key_env: OPENROUTER_API_KEY
     api_url: https://openrouter.ai/api/v1
-    model: minimax/minimax-m2.7
-    name: Minimax 2.7 (OpenRouter)
-  qwen3.5-27b-openrouter:
+    model: anthropic/claude-sonnet-4-6
+    name: Claude Sonnet 4.6 (OpenRouter)
+
+  claude-opus-openrouter:
     api_key_env: OPENROUTER_API_KEY
     api_url: https://openrouter.ai/api/v1
-    model: qwen/qwen3.5-27b
-    name: Qwen 3.5 27B (OpenRouter)
-  kimi-2.6-openrouter:
-    api_key_env: OPENROUTER_API_KEY
-    api_url: https://openrouter.ai/api/v1
-    model: moonshotai/kimi-k2.6
-    name: Kimi 2.6 (OpenRouter)
-  deepseek-v4-pro-openrouter:
+    model: anthropic/claude-opus-4-6
+    name: Claude Opus 4.6 (OpenRouter)
+
+  deepseek-v4-openrouter:
     api_key_env: OPENROUTER_API_KEY
     api_url: https://openrouter.ai/api/v1
     model: deepseek/deepseek-v4-pro
-    name: Deepseek v4 (OpenRouter)
+    name: DeepSeek v4 Pro (OpenRouter)
+    thinking: high    # Example of a per-model thinking override
 
+  # ── Local model example (LM Studio, Ollama, llama.cpp, etc.) ──────────────
+  # local_model:
+  #   api_key_env: OPENAI_API_KEY   # Most local servers ignore this; set to any non-empty value
+  #   api_url: http://localhost:11434/v1
+  #   model: llama3.2
+  #   name: Llama 3.2 (Local)
+  #   context_window: 8192           # Example per-model context override for a smaller model
+  #   reserve_tokens: 2048
+  #   keep_recent_tokens: 4096
+
+  # ── Large-context model example ────────────────────────────────────────────
+  # gemini-pro-openrouter:
+  #   api_key_env: OPENROUTER_API_KEY
+  #   api_url: https://openrouter.ai/api/v1
+  #   model: google/gemini-2.5-pro
+  #   name: Gemini 2.5 Pro (OpenRouter)
+  #   context_window: 1000000        # This model supports 1M tokens
+  #   reserve_tokens: 32768
+  #   keep_recent_tokens: 50000

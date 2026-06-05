@@ -16,7 +16,7 @@ from .commands import SlashCommandsMixin
 from .conversation import ConversationPane
 from .prompt_input import PromptInput
 from .sidebar import Sidebar
-from .utils import _resolve_option, _Stats
+from .utils import _Stats
 
 
 class DagiApp(SlashCommandsMixin, App[None]):
@@ -53,6 +53,7 @@ class DagiApp(SlashCommandsMixin, App[None]):
         yield Sidebar(
             self._model_name, cfg.context_window, cfg.reserve_tokens,
             dagi_root=dagi_root, project_path=self._project_path,
+            memory_root=getattr(cfg, "memory_root", None),
         )
         yield ConversationPane(id="conversation", highlight=True, markup=True, wrap=True)
         yield Static("", id="running-indicator")
@@ -79,7 +80,11 @@ class DagiApp(SlashCommandsMixin, App[None]):
         if self._pending_ask is not None:
             ask_evt, container, options, _ = self._pending_ask
             self._pending_ask = None
-            container.append(_resolve_option(raw, options))
+            container.append(raw)
+            self.query_one(ConversationPane).write(
+                Panel(raw, title="[bold cyan]You[/bold cyan]",
+                      title_align="left", border_style="cyan", padding=(0, 1))
+            )
             ask_evt.set()
             self.query_one("#prompt", PromptInput).disabled = True
             self._show_running_indicator()

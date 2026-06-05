@@ -24,6 +24,7 @@ class Sidebar(Widget):
         reserve_tokens: int,
         dagi_root: Path,
         project_path: Path,
+        memory_root: Path | None = None,
     ) -> None:
         super().__init__()
         self._status = "idle"
@@ -37,6 +38,7 @@ class Sidebar(Widget):
         self._reserve_tokens = reserve_tokens
         self._dagi_root = dagi_root
         self._project_path = project_path
+        self._memory_root = memory_root
         self._subtasks: list[dict] = []
         self._plan_title: str = ""
         self._emote: str = "default"
@@ -94,9 +96,16 @@ class Sidebar(Widget):
         else:
             dot, label = "[dim]○[/dim]", "Idle"
         t = Table.grid(padding=(0, 1))
-        t.add_row(Text.from_markup(f"[#4da6ff]{face}[/#4da6ff]"))
-        t.add_row(Text.from_markup(f"{dot} {label}"))
-        t.add_row(Text.from_markup(f"[bold]{self._model_name}[/bold]"))
+        t.add_column(style="dim", no_wrap=True)
+        t.add_column(no_wrap=True, overflow="ellipsis")
+        t.add_row(Text.from_markup(f"[#4da6ff]{face}[/#4da6ff]"), "")
+        t.add_row(Text.from_markup(f"{dot} {label}"), "")
+        t.add_row(Text.from_markup(f"[bold]{self._model_name}[/bold]"), "")
+        t.add_row("", "")
+        t.add_row("cwd", str(self._project_path))
+        t.add_row("app", str(self._dagi_root))
+        if self._memory_root is not None:
+            t.add_row("mem", str(self._memory_root))
         return t
 
     def _tokens_context_col(self) -> Group:

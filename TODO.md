@@ -61,9 +61,9 @@
   - **Source:** Session `2026-04-26_15-24-09` · [review_2026-04-26_15-24-09.md](.dagi/self-review/review_2026-04-26_15-24-09.md) · [plan_2026-04-26_15-24-09.md](.dagi/self-review/plan_2026-04-26_15-24-09.md)
 
 - **Fix `pyproject.toml` dependencies** · `priority:low` · `impact:low`
-  - **Current:** `typer` and `rich` missing from declared deps; `crawl4ai` already added; `streamlit` dropped.
-  - **Ideal:** `pyproject.toml` matches actual runtime requirements; `pip install -e .` installs all CLI dependencies.
-  - **Next:** Add `typer`, `rich` to `pyproject.toml`.
+  - **Current:** `typer`, `rich`, `textual` missing from declared deps; `crawl4ai` already added; `streamlit` dropped. `requirements.txt` now correctly documents hard vs optional deps.
+  - **Ideal:** `pyproject.toml` matches actual runtime requirements; `pip install -e .` installs all CLI+TUI dependencies.
+  - **Next:** Add `typer`, `rich`, `textual` to `pyproject.toml`; remove `nicegui`, `markdown`, `matplotlib` if unused.
 
 ---
 

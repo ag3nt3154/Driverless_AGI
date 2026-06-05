@@ -28,18 +28,6 @@ def _truncate(text: str, n: int = 120) -> str:
     return text if len(text) <= n else text[:n] + "…"
 
 
-def _resolve_option(raw: str, options: list[dict]) -> str:
-    if raw.isdigit():
-        idx = int(raw) - 1
-        if 0 <= idx < len(options):
-            return options[idx]["label"]
-    for opt in options:
-        if opt["label"].lower() == raw.lower():
-            return opt["label"]
-    return next((o["label"] for o in options if o.get("recommended")),
-                options[0]["label"] if options else "")
-
-
 def _breakdown(messages: list) -> dict[str, int]:
     """Estimate token counts for user/assistant/tools/summary buckets (chars // 4).
     System messages are excluded — accounted for by _system_breakdown() from source files.

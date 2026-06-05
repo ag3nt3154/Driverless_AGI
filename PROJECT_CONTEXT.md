@@ -1,6 +1,6 @@
 # PROJECT_CONTEXT.md
 
-> Last updated: 2026-06-04 (session 12) | [README](README.md) | [TODO](TODO.md)
+> Last updated: 2026-06-05 (session 14) | [README](README.md) | [TODO](TODO.md)
 
 ---
 
@@ -153,7 +153,7 @@ tui.py / cli.py / main.py ← entry points (Textual TUI | Rich REPL | single-sho
 - **Running indicator lifecycle**: `tui/app.py` has a 1-line `Static` widget (`#running-indicator`, `display: none` by default) between `#main-row` and `#prompt`. It is shown by `_show_running_indicator()` and hidden by `_hide_running_indicator()` (called from `_enable_input()`). The braille spinner (`_SPINNER` class var, 10 frames) is advanced by a `set_interval(0.1, _tick_spinner)` timer that no-ops when the bar is hidden. Show/hide call sites: `_dispatch_agent` (new task), `on_prompt_input_submitted` inject-and-resume branch (pause → resume), `on_prompt_input_submitted` ask_user answer branch (agent resumes after answer), `action_pause` (explicit hide without enabling input). Because `_enable_input` is always called via `call_from_thread`, `_hide_running_indicator` runs on the Textual main thread — safe.
 - **`/hist` in TUI writes to hidden buffer**: `hist.run()` calls `console.print()` which writes to a Rich console that is not the Textual RichLog. Output appears in the terminal's hidden scroll buffer (behind Textual). This is a known limitation — `/hist` is functional but not displayed in the conversation pane.
 - **There is a stale test directory** `C:UsersalexrDriverless_AGItests` (bad path) at the repo root — likely a Windows path mangling artifact, harmless but odd.
-- **`requirements.txt` ≠ `pyproject.toml`**: `requirements.txt` is a `pip freeze` of the actual `dagi` conda env (23 packages). `pyproject.toml` declares ~10 additional runtime deps (`ddgs`, `crawl4ai`, `beautifulsoup4`, `nicegui`, `markdown`, `matplotlib`, `typer`, `rich`) that are **not** present in the env. The project cannot use web search, web fetch, or the interactive CLI on a clean install from `requirements.txt` alone.
+- **`requirements.txt` now documents hard vs optional deps**: Core (openai, pyyaml, python-dotenv, rich, typer, textual) are listed as required; web tools (ddgs, crawl4ai, httpx, beautifulsoup4) are commented-out optional entries. `pyproject.toml` still declares several deps (`nicegui`, `markdown`, `matplotlib`) not in requirements.txt or the conda env.
 
 ## Terms & Language
 
@@ -190,8 +190,11 @@ tui.py / cli.py / main.py ← entry points (Textual TUI | Rich REPL | single-sho
 ### Project Shortcomings
 
 - **`/hist` slash command in TUI is broken** — it writes to a `rich.Console` behind Textual's canvas. Needs reimplementing to write to `ConversationPane`.
+- **`ask_user` returns verbatim free text**: The TUI no longer calls `_resolve_option()` to coerce the user's answer to a matching option label. `container.append(raw)` passes the raw string directly, so the agent's tool result JSON always contains the unmodified answer. Options are shown as hints only. The user's answer is now echoed as a cyan "You" panel in the ConversationPane immediately before the agent thread is unblocked.
+- **`_resolve_option` has been deleted**: `tui/utils.py` no longer exports this function. The CLI paths (`on_ask_user` sync and `_render_queue` threaded) already passed raw text; option resolution only survived as their timeout-fallback, which is unchanged.
 - **`PromptInput` has no placeholder**: Textual's `TextArea` (which `PromptInput` subclasses) does not expose a `.placeholder` property. The "Your answer…" cue shown during `ask_user` prompts was silently dropped. A future improvement could overlay a `Label` or use the TUI's conversation pane to communicate prompt context.
 - **No retry/backoff for transient API errors** — a single 429 or 5xx will abort the task. The TODO acknowledges this but it hasn't been implemented. Long tasks in production will hit rate limits.
+- **`max_continuations` was silently hardcoded at 10** until 2026-06-05 — it existed as an `AgentConfig` default but was never read from `config.yaml`. Now configurable via top-level `max_continuations:` key.
 - **Dependency split between `requirements.txt` and `pyproject.toml`** — `requirements.txt` (pip freeze of actual `dagi` conda env) has only 23 packages; `pyproject.toml` declares ~10 more (`ddgs`, `crawl4ai`, `beautifulsoup4`, `nicegui`, `markdown`, `matplotlib`, `typer`, `rich`). Neither file alone produces a working install. The `dagi` conda env is missing several declared runtime deps, meaning tools like `web_search`, `web_fetch`, and the Rich CLI may silently fail until those packages are installed.
 - **BashTool is unsandboxed** — no command blacklist, no process group kill on timeout. An agent could run destructive bash commands. Path guard protects file tools but not bash.
 - **Subagent architecture is Windows-only** (`CREATE_NEW_CONSOLE`). Cross-platform support would require a different IPC mechanism.
@@ -219,7 +222,7 @@ tui.py / cli.py / main.py ← entry points (Textual TUI | Rich REPL | single-sho
 ### Potential Areas of Exploration
 
 - **Fix `/hist` in TUI**: reimplement `_cmd_hist()` in `tui.py` to write session history directly to `ConversationPane` rather than calling `hist.run()` (which uses a bare `rich.Console`).
-- **`ask_user` UX in TUI**: the input pane is now correctly re-enabled during `ask_user`. However, since `PromptInput` has no placeholder support, there is still no visual cue distinguishing a normal prompt from an `ask_user` question prompt. A small indicator (e.g., a highlighted label or border colour change on `#prompt`) would improve clarity during agent-initiated Q&A.
+- **`ask_user` UX in TUI**: the user's free-text answer is now echoed in the conversation pane. The remaining gap: since `PromptInput` has no placeholder support, there is no visual cue distinguishing a normal prompt from an `ask_user` question prompt while the cursor is idle. A small indicator (e.g., a highlighted label or border colour change on `#prompt`) would improve clarity.
 - **Parallel subagent dispatch**: the `[~]` in-progress state was introduced with parallel multi-agent future in mind. The IPC layer (`agent/ipc.py`) would need to support multiple concurrent polls; the plan panel would then show multiple subtasks as `[~]` simultaneously.
 - **Pause during subagent execution**: current pause only stops the *parent* loop at its checkpoint. If a subagent is running (terminal subprocess), it continues unaffected. A future improvement could write an IPC `pause` sentinel to the subagent's channel.
 - **Streaming responses**: the TUI sidebar's token counter currently only updates after each full API response. Streaming would enable per-token updates and reduce perceived latency. The `ConversationPane` could stream assistant text incrementally using `RichLog.write()` calls on each chunk.
