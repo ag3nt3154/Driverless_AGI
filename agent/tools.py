@@ -244,22 +244,23 @@ def create_tool_registry(
             reg.register(SkillTool(skill_roots=skill_roots, dagi_root=_DAGI_ROOT, cwd=cwd, memory_root=_effective_memory_root))
             from tools.run_skill_script import RunSkillScriptTool
             reg.register(RunSkillScriptTool(skill_roots=skill_roots, dagi_root=_DAGI_ROOT))
-        # Web research — available in plan mode for information gathering
+        # Subagents available in plan mode: web_research + explore_files
         if config is not None:
             from tools.spawn_subagent import SpawnSubagentTool
             on_event_factory = callbacks.on_subagent_event_factory if callbacks else None
-            try:
-                cfg = _load_subagent_config("web_research", cwd)
-                web_desc = cfg.get("description", "Search the web and fetch page content.")
-            except FileNotFoundError:
-                web_desc = "Search the web and fetch page content."
-            reg.register(SpawnSubagentTool(
-                type_name="web_research",
-                description=web_desc,
-                config=config,
-                on_event_factory=on_event_factory,
-                tracker=tracker,
-            ))
+            for _type in ("web_research", "explore_files"):
+                try:
+                    cfg = _load_subagent_config(_type, cwd)
+                    desc = cfg.get("description", f"Spawn a {_type} subagent.")
+                except FileNotFoundError:
+                    continue
+                reg.register(SpawnSubagentTool(
+                    type_name=_type,
+                    description=desc,
+                    config=config,
+                    on_event_factory=on_event_factory,
+                    tracker=tracker,
+                ))
         else:
             from tools.web_fetch import WebFetchTool
             from tools.web_search import WebSearchTool
@@ -273,8 +274,10 @@ def create_tool_registry(
         reg.register(GitStatusTool(cwd=cwd))
         reg.register(GitCommitTool(cwd=cwd))
         reg.register(GitRollbackTool(cwd=cwd))
+        from tools.complete_plan import CompletePlanTool
         from tools.plan_mode import EnterPlanModeTool
         reg.register(EnterPlanModeTool())
+        reg.register(CompletePlanTool())
         from tools.ask_user import AskUserTool
         _on_ask = callbacks.on_ask_user if callbacks else _default_ask_user
         reg.register(AskUserTool(on_ask_user=_on_ask, timeout=300))

@@ -66,6 +66,14 @@ def _compose_worker_context(
     return "\n\n---\n\n".join(sections)
 
 
+def _compose_explore_context(task: str, handoff_file: str) -> str:
+    sections: list[str] = [
+        f"## Task\n{task}",
+        f"## Output\nWrite your exploration report to: {handoff_file}",
+    ]
+    return "\n\n---\n\n".join(sections)
+
+
 def _compose_review_context(
     plan_text: str,
     subtask_name: str,
@@ -140,7 +148,11 @@ class SpawnSubagentTool(BaseTool):
         from tools._subagent_runner import run_subagent
 
         subagent_id = uuid4().hex[:8]
-        handoffs_dir = self._config.project_path / ".dagi" / "handoffs"
+        active_plan = self._config.active_plan_file or self._config.plan_file
+        if active_plan:
+            handoffs_dir = Path(active_plan).parent  # .dagi/plans/plan_<ts>/
+        else:
+            handoffs_dir = self._config.project_path / ".dagi" / "handoffs"
         handoffs_dir.mkdir(parents=True, exist_ok=True)
         handoff_path = handoffs_dir / f"{self._type_name}_{subagent_id}.md"
 
@@ -193,5 +205,10 @@ class SpawnSubagentTool(BaseTool):
                 unit_test_paths=unit_test_paths,
                 review_file=str(handoff_path),
                 custom_instructions=kwargs.get("custom_instructions", ""),
+            )
+        if self._type_name == "explore_files":
+            return _compose_explore_context(
+                task=kwargs.get("task", ""),
+                handoff_file=str(handoff_path),
             )
         return kwargs.get("task", "")

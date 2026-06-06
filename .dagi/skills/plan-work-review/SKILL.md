@@ -1,6 +1,6 @@
 ---
 name: plan-work-review
-description: Full planning and execution lifecycle for complex tasks — enters plan mode, explores the codebase, clarifies requirements with the user, writes and approves a plan, then executes it via worker and review subagents with retry logic.
+description: Full planning and execution lifecycle for complex tasks — enters plan mode, delegates codebase exploration to an explore subagent, grills the user on requirements, writes and approves a plan, then executes it via worker and review subagents with retry logic.
 triggers: plan, /plan, /plan-work-review, execute plan, start plan work review, run plan work review cycle
 ---
 
@@ -15,13 +15,22 @@ This skill owns the full lifecycle for complex tasks: planning, approval, and ex
 ### Step 1 — Enter Plan Mode
 Call `enter_plan_mode(mode="interactive")` if this skill was invoked by the user (slash command or explicit request). Call `enter_plan_mode(mode="autonomous")` if DAGI initiated this internally.
 
-### Step 2 — Explore
-Use `read`, `grep`, and `find` to understand the relevant code, architecture, and constraints. Do not write anything yet.
+### Step 2 — Explore via Subagent
+Delegate all codebase discovery to the explore subagent — do not use `read`, `grep`, or `find` directly for exploration.
+
+Call `spawn_explore_files_subagent(...)` with:
+- `task`: a clear description of what to discover (e.g. "Map all tool registration paths and explain how tools are loaded at startup. Identify files that will need to change for X.")
+- `handoff_file`: leave this unset — the tool generates the path automatically
+
+Once the tool returns, read the handoff file it reports. Use its **Findings** and **Recommendations** sections to inform the plan.
 
 ### Step 3 — Clarify (interactive mode only)
-Before writing the plan, use `ask_user` to surface ambiguities, get design opinions, or flesh out requirements. Ask one question at a time. Skip this step in autonomous mode.
+Before writing the plan, use `ask_user` to surface ambiguities or requirements gaps identified during exploration. Ask one question at a time. Skip this step in autonomous mode.
 
-### Step 4 — Write the Plan
+### Step 4 — Grill (interactive mode only)
+Before writing the plan, invoke `skill("grill-me")` to stress-test your understanding of the requirements. The skill will ask questions one at a time — answer them or use codebase exploration to resolve them. Proceed to Step 5 once the user signals readiness (e.g. "ready", "proceed", "let's go"). Skip this step in autonomous mode.
+
+### Step 5 — Write the Plan
 Write the plan document to the plan file. Use this structure:
 
 ```markdown
@@ -59,11 +68,11 @@ Salient findings, traps to avoid, decisions made during execution.
 How to verify the full implementation end-to-end.
 ```
 
-### Step 5 — Show and Approve
+### Step 6 — Show and Approve
 1. Call `show_plan` to render the plan.
 2. In interactive mode: call `ask_user("Approve this plan? Type [approve] to proceed, describe changes to modify, or [cancel] to abort.")`
    - **approve** → call `exit_plan_mode`, proceed to Phase 2
-   - **modify** → edit the plan file to incorporate feedback, go back to Step 5
+   - **modify** → edit the plan file to incorporate feedback, go back to Step 6
    - **cancel** → call `exit_plan_mode`, stop — do NOT proceed to execution
 3. In autonomous mode: `show_plan` auto-approves — call `exit_plan_mode`, proceed to Phase 2.
 
@@ -76,7 +85,7 @@ Execute this cycle for each `[ ] pending` subtask in the plan. Delegate all exec
 ### Step 1 — Write Tests
 Before spawning the worker, write the unit/integration test file(s) for this subtask:
 - Read the subtask's **Acceptance Criteria** and translate them into concrete test assertions
-- Write the test file(s) to disk
+- Write all test files to `.dagi/plans/{plan_ts}/tests/` — derive `{plan_ts}` from the `plan_file` path you received when entering plan mode (e.g. if plan_file is `.dagi/plans/plan_20260606_120000/plan.md`, tests go in `.dagi/plans/plan_20260606_120000/tests/`). Create the directory if it does not exist.
 - Edit `plan.md` to fill in the subtask's `#### Tests` subsection with the test file path(s) and a one-line description of what each test verifies
 - Do NOT pass test paths to the worker — tests are a hidden oracle for the review stage only
 
@@ -89,24 +98,22 @@ Before spawning, edit `plan.md` to change the subtask heading marker from `[ ]` 
 
 Call `spawn_worker_subagent(...)` with:
 - `subtask_name`: the subtask name exactly as it appears in `plan.md` (e.g. `"Subtask 1: Add login endpoint"`)
-- `handoff_file`: path for the handoff report, named `handoff_{attempt}_{subtask_slug}.md` in the plan subfolder
 - `custom_instructions` (optional): any guidance, traps to avoid, or context from prior failed attempts
 
 The tool automatically injects the plan context (Context, Approach, Notes sections) and the subtask details into the subagent's context — do NOT duplicate this manually.
 
-Where `{attempt}` is the 1-based attempt number (01, 02, 03) and `{subtask_slug}` is the subtask name lowercased with spaces replaced by underscores.
+When the tool returns, it reports the path to the worker's handoff file. Keep this path — you need it for Step 3.
 
 ### Step 3 — Spawn Review Subagent
 Call `spawn_review_subagent(...)` with:
 - `subtask_name`: the subtask name exactly as it appears in `plan.md`
-- `handoff_report_path`: path to the worker's handoff report from Step 2
+- `worker_handoff_path`: path to the worker's handoff report from Step 2
 - `unit_test_paths`: list of paths to test files written in Step 1
-- `review_file`: path for the review report, named `review_{attempt}_{subtask_slug}.md` in the plan subfolder
 - `custom_instructions` (optional): any additional evaluation guidance
 
 The tool automatically injects plan context and the subtask block (including the Tests section) — do NOT duplicate this manually.
 
-Where `{attempt}` is the 1-based attempt number (01, 02, 03) and `{subtask_slug}` is the subtask name lowercased with spaces replaced by underscores.
+When the tool returns, it reports the path to the review report. Read it in Step 4.
 
 ### Step 4 — Evaluate and Decide
 Read the review report. Pass/fail is determined by the review subagent's verdict — not your own judgment.
@@ -133,6 +140,16 @@ Read the review report. Pass/fail is determined by the review subagent's verdict
   - Proposed solutions or paths forward
 - Wait for user guidance before continuing
 
+### Step 5 — Complete the Plan
+Once **every** subtask is resolved (all markers are `[x]` or `[!]` — none remain `[ ]` or `[~]`), call `complete_plan()`.
+
+This clears the active plan reference from the loop. After this call:
+- Future subagent handoffs route back to `.dagi/handoffs/`
+- The TUI plan panel clears
+- The plan document is preserved on disk at its original path — reference it by path if needed
+
+Do NOT call `complete_plan()` mid-cycle or before all subtasks are settled.
+
 ---
 
 ## cycle_log.md Format
@@ -142,8 +159,8 @@ Maintain `cycle_log.md` in the plan subfolder. Append one block per attempt:
 ```markdown
 ## Subtask N: <name>
 ### Attempt N — PASS/FAIL
-- Worker: handoff_{n}_{slug}.md
-- Review: review_{n}_{slug}.md
+- Worker: .dagi/handoffs/worker_<id>.md
+- Review: .dagi/handoffs/review_<id>.md
 - Issue: <one-line summary, or "None">
 - Action: <what you did next, or "Subtask complete">
 ```

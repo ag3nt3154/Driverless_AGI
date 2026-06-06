@@ -1,63 +1,8 @@
-# Project: Driverless_AGI (dagi)
+# Behavioral Guidelines
 
-> **Last updated:** 2026-05-12
-> **Update after:** any task that changes the codebase, adds tools/skills, changes dependencies, or resolves an error. Use `edit` for incremental updates only. Maintain at most 5 recent changes.
-
-## Description
-
-dagi is a self-contained agentic coding assistant engine. It runs an agentic loop that can read, write, edit, and execute code across a local project. It is also capable of self-improvement — extending its own tools, skills, and prompts.
-
-## Objectives
-
-- Provide a reliable, extensible agentic coding loop compatible with any OpenAI-compatible LLM endpoint.
-- Support project-local customisation via `.dagi/` scaffolding (tools, skills, workflows, agents.md).
-- Enable self-improvement through the `review-session` skill and `improve-yourself` workflow.
-
-## Directory Structure
-
-```
-Driverless_AGI/
-├── agent/              # Core engine — loop, registry, tools, prompts, session tracking
-├── tools/              # Built-in tools (compact, explore_files, web_research, spawn_subagent, etc.)
-├── scripts/            # Utility scripts (dagi_freeze, build_api_tools, etc.)
-├── projects/           # Experimental sub-projects (prompt_opt, etc.)
-├── .dagi/
-│   ├── agents.md       # This file — dagi engine context loaded every session
-│   ├── prompts/
-│   │   ├── main/       # main_system.md — primary agent system prompt
-│   │   ├── subagents/  # explore_files, web_research, worker, review prompts
-│   │   └── compact/    # compact_system, compact_user prompts
-│   ├── skills/         # Built-in skills (memory-add, memory-ingest, review-session, etc.)
-│   ├── workflow/       # Built-in workflows (improve-yourself)
-│   ├── plans/          # Generated plan documents
-│   ├── logs/           # Session JSONL logs
-│   └── self-review/    # Session review reports
-├── soul.md             # Agent identity and personality
-├── cli.py              # Interactive CLI entry point
-├── README.md           # Full documentation
-└── config.yaml         # Runtime config (gitignored)
-```
-
-## Environment
-
-- **Language:** Python 3.11+
-- **Runtime / virtual env:** `conda` — environment name `dagi`
-- **Install dependencies:** `conda run -n dagi pip install -e .`
-- **Run command:** `conda run -n dagi python cli.py` or activate env and run `python cli.py`
-- **Config:** `config.yaml` (gitignored) — sets model, base_url, api_key, max_iterations
-
-## Known Issues & Resolutions
-
-_Document errors encountered and how they were resolved._
-
-## Recent Changes
-
-- Extracted Plan-Work-Review Cycle into `.dagi/skills/plan-work-review/SKILL.md`; removed inline section from `agents.md`.
-- Prompt architecture refactor: `main_system.md` trimmed to harness-only (tools, plan mode trigger); behavioral guidelines, memory rules, and Plan-Work-Review Cycle moved to `agents.md`; persona stays in `soul.md`.
-- Added unified Behavioral Guidelines section (merged from temp_system_prompt.txt): ambiguity calibration, invariants checklist, hard stops, token budgets.
-- Removed redundant "read agents.md at session start" instruction — both files are auto-prepended by `loop.py`.
-- Reorganised `.dagi/prompts/` into `main/`, `subagents/`, `compact/` subfolders; updated all `load_prompt()` callers.
-- Moved `agents.md` from dagi root → `.dagi/agents.md`; updated `loop.py` preamble loader and UI labels.
+This file defines dagi's operating protocol — behavioral rules, coding standards, and session protocols.
+It is loaded into the agent's context at session start alongside `PROJECT_CONTEXT.md`.
+Refer to `PROJECT_CONTEXT.md` for project description, architecture, directory layout, and error history.
 
 ## Coding standards
 - Functions: <= 100 lines
@@ -127,4 +72,3 @@ Stop and flag when:
 - Fail fast with clear, actionable messages
 - Never swallow exceptions silently
 - Include context (what operation, what input, suggested fix)
-

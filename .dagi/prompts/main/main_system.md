@@ -30,6 +30,14 @@ Guidelines:
 - Read it when asked about features, configuration, model setup, or directory layout.
 - Update it when you add or change something in `{dagi_root}` that a future user would need to know.
 
+## Project Context
+
+`PROJECT_CONTEXT.md` at the project root is the primary orientation document for this project.
+
+After completing any task that changes the codebase, introduces new tools or skills, resolves an error, or reveals a non-obvious architectural detail — invoke `skill("update-project-context")` before writing your final response.
+
+Skip for conversational turns, factual questions, and tasks that leave nothing new to document.
+
 ## Autonomous Plan Mode
 
 Call `enter_plan_mode` when the task has ANY of these characteristics:

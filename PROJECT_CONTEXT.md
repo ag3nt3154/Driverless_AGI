@@ -1,6 +1,6 @@
 # PROJECT_CONTEXT.md
 
-> Last updated: 2026-06-06 (session 16) | [README](README.md) | [TODO](TODO.md)
+> Last updated: 2026-06-06 (session 18) | [README](README.md) | [TODO](TODO.md)
 
 ---
 
@@ -13,6 +13,43 @@ Driverless AGI (dagi) is a self-hosted, OpenAI-compatible agentic coding assista
 Build a minimal but production-capable autonomous coding agent that can: work on arbitrary codebases, survive long tasks via context compaction, accumulate persistent knowledge via a wiki memory system, spawn specialist subagents for research/planning, and self-improve over time via the GNHF feedback loop.
 
 Non-goals: cloud hosting, multi-user auth, UI beyond CLI/Rich.
+
+## Environment
+
+- **Language:** Python 3.11+ (conda env `dagi` currently runs 3.14 pre-release — see Notable Points)
+- **Runtime:** `conda` environment named `dagi`
+- **Install:** `conda run -n dagi pip install -e .`
+- **Run (REPL):** `conda run -n dagi python cli.py`
+- **Run (TUI):** `conda run -n dagi python tui.py`
+- **Config:** `config.yaml` (gitignored) — model catalog, base_url, api_key / api_key_env, max_iterations, null_response_retries, max_continuations, emote_tool
+
+## Directory Layout
+
+```
+Driverless_AGI/
+├── agent/              # Core engine — loop, registry, config, session tracking
+├── tools/              # Built-in tools (compact, spawn_subagent, extend_timeout, emote, etc.)
+├── scripts/            # Utility scripts (dagi_freeze, build_api_tools, etc.)
+├── tui/                # Textual TUI package (app, commands, sidebar, callbacks, etc.)
+├── tests/              # Unit tests
+├── .dagi/
+│   ├── agents.md       # Behavioral guidelines loaded at every session start
+│   ├── prompts/
+│   │   ├── main/       # main_system.md — primary agent system prompt
+│   │   ├── subagents/  # Per-type prompts (explore_files, web_research, worker, review)
+│   │   └── compact/    # compact_system + compact_user prompts
+│   ├── skills/         # Skills (memory-*, grill-me, update-project-context, etc.)
+│   ├── subagents/      # Per-type subagent_config.yaml (tools list + model_tier)
+│   ├── handoffs/       # Subagent handoff documents (generated at runtime)
+│   ├── plans/          # Generated plan documents
+│   ├── logs/           # Session JSONL logs
+│   └── self-review/    # Session review reports
+├── soul.md             # Agent persona / identity
+├── tui.py              # TUI entry point (thin launcher)
+├── cli.py              # Rich REPL entry point
+├── config.yaml         # Runtime config (gitignored)
+└── README.md           # Full documentation
+```
 
 ## Architecture
 
@@ -151,6 +188,10 @@ tui.py / cli.py / main.py ← entry points (Textual TUI | Rich REPL | single-sho
 - **`[~]` orphan semantics**: The plan-work-review skill marks a subtask `[~]` before spawning a worker subagent. If the loop is interrupted mid-execution, `[~]` persists in plan.md indefinitely — no auto-reset. On session resume, the user or agent must inspect the subtask and decide whether to retry or mark complete. The TUI sidebar displays `[~]` in amber as "interrupted."
 - **TUI plan panel poll**: `DagiApp` runs a 2 s `set_interval` poll (`_poll_plan`) that reads `loop.config.plan_file or loop.config.active_plan_file` on the Textual main thread. Both attributes are plain strings set once by the agent thread; Python's GIL makes the read safe without an explicit lock. The poll is a no-op when no loop is active.
 - **TUI scrolling**: `RichLog.auto_scroll = True` by default. Textual pauses auto-scroll when the user scrolls up and resumes when they reach the bottom — this is built-in behaviour requiring no custom scroll handling.
+- **`agents.md` is now behavior-only**: Project Description, Objectives, Directory Structure, Environment, Known Issues, and Recent Changes sections were stripped from `.dagi/agents.md`. Those were either stale duplicates of PROJECT_CONTEXT.md or missing from it. `agents.md` now contains only Coding Standards, Behavioral Guidelines, Memory protocol, and Error handling — 74 lines, no project state. The file now opens with a pointer to PROJECT_CONTEXT.md for all project information.
+- **`update-project-context` skill added to DAGI**: `.dagi/skills/update-project-context/SKILL.md` created. The skill is adapted from the global `~/.claude/skills/update-project-context/` with one DAGI-specific addition: the guideline that behavioral guidelines from `agents.md` must never be duplicated into PROJECT_CONTEXT.md. The skill is auto-discovered via `{tools_and_skills}` injection and available to the agent without any other wiring.
+- **System prompt instructs automatic PROJECT_CONTEXT.md updates**: `.dagi/prompts/main/main_system.md` now has a `## Project Context` section that instructs the agent to call `skill("update-project-context")` before writing its final response on any task that changes the codebase, introduces tools/skills, resolves an error, or reveals non-obvious architecture. Skip rule: conversational turns and factual questions.
+- **`grill-me` skill is now universal**: `.dagi/skills/grill-me/SKILL.md` was upgraded from a 13-line imperative prompt to a full ~200-line protocol. It now has three phases: Phase 1 silently gathers context (codebase, PROJECT_CONTEXT.md, memory-wiki via `skill("memory-query")`, provided paths, web); Phase 2 routes to Mode A (decision-tree interrogation for plans/ideas) or Mode B (Socratic questioning for topics/documents/codebases); Phase 3 writes a closing summary and records insights to PROJECT_CONTEXT.md (`skill("update-project-context")`) and memory-wiki (`skill("memory-add")`) without asking permission. The global `~/.claude/skills/grill-my-plan/` directory was renamed to `grill-me/` and holds identical content for Claude Code sessions.
 - **Skill slash commands are LLM-delegated**: `/skill-name [args]` no longer pre-injects skill content. It produces `"Invoke the \`skill-name\` skill.\n\n{args}"` and sends it as the user message. The agent must call `skill("skill-name")` to load the content — same path as mid-task internal invocations. This means one extra LLM round-trip per slash command, but both code paths are now unified through `SkillTool`.
 - **Sidebar emote system**: `Sidebar._status_col()` calls `_load_face()` on every `refresh()`, which reads `.dagi/emotes/{_emote}.md` (one-line plain text face expression). Falls back to `(◉ ᴗ ◉)` on `OSError`. The agent can switch emotes via `EmoteTool` → `AgentCallbacks.on_emote` → `App.call_from_thread(sidebar.update_emote, emote)`. Emote files are live-editable. Controlled by `emote_tool: true/false` in `config.yaml`. The decorative ASCII-art hair border (`╭≋≋╮`) was removed in the top-header redesign (2026-06-04); the face glyph itself is preserved inline in the left column.
 - **ANSI `[blue]` renders as purple**: Rich's `[blue]` maps to ANSI color 4, which most modern terminal emulators render as violet/purple (inherited from CGA). Use hex colors (`[#4da6ff]`) or `[bright_blue]` (ANSI 12) for a perceptually blue result. This bit the sidebar logo — all color markup now uses hex.
@@ -193,6 +234,7 @@ tui.py / cli.py / main.py ← entry points (Textual TUI | Rich REPL | single-sho
 - Prefers pause semantics that preserve agent context (inject & resume) over simpler cancel-and-restart approaches, even at slightly higher implementation cost. Favours architectural correctness over convenience shortcuts.
 - Will accept dead-code cleanup (removal) when shown the evidence; prefers the simpler behavior (accept the extra round-trip) over adding new flag logic when the outcome is equivalent.
 - Prefers behavioral unification over performance micro-optimisation — accepted Option C (one extra LLM round-trip per slash command) because it eliminates divergent code paths, rather than synthetic-prefill options that would save the round-trip at the cost of message-history surgery.
+- Invests heavily in skill design: treats skills as behavioral specifications rather than code. Will design multi-phase skills (gather → interrogate → record) with explicit internal vs. external phases and mode-routing logic. The grill-me skill upgrade (session 17) is the clearest example — a thin 13-line prompt was replaced with a structured protocol incorporating Socratic method, knowledge-gathering, and automatic recording.
 
 ### Project Shortcomings
 

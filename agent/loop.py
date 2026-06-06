@@ -14,6 +14,7 @@ from agent.registry import ToolRegistry
 from agent.session import SessionTracker, ToolCallRecord
 from agent.skills import Skill, SkillLoader
 from tools.compact import CompactTool, CompactionResult
+from tools.complete_plan import COMPLETE_PLAN_SENTINEL
 from tools.plan_mode import ENTER_PLAN_MODE_SENTINEL, EXIT_PLAN_MODE_SENTINEL
 from tools.reload_skills import RELOAD_SKILLS_SENTINEL
 from tools.switch_model import parse_switch_sentinel
@@ -464,6 +465,8 @@ class AgentLoop:
                         result = self._handle_enter_plan_mode(json.loads(tc.function.arguments))
                     elif result == EXIT_PLAN_MODE_SENTINEL:
                         result = self._handle_exit_plan_mode(json.loads(tc.function.arguments))
+                    elif result == COMPLETE_PLAN_SENTINEL:
+                        result = self._handle_complete_plan()
                     elif result == RELOAD_SKILLS_SENTINEL:
                         added, removed, errors = self._rebuild_for_reload()
                         result = _format_reload_notification(len(self.skills), added, removed, errors)
@@ -580,6 +583,16 @@ class AgentLoop:
         return (
             f"Plan mode exited. Full tools restored. Plan file: {saved_plan}\n\n"
             f"{plan_contents}"
+        )
+
+    def _handle_complete_plan(self) -> str:
+        cleared = self.config.active_plan_file
+        self.config.active_plan_file = None
+        self._rebuild_for_normal_mode(Path(__file__).parent.parent)
+        return (
+            f"Active plan cleared (was: {cleared}). "
+            "Handoffs will now go to .dagi/handoffs/. "
+            "The plan document is preserved on disk — reference it by path if needed."
         )
 
     def _handle_switch_model(self, target: str, args: dict) -> str:
