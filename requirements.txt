@@ -1,10 +1,12 @@
 # ── Core (required) ───────────────────────────────────────────────────────────
-openai>=1.0.0          # OpenAI-compatible API client — used for all model providers
-pyyaml>=6.0            # config.yaml parsing
-python-dotenv>=1.0     # .env file loading for API keys
-rich>=13.0             # Rich text rendering in the CLI (markdown, panels, tables)
-typer>=0.26.3          # CLI framework for cli.py and tui.py entry points
-textual>=0.80.0        # TUI framework for the full-canvas terminal UI (tui.py)
+openai>=1.0.0               # OpenAI-compatible API client — used for all model providers
+pyyaml>=6.0                 # config.yaml parsing
+python-dotenv>=1.0          # .env file loading for API keys
+rich>=13.0                  # Rich text rendering in the CLI (markdown, panels, tables)
+typer>=0.26.3               # CLI framework for cli.py and tui.py entry points
+textual>=0.80.0             # TUI framework for the full-canvas terminal UI (tui.py)
+langchain>=1.3.4            # Core LLM orchestration and agent framework
+langchain-openai>=1.2.2     # OpenAI provider for LangChain
 
 # ── Optional: web tools ───────────────────────────────────────────────────────
 # Install to enable the web_search and web_fetch tools.

@@ -6,6 +6,8 @@ Usage:
     conda run --no-capture-output -n dagi python tui.py --project /path/to/project
     conda run --no-capture-output -n dagi python tui.py --model deepseek-v4-pro-openrouter
 """
+import os
+os.environ["NO_PROXY"] = "127.0.0.1, localhost, 172.25.*"
 from typing import Optional
 
 import typer
