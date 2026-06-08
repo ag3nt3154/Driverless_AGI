@@ -198,44 +198,53 @@ class CompactTool(BaseTool):
         if not middle:
             return _NO_COMPACTION
 
-        # ── Build summarisation prompt ────────────────────────────────────
-        prior_section = (
-            f"\n\n=== PRIOR SUMMARY (carry this forward) ===\n{prior_summary}"
-            if prior_summary
-            else ""
-        )
-        summarisation_messages = [
-            {"role": "system", "content": _COMPACT_SYSTEM},
-            {
+        # ── Snapshot for rollback on failure ──────────────────────────────
+        snapshot = list(msgs)
+
+        try:
+            # ── Build summarisation prompt ────────────────────────────────
+            prior_section = (
+                f"\n\n=== PRIOR SUMMARY (carry this forward) ===\n{prior_summary}"
+                if prior_summary
+                else ""
+            )
+            summarisation_messages = [
+                {"role": "system", "content": _COMPACT_SYSTEM},
+                {
+                    "role": "user",
+                    "content": _COMPACT_USER.format(
+                        prior_section=prior_section,
+                        conversation=_format_messages_for_summary(middle),
+                    ),
+                },
+            ]
+
+            summary_response = self._client.chat.completions.create(
+                model=config.model,
+                messages=summarisation_messages,
+            )
+            summary_text = summary_response.choices[0].message.content or "(no summary)"
+
+            # ── Token usage from the summarisation call ───────────────────
+            su = summary_response.usage
+            sum_in = getattr(su, "prompt_tokens", 0) or 0
+            sum_out = getattr(su, "completion_tokens", 0) or 0
+            sum_cost = getattr(su, "cost", None)
+
+            # ── Build replacement message (role=user avoids pairing invariant)
+            summary_message = {
                 "role": "user",
-                "content": _COMPACT_USER.format(
-                    prior_section=prior_section,
-                    conversation=_format_messages_for_summary(middle),
-                ),
-            },
-        ]
+                "content": "[CONTEXT SUMMARY — prior conversation compacted]\n\n"
+                + summary_text,
+            }
 
-        summary_response = self._client.chat.completions.create(
-            model=config.model,
-            messages=summarisation_messages,
-        )
-        summary_text = summary_response.choices[0].message.content or "(no summary)"
+            # ── Mutate in place ───────────────────────────────────────────
+            removed_count = len(middle)
+            msgs[head_end:tail_start] = [summary_message]
 
-        # ── Token usage from the summarisation call ───────────────────────
-        su = summary_response.usage
-        sum_in = getattr(su, "prompt_tokens", 0) or 0
-        sum_out = getattr(su, "completion_tokens", 0) or 0
-        sum_cost = getattr(su, "cost", None)
-
-        # ── Build replacement message (role=user avoids pairing invariant) ─
-        summary_message = {
-            "role": "user",
-            "content": "[CONTEXT SUMMARY — prior conversation compacted]\n\n" + summary_text,
-        }
-
-        # ── Mutate in place ───────────────────────────────────────────────
-        removed_count = len(middle)
-        msgs[head_end:tail_start] = [summary_message]
+        except Exception:
+            msgs[:] = snapshot
+            raise
 
         # ── Notify observers ──────────────────────────────────────────────
         if self._on_summary:
