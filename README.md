@@ -124,6 +124,7 @@ Exit with `q`, `exit`, or `quit`. Conversation history carries across turns.
 default_model: gpt-4o-openai        # used if --model isn't passed
 max_iterations: 20                   # hard cap on loop iterations
 max_continuations: 10                # max "continue" injections before giving up
+api_error_retries: 3                 # retries for transient API errors (429/5xx/connection)
 
 models:
   gpt-4o-openai:

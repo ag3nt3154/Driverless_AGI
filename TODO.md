@@ -12,10 +12,10 @@
   - **Ideal:** `allowed_paths` and `blocked_commands` configurable in `config.yaml`; per-project scope UI; BashTool command blacklist.
   - **Next:** Add `allowed_paths` / `blocked_commands` keys to `config.yaml` and read them in `agent/tools.py`.
 
-- **Error Handling & Retries** · `priority:high` · `impact:high`
-  - **Current:** `ToolRegistry.dispatch()` catches exceptions. `EditTool` returns errors rather than raising. BashTool times out but doesn't kill process group. Continuation (mid-task stall recovery) implemented.
-  - **Ideal:** Exponential backoff for 429/5xx (initial 1s, max 60s, 3 attempts); fail-fast for 401/400; `os.killpg` on BashTool timeout; actionable empty-API-key error.
-  - **Next:** Add retry loop with backoff to `agent/loop.py`; add `os.killpg` to `tools/bash.py`.
+- **Error Handling & Retries** · `priority:high` · `impact:high` · `partial`
+  - **Current:** Transient API error retry with exponential backoff implemented in `agent/loop.py` (429, 500, 502, 503, connection/timeout errors). `api_error_retries` configurable in `config.yaml` (default 3). Non-transient errors (401, 403) propagate immediately. Compaction snapshot/restore in `tools/compact.py`. `ToolRegistry.dispatch()` catches exceptions. `EditTool` returns errors rather than raising. BashTool times out but doesn't kill process group.
+  - **Ideal:** `os.killpg` on BashTool timeout; actionable empty-API-key error.
+  - **Next:** Add `os.killpg` to `tools/bash.py`; improve API key validation at startup.
 
 - **Validate project root in system prompt against actual filesystem** · `priority:high` · `impact:high` · `review-item`
   - **Current:** System prompt can contain an incorrect project root (e.g., inside `raw/` instead of actual `DAGI_ROOT`), causing all tool paths to resolve incorrectly.
@@ -113,6 +113,7 @@
 - [x] Full Textual TUI (`tui.py`) — vertical split layout with always-visible sidebar showing live token stats, context window breakdown by role (system/user/assistant/tools/reserve) with `~` estimates and 80%/95% colour warnings, model status indicator, and `/model <id>` switching. `ConversationPane(RichLog)` preserves Rich panel style and scrolls freely during agent runs. Agent runs on a daemon thread with `call_from_thread` bridging all `AgentCallbacks` to the Textual main loop. `cli.py` retained for piped/non-interactive use.
 
 - [x] Single response flag — every no-tool-call response must end with `<<END_OF_RESPONSE>>` (applies to greetings, answers, and completions alike). `<<TASK_END>>` kept as a silent legacy alias. Recovery injection replaced hardcoded `"continue"` with a proper prompt in `.dagi/prompts/main/continue.md`. Flag rules placed at the end of `main_system.md` for reliable model compliance. 11 unit tests in `tests/test_continuation.py`.
+- [x] Transient API error retry — 429, 500, 502, 503, connection errors, and timeout errors are retried with exponential backoff (`2^attempt` seconds, capped at 60s) up to `api_error_retries` times (default 3, configurable in `config.yaml`). Non-transient errors propagate immediately. Retry counter resets per loop iteration. Compaction in `tools/compact.py` now snapshots `_messages` before the API call and restores on failure. 11 new tests in `tests/test_continuation.py`.
 - [x] Direct `api_key` in config.yaml — model entries now support `api_key: "sk-..."` as an alternative to `api_key_env`. Direct key takes precedence; empty string falls through to env var lookup. Prevents silent fallback to `OPENAI_API_KEY` env var. 3 unit tests in `tests/test_config_loader.py`.
 
 - [x] GNHF skill — cross-session iterative development with committed milestones. New `tools/git.py` adds `git_status`, `git_commit`, `git_rollback` tools (branch-guarded to `dagi` branch). Skill at `.dagi/skills/gnhf/SKILL.md` teaches the loop: init → plan milestone → implement → verify → commit + append note → repeat. Scripts at `.dagi/skills/gnhf/scripts/init.py` and `append_note.py` manage `.dagi/gnhf/notes.md` — a per-commit freeform log that carries context across sessions.
