@@ -87,6 +87,7 @@ def _build_config_from_entry(entry: dict, raw: dict) -> AgentConfig:
     keep_recent_tokens   = entry.get("keep_recent_tokens")    or raw.get("keep_recent_tokens",     20_000)
     null_response_retries = int(raw.get("null_response_retries", 3))
     max_continuations = int(raw.get("max_continuations", 10))
+    api_error_retries = int(raw.get("api_error_retries", 3))
     thinking = entry.get("thinking") or raw.get("thinking", "none") or "none"
 
     raw_memory_root = raw.get("memory_root")
@@ -104,6 +105,7 @@ def _build_config_from_entry(entry: dict, raw: dict) -> AgentConfig:
         keep_recent_tokens=int(keep_recent_tokens),
         null_response_retries=null_response_retries,
         max_continuations=max_continuations,
+        api_error_retries=api_error_retries,
         memory_root=memory_root,
         emote_tool=emote_tool,
     )

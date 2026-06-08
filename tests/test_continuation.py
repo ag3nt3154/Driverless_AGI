@@ -236,3 +236,14 @@ class TestWaitForUserFlag:
         from agent.loop import CONTINUE_PROMPT
         continue_msgs = [m for m in loop._messages if m.get("content") == CONTINUE_PROMPT]
         assert len(continue_msgs) == 0
+
+
+class TestApiErrorRetryConfig:
+    def test_default_api_error_retries(self):
+        """AgentConfig defaults api_error_retries to 3."""
+        config = AgentConfig(
+            model="test-model",
+            api_key="test-key",
+            system_prompt="You are a test agent.",
+        )
+        assert config.api_error_retries == 3

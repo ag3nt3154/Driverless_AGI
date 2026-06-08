@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import threading
+import time
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -129,6 +130,9 @@ class AgentConfig:
     null_response_retries: int = 3
     # Emote tool: when False the emote tool is not registered in the tool list.
     emote_tool: bool = True
+    # Transient API error retries: how many times to retry on 429/5xx/connection
+    # errors before propagating the exception. Independent of null_response_retries.
+    api_error_retries: int = 3
 
 
 @dataclass
