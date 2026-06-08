@@ -355,24 +355,50 @@ class AgentLoop:
                 self.callbacks.on_iteration(iteration)
                 self._pause_event.wait()  # blocks here when paused; instant no-op otherwise
 
-                # ── API call with ghost-response retry ───────────────────────
-                # A ghost response is HTTP 200 with content=None, no tool calls,
-                # and usage=None (prompt_tokens=0). This is an API anomaly — not a
-                # real model turn. We retry the same context up to null_response_retries
-                # times, discarding each ghost without appending it to _messages.
-                # Appending a null-content message would cascade: every subsequent
-                # call would also return empty because the malformed history confuses
-                # the model (or triggers provider-side filtering).
+                # ── API call with retry ────────────────────────────────────
+                # Retries on two classes of failure:
+                # 1. Transient API errors (429, 500, 502, 503, connection,
+                #    timeout) — exponential backoff, separate counter.
+                # 2. Ghost responses (HTTP 200, content=None, usage=None) —
+                #    instant retry, separate counter.
+                _TRANSIENT_CODES = (429, 500, 502, 503)
                 _null_retries = 0
+                _error_retries = 0
                 while True:
                     self.callbacks.on_api_call(list(self._messages))
-                    response = self.client.chat.completions.create(
-                        model=self.config.model,
-                        messages=self._messages,
-                        tools=self.registry.get_openai_tools_list(),
-                        parallel_tool_calls=False,
-                        **(dict(extra_body=self._reasoning_extra) if self._reasoning_extra else {}),
-                    )
+                    try:
+                        response = self.client.chat.completions.create(
+                            model=self.config.model,
+                            messages=self._messages,
+                            tools=self.registry.get_openai_tools_list(),
+                            parallel_tool_calls=False,
+                            **(dict(extra_body=self._reasoning_extra) if self._reasoning_extra else {}),
+                        )
+                    except (openai.APIConnectionError, openai.APITimeoutError):
+                        _error_retries += 1
+                        if _error_retries >= self.config.api_error_retries:
+                            raise
+                        delay = min(2 ** _error_retries, 60)
+                        self.callbacks.on_assistant_text(
+                            f"[Connection error. Retrying in {delay}s "
+                            f"({_error_retries}/{self.config.api_error_retries})...]"
+                        )
+                        time.sleep(delay)
+                        continue
+                    except openai.APIStatusError as exc:
+                        if exc.status_code not in _TRANSIENT_CODES:
+                            raise
+                        _error_retries += 1
+                        if _error_retries >= self.config.api_error_retries:
+                            raise
+                        delay = min(2 ** _error_retries, 60)
+                        self.callbacks.on_assistant_text(
+                            f"[Server error {exc.status_code}. Retrying in {delay}s "
+                            f"({_error_retries}/{self.config.api_error_retries})...]"
+                        )
+                        time.sleep(delay)
+                        continue
+
                     message = response.choices[0].message
                     _prompt_tok = getattr(response.usage, "prompt_tokens", 0) or 0
                     _is_ghost = (

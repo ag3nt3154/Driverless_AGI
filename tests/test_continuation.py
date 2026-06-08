@@ -1,10 +1,13 @@
 """tests/test_continuation.py — Unit tests for loop termination flags."""
 from __future__ import annotations
 
+import time
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
+import httpx
+import openai
 import pytest
 
 from agent.loop import AgentConfig, AgentCallbacks, AgentLoop, TASK_END_FLAG, AWAIT_USER_FLAG
@@ -247,3 +250,138 @@ class TestApiErrorRetryConfig:
             system_prompt="You are a test agent.",
         )
         assert config.api_error_retries == 3
+
+
+def _make_api_status_error(status_code: int, message: str = "Server Error"):
+    """Build a fake openai.APIStatusError with the given status code."""
+    request = httpx.Request("POST", "https://api.example.com/v1/chat/completions")
+    response = httpx.Response(status_code, request=request)
+    return openai.APIStatusError(
+        message=message, response=response, body=None,
+    )
+
+
+class TestApiErrorRetry:
+    def test_transient_error_retries_then_succeeds(self):
+        """A single 500 followed by a valid response should succeed."""
+        loop = _make_loop()
+        loop.client = MagicMock()
+        loop.client.chat.completions.create.side_effect = [
+            _make_api_status_error(500),
+            _make_response(f"Done. {TASK_END_FLAG}"),
+        ]
+
+        with patch("agent.loop.time.sleep"):
+            result = loop.run("do something")
+
+        assert loop.client.chat.completions.create.call_count == 2
+        assert "Done." in result
+
+    def test_non_transient_error_raises_immediately(self):
+        """A 401 should not be retried — raises immediately."""
+        loop = _make_loop()
+        loop.client = MagicMock()
+        loop.client.chat.completions.create.side_effect = _make_api_status_error(401)
+
+        with pytest.raises(openai.APIStatusError) as exc_info:
+            loop.run("do something")
+        assert exc_info.value.status_code == 401
+        assert loop.client.chat.completions.create.call_count == 1
+
+    def test_exhausted_retries_raises(self):
+        """After api_error_retries failures, the exception propagates."""
+        loop = _make_loop()
+        loop.config.api_error_retries = 2
+        loop.client = MagicMock()
+        loop.client.chat.completions.create.side_effect = _make_api_status_error(503)
+
+        with patch("agent.loop.time.sleep"):
+            with pytest.raises(openai.APIStatusError):
+                loop.run("do something")
+
+        assert loop.client.chat.completions.create.call_count == 2
+
+    def test_429_is_retried(self):
+        """Rate limit (429) is treated as transient."""
+        loop = _make_loop()
+        loop.client = MagicMock()
+        loop.client.chat.completions.create.side_effect = [
+            _make_api_status_error(429, "Rate limited"),
+            _make_response(f"OK. {TASK_END_FLAG}"),
+        ]
+
+        with patch("agent.loop.time.sleep"):
+            result = loop.run("do something")
+
+        assert "OK." in result
+
+    def test_connection_error_is_retried(self):
+        """APIConnectionError is treated as transient."""
+        loop = _make_loop()
+        loop.client = MagicMock()
+        request = httpx.Request("POST", "https://api.example.com/v1/chat/completions")
+        loop.client.chat.completions.create.side_effect = [
+            openai.APIConnectionError(request=request),
+            _make_response(f"OK. {TASK_END_FLAG}"),
+        ]
+
+        with patch("agent.loop.time.sleep"):
+            result = loop.run("do something")
+
+        assert "OK." in result
+
+    def test_retry_counter_resets_per_iteration(self):
+        """Each loop iteration gets a fresh retry budget."""
+        loop = _make_loop(max_continuations=1)
+        loop.config.api_error_retries = 2
+        loop.client = MagicMock()
+        loop.client.chat.completions.create.side_effect = [
+            _make_api_status_error(500),
+            _make_response("Still working..."),
+            _make_api_status_error(502),
+            _make_response(f"Done. {TASK_END_FLAG}"),
+        ]
+
+        with patch("agent.loop.time.sleep"):
+            result = loop.run("do something")
+
+        assert loop.client.chat.completions.create.call_count == 4
+        assert "Done." in result
+
+    def test_backoff_delay_increases(self):
+        """Backoff should use 2^attempt seconds, capped at 60."""
+        loop = _make_loop()
+        loop.config.api_error_retries = 4
+        loop.client = MagicMock()
+        loop.client.chat.completions.create.side_effect = [
+            _make_api_status_error(500),
+            _make_api_status_error(500),
+            _make_api_status_error(500),
+            _make_response(f"OK. {TASK_END_FLAG}"),
+        ]
+
+        with patch("agent.loop.time.sleep") as mock_sleep:
+            loop.run("do something")
+
+        delays = [call.args[0] for call in mock_sleep.call_args_list]
+        assert delays == [2, 4, 8]
+
+    def test_on_assistant_text_called_during_retry(self):
+        """User should see a retry notification."""
+        texts = []
+        callbacks = AgentCallbacks(on_assistant_text=lambda t: texts.append(t))
+
+        loop = _make_loop()
+        loop.callbacks = callbacks
+        loop.client = MagicMock()
+        loop.client.chat.completions.create.side_effect = [
+            _make_api_status_error(500, "Internal Server Error"),
+            _make_response(f"OK. {TASK_END_FLAG}"),
+        ]
+
+        with patch("agent.loop.time.sleep"):
+            loop.run("do something")
+
+        retry_msgs = [t for t in texts if "Retrying" in t]
+        assert len(retry_msgs) == 1
+        assert "1/3" in retry_msgs[0]
