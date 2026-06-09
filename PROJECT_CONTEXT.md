@@ -1,6 +1,6 @@
 # PROJECT_CONTEXT.md
 
-> Last updated: 2026-06-08 | [README](README.md) | [TODO](TODO.md)
+> Last updated: 2026-06-09 | [README](README.md) | [TODO](TODO.md)
 
 ---
 
@@ -204,6 +204,8 @@ tui.py / cli.py / main.py ← entry points (Textual TUI | Rich REPL | single-sho
 - **2026-06-08 Feature**: Transient API error retry with exponential backoff.
   **Cause**: A single 429 or 5xx response would abort the entire task, making long-running tasks fragile against rate limits and transient server errors.
   **Fix**: Wrapped the API call in a try/except block catching `APIConnectionError`, `APITimeoutError`, and `APIStatusError` (for codes 429, 500, 502, 503). Retries use exponential backoff (`2^attempt` seconds, capped at 60s) up to `api_error_retries` (default 3, configurable in `config.yaml`). Non-transient errors propagate immediately. The retry counter (`_error_retries`) resets per loop iteration, independent of the ghost-response retry counter (`_null_retries`). User-facing retry notifications are sent via `on_assistant_text`.
+
+- **`README.md` now has a User Guide section** (added 2026-06-09) covering: starting a new project with `/init`, writing effective tasks, plan mode walkthrough, the full slash command reference, TUI pause/resume, using skills, context management, and best-practice tips. It sits between the Usage and Configuration sections.
 
 - **There is a stale test directory** `C:UsersalexrDriverless_AGItests` (bad path) at the repo root — likely a Windows path mangling artifact, harmless but odd.
 - **`requirements.txt` now documents hard vs optional deps**: Core (openai, pyyaml, python-dotenv, rich, typer, textual) are listed as required; web tools (ddgs, crawl4ai, httpx, beautifulsoup4) are commented-out optional entries. `pyproject.toml` still declares several deps (`nicegui`, `markdown`, `matplotlib`) not in requirements.txt or the conda env.

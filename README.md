@@ -116,6 +116,201 @@ Exit with `q`, `exit`, or `quit`. Conversation history carries across turns.
 
 ---
 
+## User Guide
+
+### Starting a New Project
+
+**1. Point dagi at your project directory**
+
+Every session is scoped to a working directory. Pass it at launch or change it mid-session with `/wd`:
+
+```bash
+# TUI
+conda run --no-capture-output -n dagi python tui.py --project /path/to/myproject
+
+# CLI
+python cli.py --project /path/to/myproject
+```
+
+**2. Scaffold the `.dagi/` directory**
+
+On first use, run `/init` inside the interface. It creates the standard directory tree and stub files:
+
+```
+/init
+```
+
+This creates:
+- `.dagi/agents.md` — behavioral guidelines injected into every session
+- `.dagi/skills/` — directory for project-specific skills
+- `.dagi/workflow/` — directory for project-specific workflows
+- `dagi-memory/raw/` — drop source material here for the wiki
+- `dagi-memory/wiki/` — structured wiki pages (populated by the `memory-ingest` skill)
+
+You only need to run `/init` once per project. It is safe to re-run — existing files are skipped.
+
+**3. Seed the memory wiki (optional but recommended)**
+
+Drop any relevant documents — architecture notes, API references, prior session summaries — into `dagi-memory/raw/`. Then ask dagi to ingest them:
+
+```
+Invoke the memory-ingest skill.
+```
+
+At the start of every subsequent session, BM25 retrieval automatically surfaces the most relevant wiki pages as context before the first API call.
+
+---
+
+### Writing Good Tasks
+
+Dagi works best when the task is concrete and bounded. A few principles:
+
+**Be specific about what "done" looks like:**
+
+```
+# Vague
+"Fix the authentication"
+
+# Better
+"The login endpoint returns 500 when the user submits an empty password.
+Fix it so it returns 400 with {"error": "password required"}.
+The handler is in api/auth.py."
+```
+
+**Scope the task to one concern at a time.** If you have a large feature, use plan mode (see below) to break it into subtasks first — then implement each subtask individually.
+
+**Give context the agent can't see.** If there's a known constraint, a related PR, or a quirk of the codebase, include it:
+
+```
+"The DB client is not thread-safe; all calls must go through the connection pool
+in db/pool.py. Refactor the user service to use it."
+```
+
+---
+
+### Plan Mode
+
+For complex multi-step tasks, invoke plan mode before implementation. The agent explores the codebase in read-only mode, writes a structured plan with subtasks, asks you to approve it, and then begins implementation.
+
+```
+/plan
+```
+
+Or ask naturally:
+
+```
+"Plan a refactor of the authentication module to use JWT instead of sessions."
+```
+
+**How it works:**
+
+1. The agent explores relevant files (read-only — no writes except to the plan document)
+2. It writes a plan with numbered subtasks, each marked `[ ]` pending
+3. It calls `show_plan` and asks you for revisions
+4. You respond with changes or say "looks good"
+5. On approval, it calls `exit_plan_mode` and begins implementation
+6. The **Plan** panel in the TUI header tracks subtask status in real time:
+   `[ ]` pending · `[~]` in-progress · `[x]` complete · `[!]` failed
+
+The plan document is saved to `.dagi/plans/` and referenced throughout the implementation.
+
+---
+
+### Slash Command Reference
+
+All slash commands work identically in the TUI and CLI.
+
+| Command | Description |
+|---------|-------------|
+| `/help` | Show the command list |
+| `/exit` | Exit dagi |
+| `/clear` | Clear conversation context and reset the session |
+| `/wd [path]` | Show the current working directory, or change it to `path` |
+| `/model [id]` | List available models, or switch to `id` immediately |
+| `/plan` | Enter plan mode — agent explores and writes a structured plan |
+| `/compact` | Force-compact the current conversation context |
+| `/tools` | List all registered tools for the active session |
+| `/skills` | List all loaded skills |
+| `/workflows` | List all loaded workflows |
+| `/hist [n]` | Show the `n` most recent session summaries (default 20) |
+| `/init` | Scaffold `.dagi/` and `dagi-memory/` directories for the current project |
+| `/<skill-name>` | Invoke any loaded skill directly (e.g. `/memory-query`) |
+| `/<workflow-name>` | Run any loaded workflow (e.g. `/improve-yourself`) |
+
+---
+
+### Pausing and Resuming (TUI only)
+
+Press `Esc` at any time while the agent is running to pause it at the end of the current iteration (after all tool calls in the current LLM response complete). The status indicator switches to `⏸ Paused`.
+
+Type any message and press `Enter` to inject it into the agent's context and resume — this is equivalent to the agent asking you a question and you answering it. The agent receives your message and continues from where it stopped, with full context intact.
+
+Useful for: course-correcting mid-task, adding constraints you forgot to mention, or answering a question the agent was about to ask.
+
+---
+
+### Using Skills
+
+Skills are structured guidance documents in `.dagi/skills/<name>/SKILL.md`. The agent discovers and invokes them via the `skill` tool. You can trigger them from the user side too:
+
+```
+Invoke the memory-add skill.
+```
+
+Or as a slash command if the skill is loaded:
+
+```
+/memory-query
+```
+
+**Built-in skills:**
+
+| Skill | Purpose |
+|-------|---------|
+| `memory-add` | Add a structured note to the persistent wiki |
+| `memory-ingest` | Bulk-ingest raw documents into the wiki |
+| `memory-query` | Look up information in the wiki |
+| `memory-lint` | Validate wiki structure and internal links |
+| `create-skill` | Scaffold a new skill document |
+| `review-session` | Analyse recent session logs and write structured review reports |
+| `grill-me` | Adversarial interrogation of a plan or idea before implementation |
+| `update-project-context` | Update `PROJECT_CONTEXT.md` with current project state |
+
+Add a project-specific skill by creating `.dagi/skills/<name>/SKILL.md` in your project directory.
+
+---
+
+### Managing Context in Long Sessions
+
+Dagi uses **Pi-style context compaction** to handle tasks that exceed the model's context window. When the conversation approaches the token limit, the middle of the history is summarized and replaced — the system prompt and recent messages are always preserved verbatim.
+
+**Manual compaction** is available when you want to reclaim context before the automatic threshold:
+
+```
+/compact
+```
+
+**Switching models mid-session** is supported. A lighter model can handle exploratory steps; switch to a more capable one for complex implementation:
+
+```
+/model deepseek-v4-openrouter
+```
+
+The context carries over — no need to restart.
+
+---
+
+### Tips for Best Results
+
+- **Start sessions with a specific project.** Using `--project` scopes file access and loads project-local skills, workflows, and the project wiki automatically.
+- **Use plan mode for anything non-trivial.** It prevents the agent from making opinionated implementation choices before you've agreed on the approach.
+- **Build the memory wiki over time.** The more domain knowledge in `dagi-memory/wiki/`, the less you need to re-explain project context each session.
+- **Pause instead of cancelling.** `Esc` in the TUI preserves the agent's full context; you can inject corrections and resume rather than restarting from scratch.
+- **Review sessions with `/hist`.** Session summaries in `.dagi/logs/` capture token counts, cost, and what the agent did. The `review-session` skill turns raw logs into actionable improvement notes.
+- **Add a `.dagi/agents.md` to your project.** This file is injected into every session for that project. Use it to encode coding standards, architecture invariants, and anything you would otherwise repeat in every task prompt.
+
+---
+
 ## Configuration
 
 `config.yaml` controls runtime behavior. Copy `config.example.yaml` to get started.
