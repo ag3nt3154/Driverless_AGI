@@ -133,6 +133,10 @@ class AgentConfig:
     # Transient API error retries: how many times to retry on 429/5xx/connection
     # errors before propagating the exception. Independent of null_response_retries.
     api_error_retries: int = 3
+    # Send cache_prompt: true in extra_body — enables prompt caching on OpenRouter.
+    cache_prompt: bool = False
+    # Bash backend: "subprocess" = local BashTool (default); "tmux" = TmuxBashTool via TmuxSession.
+    bash_backend: str = "subprocess"
 
 
 @dataclass
@@ -160,6 +164,11 @@ class AgentCallbacks:
     # Factory for subagent stdout relay: takes subagent_type, returns per-event callback.
     # None in headless / CLI mode — subagent output is not relayed.
     on_subagent_event_factory: Callable[[str], Callable[[str], None]] | None = None
+    # Pause-on-error: when True, transient API errors that exhaust retries pause the loop
+    # instead of raising. The TUI sets this True and wires on_pause to re-enable input.
+    # CLI and subagents leave it False so existing raise behaviour is fully preserved.
+    on_pause:       Callable[[], None] = field(default=lambda: None)
+    supports_pause: bool               = False
 
 
 def _extract_reasoning(message) -> str:
@@ -187,6 +196,7 @@ class AgentLoop:
         _parent_tracker: "SessionTracker | None" = None,
         _subagent_id: str | None = None,
         _tracker: "SessionTracker | None" = None,
+        _tmux_session: "object | None" = None,
     ):
         from agent.tools import create_tool_registry
         from uuid import uuid4
@@ -231,6 +241,7 @@ class AgentLoop:
                 callbacks=self.callbacks,
                 tracker=self.tracker,
                 memory_root=self._effective_memory_root,
+                tmux_session=_tmux_session,
             )
 
         # ── Build system prompt ───────────────────────────────────────────
@@ -285,10 +296,12 @@ class AgentLoop:
 
         self.client = openai.OpenAI(api_key=config.api_key, base_url=config.base_url)
         self.config = config
-        # Build the extra_body for reasoning/thinking (OpenRouter extension)
-        self._reasoning_extra: dict = {}
+        # Build extra_body for OpenRouter extensions (reasoning, prompt caching).
+        self._extra_body: dict = {}
         if config.thinking and config.thinking.lower() != "none":
-            self._reasoning_extra = {"reasoning": {"effort": config.thinking.lower()}}
+            self._extra_body["reasoning"] = {"effort": config.thinking.lower()}
+        if config.cache_prompt:
+            self._extra_body["cache_prompt"] = True
 
         # ── Model-tier tracking ───────────────────────────────────────────────
         # Snapshot the five LLM identity fields so "default" tier can always
@@ -364,6 +377,7 @@ class AgentLoop:
                 _TRANSIENT_CODES = (429, 500, 502, 503)
                 _null_retries = 0
                 _error_retries = 0
+                _paused_on_error = False
                 while True:
                     self.callbacks.on_api_call(list(self._messages))
                     try:
@@ -372,11 +386,20 @@ class AgentLoop:
                             messages=self._messages,
                             tools=self.registry.get_openai_tools_list(),
                             parallel_tool_calls=False,
-                            **(dict(extra_body=self._reasoning_extra) if self._reasoning_extra else {}),
+                            **(dict(extra_body=self._extra_body) if self._extra_body else {}),
                         )
                     except (openai.APIConnectionError, openai.APITimeoutError):
                         _error_retries += 1
                         if _error_retries >= self.config.api_error_retries:
+                            if self.callbacks.supports_pause:
+                                self.callbacks.on_assistant_text(
+                                    f"[Connection error — all {_error_retries} retries failed. "
+                                    "Session paused. Send a message to retry.]"
+                                )
+                                self.callbacks.on_pause()
+                                self.pause()
+                                _paused_on_error = True
+                                break
                             raise
                         delay = min(2 ** _error_retries, 60)
                         self.callbacks.on_assistant_text(
@@ -390,6 +413,15 @@ class AgentLoop:
                             raise
                         _error_retries += 1
                         if _error_retries >= self.config.api_error_retries:
+                            if self.callbacks.supports_pause:
+                                self.callbacks.on_assistant_text(
+                                    f"[Server error {exc.status_code} — all {_error_retries} retries failed. "
+                                    "Session paused. Send a message to retry.]"
+                                )
+                                self.callbacks.on_pause()
+                                self.pause()
+                                _paused_on_error = True
+                                break
                             raise
                         delay = min(2 ** _error_retries, 60)
                         self.callbacks.on_assistant_text(
@@ -419,6 +451,9 @@ class AgentLoop:
                         return error_msg
                     # else: discard ghost, retry with identical context
                 # ─────────────────────────────────────────────────────────────
+
+                if _paused_on_error:
+                    continue  # restart outer loop → _pause_event.wait() will block
 
                 _reasoning = _extract_reasoning(message)
                 if _reasoning:
@@ -671,10 +706,11 @@ class AgentLoop:
 
         self.client = openai.OpenAI(api_key=self.config.api_key, base_url=self.config.base_url)
 
+        self._extra_body = {}
         if self.config.thinking and self.config.thinking.lower() != "none":
-            self._reasoning_extra = {"reasoning": {"effort": self.config.thinking.lower()}}
-        else:
-            self._reasoning_extra = {}
+            self._extra_body["reasoning"] = {"effort": self.config.thinking.lower()}
+        if self.config.cache_prompt:
+            self._extra_body["cache_prompt"] = True
 
         self.compact_tool.bind(
             self._messages, self.config, self.client,

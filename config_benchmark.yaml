@@ -1,0 +1,65 @@
+# ============================================================
+#  config_benchmark.yaml — DAGI configuration for Terminal-bench 2
+#
+#  Set DAGI_BENCH_MODEL to a model key below before running.
+#  Usage: benchmarks\run_terminal_bench.bat [--task-id ID] [--n-concurrent N]
+# ============================================================
+
+# --- Benchmark-specific settings ----------------------------
+bash_backend: tmux       # routes all bash calls through TmuxSession (Docker container)
+emote_tool: false        # no TUI during benchmark runs
+
+# --- Model selection ----------------------------------------
+# Override at runtime: set DAGI_BENCH_MODEL=<key>
+default_model: claude-sonnet-openrouter
+# advanced_model: claude-opus-openrouter   # uncomment to enable plan mode with a stronger model
+# worker_model: deepseek-v4-flash-openrouter  # uncomment to use a cheaper model for subagents
+
+# --- Token / compaction limits ------------------------------
+context_window: 128000
+keep_recent_tokens: 20000
+reserve_tokens: 16384
+
+# --- Retry / continuation limits ----------------------------
+null_response_retries: 5
+api_error_retries: 3
+max_continuations: 20    # raised from 10 — benchmark tasks can be long
+
+# --- Memory -------------------------------------------------
+# Isolate benchmark memory from your normal DAGI wiki.
+# Omit to use {logging_dir}/dagi-memory (set per-task by the harness).
+# memory_root: "C:/tmp/dagi-bench-memory"
+
+# --- Prompt caching -----------------------------------------
+cache_prompt: true       # saves cost on repeated system prompts
+
+# --- Thinking -----------------------------------------------
+thinking: high           # full reasoning effort for best benchmark scores
+
+# --- Models catalog (same as config.yaml) -------------------
+models:
+  claude-opus-openrouter:
+    api_key_env: OPENROUTER_API_KEY
+    api_url: https://openrouter.ai/api/v1
+    model: anthropic/claude-opus-4-6
+    name: Claude Opus 4.6 (OpenRouter)
+  claude-sonnet-openrouter:
+    api_key_env: OPENROUTER_API_KEY
+    api_url: https://openrouter.ai/api/v1
+    model: anthropic/claude-sonnet-4-6
+    name: Claude Sonnet 4.6 (OpenRouter)
+  deepseek-v4-pro-openrouter:
+    api_key_env: OPENROUTER_API_KEY
+    api_url: https://openrouter.ai/api/v1
+    model: deepseek/deepseek-v4-pro
+    name: Deepseek v4 Pro (OpenRouter)
+  deepseek-v4-flash-openrouter:
+    api_key_env: OPENROUTER_API_KEY
+    api_url: https://openrouter.ai/api/v1
+    model: deepseek/deepseek-v4-flash
+    name: Deepseek v4 Flash (OpenRouter)
+  gpt-4o-openai:
+    api_key_env: OPENAI_API_KEY
+    api_url: https://api.openai.com/v1
+    model: gpt-4o
+    name: GPT-4o (OpenAI)

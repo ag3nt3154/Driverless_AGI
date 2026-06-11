@@ -61,11 +61,16 @@ def load_cli_config() -> CliConfig:
     )
 
 
-def load_raw_config() -> dict:
-    """Return the full parsed config.yaml dict, or {} if the file is absent."""
-    if not _CONFIG_PATH.exists():
+def load_raw_config(config_path: Path | None = None) -> dict:
+    """Return the full parsed config dict, or {} if the file is absent.
+
+    config_path overrides the default config.yaml path (used by benchmark runners
+    that need a separate config file).
+    """
+    path = config_path or _CONFIG_PATH
+    if not path.exists():
         return {}
-    return yaml.safe_load(_CONFIG_PATH.read_text(encoding="utf-8")) or {}
+    return yaml.safe_load(path.read_text(encoding="utf-8")) or {}
 
 
 def list_model_ids() -> list[str]:
@@ -89,11 +94,13 @@ def _build_config_from_entry(entry: dict, raw: dict) -> AgentConfig:
     max_continuations = int(raw.get("max_continuations", 10))
     api_error_retries = int(raw.get("api_error_retries", 3))
     thinking = entry.get("thinking") or raw.get("thinking", "none") or "none"
+    cache_prompt = bool(entry.get("cache_prompt", raw.get("cache_prompt", False)))
 
     raw_memory_root = raw.get("memory_root")
     memory_root = Path(raw_memory_root).expanduser() if raw_memory_root else None
 
     emote_tool = bool(raw.get("emote_tool", True))
+    bash_backend = str(raw.get("bash_backend", "subprocess"))
 
     return AgentConfig(
         model=entry["model"],
@@ -108,10 +115,15 @@ def _build_config_from_entry(entry: dict, raw: dict) -> AgentConfig:
         api_error_retries=api_error_retries,
         memory_root=memory_root,
         emote_tool=emote_tool,
+        cache_prompt=cache_prompt,
+        bash_backend=bash_backend,
     )
 
 
-def resolve_model_config(model_id: str | None = None) -> AgentConfig:
+def resolve_model_config(
+    model_id: str | None = None,
+    config_path: Path | None = None,
+) -> AgentConfig:
     """
     Build an AgentConfig by looking up a model in the catalog.
 
@@ -119,6 +131,9 @@ def resolve_model_config(model_id: str | None = None) -> AgentConfig:
       1. model_id argument (CLI --model or UI selectbox)
       2. default_model from config.yaml
       3. built-in fallback (gpt-4o-openai)
+
+    config_path overrides the default config.yaml (e.g. pass config_benchmark.yaml
+    for Terminal-bench runs).
 
     If worker_model is set in config.yaml and resolves to a known catalog entry,
     the returned config carries a worker_config field that sub-agents use instead
@@ -129,7 +144,7 @@ def resolve_model_config(model_id: str | None = None) -> AgentConfig:
     KeyError        if the resolved model_id is not in the catalog.
     EnvironmentError if the required API key env var is not set.
     """
-    raw = load_raw_config()
+    raw = load_raw_config(config_path=config_path)
     catalog: dict = raw.get("models", {})
 
     chosen_id = model_id or raw.get("default_model") or _FALLBACK_MODEL_ID

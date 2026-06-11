@@ -13,7 +13,7 @@
   - **Next:** Add `allowed_paths` / `blocked_commands` keys to `config.yaml` and read them in `agent/tools.py`.
 
 - **Error Handling & Retries** · `priority:high` · `impact:high` · `partial`
-  - **Current:** Transient API error retry with exponential backoff implemented in `agent/loop.py` (429, 500, 502, 503, connection/timeout errors). `api_error_retries` configurable in `config.yaml` (default 3). Non-transient errors (401, 403) propagate immediately. Compaction snapshot/restore in `tools/compact.py`. `ToolRegistry.dispatch()` catches exceptions. `EditTool` returns errors rather than raising. BashTool times out but doesn't kill process group.
+  - **Current:** Transient API error retry with exponential backoff (429, 500, 502, 503, connection/timeout). TUI now error-pauses (same semantics as ESC pause) when all retries are exhausted — session stays alive, user sends next message to retry. CLI path unaffected (already preserved context via `loop._messages` return). `_active_loop` pre-assigned in `_agent_work` so non-transient raises also preserve context. `api_error_retries` configurable in `config.yaml` (default 3).
   - **Ideal:** `os.killpg` on BashTool timeout; actionable empty-API-key error.
   - **Next:** Add `os.killpg` to `tools/bash.py`; improve API key validation at startup.
 

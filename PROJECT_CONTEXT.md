@@ -1,6 +1,8 @@
 # PROJECT_CONTEXT.md
 
-> Last updated: 2026-06-09 | [README](README.md) | [TODO](TODO.md)
+> Last updated: 2026-06-12 | [README](README.md) | [TODO](TODO.md)
+> Session 2026-06-12: Terminal-bench 2 integration
+
 
 ---
 
@@ -21,7 +23,7 @@ Non-goals: cloud hosting, multi-user auth, UI beyond CLI/Rich.
 - **Install:** `conda run -n dagi pip install -e .`
 - **Run (REPL):** `conda run -n dagi python cli.py`
 - **Run (TUI):** `conda run -n dagi python tui.py`
-- **Config:** `config.yaml` (gitignored) — model catalog, base_url, api_key / api_key_env, max_iterations, null_response_retries, max_continuations, emote_tool
+- **Config:** `config.yaml` (gitignored) — model catalog, base_url, api_key / api_key_env, max_iterations, null_response_retries, max_continuations, emote_tool, cache_prompt
 
 ## Directory Layout
 
@@ -31,6 +33,8 @@ Driverless_AGI/
 ├── tools/              # Built-in tools (compact, spawn_subagent, extend_timeout, emote, etc.)
 ├── scripts/            # Utility scripts (dagi_freeze, build_api_tools, etc.)
 ├── tui/                # Textual TUI package (app, commands, sidebar, callbacks, etc.)
+├── benchmarks/         # Benchmark adapters
+│   └── terminal_bench/ # Terminal-bench 2 adapter (TmuxBashTool, DagiAgent)
 ├── tests/              # Unit tests
 ├── .dagi/
 │   ├── agents.md       # Behavioral guidelines loaded at every session start
@@ -48,6 +52,9 @@ Driverless_AGI/
 ├── tui.py              # TUI entry point (thin launcher)
 ├── cli.py              # Rich REPL entry point
 ├── config.yaml         # Runtime config (gitignored)
+├── config_benchmark.yaml # Terminal-bench 2 config (bash_backend: tmux)
+├── docs/
+│   └── terminal-bench.md # Guide for running Terminal-bench 2
 └── README.md           # Full documentation
 ```
 
@@ -99,7 +106,7 @@ tui.py / cli.py / main.py ← entry points (Textual TUI | Rich REPL | single-sho
 
 | Path | Purpose |
 |------|---------|
-| `agent/loop.py` | Core agent loop, `AgentConfig`, `AgentCallbacks`, `TASK_END_FLAG`, `AWAIT_USER_FLAG`; pause/resume via `_pause_event` |
+| `agent/loop.py` | Core agent loop, `AgentConfig`, `AgentCallbacks`, `TASK_END_FLAG`, `AWAIT_USER_FLAG`; pause/resume via `_pause_event`; `_extra_body` dict for OpenRouter extensions (reasoning, cache_prompt) |
 | `agent/config_loader.py` | Reads `config.yaml`; resolves `api_key` (direct or env var) and model catalog |
 | `agent/tools.py` | Wires all tools into `ToolRegistry`; defines plan-mode and subagent registry variants |
 | `agent/registry.py` | Tool dispatch; OpenAI function-schema generation |
@@ -128,6 +135,11 @@ tui.py / cli.py / main.py ← entry points (Textual TUI | Rich REPL | single-sho
 | `requirements.txt` | Exact pip freeze of the `dagi` conda env (23 packages). **Does not match `pyproject.toml`** — see Notable Points. |
 | `tools/emote.py` | `EmoteTool(BaseTool)` — agent calls `emote(emote)` to update sidebar face; fires `on_emote` callback |
 | `.dagi/emotes/` | Five emote face files (`default`, `confused`, `happy`, `serious`, `funny`), one line each, plain text |
+| `benchmarks/terminal_bench/tmux_bash_tool.py` | `TmuxBashTool(BaseTool)` — bash tool replacement that routes commands through Terminal-bench's `TmuxSession` (Docker container); selected via `bash_backend: tmux` in config |
+| `benchmarks/terminal_bench/agent.py` | `DagiAgent(BaseAgent)` — Terminal-bench 2 entry point; reads `DAGI_BENCH_MODEL` env var, loads `config_benchmark.yaml`, passes `TmuxSession` into `AgentLoop` |
+| `config_benchmark.yaml` | Benchmark-specific config: `bash_backend: tmux`, `emote_tool: false`, raised `max_continuations`; models catalog shared with `config.yaml` |
+| `benchmarks/run_terminal_bench.bat` | Windows runner: sets `DAGI_BENCH_MODEL`, calls `tb run --agent-import-path benchmarks.terminal_bench.agent:DagiAgent` |
+| `docs/terminal-bench.md` | User guide: prerequisites, one-time setup, model selection, smoke test, full run, result interpretation |
 
 ## Encountered Errors & Solutions
 
@@ -171,6 +183,9 @@ tui.py / cli.py / main.py ← entry points (Textual TUI | Rich REPL | single-sho
 - **`api_key` vs `api_key_env`**: Direct `api_key` in config.yaml overrides env var lookup. Empty string `""` still falls through to env var — only a truthy value short-circuits. Security note: putting the key in yaml means it could be committed; prefer `api_key_env` for production use.
 - **Multi-turn message history**: The CLI passes `loop._messages` as `conversation_msgs` into the next `_run_task()` call. `<<WAIT_FOR_USER_RESPONSE>>` works without any CLI changes because of this existing design.
 - **`null_response_retries` is per-API-call** — the inner retry loop resets for every new LLM call. A ghost response during tool-call processing (e.g. after a large skill result) retries that specific call up to N times. This is independent of `max_continuations`.
+- **`supports_pause` gates error-pause behavior**: `AgentCallbacks.supports_pause` (default `False`) controls whether exhausted transient retries pause the loop (TUI path) or raise (CLI/subagent path). The TUI's `build_callbacks()` sets it `True`. This explicit boolean is intentional — checking `on_pause is not lambda: None` would be fragile since Python lambdas aren't singletons.
+- **`_active_loop` now set before `loop.run()`**: In `tui/app.py._agent_work()`, `self._active_loop = loop` is assigned immediately after `AgentLoop.__init__()` completes, before `loop.run()` is called. This means even non-transient raises (401, 403) preserve the loop's `_messages` for the next task's `initial_messages`. Previously, any exception skipped the assignment entirely.
+- **`_extra_body` unifies all OpenRouter extensions**: `AgentLoop.__init__()` builds `self._extra_body: dict` by combining the `reasoning` effort dict (when `thinking != "none"`) and `cache_prompt: True` (when `config.cache_prompt` is set). Previously, only `_reasoning_extra` existed. `_handle_switch_model` rebuilds `_extra_body` identically after switching tiers, since `cache_prompt` is not tier-specific (it lives on the primary config, not the tier config). To add a new provider extension, add a field to `AgentConfig`, read it in `config_loader._build_config_from_entry`, and merge it into `_extra_body` in both `__init__` and `_handle_switch_model`.
 - **`api_error_retries` is per-iteration** — the transient error retry counter (`_error_retries`) resets at the start of each loop iteration, giving every API call a fresh retry budget. Transient codes (429, 500, 502, 503) and connection/timeout errors are retried with exponential backoff (`2^attempt` seconds, capped at 60s). Non-transient errors (e.g. 401, 403) propagate immediately. This is independent of both `null_response_retries` and `max_continuations`.
 - **`max_continuations` is per-`run()` call** — `_continuation_count` resets to 0 at the start of each `run()` call, so every task gets a fresh budget of `max_continuations` (default 10).
 - **Subagents use pipe-based IPC**: `subprocess.Popen(stdout=PIPE, stderr=STDOUT)` — cross-platform, no separate window. A daemon thread reads each stdout line as a newline-delimited JSON event and relays it via `on_subagent_event_factory` in `AgentCallbacks` → `build_subagent_relay_callback()` in `tui/callbacks.py` → `ConversationPane` with `[bold cyan][{subagent_type}][/bold cyan]` prefix.
@@ -198,8 +213,17 @@ tui.py / cli.py / main.py ← entry points (Textual TUI | Rich REPL | single-sho
 - **ANSI `[blue]` renders as purple**: Rich's `[blue]` maps to ANSI color 4, which most modern terminal emulators render as violet/purple (inherited from CGA). Use hex colors (`[#4da6ff]`) or `[bright_blue]` (ANSI 12) for a perceptually blue result. This bit the sidebar logo — all color markup now uses hex.
 - **Plan mode revision loop**: After writing a plan, the agent is instructed (via `main_system.md`) to call `show_plan` before `exit_plan_mode`. `show_plan` shows the plan, asks "Do you have any modifications?", and returns either "Plan approved — call `exit_plan_mode`" or "Modifications requested — revise and call `show_plan` again." The revision cycle repeats until approval. After `exit_plan_mode`, the agent outputs one implementation-start sentence and immediately begins tool calls without waiting for user confirmation.
 - **Running indicator lifecycle**: `tui/app.py` has a 1-line `Static` widget (`#running-indicator`, `display: none` by default) between `#main-row` and `#prompt`. It is shown by `_show_running_indicator()` and hidden by `_hide_running_indicator()` (called from `_enable_input()`). The braille spinner (`_SPINNER` class var, 10 frames) is advanced by a `set_interval(0.1, _tick_spinner)` timer that no-ops when the bar is hidden. Show/hide call sites: `_dispatch_agent` (new task), `on_prompt_input_submitted` inject-and-resume branch (pause → resume), `on_prompt_input_submitted` ask_user answer branch (agent resumes after answer), `action_pause` (explicit hide without enabling input). Because `_enable_input` is always called via `call_from_thread`, `_hide_running_indicator` runs on the Textual main thread — safe.
+- **`/clear` resets all session state**: The handler resets `_active_loop`, `_current_loop_ref`, `_stats`, sidebar stats, and sidebar plan subtasks. It guards against being called while the agent is running (`_worker.is_alive()`) — the user must ESC to pause first. After clear, the next dispatched task creates a fresh `AgentLoop` with `initial_messages=None`, a new `SessionTracker`, and only the system prompt in `_messages`.
 - **`/hist` in TUI writes to hidden buffer**: `hist.run()` calls `console.print()` which writes to a Rich console that is not the Textual RichLog. Output appears in the terminal's hidden scroll buffer (behind Textual). This is a known limitation — `/hist` is functional but not displayed in the conversation pane.
 - **Compaction summary is now a first-class JSONL record**: After the 2026-06-05 fix, each compaction fires `on_summary` → `tracker.record_user(summary_content)`, writing a `{"type": "message", "entity": "user", "content": "[CONTEXT SUMMARY ..."}` record into the JSONL stream. Previously the summary only appeared inside `session_end.raw_messages`. Parsing tools (`parse_jsonl_logs.py`, `parse_session_log.py`) will now encounter this record in the message stream — they already handle user messages correctly, so no changes needed there.
+
+- **2026-06-12 Bug**: `/clear` slash command left stale session state visible in the sidebar after clearing.
+  **Cause**: The handler set `_active_loop = None` and cleared the visual pane, but did not reset `_current_loop_ref`. The 2 s `_poll_plan` timer kept firing against the old loop's `plan_file`, so plan subtasks from the cleared session continued to appear in the sidebar header. There was also no guard against calling `/clear` while the agent was actively running.
+  **Fix**: Added `self._current_loop_ref = []` reset, `sidebar.update_plan([], "")` call, and an early-return guard that rejects `/clear` when `self._worker.is_alive()` (directing the user to ESC first). The confirmation message was also updated to "Context cleared — new session" for clarity.
+
+- **2026-06-11 Feature**: Error-pause on exhausted transient API retries (TUI).
+  **Cause**: When `api_error_retries` were exhausted in the TUI, the loop raised an exception. `_agent_work()` caught it but `self._active_loop = loop` was never reached (it sat after `loop.run()`), so the loop instance was discarded. The next task created a fresh `AgentLoop` from whatever `_active_loop._messages` existed before the failed run — losing all partial context from the failed task.
+  **Fix**: Added `on_pause: Callable[[], None]` and `supports_pause: bool = False` to `AgentCallbacks`. The TUI sets `supports_pause=True` and wires `on_pause` to show a yellow pause banner and re-enable input. In `AgentLoop.run()`, when transient errors exhaust retries and `supports_pause` is True, the loop calls `on_pause()` + `self.pause()` + `continue` (back to the outer while) instead of raising — the loop blocks at `_pause_event.wait()`. The worker thread stays alive. The existing `inject_and_resume` path in `on_prompt_input_submitted` already handles the paused state, so the TUI routes the user's next message directly to the paused loop. CLI and subagents keep `supports_pause=False` → existing raise behavior fully preserved. Additionally moved `self._active_loop = loop` to before `loop.run()` in `_agent_work` so context is preserved even for non-transient raises (401, 403).
 
 - **2026-06-08 Feature**: Transient API error retry with exponential backoff.
   **Cause**: A single 429 or 5xx response would abort the entire task, making long-running tasks fragile against rate limits and transient server errors.
@@ -207,6 +231,12 @@ tui.py / cli.py / main.py ← entry points (Textual TUI | Rich REPL | single-sho
 
 - **`README.md` now has a User Guide section** (added 2026-06-09) covering: starting a new project with `/init`, writing effective tasks, plan mode walkthrough, the full slash command reference, TUI pause/resume, using skills, context management, and best-practice tips. It sits between the Usage and Configuration sections.
 
+- **`bash_backend` config field gates which bash implementation runs**: `AgentConfig.bash_backend` defaults to `"subprocess"` (normal `BashTool`). Setting `bash_backend: tmux` in config.yaml selects `TmuxBashTool` — but only if a `_tmux_session` is also passed to `AgentLoop.__init__`. If `bash_backend: tmux` is set but `_tmux_session=None`, it silently falls back to `BashTool`. This means `config_benchmark.yaml` is inert when loaded by the TUI/CLI (no session provided).
+- **Terminal-bench 2's `send_keys(block=True)` appends `; tmux wait -S done`**: When `block=True` and the last key is "Enter", `TmuxSession` transparently rewrites the command as `<cmd>; tmux wait -S done` and then calls `tmux wait done` to block until completion. `TmuxBashTool.run()` uses this exclusively — no polling needed. Timeout raises `TimeoutError`, which `TmuxBashTool` catches and returns as a formatted string.
+- **`resolve_model_config` now accepts `config_path`**: The `config_path: Path | None = None` parameter lets callers override the default `config.yaml`. `DagiAgent` passes `config_benchmark.yaml` via this parameter. All other callers (TUI, CLI, `main.py`) pass nothing, preserving existing behavior.
+- **`load_raw_config` is now path-aware**: accepts `config_path: Path | None = None`, falling back to module-level `_CONFIG_PATH = Path("config.yaml")`. The `list_model_ids()` and `load_cli_config()` helpers still call it without arguments — they always read `config.yaml`.
+- **Terminal-bench 2 token fields differ from DAGI's**: `AgentResult.total_input_tokens` / `total_output_tokens` (Terminal-bench) vs. `input_tokens` / `output_tokens` (DAGI's `MessageNode`). `DagiAgent` sums `MessageNode.input_tokens` for `entity == "assistant"` from `loop.tracker._messages` to build `AgentResult`.
+- **`DagiAgent.name()` is a `@staticmethod @abstractmethod`** — Terminal-bench uses the returned string (`"dagi"`) to tag benchmark results on the leaderboard. It must be unique.
 - **There is a stale test directory** `C:UsersalexrDriverless_AGItests` (bad path) at the repo root — likely a Windows path mangling artifact, harmless but odd.
 - **`requirements.txt` now documents hard vs optional deps**: Core (openai, pyyaml, python-dotenv, rich, typer, textual) are listed as required; web tools (ddgs, crawl4ai, httpx, beautifulsoup4) are commented-out optional entries. `pyproject.toml` still declares several deps (`nicegui`, `markdown`, `matplotlib`) not in requirements.txt or the conda env.
 
@@ -221,6 +251,9 @@ tui.py / cli.py / main.py ← entry points (Textual TUI | Rich REPL | single-sho
 - **GNHF**: "Good and not horrible feedback" — dagi's self-improvement workflow. Committed milestones, iterative development, freeform notes log at `.dagi/gnhf/notes.md`.
 - **BM25**: Sparse keyword ranking algorithm used for memory retrieval in `agent/memory_retriever.py`.
 - **IPC**: Inter-process communication between parent agent and subagent subprocess. Now pipe-based (stdout JSON events) via `tools/_subagent_runner.py`. The old file-sentinel IPC (`agent/ipc.py`) has been deleted.
+- **Terminal-bench 2**: Benchmark of 89 real-world terminal tasks (software engineering, sysadmin, ML, security, etc.) run in Docker containers. Agents interface via `BaseAgent.perform_task(instruction, TmuxSession, logging_dir)`. Top scores ~60–65% as of 2026-06.
+- **TmuxSession**: Terminal-bench object wrapping a tmux session inside a Docker container. Key methods: `send_keys(keys, block, max_timeout_sec)` and `capture_pane(capture_entire)`. When `block=True` + last key is "Enter", blocks until the shell command finishes via `tmux wait`.
+- **bash_backend**: `AgentConfig` field (`"subprocess"` | `"tmux"`). Controls which bash tool `create_tool_registry` registers. Declared in config.yaml; no code change needed to switch.
 - **emote**: One of five named expressions (`default`, `confused`, `happy`, `serious`, `funny`) dagi-chan can display in the sidebar. Stored as plain-text `.md` files in `.dagi/emotes/`; switched by the agent via the `emote` tool.
 
 ---
@@ -241,7 +274,9 @@ tui.py / cli.py / main.py ← entry points (Textual TUI | Rich REPL | single-sho
 - Prefers pause semantics that preserve agent context (inject & resume) over simpler cancel-and-restart approaches, even at slightly higher implementation cost. Favours architectural correctness over convenience shortcuts.
 - Will accept dead-code cleanup (removal) when shown the evidence; prefers the simpler behavior (accept the extra round-trip) over adding new flag logic when the outcome is equivalent.
 - Prefers behavioral unification over performance micro-optimisation — accepted Option C (one extra LLM round-trip per slash command) because it eliminates divergent code paths, rather than synthetic-prefill options that would save the round-trip at the cost of message-history surgery.
-- Invests heavily in skill design: treats skills as behavioral specifications rather than code. Will design multi-phase skills (gather → interrogate → record) with explicit internal vs. external phases and mode-routing logic. The grill-me skill upgrade (session 17) is the clearest example — a thin 13-line prompt was replaced with a structured protocol incorporating Socratic method, knowledge-gathering, and automatic recording.
+- Invests heavily in skill design: treats skills as behavioral specifications rather than code.
+- Strongly prefers config-driven behavior over code-injection parameters. When designing the Terminal-bench integration, immediately pushed back on a `bash_tool` parameter injection approach in favor of a `bash_backend` field in config.yaml — the config is the single source of truth for which implementation runs.
+- Actively considers Windows-compatibility when reviewing cross-platform designs; caught the potential clash between `TmuxBashTool` and normal Windows usage before implementation began. Will design multi-phase skills (gather → interrogate → record) with explicit internal vs. external phases and mode-routing logic. The grill-me skill upgrade (session 17) is the clearest example — a thin 13-line prompt was replaced with a structured protocol incorporating Socratic method, knowledge-gathering, and automatic recording.
 
 ### Project Shortcomings
 
@@ -249,7 +284,7 @@ tui.py / cli.py / main.py ← entry points (Textual TUI | Rich REPL | single-sho
 - **`ask_user` returns verbatim free text**: The TUI no longer calls `_resolve_option()` to coerce the user's answer to a matching option label. `container.append(raw)` passes the raw string directly, so the agent's tool result JSON always contains the unmodified answer. Options are shown as hints only. The user's answer is now echoed as a cyan "You" panel in the ConversationPane immediately before the agent thread is unblocked.
 - **`_resolve_option` has been deleted**: `tui/utils.py` no longer exports this function. The CLI paths (`on_ask_user` sync and `_render_queue` threaded) already passed raw text; option resolution only survived as their timeout-fallback, which is unchanged.
 - **`PromptInput` has no placeholder**: Textual's `TextArea` (which `PromptInput` subclasses) does not expose a `.placeholder` property. The "Your answer…" cue shown during `ask_user` prompts was silently dropped. A future improvement could overlay a `Label` or use the TUI's conversation pane to communicate prompt context.
-- **Transient API error retry implemented (2026-06-08)** — 429, 500, 502, 503, connection errors, and timeout errors are now retried with exponential backoff (2^attempt seconds, capped at 60s) up to `api_error_retries` times (default 3). Non-transient errors (401, 403, etc.) propagate immediately. User sees `[Server error NNN. Retrying in Ns (M/N)...]` via `on_assistant_text` callback.
+- **Error-pause implemented (2026-06-11)** — TUI now pauses the session (same semantics as ESC pause) when transient retries are exhausted, rather than dying and losing context. Non-transient errors (401, 403) still raise; context is preserved via the `_active_loop` pre-assignment fix.
 - **`max_continuations` was silently hardcoded at 10** until 2026-06-05 — it existed as an `AgentConfig` default but was never read from `config.yaml`. Now configurable via top-level `max_continuations:` key.
 - **Dependency split between `requirements.txt` and `pyproject.toml`** — `requirements.txt` (pip freeze of actual `dagi` conda env) has only 23 packages; `pyproject.toml` declares ~10 more (`ddgs`, `crawl4ai`, `beautifulsoup4`, `nicegui`, `markdown`, `matplotlib`, `typer`, `rich`). Neither file alone produces a working install. The `dagi` conda env is missing several declared runtime deps, meaning tools like `web_search`, `web_fetch`, and the Rich CLI may silently fail until those packages are installed.
 - **BashTool is unsandboxed** — no command blacklist, no process group kill on timeout. An agent could run destructive bash commands. Path guard protects file tools but not bash.
@@ -289,9 +324,12 @@ tui.py / cli.py / main.py ← entry points (Textual TUI | Rich REPL | single-sho
 - **`ask_user` UX in TUI**: the user's free-text answer is now echoed in the conversation pane. The remaining gap: since `PromptInput` has no placeholder support, there is no visual cue distinguishing a normal prompt from an `ask_user` question prompt while the cursor is idle. A small indicator (e.g., a highlighted label or border colour change on `#prompt`) would improve clarity.
 - **Parallel subagent dispatch**: the `[~]` in-progress state was introduced with parallel multi-agent future in mind. The IPC layer (`agent/ipc.py`) would need to support multiple concurrent polls; the plan panel would then show multiple subtasks as `[~]` simultaneously.
 - **Pause during subagent execution**: current pause only stops the *parent* loop at its checkpoint. If a subagent is running (terminal subprocess), it continues unaffected. A future improvement could write an IPC `pause` sentinel to the subagent's channel.
+- **Cache hit visibility**: `cache_prompt: true` is now sent to OpenRouter for all models, but the token tracker (`agent/session.py`) does not yet read `usage.prompt_tokens_details.cached_tokens` from the response. Displaying cached vs. non-cached tokens in the TUI sidebar would make caching ROI visible.
 - **Streaming responses**: the TUI sidebar's token counter currently only updates after each full API response. Streaming would enable per-token updates and reduce perceived latency. The `ConversationPane` could stream assistant text incrementally using `RichLog.write()` calls on each chunk.
 - **Structured output / tool-call validation**: the agent currently relies on the model to produce valid JSON for tool arguments. A schema-level validator at the registry layer would catch malformed calls early.
 - **Session replay / dry-run mode**: the JSONL session log has everything needed to replay a session deterministically — useful for debugging and regression testing.
 - **Parallel subagent dispatch**: `SpawnSubagentTool` currently blocks until the subprocess exits. Multiple concurrent subagents could be dispatched by the agent calling `spawn_*` multiple times and then polling each `extend_subagent_timeout` — no architectural change needed, just agent-level orchestration and TUI labelling per subagent.
 - **Emote animation**: `_status_col()` runs on every `refresh()`. Animating the face or label (e.g., cycling symbols on `_status == "running"`) requires only a branch on `self._status` inside `_status_col()` — no new state or callbacks needed. The ASCII hair glyphs (`≋`) were removed when the logo moved inline; add them back here if desired.
 - **Emote tool in CLI mode**: `EmoteTool` is registered in the CLI path too (when `emote_tool: true`), but `on_emote=None` is passed since there is no sidebar. The tool still returns `"*emote*"` in text; the callback is silently a no-op. No separate CLI wiring required.
+- **No benchmark results yet**: Terminal-bench 2 integration was completed 2026-06-12 but no actual benchmark runs have been performed. Scores, token costs, and per-task performance data are unknown. The integration is structurally complete — Docker + `conda run -n dagi tb run` are the remaining prerequisites for a first run.
+- **`benchmarks/` has no unit tests**: `TmuxBashTool` and `DagiAgent` have zero test coverage. A mock `TmuxSession` unit test for `TmuxBashTool.run()` would catch regressions in the blocking/capture flow without needing Docker.
