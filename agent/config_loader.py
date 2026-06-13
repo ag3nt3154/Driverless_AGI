@@ -130,6 +130,7 @@ def _build_config_from_entry(entry: dict, raw: dict) -> AgentConfig:
     bash_backend = str(raw.get("bash_backend", "subprocess"))
     tools: list[str] | None = raw.get("tools") or None
     sandbox_mode = bool(raw.get("sandbox_mode", False))
+    system_prompt_preamble = str(raw.get("system_prompt_preamble", "") or "")
 
     return AgentConfig(
         model=entry["model"],
@@ -147,6 +148,7 @@ def _build_config_from_entry(entry: dict, raw: dict) -> AgentConfig:
         bash_backend=bash_backend,
         tools=tools,
         sandbox_mode=sandbox_mode,
+        system_prompt_preamble=system_prompt_preamble,
     )
 
 
