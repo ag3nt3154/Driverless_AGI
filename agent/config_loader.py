@@ -97,8 +97,8 @@ def _merge_configs(root_raw: dict, project_raw: dict) -> dict:
     All other top-level scalar fields: project value wins when key is present.
     """
     merged = dict(root_raw)
-    root_models: dict = root_raw.get("models", {})
-    project_models: dict = project_raw.get("models", {})
+    root_models: dict = root_raw.get("models") or {}
+    project_models: dict = project_raw.get("models") or {}
     merged["models"] = {**root_models, **project_models}
     for key, value in project_raw.items():
         if key != "models":

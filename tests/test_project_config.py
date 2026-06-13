@@ -152,6 +152,27 @@ models:
     bad.parent.mkdir(parents=True, exist_ok=True)
     bad.write_text(": bad: yaml: [unclosed\n", encoding="utf-8")
     from agent.config_loader import resolve_model_config
-    import pytest
     with pytest.raises(ValueError, match=".dagi"):
         resolve_model_config(project_path=tmp_path, config_path=root_cfg)
+
+
+def test_project_config_models_null_does_not_crash(tmp_path, monkeypatch):
+    """Project config with 'models: null' should not crash — treated as no model overrides."""
+    monkeypatch.chdir(tmp_path)
+    root_cfg = tmp_path / "config.yaml"
+    _write_yaml(root_cfg, """
+default_model: root-model
+models:
+  root-model:
+    name: Root
+    model: root/m
+    api_url: http://root/v1
+    api_key: rk
+""")
+    _write_yaml(tmp_path / ".dagi" / "config.yaml", """
+models:
+""")
+    from agent.config_loader import resolve_model_config
+    cfg = resolve_model_config(project_path=tmp_path, config_path=root_cfg)
+    # Root model still accessible — no crash
+    assert cfg.model == "root/m"
