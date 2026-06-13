@@ -10,3 +10,7 @@ dagi = "main:main"
 [build-system]
 requires = ["setuptools"]
 build-backend = "setuptools.backends.legacy:build"
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]

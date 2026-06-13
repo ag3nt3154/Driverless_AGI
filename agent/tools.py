@@ -204,7 +204,7 @@ def create_tool_registry(
     callbacks: "AgentCallbacks | None" = None,
     tracker: "SessionTracker | None" = None,
     memory_root: Path | None = None,
-    tmux_session: "object | None" = None,
+    bash_tool: "object | None" = None,
 ) -> ToolRegistry:
     """Build a fresh ToolRegistry with all tools bound to *cwd*.
 
@@ -271,11 +271,9 @@ def create_tool_registry(
         reg.register(WriteTool(cwd=cwd, allowed_roots=effective_roots))
         reg.register(EditTool(cwd=cwd, allowed_roots=effective_roots))
         reg.register(CopyTool(cwd=cwd, allowed_roots=effective_roots))
-        if getattr(config, "bash_backend", "subprocess") == "tmux" and tmux_session is not None:
-            from benchmarks.terminal_bench.tmux_bash_tool import TmuxBashTool
-            reg.register(TmuxBashTool(tmux_session))
-        else:
-            reg.register(BashTool(cwd=cwd))
+        reg.register(BashTool(cwd=cwd))
+        if bash_tool is not None:
+            reg.register(bash_tool)
         reg.register(GitStatusTool(cwd=cwd))
         reg.register(GitCommitTool(cwd=cwd))
         reg.register(GitRollbackTool(cwd=cwd))

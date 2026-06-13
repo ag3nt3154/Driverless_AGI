@@ -9,6 +9,7 @@ from terminal_bench.terminal.tmux_session import TmuxSession
 
 from agent.config_loader import resolve_model_config
 from agent.loop import AgentLoop, AgentCallbacks
+from tools.tmux_bash import TmuxBashTool
 
 
 class DagiAgent(BaseAgent):
@@ -34,7 +35,8 @@ class DagiAgent(BaseAgent):
         config = resolve_model_config(model_key, config_path=bench_config)
         config.project_path = logging_dir or Path(".")
 
-        loop = AgentLoop(config, callbacks=AgentCallbacks(), _tmux_session=session)
+        bash_tool = TmuxBashTool(session)
+        loop = AgentLoop(config, callbacks=AgentCallbacks(), _bash_tool=bash_tool)
         try:
             loop.run(instruction)
         except Exception:
