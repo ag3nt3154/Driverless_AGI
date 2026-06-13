@@ -44,10 +44,10 @@
   - **Ideal:** Tool descriptions tailored per model or context at runtime.
   - **Next:** Research approach; prototype in `agent/tools.py`.
 
-- **Per-project config (work in projects)** · `priority:medium` · `impact:medium`
-  - **Current:** No per-project config support. Depends on Project / Folder Scoping being completed first.
-  - **Ideal:** Dedicated project folders with per-project `config.yaml` overrides; agent scoped to project on startup.
-  - **Next:** Implement after Project / Folder Scoping is complete.
+- **Per-project config (work in projects)** · `priority:medium` · `impact:medium` · `partial`
+  - **Current:** `resolve_model_config(project_path=...)` now loads `{project_path}/.dagi/config.yaml` and merges it over root. Project scalars win; model catalog entries are shallow-merged. `agent/prompts.py` resolves `main_system.md` and `soul.md` from the project folder first. Core config merge infra is complete (Tasks 1–3 done).
+  - **Ideal:** Dedicated project folders with per-project `config.yaml` overrides; agent scoped to project on startup; TUI `/project <path>` command.
+  - **Next:** Wire `project_path` into CLI/TUI startup (`cli.py`, `tui/app.py`) so the agent is automatically scoped when launched from a project directory.
 
 - **Sample project for testing** · `priority:medium` · `impact:medium`
   - **Current:** No example task, source files, or reference output exists for validating agent behavior.

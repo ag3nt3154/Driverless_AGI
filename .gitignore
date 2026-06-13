@@ -192,3 +192,4 @@ dagi-memory/*
 .dagi/plans/*
 snapshots/
 benchmarks/jobs/*
+jobs/*

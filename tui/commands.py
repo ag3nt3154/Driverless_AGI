@@ -131,8 +131,8 @@ class SlashCommandsMixin:
             conv.append_info(f"[red]Not a directory:[/red] {new}")
             return
         self._project_path = new
-        if self._config:
-            self._config.project_path = new
+        from agent.config_loader import resolve_model_config
+        self._config = resolve_model_config(self._model_id, project_path=new)
         self._active_loop = None
         self._load_maps()
         self.query_one(Sidebar).set_project_path(new)
