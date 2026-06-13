@@ -48,7 +48,7 @@ class DagiApp(SlashCommandsMixin, App[None]):
         self._spinner_idx: int = 0
 
     def compose(self) -> ComposeResult:
-        cfg = resolve_model_config(self._model_id)
+        cfg = resolve_model_config(self._model_id, project_path=self._project_path)
         dagi_root = Path(__file__).parent.parent
         yield Sidebar(
             self._model_name, cfg.context_window, cfg.reserve_tokens,
@@ -60,8 +60,7 @@ class DagiApp(SlashCommandsMixin, App[None]):
         yield PromptInput(id="prompt")
 
     def on_mount(self) -> None:
-        self._config = resolve_model_config(self._model_id)
-        self._config.project_path = self._project_path
+        self._config = resolve_model_config(self._model_id, project_path=self._project_path)
         self._load_maps()
         conv = self.query_one(ConversationPane)
         conv.write(Text(

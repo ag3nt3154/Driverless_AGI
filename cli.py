@@ -448,8 +448,7 @@ def _run_task(
     existing_tracker: "SessionTracker | None" = None,
 ) -> tuple[list, "AgentLoop"]:
     """Run one agent task. Returns (updated conversation messages, loop) for multi-turn."""
-    config = resolve_model_config(model_id)
-    config.project_path = project_path
+    config = resolve_model_config(model_id, project_path=project_path)
     config.plan_mode = plan_mode
     config.plan_file = str(plan_file) if plan_file else None
     use_threaded = (cli_cfg.threading == "threaded") and not force_sync
@@ -1060,8 +1059,7 @@ def _run_subagent_pipe_mode(
     task = Path(task_file).read_text(encoding="utf-8")
 
     # Resolve model tier from subagent_config.yaml
-    base_config = resolve_model_config(model)
-    base_config.project_path = project_path
+    base_config = resolve_model_config(model, project_path=project_path)
 
     config_yaml = (
         project_path / ".dagi" / "subagents" / subagent_type / "subagent_config.yaml"

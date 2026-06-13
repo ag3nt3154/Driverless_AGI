@@ -111,8 +111,7 @@ class SlashCommandsMixin:
             return
         self._model_id = arg
         self._model_name = get_model_display_name(arg)
-        self._config = resolve_model_config(arg)
-        self._config.project_path = self._project_path
+        self._config = resolve_model_config(arg, project_path=self._project_path)
         sidebar.update_model(self._model_name)
         sidebar._context_window = self._config.context_window
         sidebar._reserve_tokens = self._config.reserve_tokens
