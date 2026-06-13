@@ -57,3 +57,101 @@ def test_load_soul_returns_none_when_absent(tmp_path):
     # Point dagi_root to tmp_path so neither soul exists
     result = load_soul(tmp_path, tmp_path)
     assert result is None
+
+
+# ── Config merge ─────────────────────────────────────────────────────────────
+
+def _write_yaml(path: Path, content: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(content.strip(), encoding="utf-8")
+
+
+def test_project_config_overrides_scalar_field(tmp_path, monkeypatch):
+    """Project config scalars win over dagi root scalars."""
+    monkeypatch.chdir(tmp_path)
+    root_cfg = tmp_path / "config.yaml"
+    _write_yaml(root_cfg, """
+default_model: root-model
+max_continuations: 10
+models:
+  root-model:
+    name: Root Model
+    model: root/model
+    api_url: http://root/v1
+    api_key: root-key
+""")
+    _write_yaml(tmp_path / ".dagi" / "config.yaml", """
+max_continuations: 3
+""")
+    from agent.config_loader import resolve_model_config
+    cfg = resolve_model_config(project_path=tmp_path, config_path=root_cfg)
+    assert cfg.max_continuations == 3
+
+
+def test_project_config_model_catalog_merged(tmp_path, monkeypatch):
+    """Project model catalog entries are added to root catalog."""
+    monkeypatch.chdir(tmp_path)
+    root_cfg = tmp_path / "config.yaml"
+    _write_yaml(root_cfg, """
+default_model: root-model
+models:
+  root-model:
+    name: Root
+    model: root/m
+    api_url: http://root/v1
+    api_key: rk
+""")
+    _write_yaml(tmp_path / ".dagi" / "config.yaml", """
+default_model: fast-local
+models:
+  fast-local:
+    name: Local
+    model: ollama/llama
+    api_url: http://localhost:11434/v1
+    api_key: ollama
+""")
+    from agent.config_loader import resolve_model_config
+    cfg = resolve_model_config(project_path=tmp_path, config_path=root_cfg)
+    assert cfg.model == "ollama/llama"
+    assert cfg.base_url == "http://localhost:11434/v1"
+
+
+def test_project_config_absent_uses_root(tmp_path, monkeypatch):
+    """When no project config exists, root config is used unchanged."""
+    monkeypatch.chdir(tmp_path)
+    root_cfg = tmp_path / "config.yaml"
+    _write_yaml(root_cfg, """
+default_model: root-model
+max_continuations: 7
+models:
+  root-model:
+    name: Root
+    model: root/m
+    api_url: http://root/v1
+    api_key: rk
+""")
+    from agent.config_loader import resolve_model_config
+    cfg = resolve_model_config(project_path=tmp_path, config_path=root_cfg)
+    assert cfg.max_continuations == 7
+
+
+def test_project_config_invalid_yaml_raises(tmp_path, monkeypatch):
+    """Invalid YAML in project config surfaces a clear ValueError."""
+    monkeypatch.chdir(tmp_path)
+    root_cfg = tmp_path / "config.yaml"
+    _write_yaml(root_cfg, """
+default_model: root-model
+models:
+  root-model:
+    name: Root
+    model: root/m
+    api_url: http://root/v1
+    api_key: rk
+""")
+    bad = tmp_path / ".dagi" / "config.yaml"
+    bad.parent.mkdir(parents=True, exist_ok=True)
+    bad.write_text(": bad: yaml: [unclosed\n", encoding="utf-8")
+    from agent.config_loader import resolve_model_config
+    import pytest
+    with pytest.raises(ValueError, match=".dagi"):
+        resolve_model_config(project_path=tmp_path, config_path=root_cfg)

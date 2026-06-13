@@ -78,6 +78,34 @@ def list_model_ids() -> list[str]:
     return list(load_raw_config().get("models", {}).keys())
 
 
+def _load_project_config(project_path: Path) -> dict | None:
+    """Load project-level config from {project_path}/.dagi/config.yaml.
+
+    Returns None if the file is absent. Raises ValueError on invalid YAML.
+    """
+    path = project_path / ".dagi" / "config.yaml"
+    if not path.exists():
+        return None
+    try:
+        return yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    except yaml.YAMLError as exc:
+        raise ValueError(f"Invalid YAML in {path}: {exc}") from exc
+
+
+def _merge_configs(root_raw: dict, project_raw: dict) -> dict:
+    """Merge project_raw over root_raw. Model catalogs are shallow-merged (project wins).
+    All other top-level scalar fields: project value wins when key is present.
+    """
+    merged = dict(root_raw)
+    root_models: dict = root_raw.get("models", {})
+    project_models: dict = project_raw.get("models", {})
+    merged["models"] = {**root_models, **project_models}
+    for key, value in project_raw.items():
+        if key != "models":
+            merged[key] = value
+    return merged
+
+
 def _build_config_from_entry(entry: dict, raw: dict) -> AgentConfig:
     """Build an AgentConfig from a catalog entry dict and the top-level raw config."""
     direct_key = entry.get("api_key", "")
@@ -125,6 +153,7 @@ def _build_config_from_entry(entry: dict, raw: dict) -> AgentConfig:
 def resolve_model_config(
     model_id: str | None = None,
     config_path: Path | None = None,
+    project_path: Path | None = None,
 ) -> AgentConfig:
     """
     Build an AgentConfig by looking up a model in the catalog.
@@ -137,6 +166,11 @@ def resolve_model_config(
     config_path overrides the default config.yaml (e.g. pass config_benchmark.yaml
     for Terminal-bench runs).
 
+    project_path, when provided, loads {project_path}/.dagi/config.yaml and
+    merges it over the root config. Project values win on all scalar fields;
+    model catalog entries are shallow-merged (project entries add or fully
+    replace root entries).
+
     If worker_model is set in config.yaml and resolves to a known catalog entry,
     the returned config carries a worker_config field that sub-agents use instead
     of the primary model. Unrecognised worker_model values are silently ignored.
@@ -145,8 +179,13 @@ def resolve_model_config(
     ------
     KeyError        if the resolved model_id is not in the catalog.
     EnvironmentError if the required API key env var is not set.
+    ValueError       if project .dagi/config.yaml contains invalid YAML.
     """
     raw = load_raw_config(config_path=config_path)
+    if project_path is not None:
+        project_raw = _load_project_config(project_path)
+        if project_raw:
+            raw = _merge_configs(raw, project_raw)
     catalog: dict = raw.get("models", {})
 
     chosen_id = model_id or raw.get("default_model") or _FALLBACK_MODEL_ID
@@ -173,6 +212,8 @@ def resolve_model_config(
 
     cfg = _build_config_from_entry(entry, raw)
     cfg = replace(cfg, display_name=entry.get("name", chosen_id))
+    if project_path is not None:
+        cfg = replace(cfg, project_path=project_path)
 
     # Resolve optional worker model for sub-agents; silently fall back if unset/invalid.
     worker_id = raw.get("worker_model")
