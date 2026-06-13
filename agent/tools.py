@@ -248,6 +248,11 @@ def create_tool_registry(
             reg.register(SkillTool(skill_roots=skill_roots, dagi_root=_DAGI_ROOT, cwd=cwd, memory_root=_effective_memory_root))
             from tools.run_skill_script import RunSkillScriptTool
             reg.register(RunSkillScriptTool(skill_roots=skill_roots, dagi_root=_DAGI_ROOT))
+        # Direct web tools always available in plan mode
+        from tools.web_fetch import WebFetchTool
+        from tools.web_search import WebSearchTool
+        reg.register(WebSearchTool())
+        reg.register(WebFetchTool())
         # Subagents available in plan mode: web_research + explore_files
         if config is not None:
             from tools.spawn_subagent import SpawnSubagentTool
@@ -265,11 +270,6 @@ def create_tool_registry(
                     on_event_factory=on_event_factory,
                     tracker=tracker,
                 ))
-        else:
-            from tools.web_fetch import WebFetchTool
-            from tools.web_search import WebSearchTool
-            reg.register(WebSearchTool())
-            reg.register(WebFetchTool())
     else:
         reg.register(WriteTool(cwd=cwd, allowed_roots=effective_roots))
         reg.register(EditTool(cwd=cwd, allowed_roots=effective_roots))
