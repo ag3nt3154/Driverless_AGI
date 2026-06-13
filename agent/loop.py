@@ -10,7 +10,7 @@ from typing import Callable
 
 import openai
 
-from agent.prompts import load_prompt
+from agent.prompts import load_prompt, load_main_system_prompt, load_soul
 from agent.registry import ToolRegistry
 from agent.session import SessionTracker, ToolCallRecord
 from agent.skills import Skill, SkillLoader
@@ -90,7 +90,6 @@ def _format_reload_notification(
     return "\n".join(lines)
 
 
-DEFAULT_SYSTEM_PROMPT = load_prompt("main/main_system.md")
 CONTINUE_PROMPT = load_prompt("main/continue.md")
 
 
@@ -99,7 +98,7 @@ class AgentConfig:
     model: str = "gpt-4o"
     base_url: str = "https://api.openai.com/v1"
     api_key: str = ""  # always set by agent.config_loader.resolve_model_config
-    system_prompt: str = DEFAULT_SYSTEM_PROMPT
+    system_prompt: str = ""  # loaded from files at AgentLoop init time if empty
     thread_id: str | None = None
     thinking: str = "none"  # "none" | "low" | "medium" | "high"
     # Compaction (Pi-style)
@@ -217,7 +216,11 @@ class AgentLoop:
         elif _parent_tracker is not None:
             self.tracker = _parent_tracker.child_tracker(_subagent_id or uuid4().hex)
         else:
-            self.tracker = SessionTracker(model=config.model, thread_id=config.thread_id)
+            self.tracker = SessionTracker(
+                model=config.model,
+                thread_id=config.thread_id,
+                logs_dir=config.project_path / ".dagi" / "logs",
+            )
 
         self._effective_memory_root = (
             config.memory_root if config.memory_root is not None
@@ -254,7 +257,12 @@ class AgentLoop:
         # ── Build system prompt ───────────────────────────────────────────
         readme_path = (dagi_root / "README.md").resolve()
         tools_and_skills_section = _format_tools_and_skills(self.registry, self.skills)
-        prompt = config.system_prompt.format_map(_SafeDict(
+        system_prompt_text = (
+            config.system_prompt
+            if config.system_prompt
+            else load_main_system_prompt(dagi_root, config.project_path)
+        )
+        prompt = system_prompt_text.format_map(_SafeDict(
             readme_path=readme_path,
             tools_and_skills=tools_and_skills_section,
             cwd=str(config.project_path.resolve()),
@@ -262,11 +270,11 @@ class AgentLoop:
             dagi_root=str(dagi_root.resolve()),
         ))
 
-        # Load preamble: dagi root soul + .dagi/agents.md, then project .dagi/agents.md
+        # Load preamble: soul (project first, dagi root fallback), then agents.md files
         preamble_parts: list[str] = []
-        dagi_soul = dagi_root / "soul.md"
-        if dagi_soul.exists():
-            preamble_parts.append(dagi_soul.read_text(encoding="utf-8").strip())
+        soul_text = load_soul(dagi_root, config.project_path)
+        if soul_text:
+            preamble_parts.append(soul_text.strip())
         dagi_agents = dagi_root / ".dagi" / "agents.md"
         if dagi_agents.exists():
             text = dagi_agents.read_text(encoding="utf-8").strip()
@@ -287,8 +295,8 @@ class AgentLoop:
 
         # Build labeled system-prompt sections for the UI expander
         self.system_parts: list[dict] = []
-        if dagi_soul.exists():
-            self.system_parts.append({"label": "SOUL.md", "content": dagi_soul.read_text(encoding="utf-8").strip()})
+        if soul_text:
+            self.system_parts.append({"label": "SOUL.md", "content": soul_text.strip()})
         if dagi_agents.exists():
             self.system_parts.append({"label": ".dagi/agents.md (dagi)", "content": dagi_agents.read_text(encoding="utf-8").strip()})
         if project_agents.exists():
