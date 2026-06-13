@@ -1,3 +1,28 @@
+# ── Per-project configuration ────────────────────────────────────────────────
+# Place a .dagi/config.yaml in any project directory to override settings here.
+#
+# Merge behaviour:
+#   - models: block is shallow-merged — project entries add to or fully replace
+#     root entries (the whole entry wins; individual fields are NOT deep-merged).
+#   - All other top-level fields (max_continuations, tools, etc.) are scalars:
+#     the project value wins when the key is present.
+#   - default_model: project value takes precedence if set.
+#
+# Example project .dagi/config.yaml:
+#
+#   default_model: fast-local
+#   max_continuations: 5
+#   tools:
+#     - read
+#     - write
+#     - bash
+#   models:
+#     fast-local:
+#       name: "Local Ollama"
+#       model: "llama3.2"
+#       api_url: "http://localhost:11434/v1"
+#       api_key: "ollama"
+#
 # ─────────────────────────────────────────────────────────────────────────────
 # dagi — configuration example
 # Copy this file to config.yaml and fill in your values.

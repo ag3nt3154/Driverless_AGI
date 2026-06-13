@@ -187,6 +187,7 @@ logs/
 .env
 .claude/
 dagi-memory/*
+.dagi/config.yaml
 .dagi/logs/*
 .dagi/plans/*
 snapshots/
