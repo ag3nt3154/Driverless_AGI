@@ -29,6 +29,11 @@
   - **Next:** Review plan · implement · mark done
   - **Source:** Session `2026-04-26_15-20-10` · [review_2026-04-26_15-20-10.md](.dagi/self-review/review_2026-04-26_15-20-10.md) · [plan_2026-04-26_15-20-10.md](.dagi/self-review/plan_2026-04-26_15-20-10.md)
 
+- **Full Harbor benchmark run (89 tasks)** · `priority:medium` · `impact:high`
+  - **Current:** Only single-task smoke tests have been run (`--n-tasks 1`). Fix A and Fix B are in place; reward 0.0 was confirmed on the smoke test with Gemma 4 (too weak). Harness, async/sync bridge, and preamble injection are all verified.
+  - **Ideal:** Full 89-task run with Claude Sonnet via OpenRouter; per-task score breakdown, token cost, and pass-rate baseline established.
+  - **Next:** Run `set DAGI_BENCH_MODEL=claude-sonnet-openrouter && benchmarks\run_harbor.bat`; record results.
+
 - **Multi-agent / parallel clones** · `priority:medium` · `impact:high`
   - **Current:** Subagents run sequentially as pipe subprocesses (`tools/_subagent_runner.py`). Output streams to the main TUI `ConversationPane` with a `[subagent-type]` label. Each subagent declares its own `tools:` list in `.dagi/subagents/<type>/subagent_config.yaml`. Agent can extend a timed-out subagent via `extend_subagent_timeout(pid, extra_seconds)`.
   - **Ideal:** Parallel spawning (multiple subagents concurrently); task queue / manifest structure; each subagent's output visible in TUI with distinct label simultaneously.
@@ -133,4 +138,7 @@
 - [x] Add bash-based archiving template to memory-ingest Step 5 — explicit `mkdir`/`type … | Out-File`/`del` template in Step 5.
 - [x] Add bash-fallback guidance to memory-ingest for G: path operations — covered by the Path Roots section added to the skill.
 - [x] Recommend `dir` not `ls` in memory skills for Windows paths — both memory-ingest and memory-add Path Roots tables use `dir` in all bash examples for non-C: drives.
+- [x] Harbor harness Fix A — `DagiAgent.run()` now uses `tempfile.mkdtemp()` for `config.project_path` instead of Harbor's log directory, preventing DAGI's file tools from seeing misleading `.dagi/` internal files and stopping the system prompt from emitting a misleading "Project root: <logs_dir>" line.
+- [x] Harbor harness Fix B — Added `system_prompt_preamble: str = ""` field to `AgentConfig`, parsed from `config_benchmark.yaml`. Injected first in the system prompt at all 3 build sites (`__init__`, `_rebuild_for_normal_mode`, `_rebuild_for_plan_mode`). Preamble instructs the agent to use `harbor_bash` for all container access and never call `enter_plan_mode`. `config_benchmark.yaml` created at project root with model catalog, tool allowlist, and preamble.
+
 - [x] RAM watchdog in test suite — `tests/conftest.py` auto-use fixture monitors system RAM via a daemon thread (0.5 s poll). At 70%: interrupts the running test with `pytest.fail()`. At 90%: hard-kills the process with `os._exit(1)` to protect the machine. Catches infinite-loop OOM bugs like the MagicMock + `yaml.safe_load` issue that previously killed the machine.

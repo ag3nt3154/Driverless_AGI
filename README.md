@@ -567,6 +567,70 @@ Logs are append-only JSONL — each line is a self-contained JSON record.
 
 ---
 
+## Running Benchmarks
+
+### Harbor Framework (89-task Terminal Benchmark)
+
+DAGI includes an adapter for the [Harbor Framework](https://harborframework.com) benchmark suite.
+
+**Prerequisites**
+
+- Docker running locally
+- `harbor` CLI installed (`pip install harbor-ai`)
+- `config_benchmark.yaml` at the project root (copy `config.example.yaml`, add model entries for `claude-sonnet-openrouter` and/or `claude-opus-openrouter` with your OpenRouter API key)
+
+**Setup**
+
+```yaml
+# config_benchmark.yaml (excerpt)
+default_model: claude-sonnet-openrouter
+max_continuations: 30
+system_prompt_preamble: |
+  ## Harbor Environment
+  You are running inside a Harbor benchmark task. All task files live inside a Docker
+  container. Use harbor_bash for ALL file access (ls, cat, etc.). Your first action
+  MUST be harbor_bash("ls /app"). Never call enter_plan_mode.
+tools:
+  - harbor_bash
+  - read
+  - find
+  - grep
+  - write
+  - edit
+  - ask_user
+models:
+  claude-sonnet-openrouter:
+    name: "Claude Sonnet (OpenRouter)"
+    model: "anthropic/claude-sonnet-4-5"
+    api_url: "https://openrouter.ai/api/v1"
+    api_key_env: "OPENROUTER_API_KEY"
+```
+
+**Running**
+
+```bat
+set DAGI_BENCH_MODEL=claude-sonnet-openrouter
+benchmarks\run_harbor.bat
+```
+
+Or for a single-task smoke test:
+
+```bat
+set DAGI_BENCH_MODEL=claude-sonnet-openrouter
+set HARBOR_DATASET=terminal-bench/terminal-bench-2@latest
+conda run -n dagi harbor run --agent-import-path benchmarks.harbor.agent:DagiAgent --n-tasks 1
+```
+
+**Key implementation notes**
+
+- `HarborBashTool` (`benchmarks/harbor/bash_tool.py`, `name="harbor_bash"`) routes all commands to the Docker container via `environment.exec()`. Only this tool reaches the container — DAGI's built-in `bash` tool runs on the Windows host.
+- The `system_prompt_preamble` field in `config_benchmark.yaml` is injected first in the system prompt (before soul/agents.md), telling the agent to use `harbor_bash` for all file I/O and to start with `ls /app`.
+- `config.project_path` is set to a fresh `tempfile.mkdtemp()` directory so that DAGI's file tools return nothing — nudging the model toward `harbor_bash` rather than host file tools.
+- The dataset is `terminal-bench/terminal-bench-2@latest` (OCI package registry, no auth required).
+- A full 89-task run has not yet been performed; only single-task smoke tests are confirmed working.
+
+---
+
 ## Dependencies
 
 Core (from `pyproject.toml`):
