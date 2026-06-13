@@ -275,6 +275,8 @@ class AgentLoop:
 
         # Load preamble: soul (project first, dagi root fallback), then agents.md files
         preamble_parts: list[str] = []
+        if config.system_prompt_preamble:
+            preamble_parts.append(config.system_prompt_preamble.strip())
         soul_text = load_soul(dagi_root, config.project_path)
         if soul_text:
             preamble_parts.append(soul_text.strip())
@@ -784,6 +786,8 @@ class AgentLoop:
             memory_root=str(effective_memory_root),
             dagi_root=str(dagi_root.resolve()),
         ))
+        if self.config.system_prompt_preamble:
+            new_system = self.config.system_prompt_preamble.strip() + "\n\n---\n\n" + new_system
         new_system += f"\n\n---\n\nProject root: {self.config.project_path}"
 
         if self.config.active_plan_file:
@@ -847,6 +851,8 @@ class AgentLoop:
             memory_root=str(effective_memory_root),
             dagi_root=str(dagi_root.resolve()),
         ))
+        if self.config.system_prompt_preamble:
+            new_system = self.config.system_prompt_preamble.strip() + "\n\n---\n\n" + new_system
         new_system += f"\n\n---\n\nProject root: {self.config.project_path}"
         self._messages[0] = {"role": "system", "content": new_system}
         self.compact_tool.bind(

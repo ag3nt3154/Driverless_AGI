@@ -45,3 +45,34 @@ class TestPreambleFromConfig:
         """), encoding="utf-8")
         cfg = resolve_model_config(config_path=cfg_yaml)
         assert cfg.system_prompt_preamble == ""
+
+
+from unittest.mock import patch
+
+
+class TestPreambleInjection:
+    def _make_loop(self, preamble: str = ""):
+        from agent.loop import AgentLoop, AgentConfig, AgentCallbacks
+        cfg = AgentConfig(
+            system_prompt="Base system prompt. {tools_and_skills}",
+            system_prompt_preamble=preamble,
+            api_key="test",
+        )
+        with patch("openai.OpenAI"):
+            loop = AgentLoop(cfg, callbacks=AgentCallbacks())
+        return loop
+
+    def test_preamble_appears_in_system_message(self):
+        loop = self._make_loop(preamble="HARBOR_PREAMBLE_MARKER")
+        system_content = loop._messages[0]["content"]
+        assert "HARBOR_PREAMBLE_MARKER" in system_content
+
+    def test_preamble_appears_before_base_prompt(self):
+        loop = self._make_loop(preamble="HARBOR_PREAMBLE_MARKER")
+        system_content = loop._messages[0]["content"]
+        assert system_content.index("HARBOR_PREAMBLE_MARKER") < system_content.index("Base system prompt")
+
+    def test_no_preamble_leaves_system_unchanged(self):
+        loop_with = self._make_loop(preamble="UNIQUE_MARKER")
+        loop_without = self._make_loop(preamble="")
+        assert "UNIQUE_MARKER" not in loop_without._messages[0]["content"]
