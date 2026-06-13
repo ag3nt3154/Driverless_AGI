@@ -56,6 +56,13 @@ def build_callbacks(app: DagiApp, loop_ref: list) -> AgentCallbacks:
     def on_error(exc):
         app.call_from_thread(conv.append_error, str(exc))
 
+    def on_pause():
+        app.call_from_thread(sidebar.set_status, "paused")
+        app.call_from_thread(conv.append_info,
+            "[yellow]⏸ Server error — session paused. "
+            "Send a message to retry when the server is back.[/yellow]")
+        app.call_from_thread(app._enable_input)
+
     def on_api_call(messages):
         app.call_from_thread(sidebar.update_context, _breakdown(messages))
 
@@ -84,6 +91,7 @@ def build_callbacks(app: DagiApp, loop_ref: list) -> AgentCallbacks:
         on_compaction=on_compaction, on_model_switch=on_model_switch,
         on_ask_user=on_ask_user, on_emote=on_emote,
         on_subagent_event_factory=on_subagent_event_factory,
+        on_pause=on_pause, supports_pause=True,
     )
 
 

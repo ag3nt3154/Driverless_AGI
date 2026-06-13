@@ -51,7 +51,7 @@ def _load_subagent_config(subagent_type: str, project_path: Path) -> dict:
 def _tools_from_list(
     tool_names: list[str],
     cwd: Path,
-    allowed_roots: list[Path],
+    allowed_roots: list[Path] | None,
 ) -> list[BaseTool]:
     """Instantiate tools by name for a subagent registry."""
     from tools.web_fetch import WebFetchTool
@@ -221,7 +221,10 @@ def create_tool_registry(
     by delegate tools that spin up sub-agents. Without *config* (e.g. in
     tests), the raw web_search and web_fetch tools are registered instead.
     """
-    effective_roots = allowed_roots if allowed_roots is not None else [_DAGI_ROOT, cwd]
+    if config is not None and config.sandbox_mode:
+        effective_roots = None
+    else:
+        effective_roots = allowed_roots if allowed_roots is not None else [_DAGI_ROOT, cwd]
     reg = ToolRegistry()
     reg.register(ReadTool(cwd=cwd, allowed_roots=effective_roots))
     reg.register(GrepTool(cwd=cwd, allowed_roots=effective_roots))
@@ -289,10 +292,9 @@ def create_tool_registry(
             reg.register(SwitchModelTool())
         from tools.reload_skills import ReloadSkillsTool
         reg.register(ReloadSkillsTool())
-        if config is None or config.emote_tool:
-            from tools.emote import EmoteTool
-            _on_emote = callbacks.on_emote if callbacks else None
-            reg.register(EmoteTool(on_emote=_on_emote))
+        from tools.emote import EmoteTool
+        _on_emote = callbacks.on_emote if callbacks else None
+        reg.register(EmoteTool(on_emote=_on_emote))
         if config is not None:
             # Auto-discover predefined subagent types from .dagi/subagents/
             # A valid type directory must contain both prompt.md and subagent_config.yaml.
@@ -341,6 +343,8 @@ def create_tool_registry(
             if skill_roots:
                 _effective_memory_root = memory_root or cwd / "dagi-memory"
                 reg.register(SkillTool(skill_roots=skill_roots, dagi_root=_DAGI_ROOT, cwd=cwd, memory_root=_effective_memory_root))
+        if config is not None and config.tools is not None:
+            reg.filter_to(config.tools)
     return reg
 
 
@@ -369,7 +373,7 @@ def build_subagent_registry(
         callbacks:     Subprocess-side callbacks.
         tracker:       Optional session tracker.
     """
-    effective_roots = [_DAGI_ROOT, project_path]
+    effective_roots: list[Path] | None = None if config.sandbox_mode else [_DAGI_ROOT, project_path]
     reg = ToolRegistry()
 
     # ── Custom: full scope for dynamic SpawnCliSubagentTool subagents ─────────

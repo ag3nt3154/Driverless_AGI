@@ -13,12 +13,15 @@ class PathNotAllowedError(ValueError):
     """Raised when a resolved path escapes all allowed roots."""
 
 
-def validate_path(p: Path, allowed_roots: list[Path]) -> Path:
+def validate_path(p: Path, allowed_roots: list[Path] | None) -> Path:
     """Resolve *p* and verify it sits under at least one of *allowed_roots*.
 
     allowed_roots entries may be directories (any descendant is allowed) or
     exact file paths (only that precise file is allowed). This lets plan mode
     register write tools scoped to a single plan document.
+
+    When allowed_roots is None (sandbox_mode=True), the path is resolved and
+    returned immediately with no restriction applied.
 
     Returns the resolved path on success.
     Raises PathNotAllowedError with a human-readable message on failure.
@@ -26,6 +29,8 @@ def validate_path(p: Path, allowed_roots: list[Path]) -> Path:
     catches it and returns the message to the model as a tool result.
     """
     resolved = p.resolve()
+    if allowed_roots is None:
+        return resolved
     for root in allowed_roots:
         root_resolved = root.resolve()
         if root_resolved.is_file():

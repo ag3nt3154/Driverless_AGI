@@ -46,3 +46,16 @@ def test_empty_direct_key_falls_back_to_env():
     with patch.dict(os.environ, {"MY_CUSTOM_KEY": "sk-env-fallback"}):
         cfg = _build_config_from_entry(entry, {})
     assert cfg.api_key == "sk-env-fallback"
+
+
+def test_tools_list_parsed_from_raw():
+    entry = {"model": "m", "api_url": "http://x", "api_key": "k"}
+    raw = {"tools": ["read", "grep", "bash"]}
+    cfg = _build_config_from_entry(entry, raw)
+    assert cfg.tools == ["read", "grep", "bash"]
+
+
+# def test_tools_none_when_absent():
+#     entry = {"model": "m", "api_url": "http://x", "api_key": "k"}
+#     cfg = _build_config_from_entry(entry, {})
+#     assert cfg.tools is None

@@ -1,17 +1,17 @@
 # ============================================================
-#  config_benchmark.yaml — DAGI configuration for Terminal-bench 2
+#  config_benchmark.yaml — DAGI configuration for Harbor benchmarks
 #
 #  Set DAGI_BENCH_MODEL to a model key below before running.
-#  Usage: benchmarks\run_terminal_bench.bat [--task-id ID] [--n-concurrent N]
+#  Usage: benchmarks\run_harbor.bat [--task-id ID] [--n-concurrent N]
 # ============================================================
 
 # --- Benchmark-specific settings ----------------------------
-bash_backend: tmux       # routes all bash calls through TmuxSession (Docker container)
-emote_tool: false        # no TUI during benchmark runs
+bash_backend: external   # routes bash calls through the injected tool (TmuxBashTool / HarborBashTool)
+sandbox_mode: true       # benchmark tasks may read/write anywhere; disable path restrictions
 
 # --- Model selection ----------------------------------------
 # Override at runtime: set DAGI_BENCH_MODEL=<key>
-default_model: claude-sonnet-openrouter
+default_model: local-llamacpp
 # advanced_model: claude-opus-openrouter   # uncomment to enable plan mode with a stronger model
 # worker_model: deepseek-v4-flash-openrouter  # uncomment to use a cheaper model for subagents
 
@@ -31,35 +31,65 @@ max_continuations: 20    # raised from 10 — benchmark tasks can be long
 # memory_root: "C:/tmp/dagi-bench-memory"
 
 # --- Prompt caching -----------------------------------------
-cache_prompt: true       # saves cost on repeated system prompts
+cache_prompt: true
 
 # --- Thinking -----------------------------------------------
-thinking: high           # full reasoning effort for best benchmark scores
+thinking: high
 
-# --- Models catalog (same as config.yaml) -------------------
+
+tools:                      # Restrict the main agent to a specific subset of tools.
+                            # Omit (or set to null) to enable all available tools.
+  # ── File tools ──────────────────────────────────────────────────────────────
+  - read                    # Read files from disk
+  - grep                    # Regex search across files
+  - find                    # Locate files by name/pattern
+  - write                   # Write (create/overwrite) files
+  - edit                    # Patch a specific region of a file
+  - copy                    # Copy files or directories
+  # ── Shell tools ─────────────────────────────────────────────────────────────
+  - harbor_bash             # Run commands in the Harbor benchmark container (renamed from bash in c40b9b1)
+  # - bash                  # Host-machine bash — intentionally excluded; use harbor_bash for container access
+  # - tmux_bash               # Run commands in a persistent tmux session
+  # # ── Git tools ────────────────────────────────────────────────────────────────
+  # - git_status              # Show current git status / diff
+  # - git_commit              # Stage and commit changes
+  # - git_rollback            # Revert uncommitted changes
+  # ── Planning tools ───────────────────────────────────────────────────────────
+  - enter_plan_mode         # Switch agent into plan-writing mode
+  - complete_plan           # Mark a plan step as done and continue
+  # ── Agent / subagent tools ───────────────────────────────────────────────────
+  # - ask_user                # Pause and prompt the user for input
+  - spawn_cli_subagent      # Spawn a dynamic full-scope subagent
+  - extend_subagent_timeout # Extend timeout for an in-flight subagent
+  # ── Model tools ──────────────────────────────────────────────────────────────
+  # - switch_model            # Switch between default / worker / advanced models
+  # ── Skill tools ──────────────────────────────────────────────────────────────
+  - skill                   # Load and run a skill document
+  - run_skill_script        # Execute a skill's companion script
+  - reload_skills           # Hot-reload skill definitions from disk
+  # ── Web tools ────────────────────────────────────────────────────────────────
+  - web_search              # Search the web (fallback when no config subagents)
+  - web_fetch               # Fetch a URL (fallback when no config subagents)
+  # ── UI tools ─────────────────────────────────────────────────────────────────
+  - emote                   # Update the TUI sidebar face expression
+
+
+# --- Models catalog -----------------------------------------
 models:
-  claude-opus-openrouter:
-    api_key_env: OPENROUTER_API_KEY
-    api_url: https://openrouter.ai/api/v1
-    model: anthropic/claude-opus-4-6
-    name: Claude Opus 4.6 (OpenRouter)
-  claude-sonnet-openrouter:
-    api_key_env: OPENROUTER_API_KEY
-    api_url: https://openrouter.ai/api/v1
-    model: anthropic/claude-sonnet-4-6
-    name: Claude Sonnet 4.6 (OpenRouter)
-  deepseek-v4-pro-openrouter:
-    api_key_env: OPENROUTER_API_KEY
-    api_url: https://openrouter.ai/api/v1
-    model: deepseek/deepseek-v4-pro
-    name: Deepseek v4 Pro (OpenRouter)
-  deepseek-v4-flash-openrouter:
-    api_key_env: OPENROUTER_API_KEY
-    api_url: https://openrouter.ai/api/v1
-    model: deepseek/deepseek-v4-flash
-    name: Deepseek v4 Flash (OpenRouter)
-  gpt-4o-openai:
-    api_key_env: OPENAI_API_KEY
-    api_url: https://api.openai.com/v1
-    model: gpt-4o
-    name: GPT-4o (OpenAI)
+  # ── Local llama.cpp server ──────────────────────────────────
+  local-llamacpp:
+    api_url: http://localhost:8080/v1
+    api_key: "dummy"     # llama.cpp accepts any non-empty Bearer token by default
+    model: /models/E4B-Gemma4-it-vl-HERE-DECKARD4-Q8_0.gguf
+    name: Gemma4 (local llama.cpp @ :8080)
+
+  # deepseek-v4-flash-openrouter:
+  #   api_key_env: OPENROUTER_API_KEY
+  #   api_url: https://openrouter.ai/api/v1
+  #   model: deepseek/deepseek-v4-flash
+  #   name: Deepseek v4 Flash (OpenRouter)
+  # gpt-4o-openai:
+  #   api_key_env: OPENAI_API_KEY
+  #   api_url: https://api.openai.com/v1
+  #   model: gpt-4o
+  #   name: GPT-4o (OpenAI)

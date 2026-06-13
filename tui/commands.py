@@ -36,11 +36,19 @@ class SlashCommandsMixin:
         if cmd == "/exit":
             self.exit()
         elif cmd == "/clear":
+            if self._worker and self._worker.is_alive():
+                conv.append_info(
+                    "[yellow]⚠ Agent is running — press ESC to pause first, then /clear[/yellow]"
+                )
+                return
             conv.clear()
             self._active_loop = None
+            self._current_loop_ref = []
             self._stats = _Stats()
-            self.query_one(Sidebar).update_stats(0, 0, None, 0)
-            conv.append_info("[green]✓ Context cleared[/green]")
+            sidebar = self.query_one(Sidebar)
+            sidebar.update_stats(0, 0, None, 0)
+            sidebar.update_plan([], "")
+            conv.append_info("[green]✓ Context cleared — new session[/green]")
         elif cmd == "/model":
             self._cmd_model(arg)
         elif cmd == "/wd":

@@ -21,7 +21,7 @@ class WriteTool(BaseTool):
 
     def __init__(self, cwd: Path = Path("."), allowed_roots: list[Path] | None = None):
         self.cwd = cwd
-        self.allowed_roots = allowed_roots or [cwd]
+        self.allowed_roots = allowed_roots
 
     def run(self, path: str, content: str) -> str:
         p = Path(path)

@@ -190,3 +190,4 @@ dagi-memory/*
 .dagi/logs/*
 .dagi/plans/*
 snapshots/
+benchmarks/jobs/*

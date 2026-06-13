@@ -128,8 +128,6 @@ class AgentConfig:
     # Ghost-response retries: how many times to silently retry an API call that
     # returns content=None with zero token usage before surfacing an error.
     null_response_retries: int = 3
-    # Emote tool: when False the emote tool is not registered in the tool list.
-    emote_tool: bool = True
     # Transient API error retries: how many times to retry on 429/5xx/connection
     # errors before propagating the exception. Independent of null_response_retries.
     api_error_retries: int = 3
@@ -139,6 +137,10 @@ class AgentConfig:
     # Now a no-op for tool registration — both BashTool and any injected tool are always
     # registered. Kept for config file backwards compatibility.
     bash_backend: str = "subprocess"
+    # Accessible tools: None = all tools available; list = only named tools registered.
+    tools: list[str] | None = None
+    # Sandbox mode: when True, file tools have no path restrictions (allowed_roots=None).
+    sandbox_mode: bool = False
 
 
 @dataclass

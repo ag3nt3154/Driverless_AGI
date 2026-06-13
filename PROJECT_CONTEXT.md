@@ -1,7 +1,7 @@
 # PROJECT_CONTEXT.md
 
-> Last updated: 2026-06-12 | [README](README.md) | [TODO](TODO.md)
-> Session 2026-06-12: Terminal-bench 2 integration
+> Last updated: 2026-06-13 | [README](README.md) | [TODO](TODO.md)
+> Session 2026-06-13b: Fixed `run_harbor.bat` — two bugs: (1) Windows CP1252 UnicodeEncodeError crash; (2) `harbor_bash` tool silently filtered out after rename in c40b9b1.
 
 
 ---
@@ -23,7 +23,7 @@ Non-goals: cloud hosting, multi-user auth, UI beyond CLI/Rich.
 - **Install:** `conda run -n dagi pip install -e .`
 - **Run (REPL):** `conda run -n dagi python cli.py`
 - **Run (TUI):** `conda run -n dagi python tui.py`
-- **Config:** `config.yaml` (gitignored) — model catalog, base_url, api_key / api_key_env, max_iterations, null_response_retries, max_continuations, emote_tool, cache_prompt
+- **Config:** `config.yaml` (gitignored) — model catalog, base_url, api_key / api_key_env, max_iterations, null_response_retries, max_continuations, cache_prompt, tools
 
 ## Directory Layout
 
@@ -34,7 +34,8 @@ Driverless_AGI/
 ├── scripts/            # Utility scripts (dagi_freeze, build_api_tools, etc.)
 ├── tui/                # Textual TUI package (app, commands, sidebar, callbacks, etc.)
 ├── benchmarks/         # Benchmark adapters
-│   └── terminal_bench/ # Terminal-bench 2 adapter (TmuxBashTool, DagiAgent)
+│   ├── terminal_bench/ # Terminal-bench 2 adapter (TmuxBashTool, DagiAgent)
+│   └── harbor/         # Harbor Framework adapter (HarborBashTool, DagiAgent)
 ├── tests/              # Unit tests
 ├── .dagi/
 │   ├── agents.md       # Behavioral guidelines loaded at every session start
@@ -52,7 +53,7 @@ Driverless_AGI/
 ├── tui.py              # TUI entry point (thin launcher)
 ├── cli.py              # Rich REPL entry point
 ├── config.yaml         # Runtime config (gitignored)
-├── config_benchmark.yaml # Terminal-bench 2 config (bash_backend: tmux)
+├── config_benchmark.yaml # Benchmark config (bash_backend: external, emote_tool: false)
 ├── docs/
 │   └── terminal-bench.md # Guide for running Terminal-bench 2
 └── README.md           # Full documentation
@@ -131,14 +132,19 @@ tui.py / cli.py / main.py ← entry points (Textual TUI | Rich REPL | single-sho
 | `.dagi/agents.md` | Behavioral guidelines, Plan-Work-Review cycle instructions |
 | `soul.md` | DAGI persona definition |
 | `tests/test_continuation.py` | Unit tests for `<<TASK_END>>`, `<<WAIT_FOR_USER_RESPONSE>>` loop logic, and transient API error retry |
+| `tests/conftest.py` | RAM watchdog pytest plugin — auto-use fixture monitors system RAM during every test; fails at 70%, hard-kills at 90% |
 | `tests/test_config_loader.py` | Unit tests for direct `api_key` and `api_key_env` resolution |
 | `requirements.txt` | Exact pip freeze of the `dagi` conda env (23 packages). **Does not match `pyproject.toml`** — see Notable Points. |
 | `tools/emote.py` | `EmoteTool(BaseTool)` — agent calls `emote(emote)` to update sidebar face; fires `on_emote` callback |
 | `.dagi/emotes/` | Five emote face files (`default`, `confused`, `happy`, `serious`, `funny`), one line each, plain text |
-| `benchmarks/terminal_bench/tmux_bash_tool.py` | `TmuxBashTool(BaseTool)` — bash tool replacement that routes commands through Terminal-bench's `TmuxSession` (Docker container); selected via `bash_backend: tmux` in config |
-| `benchmarks/terminal_bench/agent.py` | `DagiAgent(BaseAgent)` — Terminal-bench 2 entry point; reads `DAGI_BENCH_MODEL` env var, loads `config_benchmark.yaml`, passes `TmuxSession` into `AgentLoop` |
-| `config_benchmark.yaml` | Benchmark-specific config: `bash_backend: tmux`, `emote_tool: false`, raised `max_continuations`; models catalog shared with `config.yaml` |
+| `tools/tmux_bash.py` | `TmuxBashTool(BaseTool)` — first-class tmux-based bash tool (`name="tmux_bash"`); canonical location; routes commands through Terminal-bench's `TmuxSession` |
+| `benchmarks/terminal_bench/tmux_bash_tool.py` | Legacy location for `TmuxBashTool` — kept for backwards compatibility; `benchmarks/terminal_bench/agent.py` now imports from `tools.tmux_bash` |
+| `benchmarks/terminal_bench/agent.py` | `DagiAgent(BaseAgent)` — Terminal-bench 2 entry point; instantiates `TmuxBashTool(session)` from `tools.tmux_bash` and passes it to `AgentLoop(_bash_tool=bash_tool)` |
+| `benchmarks/harbor/bash_tool.py` | `HarborBashTool(BaseTool)` — Harbor bash tool (`name="harbor_bash"`); wraps a sync `exec_fn` callable provided by `DagiAgent` that bridges `environment.exec()` from the event loop |
+| `benchmarks/harbor/agent.py` | `DagiAgent(BaseAgent)` — Harbor Framework entry point; runs `AgentLoop` in `run_in_executor` thread, bridges async `environment.exec()` back via `run_coroutine_threadsafe` |
+| `config_benchmark.yaml` | Benchmark-specific config: `bash_backend: subprocess` (no-op), raised `max_continuations`, explicit `tools:` list with `harbor_bash` (not `bash`) for Harbor container access; used by both Terminal-bench and Harbor adapters |
 | `benchmarks/run_terminal_bench.bat` | Windows runner: sets `DAGI_BENCH_MODEL`, calls `tb run --agent-import-path benchmarks.terminal_bench.agent:DagiAgent` |
+| `benchmarks/run_harbor.bat` | Windows runner: sets `DAGI_BENCH_MODEL` + `HARBOR_DATASET`, calls `harbor run --agent-import-path benchmarks.harbor.agent:DagiAgent` |
 | `docs/terminal-bench.md` | User guide: prerequisites, one-time setup, model selection, smoke test, full run, result interpretation |
 
 ## Encountered Errors & Solutions
@@ -209,13 +215,21 @@ tui.py / cli.py / main.py ← entry points (Textual TUI | Rich REPL | single-sho
 - **System prompt instructs automatic PROJECT_CONTEXT.md updates**: `.dagi/prompts/main/main_system.md` now has a `## Project Context` section that instructs the agent to call `skill("update-project-context")` before writing its final response on any task that changes the codebase, introduces tools/skills, resolves an error, or reveals non-obvious architecture. Skip rule: conversational turns and factual questions.
 - **`grill-me` skill is now universal**: `.dagi/skills/grill-me/SKILL.md` was upgraded from a 13-line imperative prompt to a full ~200-line protocol. It now has three phases: Phase 1 silently gathers context (codebase, PROJECT_CONTEXT.md, memory-wiki via `skill("memory-query")`, provided paths, web); Phase 2 routes to Mode A (decision-tree interrogation for plans/ideas) or Mode B (Socratic questioning for topics/documents/codebases); Phase 3 writes a closing summary and records insights to PROJECT_CONTEXT.md (`skill("update-project-context")`) and memory-wiki (`skill("memory-add")`) without asking permission. The global `~/.claude/skills/grill-my-plan/` directory was renamed to `grill-me/` and holds identical content for Claude Code sessions.
 - **Skill slash commands are LLM-delegated**: `/skill-name [args]` no longer pre-injects skill content. It produces `"Invoke the \`skill-name\` skill.\n\n{args}"` and sends it as the user message. The agent must call `skill("skill-name")` to load the content — same path as mid-task internal invocations. This means one extra LLM round-trip per slash command, but both code paths are now unified through `SkillTool`.
-- **Sidebar emote system**: `Sidebar._status_col()` calls `_load_face()` on every `refresh()`, which reads `.dagi/emotes/{_emote}.md` (one-line plain text face expression). Falls back to `(◉ ᴗ ◉)` on `OSError`. The agent can switch emotes via `EmoteTool` → `AgentCallbacks.on_emote` → `App.call_from_thread(sidebar.update_emote, emote)`. Emote files are live-editable. Controlled by `emote_tool: true/false` in `config.yaml`. The decorative ASCII-art hair border (`╭≋≋╮`) was removed in the top-header redesign (2026-06-04); the face glyph itself is preserved inline in the left column.
+- **Sidebar emote system**: `Sidebar._status_col()` calls `_load_face()` on every `refresh()`, which reads `.dagi/emotes/{_emote}.md` (one-line plain text face expression). Falls back to `(◉ ᴗ ◉)` on `OSError`. The agent switches emotes via `EmoteTool` → `AgentCallbacks.on_emote` → `App.call_from_thread(sidebar.update_emote, emote)`. Emote files are live-editable. To suppress the tool, exclude `emote` from the `tools:` list (replaces the old `emote_tool: false` config flag, removed 2026-06-13). The decorative ASCII-art hair border (`╭≋≋╮`) was removed in the top-header redesign (2026-06-04); the face glyph itself is preserved inline in the left column.
 - **ANSI `[blue]` renders as purple**: Rich's `[blue]` maps to ANSI color 4, which most modern terminal emulators render as violet/purple (inherited from CGA). Use hex colors (`[#4da6ff]`) or `[bright_blue]` (ANSI 12) for a perceptually blue result. This bit the sidebar logo — all color markup now uses hex.
 - **Plan mode revision loop**: After writing a plan, the agent is instructed (via `main_system.md`) to call `show_plan` before `exit_plan_mode`. `show_plan` shows the plan, asks "Do you have any modifications?", and returns either "Plan approved — call `exit_plan_mode`" or "Modifications requested — revise and call `show_plan` again." The revision cycle repeats until approval. After `exit_plan_mode`, the agent outputs one implementation-start sentence and immediately begins tool calls without waiting for user confirmation.
 - **Running indicator lifecycle**: `tui/app.py` has a 1-line `Static` widget (`#running-indicator`, `display: none` by default) between `#main-row` and `#prompt`. It is shown by `_show_running_indicator()` and hidden by `_hide_running_indicator()` (called from `_enable_input()`). The braille spinner (`_SPINNER` class var, 10 frames) is advanced by a `set_interval(0.1, _tick_spinner)` timer that no-ops when the bar is hidden. Show/hide call sites: `_dispatch_agent` (new task), `on_prompt_input_submitted` inject-and-resume branch (pause → resume), `on_prompt_input_submitted` ask_user answer branch (agent resumes after answer), `action_pause` (explicit hide without enabling input). Because `_enable_input` is always called via `call_from_thread`, `_hide_running_indicator` runs on the Textual main thread — safe.
 - **`/clear` resets all session state**: The handler resets `_active_loop`, `_current_loop_ref`, `_stats`, sidebar stats, and sidebar plan subtasks. It guards against being called while the agent is running (`_worker.is_alive()`) — the user must ESC to pause first. After clear, the next dispatched task creates a fresh `AgentLoop` with `initial_messages=None`, a new `SessionTracker`, and only the system prompt in `_messages`.
 - **`/hist` in TUI writes to hidden buffer**: `hist.run()` calls `console.print()` which writes to a Rich console that is not the Textual RichLog. Output appears in the terminal's hidden scroll buffer (behind Textual). This is a known limitation — `/hist` is functional but not displayed in the conversation pane.
 - **Compaction summary is now a first-class JSONL record**: After the 2026-06-05 fix, each compaction fires `on_summary` → `tracker.record_user(summary_content)`, writing a `{"type": "message", "entity": "user", "content": "[CONTEXT SUMMARY ..."}` record into the JSONL stream. Previously the summary only appeared inside `session_end.raw_messages`. Parsing tools (`parse_jsonl_logs.py`, `parse_session_log.py`) will now encounter this record in the message stream — they already handle user messages correctly, so no changes needed there.
+
+- **2026-06-12 Error**: `ValueError: Dataset terminal-bench-core@head not found` (and `terminal-bench-core==head not found`) when running `harbor run`.
+  **Cause**: `terminal-bench-core` was the old Terminal-bench 2 dataset name. Harbor's registry uses an `org/name` format (OCI package registry). The correct name is `terminal-bench/terminal-bench-2@latest`. Additionally, Harbor's CLI uses `@` as the version separator (not `==` which was terminal-bench syntax). Both bat files and `run_terminal_bench.bat` had stale dataset names.
+  **Fix**: Updated all three bat files (`run_harbor.bat`, `run_terminus2.bat`, `run_terminal_bench.bat`) to use `terminal-bench/terminal-bench-2@latest`.
+
+- **2026-06-12 Error**: `KeyError: "Model 'claude-sonnet-openrouter' not found in config.yaml."` when `harbor run` invoked `DagiAgent` without `DAGI_BENCH_MODEL` set.
+  **Cause**: `benchmarks/harbor/agent.py` hardcoded `os.environ.get("DAGI_BENCH_MODEL", "claude-sonnet-openrouter")` as the fallback model key. `config_benchmark.yaml` only defines `local-llamacpp`. When run directly (not via bat file), no env var was set, so it tried the hardcoded fallback which wasn't in the config.
+  **Fix**: Changed to `model_key = os.environ.get("DAGI_BENCH_MODEL") or None`. Passing `None` to `resolve_model_config` causes it to read `default_model` from `config_benchmark.yaml` — the config is now the single source of truth for the default.
 
 - **2026-06-12 Bug**: `/clear` slash command left stale session state visible in the sidebar after clearing.
   **Cause**: The handler set `_active_loop = None` and cleared the visual pane, but did not reset `_current_loop_ref`. The 2 s `_poll_plan` timer kept firing against the old loop's `plan_file`, so plan subtasks from the cleared session continued to appear in the sidebar header. There was also no guard against calling `/clear` while the agent was actively running.
@@ -231,13 +245,20 @@ tui.py / cli.py / main.py ← entry points (Textual TUI | Rich REPL | single-sho
 
 - **`README.md` now has a User Guide section** (added 2026-06-09) covering: starting a new project with `/init`, writing effective tasks, plan mode walkthrough, the full slash command reference, TUI pause/resume, using skills, context management, and best-practice tips. It sits between the Usage and Configuration sections.
 
-- **`bash_backend` config field gates which bash implementation runs**: `AgentConfig.bash_backend` defaults to `"subprocess"` (normal `BashTool`). Setting `bash_backend: tmux` in config.yaml selects `TmuxBashTool` — but only if a `_tmux_session` is also passed to `AgentLoop.__init__`. If `bash_backend: tmux` is set but `_tmux_session=None`, it silently falls back to `BashTool`. This means `config_benchmark.yaml` is inert when loaded by the TUI/CLI (no session provided).
+- **`bash_backend` config field is now a documented no-op in `create_tool_registry`**: As of 2026-06-13, `BashTool` is always registered unconditionally. An injected `bash_tool` is registered *additionally* if provided — no conditional gate. The `bash_backend` field on `AgentConfig` has an explicit comment marking it as a no-op kept only for config file backwards compatibility. `config_benchmark.yaml` still sets `bash_backend: subprocess` — this is harmless. The injected tool is stored as `self._injected_bash_tool` on the loop and re-passed to `create_tool_registry` on normal-mode rebuilds.
+- **Harbor async/sync bridge**: Harbor's `BaseEnvironment.exec()` is async; `AgentLoop.run()` is synchronous. `DagiAgent.run()` (in `benchmarks/harbor/agent.py`) runs `AgentLoop` in `run_in_executor` (thread pool), then uses `asyncio.run_coroutine_threadsafe(environment.exec(...), event_loop)` to bridge back from the thread to the event loop. The thread calls `.result(timeout=...)` on the returned `concurrent.futures.Future` to block until execution completes. This is safe because `run_in_executor` guarantees the thread is separate from the event loop thread — no deadlock.
 - **Terminal-bench 2's `send_keys(block=True)` appends `; tmux wait -S done`**: When `block=True` and the last key is "Enter", `TmuxSession` transparently rewrites the command as `<cmd>; tmux wait -S done` and then calls `tmux wait done` to block until completion. `TmuxBashTool.run()` uses this exclusively — no polling needed. Timeout raises `TimeoutError`, which `TmuxBashTool` catches and returns as a formatted string.
 - **`resolve_model_config` now accepts `config_path`**: The `config_path: Path | None = None` parameter lets callers override the default `config.yaml`. `DagiAgent` passes `config_benchmark.yaml` via this parameter. All other callers (TUI, CLI, `main.py`) pass nothing, preserving existing behavior.
 - **`load_raw_config` is now path-aware**: accepts `config_path: Path | None = None`, falling back to module-level `_CONFIG_PATH = Path("config.yaml")`. The `list_model_ids()` and `load_cli_config()` helpers still call it without arguments — they always read `config.yaml`.
 - **Terminal-bench 2 token fields differ from DAGI's**: `AgentResult.total_input_tokens` / `total_output_tokens` (Terminal-bench) vs. `input_tokens` / `output_tokens` (DAGI's `MessageNode`). `DagiAgent` sums `MessageNode.input_tokens` for `entity == "assistant"` from `loop.tracker._messages` to build `AgentResult`.
 - **`DagiAgent.name()` is a `@staticmethod @abstractmethod`** — Terminal-bench uses the returned string (`"dagi"`) to tag benchmark results on the leaderboard. It must be unique.
+- **Harbor dataset naming: two distinct registries**: `org/name@ref` (slash-separated, e.g. `terminal-bench/terminal-bench-2@latest`) routes through the OCI **package registry** (public, no auth required). Plain `name@version` (no slash) routes through the Supabase **dataset registry** (requires `harbor auth login`). The Harbor CLI auto-detects the format by checking for `/` in the name. `terminal-bench-core` was the old Terminal-bench 2 name; the Harbor dataset is `terminal-bench/terminal-bench-2`.
+- **Dual filesystem in Harbor benchmarks**: DAGI's file tools (`read`, `write`, `edit`, `find`, `grep`) operate on the **Windows host** filesystem only. Only the `bash` tool (via `HarborBashTool`) routes commands to the **Docker container**. Container paths like `/app/doomgeneric_mips` are inaccessible to file tools — the agent must use `bash("ls /app")`, `bash("cat /app/file.txt")` etc. for container file access. A capable model (Claude Sonnet) will do this naturally; weaker models (Gemma 4) tried the Windows file tools first and got stuck.
+- **`DagiAgent` model key now falls back to `config_benchmark.yaml`'s `default_model`**: `model_key = os.environ.get("DAGI_BENCH_MODEL") or None` passes `None` to `resolve_model_config`, which then reads `default_model` from the benchmark config. Previously hardcoded to `"claude-sonnet-openrouter"`, which caused a `KeyError` when that key wasn't in `config_benchmark.yaml`.
 - **There is a stale test directory** `C:UsersalexrDriverless_AGItests` (bad path) at the repo root — likely a Windows path mangling artifact, harmless but odd.
+- **`config.example.yaml` `tools:` section documents all 22 tool names** (as of 2026-06-13): file tools (`read`, `grep`, `find`, `write`, `edit`, `copy`), shell (`bash`, `tmux_bash`), git (`git_status`, `git_commit`, `git_rollback`), planning (`enter_plan_mode`, `complete_plan`), agent/subagent (`ask_user`, `spawn_cli_subagent`, `extend_subagent_timeout`), model (`switch_model`), skills (`skill`, `run_skill_script`, `reload_skills`), web (`web_search`, `web_fetch`), UI (`emote`). All entries are commented out — omitting `tools:` enables everything. Note: `switch_model` requires `advanced_model`/`worker_model` to be set; `tmux_bash` requires an injected `bash_tool` at runtime — listing them is safe but they silently no-op if their conditions aren't met. `emote` is now always registered unconditionally; exclude it from `tools:` to suppress it.
+- **RAM watchdog is CPython-specific**: `tests/conftest.py` uses `ctypes.pythonapi.PyThreadState_SetAsyncExc` to inject an exception into the test thread. This is a CPython C-API function — it won't work on PyPy or other interpreters. The 90% hard-kill via `os._exit(1)` is the universal fallback. The watchdog polls every 0.5 s with a daemon thread; it does not add measurable overhead (107 tests: 2.16 s with watchdog vs. ~2.1 s without).
+- **MagicMock + `yaml.safe_load` = infinite loop**: Never pass a MagicMock (or any object with a truthy, zero-length `.read()` return) to `yaml.safe_load()`. The YAML reader's `determine_encoding` loop checks `len(raw_buffer) < 2` and `not eof`; MagicMock satisfies both forever. When mocking `AgentConfig` in tests, always set `project_path` to a real `Path` — it flows into `SpawnSubagentTool._load_parameters()` which calls `yaml.safe_load(config_path.read_text(...))`.
 - **`requirements.txt` now documents hard vs optional deps**: Core (openai, pyyaml, python-dotenv, rich, typer, textual) are listed as required; web tools (ddgs, crawl4ai, httpx, beautifulsoup4) are commented-out optional entries. `pyproject.toml` still declares several deps (`nicegui`, `markdown`, `matplotlib`) not in requirements.txt or the conda env.
 
 ## Terms & Language
@@ -253,7 +274,10 @@ tui.py / cli.py / main.py ← entry points (Textual TUI | Rich REPL | single-sho
 - **IPC**: Inter-process communication between parent agent and subagent subprocess. Now pipe-based (stdout JSON events) via `tools/_subagent_runner.py`. The old file-sentinel IPC (`agent/ipc.py`) has been deleted.
 - **Terminal-bench 2**: Benchmark of 89 real-world terminal tasks (software engineering, sysadmin, ML, security, etc.) run in Docker containers. Agents interface via `BaseAgent.perform_task(instruction, TmuxSession, logging_dir)`. Top scores ~60–65% as of 2026-06.
 - **TmuxSession**: Terminal-bench object wrapping a tmux session inside a Docker container. Key methods: `send_keys(keys, block, max_timeout_sec)` and `capture_pane(capture_entire)`. When `block=True` + last key is "Enter", blocks until the shell command finishes via `tmux wait`.
-- **bash_backend**: `AgentConfig` field (`"subprocess"` | `"tmux"`). Controls which bash tool `create_tool_registry` registers. Declared in config.yaml; no code change needed to switch.
+- **bash_backend**: `AgentConfig` field (`"subprocess"`). Previously gated whether `BashTool` or an injected `_bash_tool` ran (`"external"` replaced `BashTool`). As of 2026-06-13, `create_tool_registry` always registers `BashTool` and additionally registers any injected `bash_tool` — the field is a no-op for tool registration. Kept in `AgentConfig` and `config_benchmark.yaml` for backwards compatibility only. The injected tool must be provided to `AgentLoop(_bash_tool=...)` at runtime; `bash_backend` plays no role in that decision.
+- **Harbor Framework**: The successor to Terminal-bench 2. Agents implement `harbor.agents.base.BaseAgent` with an `async run(instruction, environment, context)` interface. Shell execution goes through `await environment.exec(command)` rather than a `TmuxSession`. The official leaderboard is at harborframework.com. DAGI's Harbor adapter lives in `benchmarks/harbor/`.
+- **Harbor package registry**: OCI-based public registry; datasets referenced as `org/name@ref` (with `/`). No authentication required. `terminal-bench/terminal-bench-2@latest` is the 89-task benchmark dataset.
+- **Harbor dataset registry**: Supabase-backed; datasets referenced as `name@version` (no `/`). Requires `harbor auth login`. Harbor CLI auto-detects which registry to use by checking for `/` in the name.
 - **emote**: One of five named expressions (`default`, `confused`, `happy`, `serious`, `funny`) dagi-chan can display in the sidebar. Stored as plain-text `.md` files in `.dagi/emotes/`; switched by the agent via the `emote` tool.
 
 ---
@@ -275,8 +299,10 @@ tui.py / cli.py / main.py ← entry points (Textual TUI | Rich REPL | single-sho
 - Will accept dead-code cleanup (removal) when shown the evidence; prefers the simpler behavior (accept the extra round-trip) over adding new flag logic when the outcome is equivalent.
 - Prefers behavioral unification over performance micro-optimisation — accepted Option C (one extra LLM round-trip per slash command) because it eliminates divergent code paths, rather than synthetic-prefill options that would save the round-trip at the cost of message-history surgery.
 - Invests heavily in skill design: treats skills as behavioral specifications rather than code.
+- Actively prunes redundant config fields once a general mechanism covers them — removed `emote_tool: true/false` immediately once the `tools:` list made it redundant. Prefers one orthogonal mechanism over N specialized flags.
 - Strongly prefers config-driven behavior over code-injection parameters. When designing the Terminal-bench integration, immediately pushed back on a `bash_tool` parameter injection approach in favor of a `bash_backend` field in config.yaml — the config is the single source of truth for which implementation runs.
 - Actively considers Windows-compatibility when reviewing cross-platform designs; caught the potential clash between `TmuxBashTool` and normal Windows usage before implementation began. Will design multi-phase skills (gather → interrogate → record) with explicit internal vs. external phases and mode-routing logic. The grill-me skill upgrade (session 17) is the clearest example — a thin 13-line prompt was replaced with a structured protocol incorporating Socratic method, knowledge-gathering, and automatic recording.
+- Naturally gravitates toward Dependency Inversion: favors abstracting over a concrete type (`BaseTool`) rather than threading a specific impl through the stack. Accepted the `_bash_tool: BaseTool | None` generalization immediately — reducing two separate adapters (`TmuxBashTool`, `HarborBashTool`) to a single injection point is worth the minor parameter rename.
 
 ### Project Shortcomings
 
@@ -289,6 +315,9 @@ tui.py / cli.py / main.py ← entry points (Textual TUI | Rich REPL | single-sho
 - **Dependency split between `requirements.txt` and `pyproject.toml`** — `requirements.txt` (pip freeze of actual `dagi` conda env) has only 23 packages; `pyproject.toml` declares ~10 more (`ddgs`, `crawl4ai`, `beautifulsoup4`, `nicegui`, `markdown`, `matplotlib`, `typer`, `rich`). Neither file alone produces a working install. The `dagi` conda env is missing several declared runtime deps, meaning tools like `web_search`, `web_fetch`, and the Rich CLI may silently fail until those packages are installed.
 - **BashTool is unsandboxed** — no command blacklist, no process group kill on timeout. An agent could run destructive bash commands. Path guard protects file tools but not bash.
 - **No pause during subagent execution**: ESC pauses the *parent* loop at its checkpoint, but the subagent subprocess continues unaffected. A future improvement could write an IPC message to the subagent's stdin or use `proc.terminate()` when the user pauses.
+- **`harbor_bash` must be in `config_benchmark.yaml` tools list**: After commit `c40b9b1`, the Harbor bash tool has `name="harbor_bash"`. If `tools:` lists `bash` instead, `filter_to` silently removes the container tool and the agent uses host subprocess bash — wrong results with no error. Always verify the tools list matches the injected tool's `.name` after any rename.
+- **`run_harbor.bat` requires `PYTHONUTF8=1`**: conda on Windows CP1252 will crash with `UnicodeEncodeError` if harbor produces any rich Unicode output (box-drawing chars in error/result tables). The flag is now set in the bat file.
+- **Harbor dual-filesystem mismatch**: In Harbor benchmark runs, DAGI's file tools (`read`/`write`/`find`/`grep`/`edit`) operate on the Windows host while only the `harbor_bash` tool routes to the Docker container. The project root in the agent's system prompt points to a local Windows job directory — not the container's `/app`. Weaker models try Windows file tools on container paths and get stuck. Fix: instruct the model explicitly (system prompt addition in `config_benchmark.yaml`) to use bash for all file I/O when running in Harbor mode.
 - **No integration tests** — all tests are unit tests with mocked LLM clients. There is no end-to-end test that runs a real agent loop against a live or recorded API response.
 - **`temp_system_prompt.txt`, `temp_test.ipynb`, `plan.md` at root** are stale scratch files that should be cleaned up or archived.
 - **`show_plan` tool was underused** — it already implemented the full plan revision loop (show → ask → revise → repeat), but `main_system.md` never instructed the agent to call it before `exit_plan_mode`. The tool was wired correctly; the orchestration was missing from the prompt.
@@ -330,6 +359,51 @@ tui.py / cli.py / main.py ← entry points (Textual TUI | Rich REPL | single-sho
 - **Session replay / dry-run mode**: the JSONL session log has everything needed to replay a session deterministically — useful for debugging and regression testing.
 - **Parallel subagent dispatch**: `SpawnSubagentTool` currently blocks until the subprocess exits. Multiple concurrent subagents could be dispatched by the agent calling `spawn_*` multiple times and then polling each `extend_subagent_timeout` — no architectural change needed, just agent-level orchestration and TUI labelling per subagent.
 - **Emote animation**: `_status_col()` runs on every `refresh()`. Animating the face or label (e.g., cycling symbols on `_status == "running"`) requires only a branch on `self._status` inside `_status_col()` — no new state or callbacks needed. The ASCII hair glyphs (`≋`) were removed when the logo moved inline; add them back here if desired.
-- **Emote tool in CLI mode**: `EmoteTool` is registered in the CLI path too (when `emote_tool: true`), but `on_emote=None` is passed since there is no sidebar. The tool still returns `"*emote*"` in text; the callback is silently a no-op. No separate CLI wiring required.
-- **No benchmark results yet**: Terminal-bench 2 integration was completed 2026-06-12 but no actual benchmark runs have been performed. Scores, token costs, and per-task performance data are unknown. The integration is structurally complete — Docker + `conda run -n dagi tb run` are the remaining prerequisites for a first run.
-- **`benchmarks/` has no unit tests**: `TmuxBashTool` and `DagiAgent` have zero test coverage. A mock `TmuxSession` unit test for `TmuxBashTool.run()` would catch regressions in the blocking/capture flow without needing Docker.
+- **Emote tool in CLI mode**: `EmoteTool` is always registered (unconditionally since 2026-06-13). In CLI mode, `on_emote=None` is passed since there is no sidebar — the tool still returns `"*emote*"` in text and the callback is a silent no-op. To disable `emote` entirely, exclude it from the `tools:` list in `config.yaml`.
+- **Harbor smoke test completed 2026-06-12**: `benchmarks/harbor/agent.py` ran end-to-end against `terminal-bench/terminal-bench-2@latest` (task: `make-mips-interpreter`). 1 trial, 0 exceptions, reward 0.0. The `0.0` is expected — local Gemma 4 is not strong enough for complex Harbor tasks and was confused by the dual-filesystem environment. The async/sync bridge (`run_in_executor` + `run_coroutine_threadsafe`) worked correctly. To get meaningful scores, run with Claude Sonnet via `set DAGI_BENCH_MODEL=claude-sonnet-openrouter`.
+- **`benchmarks/` has minimal unit tests**: `HarborBashTool.name` and `TmuxBashTool` are now covered by `tests/test_bash_tools.py`, but both `DagiAgent` adapters (Terminal-bench and Harbor) still have zero test coverage. A mock unit test for `DagiAgent.perform_task()` would catch regressions without needing Docker.
+- **No full benchmark run yet**: Smoke test was done with `--n-tasks 1`. A full 89-task run has not been performed. Scores, token costs, and per-task performance data are unknown.
+
+- **2026-06-13 Change**: `pyproject.toml` lacked `[tool.pytest.ini_options]` — tests could not import project modules.
+  **Cause**: No `pythonpath` or `testpaths` declared; `pytest` ran from a path where `agent`, `tools`, etc. were not on `sys.path`. Existing tests shared this issue.
+  **Fix**: Added `[tool.pytest.ini_options]` with `pythonpath = ["."]` and `testpaths = ["tests"]` to `pyproject.toml`. All 99 tests now pass without manual `PYTHONPATH` manipulation.
+
+- **2026-06-13 Change**: `bash` and injected bash tools now coexist in the registry.
+  **Cause**: `create_tool_registry()` registered either `BashTool` (subprocess) *or* the injected `bash_tool` (external) — never both. This meant benchmark adapters replaced the host `bash` tool entirely instead of augmenting it.
+  **Fix**: Removed the `bash_backend == "external"` conditional. `BashTool(cwd=cwd)` is always registered first. If `bash_tool is not None`, it is *additionally* registered alongside it. `HarborBashTool.name` renamed `"bash"` → `"harbor_bash"` to eliminate the name conflict that would have caused a registry collision under the new logic.
+
+- **2026-06-13 Promotion**: `TmuxBashTool` promoted to `tools/tmux_bash.py` as first-class tool.
+  **Cause**: It lived only in `benchmarks/terminal_bench/tmux_bash_tool.py` with `name = "bash"`, making it unusable alongside `BashTool` without a name conflict.
+  **Fix**: Created `tools/tmux_bash.py` with `name = "tmux_bash"`. Updated `benchmarks/terminal_bench/agent.py` to import from the canonical location. Original file kept intact for backwards compatibility.
+
+- **2026-06-13 Code Review Fix**: `benchmarks/terminal_bench/tmux_bash_tool.py` retained stale `name = "bash"` after the canonical copy was promoted to `tools/tmux_bash.py`.
+  **Cause**: The legacy file was kept as a reference but its `name` was not updated, creating a collision hazard if accidentally imported.
+  **Fix**: Renamed `name = "bash"` → `name = "tmux_bash"` and updated the description to reference "tmux" explicitly.
+
+- **2026-06-13 Code Review Fix**: `docs/terminal-bench.md` described the old `bash_backend: tmux` / `_tmux_session=session` integration pattern that no longer exists.
+  **Cause**: Docs were not updated when the injection pattern changed from `bash_backend` config-driven replacement to `_bash_tool=bash_tool` additive injection.
+  **Fix**: Replaced `bash_backend: tmux` yaml block and explanation with the new injection-pattern description; updated architecture diagram to show `_bash_tool=bash_tool` and both `BashTool` + `TmuxBashTool` registered.
+
+- **2026-06-13 Cleanup**: Removed `emote_tool: true/false` config flag.
+  **Cause**: Redundant now that `tools:` list controls which tools are registered. A dedicated boolean for a single tool is inconsistent with the general-purpose filter.
+  **Fix**: Deleted `emote_tool` field from `AgentConfig` and its parsing from `config_loader.py`. `EmoteTool` is now always registered unconditionally in `create_tool_registry`. Users who want to suppress it can exclude `emote` from the `tools:` list. Removed the field from `config.example.yaml`, `config_benchmark.yaml`, `docs/terminal-bench.md`, `scripts/diagnose_registry.py`, and `tests/test_tool_filter.py`.
+
+- **2026-06-13 Bug**: `run_harbor.bat` crashed immediately with `UnicodeEncodeError: 'charmap' codec can't encode character '�'` when run from Windows CMD.
+  **Cause**: `conda run` relays subprocess stdout through Python's `print()`, which uses the console's CP1252 encoding on Windows. Harbor's rich TUI output contains Unicode box-drawing characters (`┌─┐│`) that CP1252 cannot encode. `run_terminus2.bat` was unaffected because a successful terminus-2 run produces output that keeps Unicode chars out of the conda relay path.
+  **Fix**: Added `set PYTHONUTF8=1` to `run_harbor.bat` before the `conda run` call. This forces UTF-8 throughout the entire conda→harbor pipeline.
+
+- **2026-06-13 Bug**: `run_harbor.bat` ran agent commands on the Windows host instead of the Harbor Docker container, silently producing wrong results (reward 0.0 in all tasks even for trivial ones).
+  **Cause**: Commit `c40b9b1` renamed `HarborBashTool.name` from `"bash"` to `"harbor_bash"` to eliminate a registry collision — but `config_benchmark.yaml`'s `tools:` allowlist was not updated. The `filter_to(config.tools)` call in `create_tool_registry` kept `BashTool` (name=`"bash"`) and silently removed `HarborBashTool` (name=`"harbor_bash"`). The agent dispatched all shell commands via the host subprocess `BashTool`.
+  **Fix**: Replaced `- bash` with `- harbor_bash` in `config_benchmark.yaml`'s `tools:` list, and added a comment explaining that the host `bash` tool is intentionally excluded from Harbor runs.
+
+- **2026-06-13 Code Review Fix**: `AgentConfig.bash_backend` comment falsely implied the field still drove tool registration.
+  **Cause**: Comment not updated when the `bash_backend == "external"` conditional was removed from `create_tool_registry`.
+  **Fix**: Replaced comment with explicit no-op documentation noting the field is kept only for config file backwards compatibility.
+
+- **2026-06-13 Code Review Fix**: `_FakeBashTool` in `tests/test_bash_tools.py` did not subclass `BaseTool`.
+  **Cause**: Test fake was written as a plain class with manually duplicated `schema()` method, bypassing ABC enforcement.
+  **Fix**: Made `_FakeBashTool(BaseTool)` with proper `_parameters` class attribute and `run(**kwargs)` signature. Also removed unused `MagicMock` import.
+
+- **2026-06-13 Bug**: `TestConfigDrivenFilter` tests in `tests/test_tool_filter.py` consumed 100% RAM and killed the machine.
+  **Cause**: The test's `_config()` used `MagicMock()` without setting `project_path`. When `SpawnSubagentTool._load_parameters()` accessed `config.project_path`, MagicMock auto-generated it as another MagicMock. This mock flowed through `__truediv__` (path joining) and `read_text()`, producing a MagicMock that was passed to `yaml.safe_load()`. PyYAML's `Reader.determine_encoding()` entered an infinite loop: `stream.read(4096)` returned a truthy MagicMock (so `eof` never became True), and `len(MagicMock())` returned 0 (so the `while len(raw_buffer) < 2` condition was always True). Each iteration allocated new MagicMock objects → unbounded memory growth → OOM. The `except (FileNotFoundError, OSError, yaml.YAMLError)` handler never fired because the loop never raised.
+  **Fix**: (1) Added `cfg.project_path = Path(".").resolve()` to the test mock. (2) Hardened `SpawnSubagentTool._load_parameters()` to guard `config.project_path` with `isinstance(proj, Path)` before using it — non-Path values are skipped, falling through to the `_DAGI_ROOT` search path.

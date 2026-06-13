@@ -25,11 +25,11 @@ class FindTool(BaseTool):
 
     def __init__(self, cwd: Path = Path("."), allowed_roots: list[Path] | None = None):
         self.cwd = cwd
-        self.allowed_roots = allowed_roots or [cwd]
+        self.allowed_roots = allowed_roots
 
     def run(self, pattern: str, path: str | object = _DEFAULT_PATH) -> str:
         if path is _DEFAULT_PATH:
-            search_paths = list(self.allowed_roots)
+            search_paths = list(self.allowed_roots) if self.allowed_roots is not None else [self.cwd]
         else:
             sp = Path(str(path))
             if not sp.is_absolute():

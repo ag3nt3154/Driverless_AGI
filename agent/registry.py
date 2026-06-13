@@ -17,6 +17,15 @@ class ToolRegistry:
         """Return ``[(name, description), ...]`` for every registered tool."""
         return [(t.name, t.description) for t in self._tools.values()]
 
+    def filter_to(self, names: list[str] | None) -> None:
+        """Remove any registered tool not in *names*. None keeps all tools."""
+        if names is None:
+            return
+        keep = set(names)
+        for name in list(self._tools):
+            if name not in keep:
+                del self._tools[name]
+
     def dispatch(self, name: str, kwargs: dict) -> str | list:
         if name not in self._tools:
             return f"Error: unknown tool '{name}'"

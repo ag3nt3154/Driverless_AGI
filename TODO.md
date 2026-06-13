@@ -132,3 +132,4 @@
 - [x] Add bash-based archiving template to memory-ingest Step 5 — explicit `mkdir`/`type … | Out-File`/`del` template in Step 5.
 - [x] Add bash-fallback guidance to memory-ingest for G: path operations — covered by the Path Roots section added to the skill.
 - [x] Recommend `dir` not `ls` in memory skills for Windows paths — both memory-ingest and memory-add Path Roots tables use `dir` in all bash examples for non-C: drives.
+- [x] RAM watchdog in test suite — `tests/conftest.py` auto-use fixture monitors system RAM via a daemon thread (0.5 s poll). At 70%: interrupts the running test with `pytest.fail()`. At 90%: hard-kills the process with `os._exit(1)` to protect the machine. Catches infinite-loop OOM bugs like the MagicMock + `yaml.safe_load` issue that previously killed the machine.

@@ -1,6 +1,7 @@
 """tests/test_continuation.py — Unit tests for loop termination flags."""
 from __future__ import annotations
 
+import threading
 import time
 from pathlib import Path
 from types import SimpleNamespace
@@ -385,6 +386,70 @@ class TestApiErrorRetry:
         retry_msgs = [t for t in texts if "Retrying" in t]
         assert len(retry_msgs) == 1
         assert "1/3" in retry_msgs[0]
+
+
+class TestErrorPause:
+    def test_error_pause_blocks_instead_of_raising(self):
+        """With supports_pause=True, exhausted transient retries pause the loop, not raise."""
+        paused: list = []
+        callbacks = AgentCallbacks(
+            on_pause=lambda: paused.append(True),
+            supports_pause=True,
+        )
+
+        loop = _make_loop()
+        loop.config.api_error_retries = 1
+        loop.callbacks = callbacks
+        loop.client = MagicMock()
+        loop.client.chat.completions.create.side_effect = _make_api_status_error(503)
+
+        t = threading.Thread(target=loop.run, args=("do something",), daemon=True)
+        with patch("agent.loop.time.sleep"):
+            t.start()
+            t.join(timeout=1.0)  # should NOT finish — loop is blocked on _pause_event
+
+        assert t.is_alive(), "loop should be paused (blocking), not returned or raised"
+        assert not loop._pause_event.is_set(), "_pause_event should be cleared (paused state)"
+        assert paused, "on_pause callback should have fired"
+
+    def test_error_pause_resumes_with_inject_and_resume(self):
+        """inject_and_resume after an error-pause unblocks the loop with full context."""
+        paused: list = []
+        callbacks = AgentCallbacks(
+            on_pause=lambda: paused.append(True),
+            supports_pause=True,
+        )
+
+        loop = _make_loop()
+        loop.config.api_error_retries = 1
+        loop.callbacks = callbacks
+        loop.client = MagicMock()
+        loop.client.chat.completions.create.side_effect = [
+            _make_api_status_error(503),
+            _make_response(f"Recovered. {TASK_END_FLAG}"),
+        ]
+
+        result_holder: list = []
+
+        def _run():
+            result_holder.append(loop.run("do something"))
+
+        t = threading.Thread(target=_run, daemon=True)
+        with patch("agent.loop.time.sleep"):
+            t.start()
+            deadline = time.time() + 2.0
+            while time.time() < deadline and not paused:
+                time.sleep(0.01)
+
+        assert paused, "loop should have paused before resume"
+        loop.inject_and_resume("please retry")
+        t.join(timeout=2.0)
+
+        assert not t.is_alive(), "loop should have finished after resume"
+        assert result_holder and "Recovered." in result_holder[0]
+        assert any(
+            m.get("content") == "please retry" for m in loop._messages
+        ), "injected message must appear in _messages"
 
 
 class TestCompactionSnapshot:

@@ -23,7 +23,7 @@ class EditTool(BaseTool):
 
     def __init__(self, cwd: Path = Path("."), allowed_roots: list[Path] | None = None):
         self.cwd = cwd
-        self.allowed_roots = allowed_roots or [cwd]
+        self.allowed_roots = allowed_roots
 
     def run(self, path: str, oldText: str, newText: str) -> str:
         p = Path(path)

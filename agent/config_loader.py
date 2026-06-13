@@ -99,8 +99,9 @@ def _build_config_from_entry(entry: dict, raw: dict) -> AgentConfig:
     raw_memory_root = raw.get("memory_root")
     memory_root = Path(raw_memory_root).expanduser() if raw_memory_root else None
 
-    emote_tool = bool(raw.get("emote_tool", True))
     bash_backend = str(raw.get("bash_backend", "subprocess"))
+    tools: list[str] | None = raw.get("tools") or None
+    sandbox_mode = bool(raw.get("sandbox_mode", False))
 
     return AgentConfig(
         model=entry["model"],
@@ -114,9 +115,10 @@ def _build_config_from_entry(entry: dict, raw: dict) -> AgentConfig:
         max_continuations=max_continuations,
         api_error_retries=api_error_retries,
         memory_root=memory_root,
-        emote_tool=emote_tool,
         cache_prompt=cache_prompt,
         bash_backend=bash_backend,
+        tools=tools,
+        sandbox_mode=sandbox_mode,
     )
 
 

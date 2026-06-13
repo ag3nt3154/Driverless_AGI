@@ -131,10 +131,15 @@ class SpawnSubagentTool(BaseTool):
 
     @staticmethod
     def _load_parameters(type_name: str, config: "AgentConfig") -> dict:
-        search_paths = [
-            config.project_path / ".dagi" / "subagents" / type_name / "subagent_config.yaml",
+        search_paths: list[Path] = [
             _DAGI_ROOT / ".dagi" / "subagents" / type_name / "subagent_config.yaml",
         ]
+        proj = getattr(config, "project_path", None)
+        if isinstance(proj, Path):
+            search_paths.insert(
+                0,
+                proj / ".dagi" / "subagents" / type_name / "subagent_config.yaml",
+            )
         for config_path in search_paths:
             try:
                 data = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}

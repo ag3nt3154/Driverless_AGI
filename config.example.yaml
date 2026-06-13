@@ -59,9 +59,45 @@ thinking: none    # Extended reasoning effort for models that support it (e.g. D
 # memory_root: /absolute/path/to/dagi-memory
 
 # ── Tools ─────────────────────────────────────────────────────────────────────
-emote_tool: true   # true  = register the `emote` tool so dagi can update the TUI
-                   #         sidebar face expression during tasks.
-                   # false = hide the emote tool (leaner tool list, fewer tokens).
+sandbox_mode: false  # true  = file tools (read, write, edit, grep, find, copy) have no
+                     #         path restrictions — the agent can access any path on disk.
+                     # false = file tools are restricted to allowed_roots
+                     #         ([dagi_root, cwd] by default). Recommended for most use cases.
+
+# tools:                      # Restrict the main agent to a specific subset of tools.
+#                             # Omit (or set to null) to enable all available tools.
+#   # ── File tools ──────────────────────────────────────────────────────────────
+#   - read                    # Read files from disk
+#   - grep                    # Regex search across files
+#   - find                    # Locate files by name/pattern
+#   - write                   # Write (create/overwrite) files
+#   - edit                    # Patch a specific region of a file
+#   - copy                    # Copy files or directories
+#   # ── Shell tools ─────────────────────────────────────────────────────────────
+#   - bash                    # Run arbitrary shell commands
+#   - tmux_bash               # Run commands in a persistent tmux session
+#   # ── Git tools ────────────────────────────────────────────────────────────────
+#   - git_status              # Show current git status / diff
+#   - git_commit              # Stage and commit changes
+#   - git_rollback            # Revert uncommitted changes
+#   # ── Planning tools ───────────────────────────────────────────────────────────
+#   - enter_plan_mode         # Switch agent into plan-writing mode
+#   - complete_plan           # Mark a plan step as done and continue
+#   # ── Agent / subagent tools ───────────────────────────────────────────────────
+#   - ask_user                # Pause and prompt the user for input
+#   - spawn_cli_subagent      # Spawn a dynamic full-scope subagent
+#   - extend_subagent_timeout # Extend timeout for an in-flight subagent
+#   # ── Model tools ──────────────────────────────────────────────────────────────
+#   - switch_model            # Switch between default / worker / advanced models
+#   # ── Skill tools ──────────────────────────────────────────────────────────────
+#   - skill                   # Load and run a skill document
+#   - run_skill_script        # Execute a skill's companion script
+#   - reload_skills           # Hot-reload skill definitions from disk
+#   # ── Web tools ────────────────────────────────────────────────────────────────
+#   - web_search              # Search the web (fallback when no config subagents)
+#   - web_fetch               # Fetch a URL (fallback when no config subagents)
+#   # ── UI tools ─────────────────────────────────────────────────────────────────
+#   - emote                   # Update the TUI sidebar face expression
 
 # ── Model catalog ─────────────────────────────────────────────────────────────
 # Define every model you want available to dagi here.

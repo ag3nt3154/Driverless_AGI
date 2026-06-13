@@ -153,8 +153,8 @@ class DagiApp(SlashCommandsMixin, App[None]):
             initial = self._active_loop._messages if self._active_loop else None
             loop = AgentLoop(self._config, callbacks, initial_messages=initial, _tracker=tracker)
             loop_ref.append(loop)
+            self._active_loop = loop  # save before run so context survives any exception
             loop.run(task)
-            self._active_loop = loop
         except Exception as exc:
             self.call_from_thread(self.query_one(ConversationPane).append_error, str(exc))
         finally:

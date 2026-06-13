@@ -32,10 +32,6 @@ conda run -n dagi tb --help
 
 `config_benchmark.yaml` is a copy of `config.yaml` with one key difference:
 
-```yaml
-emote_tool: false     # no TUI during benchmark runs
-```
-
 When the benchmark harness calls `DagiAgent.perform_task`, it constructs a
 `TmuxBashTool` wrapping the `TmuxSession` provided by Terminal-bench and
 passes it to `AgentLoop(..., _bash_tool=bash_tool)`. The agent loop then
