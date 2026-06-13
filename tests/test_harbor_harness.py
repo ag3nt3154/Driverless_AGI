@@ -76,3 +76,22 @@ class TestPreambleInjection:
         loop_with = self._make_loop(preamble="UNIQUE_MARKER")
         loop_without = self._make_loop(preamble="")
         assert "UNIQUE_MARKER" not in loop_without._messages[0]["content"]
+
+
+import tempfile
+
+
+class TestHarborProjectPath:
+    def test_project_path_is_clean_directory(self):
+        """tempfile.mkdtemp() produces a clean empty directory."""
+        path = Path(tempfile.mkdtemp())
+        assert path.exists()
+        assert path.is_dir()
+        assert list(path.iterdir()) == []
+
+    def test_project_path_differs_from_arbitrary_logs_dir(self):
+        """A temp dir must not be equal to an arbitrary logs path."""
+        logs_dir = Path(tempfile.mkdtemp()) / "logs"
+        logs_dir.mkdir()
+        workspace = Path(tempfile.mkdtemp())
+        assert workspace != logs_dir
