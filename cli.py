@@ -589,6 +589,7 @@ def _cmd_init(project_path: Path) -> None:
         dagi_dir / "skills",
         dagi_dir / "workflow",
         dagi_dir / "self-review",
+        dagi_dir / "logs",
         memory / "raw",
         memory / "sources",
         memory / "wiki",
