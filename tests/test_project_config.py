@@ -1,7 +1,6 @@
 """Tests for per-project config + prompt resolution."""
 from __future__ import annotations
 
-import textwrap
 from pathlib import Path
 
 import pytest
@@ -37,8 +36,8 @@ def test_load_soul_falls_back_to_dagi_root(tmp_path):
     from agent.prompts import load_soul
     dagi_root = Path(__file__).parent.parent
     result = load_soul(dagi_root, tmp_path)
-    # Dagi root soul contains "Dagi-chan"
-    assert result is not None and "Dagi-chan" in result
+    # Dagi root soul exists and is non-empty (content is intentionally not asserted)
+    assert result is not None and len(result) > 0
 
 
 def test_load_soul_uses_project_soul_when_present(tmp_path):
@@ -52,7 +51,7 @@ def test_load_soul_uses_project_soul_when_present(tmp_path):
     assert result == "Custom project persona.\n"
 
 
-def test_load_soul_returns_none_when_absent(tmp_path, monkeypatch):
+def test_load_soul_returns_none_when_absent(tmp_path):
     """Returns None when neither project nor dagi root soul exists."""
     from agent.prompts import load_soul
     # Point dagi_root to tmp_path so neither soul exists

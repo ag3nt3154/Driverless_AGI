@@ -21,7 +21,7 @@ def load_main_system_prompt(dagi_root: Path, project_path: Path) -> str:
     project_prompt = project_path / ".dagi" / "prompts" / "main_system.md"
     if project_prompt.exists():
         return project_prompt.read_text(encoding="utf-8")
-    return load_prompt("main/main_system.md")
+    return (dagi_root / ".dagi" / "prompts" / "main" / "main_system.md").read_text(encoding="utf-8")
 
 
 def load_soul(dagi_root: Path, project_path: Path) -> str | None:
