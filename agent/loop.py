@@ -140,6 +140,9 @@ class AgentConfig:
     tools: list[str] | None = None
     # Sandbox mode: when True, file tools have no path restrictions (allowed_roots=None).
     sandbox_mode: bool = False
+    # Harbor / benchmark environment preamble injected at the TOP of the system prompt.
+    # Set in config_benchmark.yaml to tell the agent about the container environment.
+    system_prompt_preamble: str = ""
 
 
 @dataclass
