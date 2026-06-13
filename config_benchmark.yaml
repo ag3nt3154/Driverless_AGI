@@ -1,0 +1,65 @@
+# config_benchmark.yaml — Harbor / Terminal-bench benchmark configuration
+# Copy your model definitions from config.yaml and tune settings for benchmarks.
+# This file is loaded by benchmarks/harbor/agent.py and benchmarks/terminal_bench/agent.py.
+#
+# Select model at run time:
+#   set DAGI_BENCH_MODEL=claude-sonnet-openrouter
+#   benchmarks\run_harbor.bat
+
+# ── Loop behaviour ────────────────────────────────────────────────────────────
+max_continuations: 30
+null_response_retries: 5
+api_error_retries: 5
+
+# ── Harbor environment preamble ───────────────────────────────────────────────
+# Injected at the TOP of the system prompt for every Harbor benchmark run.
+system_prompt_preamble: |
+  ## Harbor Benchmark Environment
+
+  You are running inside a **Harbor benchmark**. The task's files live in a
+  **Docker container** — they are NOT on the local filesystem.
+
+  CRITICAL rules:
+  - Your **FIRST action** must be `harbor_bash("ls /app")` to explore the container.
+  - ALL file access (read, write, compile, run, test) MUST go through `harbor_bash`.
+  - The local `find` / `read` / `grep` / `write` / `edit` tools see only the
+    Windows host — they cannot reach container paths like `/app`. Do not use them
+    for task-related files.
+  - Do NOT call `enter_plan_mode`. Plan mentally, then act immediately via
+    `harbor_bash`. Time-boxed benchmarks have no human to approve a plan.
+  - The task workspace is typically `/app` in the container. Start there.
+
+# ── Tools ─────────────────────────────────────────────────────────────────────
+tools:
+  - harbor_bash
+  - read
+  - find
+  - grep
+  - write
+  - edit
+  - ask_user
+
+# bash_backend: no-op kept for backwards compatibility
+bash_backend: subprocess
+
+# ── Model catalog ─────────────────────────────────────────────────────────────
+default_model: claude-sonnet-openrouter
+
+models:
+  claude-sonnet-openrouter:
+    name: Claude Sonnet 4.6 (OpenRouter)
+    model: anthropic/claude-sonnet-4-6
+    api_url: https://openrouter.ai/api/v1
+    api_key_env: OPENROUTER_API_KEY
+    context_window: 200000
+    reserve_tokens: 16384
+    keep_recent_tokens: 30000
+
+  claude-opus-openrouter:
+    name: Claude Opus 4.6 (OpenRouter)
+    model: anthropic/claude-opus-4-6
+    api_url: https://openrouter.ai/api/v1
+    api_key_env: OPENROUTER_API_KEY
+    context_window: 200000
+    reserve_tokens: 16384
+    keep_recent_tokens: 30000
