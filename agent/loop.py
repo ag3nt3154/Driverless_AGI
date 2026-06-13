@@ -769,7 +769,12 @@ class AgentLoop:
             self.config.memory_root if self.config.memory_root is not None
             else self.config.project_path / "dagi-memory"
         ).resolve()
-        new_system = self.config.system_prompt.format_map(_SafeDict(
+        _prompt_text = (
+            self.config.system_prompt
+            if self.config.system_prompt
+            else load_main_system_prompt(dagi_root, self.config.project_path)
+        )
+        new_system = _prompt_text.format_map(_SafeDict(
             readme_path=readme_path,
             tools_and_skills=tools_and_skills,
             cwd=str(self.config.project_path.resolve()),
@@ -827,7 +832,12 @@ class AgentLoop:
             self.config.memory_root if self.config.memory_root is not None
             else self.config.project_path / "dagi-memory"
         ).resolve()
-        new_system = self.config.system_prompt.format_map(_SafeDict(
+        _prompt_text = (
+            self.config.system_prompt
+            if self.config.system_prompt
+            else load_main_system_prompt(dagi_root, self.config.project_path)
+        )
+        new_system = _prompt_text.format_map(_SafeDict(
             readme_path=readme_path,
             tools_and_skills=tools_and_skills,
             cwd=str(self.config.project_path.resolve()),
