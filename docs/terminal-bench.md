@@ -30,17 +30,20 @@ conda run -n dagi tb --help
 
 ## How it works
 
-`config_benchmark.yaml` is a copy of `config.yaml` with two key differences:
+`config_benchmark.yaml` is a copy of `config.yaml` with one key difference:
 
 ```yaml
-bash_backend: tmux    # routes all bash calls into the Docker container
 emote_tool: false     # no TUI during benchmark runs
 ```
 
-When DAGI sees `bash_backend: tmux`, it replaces `BashTool` (local subprocess)
-with `TmuxBashTool`, which sends every shell command through the `TmuxSession`
-object provided by the benchmark harness. Normal DAGI usage (`config.yaml`) is
-completely unaffected — `BashTool` remains the default.
+When the benchmark harness calls `DagiAgent.perform_task`, it constructs a
+`TmuxBashTool` wrapping the `TmuxSession` provided by Terminal-bench and
+passes it to `AgentLoop(..., _bash_tool=bash_tool)`. The agent loop then
+registers **both** `BashTool` (local subprocess, name `bash`) and the injected
+`TmuxBashTool` (name `tmux_bash`) in its tool registry. Inside the container
+the agent uses `tmux_bash` to run commands; `bash` remains available for any
+local operations. Normal DAGI usage (`config.yaml`) is completely unaffected —
+only `BashTool` is registered when no `_bash_tool` is injected.
 
 ## Choosing a model
 
@@ -116,8 +119,9 @@ benchmarks\run_terminal_bench.bat
   └─ tb run --agent-import-path benchmarks.terminal_bench.agent:DagiAgent
        └─ DagiAgent.perform_task(instruction, tmux_session, logging_dir)
             ├─ resolve_model_config()   ← reads config_benchmark.yaml
-            └─ AgentLoop(config, _tmux_session=session)
-                 └─ TmuxBashTool(session)   ← replaces BashTool
+            └─ AgentLoop(config, _bash_tool=bash_tool)
+                 ├─ BashTool            ← name "bash",      local subprocess (always registered)
+                 └─ TmuxBashTool        ← name "tmux_bash", injected alongside BashTool
                       └─ session.send_keys(command, block=True)
                            └─ command runs inside Docker container
 ```

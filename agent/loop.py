@@ -135,7 +135,9 @@ class AgentConfig:
     api_error_retries: int = 3
     # Send cache_prompt: true in extra_body — enables prompt caching on OpenRouter.
     cache_prompt: bool = False
-    # Bash backend: "subprocess" = local BashTool (default); "tmux" = TmuxBashTool via TmuxSession.
+    # bash_backend: previously controlled whether BashTool was replaced by an injected tool.
+    # Now a no-op for tool registration — both BashTool and any injected tool are always
+    # registered. Kept for config file backwards compatibility.
     bash_backend: str = "subprocess"
 
 
@@ -196,13 +198,16 @@ class AgentLoop:
         _parent_tracker: "SessionTracker | None" = None,
         _subagent_id: str | None = None,
         _tracker: "SessionTracker | None" = None,
-        _tmux_session: "object | None" = None,
+        _bash_tool: "object | None" = None,
     ):
         from agent.tools import create_tool_registry
         from uuid import uuid4
 
         self.callbacks = callbacks or AgentCallbacks()
         dagi_root = Path(__file__).parent.parent
+
+        # Stash injected bash tool so plan-mode rebuilds can restore it
+        self._injected_bash_tool = _bash_tool
 
         # ── Create tracker first so sub-agent tools can reference it ─────────
         if _tracker is not None:
@@ -241,7 +246,7 @@ class AgentLoop:
                 callbacks=self.callbacks,
                 tracker=self.tracker,
                 memory_root=self._effective_memory_root,
-                tmux_session=_tmux_session,
+                bash_tool=_bash_tool,
             )
 
         # ── Build system prompt ───────────────────────────────────────────
@@ -745,6 +750,7 @@ class AgentLoop:
             config=self.config,
             callbacks=self.callbacks,
             tracker=self.tracker,
+            bash_tool=self._injected_bash_tool,
         )
 
         tools_and_skills = _format_tools_and_skills(self.registry, self.skills)

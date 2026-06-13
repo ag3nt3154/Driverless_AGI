@@ -9,9 +9,9 @@ from terminal_bench.terminal.tmux_session import TmuxSession
 class TmuxBashTool(BaseTool):
     """BashTool replacement that executes commands inside a Terminal-bench TmuxSession."""
 
-    name = "bash"
+    name = "tmux_bash"
     description = (
-        "Execute a bash command in the benchmark container terminal. "
+        "Execute a bash command inside the benchmark container terminal via tmux. "
         "Returns the terminal output after the command completes. "
         "Optionally provide a timeout in seconds (default: 30)."
     )

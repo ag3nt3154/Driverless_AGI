@@ -1,17 +1,19 @@
 """tests/test_bash_tools.py — coexistence of bash and injected bash tools."""
 from __future__ import annotations
 from pathlib import Path
-from unittest.mock import MagicMock
 import pytest
+from agent.base_tool import BaseTool
 from agent.tools import create_tool_registry
 from tools.bash import BashTool
 
 
-class _FakeBashTool:
+class _FakeBashTool(BaseTool):
     name = "tmux_bash"
     description = "Fake tmux bash"
-    def schema(self): return {}
-    def run(self, command: str) -> str: return ""
+    _parameters: dict = {"type": "object", "properties": {}, "required": []}
+
+    def run(self, **kwargs) -> str:
+        return ""
 
 
 class TestBashCoexistence:
