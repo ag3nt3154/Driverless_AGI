@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test Filter</title>
+    <script>
+        // Simple JS to trigger alert on load
+        window.onload = function() {
+            alert('XSS triggered!');
+        };
+    </script>
+</head>
+<body onload="javascript:alert('XSS triggered!')'">
+    <h1 id="greeting">Hello!</h1>
+    <img src="non_existent_image.png" onerror="alert('XSS triggered!')'">
+</body>
+</html>

@@ -2,9 +2,15 @@
 # Copy your model definitions from config.yaml and tune settings for benchmarks.
 # This file is loaded by benchmarks/harbor/agent.py and benchmarks/terminal_bench/agent.py.
 #
-# Select model at run time:
-#   set DAGI_BENCH_MODEL=claude-sonnet-openrouter
+# Select model at run time (default is local-llamacpp):
 #   benchmarks\run_harbor.bat
+#   set DAGI_BENCH_MODEL=claude-sonnet-openrouter && benchmarks\run_harbor.bat
+# ── Context  ────────────────────────────────────────────────────────────
+# Per-model overrides below take precedence; these are fallback defaults.
+context_window: 32000
+reserve_tokens: 4096
+keep_recent_tokens: 8000
+max_iterations: 20
 
 # ── Loop behaviour ────────────────────────────────────────────────────────────
 max_continuations: 30
@@ -30,36 +36,31 @@ system_prompt_preamble: |
   - The task workspace is typically `/app` in the container. Start there.
 
 # ── Tools ─────────────────────────────────────────────────────────────────────
+# Only harbor_bash is exposed — local filesystem tools (read/find/grep/write/edit)
+# see the Windows host, NOT the Docker container, so they are harmful here.
+# ask_user would block indefinitely with no human present in an automated run.
 tools:
   - harbor_bash
-  - read
-  - find
-  - grep
-  - write
-  - edit
-  - ask_user
 
 # bash_backend: no-op kept for backwards compatibility
 bash_backend: subprocess
 
 # ── Model catalog ─────────────────────────────────────────────────────────────
-default_model: claude-sonnet-openrouter
+# default_model: local-llamacpp
+default_model: deepseek-v4-flash-openrouter
 
 models:
-  claude-sonnet-openrouter:
-    name: Claude Sonnet 4.6 (OpenRouter)
-    model: anthropic/claude-sonnet-4-6
-    api_url: https://openrouter.ai/api/v1
-    api_key_env: OPENROUTER_API_KEY
-    context_window: 200000
-    reserve_tokens: 16384
-    keep_recent_tokens: 30000
+  local-llamacpp:
+    name: Qwen3 35B (llama.cpp, port 8080)
+    model: Qwen3-35B                               # llama.cpp ignores this; serves whatever is loaded
+    api_url: http://localhost:8080/v1
+    api_key: local                                 # any non-empty value; llama-server doesn't validate
+    context_window: 32000                          # matches --ctx-size 32000 (or lower)
+    reserve_tokens: 4096                           # held back for reply + compaction summary
+    keep_recent_tokens: 8000                       # tail preserved verbatim; fires at ~27900 tokens
 
-  claude-opus-openrouter:
-    name: Claude Opus 4.6 (OpenRouter)
-    model: anthropic/claude-opus-4-6
-    api_url: https://openrouter.ai/api/v1
+  deepseek-v4-flash-openrouter:
     api_key_env: OPENROUTER_API_KEY
-    context_window: 200000
-    reserve_tokens: 16384
-    keep_recent_tokens: 30000
+    api_url: https://openrouter.ai/api/v1
+    model: deepseek/deepseek-v4-flash
+    name: Deepseek v4 Flash(OpenRouter)

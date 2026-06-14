@@ -1,7 +1,7 @@
 # PROJECT_CONTEXT.md
 
-> Last updated: 2026-06-13 | [README](README.md) | [TODO](TODO.md)
-> Session 2026-06-13j: Implemented `system_prompt_preamble` injection across all 3 system-prompt build sites in `agent/loop.py`. Preamble is prepended before soul/agents.md in `__init__`, and before `new_system` in `_rebuild_for_normal_mode` and `_rebuild_for_plan_mode`. 3 new regression tests in `TestPreambleInjection`; 124/124 pass.
+> Last updated: 2026-06-14 | [README](README.md) | [TODO](TODO.md)
+> Session 2026-06-14: Moved `config_benchmark.yaml` from project root to `benchmarks/config_benchmark.yaml`. Updated `benchmarks/harbor/agent.py` path (`.parent.parent.parent` → `.parent.parent`), docs/terminal-bench.md, README.md, and TODO.md to reflect new location.
 
 
 ---
@@ -53,7 +53,7 @@ Driverless_AGI/
 ├── tui.py              # TUI entry point (thin launcher)
 ├── cli.py              # Rich REPL entry point
 ├── config.yaml         # Runtime config (gitignored)
-├── config_benchmark.yaml # Benchmark config (bash_backend: external, emote_tool: false)
+├── benchmarks/config_benchmark.yaml # Benchmark-specific config (moved here from project root)
 ├── docs/
 │   └── terminal-bench.md # Guide for running Terminal-bench 2
 └── README.md           # Full documentation
@@ -144,7 +144,7 @@ tui.py / cli.py / main.py ← entry points (Textual TUI | Rich REPL | single-sho
 | `benchmarks/terminal_bench/agent.py` | `DagiAgent(BaseAgent)` — Terminal-bench 2 entry point; instantiates `TmuxBashTool(session)` from `tools.tmux_bash` and passes it to `AgentLoop(_bash_tool=bash_tool)` |
 | `benchmarks/harbor/bash_tool.py` | `HarborBashTool(BaseTool)` — Harbor bash tool (`name="harbor_bash"`); wraps a sync `exec_fn` callable provided by `DagiAgent` that bridges `environment.exec()` from the event loop |
 | `benchmarks/harbor/agent.py` | `DagiAgent(BaseAgent)` — Harbor Framework entry point; runs `AgentLoop` in `run_in_executor` thread, bridges async `environment.exec()` back via `run_coroutine_threadsafe` |
-| `config_benchmark.yaml` | Benchmark-specific config: `bash_backend: subprocess` (no-op), raised `max_continuations`, explicit `tools:` list with `harbor_bash` (not `bash`) for Harbor container access; used by both Terminal-bench and Harbor adapters |
+| `benchmarks/config_benchmark.yaml` | Benchmark-specific config: `bash_backend: subprocess` (no-op), raised `max_continuations`, explicit `tools:` list with `harbor_bash` (not `bash`) for Harbor container access; used by both Terminal-bench and Harbor adapters |
 | `benchmarks/run_terminal_bench.bat` | Windows runner: sets `DAGI_BENCH_MODEL`, calls `tb run --agent-import-path benchmarks.terminal_bench.agent:DagiAgent` |
 | `benchmarks/run_harbor.bat` | Windows runner: sets `DAGI_BENCH_MODEL` + `HARBOR_DATASET`, calls `harbor run --agent-import-path benchmarks.harbor.agent:DagiAgent` |
 | `docs/terminal-bench.md` | User guide: prerequisites, one-time setup, model selection, smoke test, full run, result interpretation |
@@ -258,6 +258,7 @@ tui.py / cli.py / main.py ← entry points (Textual TUI | Rich REPL | single-sho
 - **Dual filesystem in Harbor benchmarks**: DAGI's file tools (`read`, `write`, `edit`, `find`, `grep`) operate on the **Windows host** filesystem only. Only the `bash` tool (via `HarborBashTool`) routes commands to the **Docker container**. Container paths like `/app/doomgeneric_mips` are inaccessible to file tools — the agent must use `bash("ls /app")`, `bash("cat /app/file.txt")` etc. for container file access. A capable model (Claude Sonnet) will do this naturally; weaker models (Gemma 4) tried the Windows file tools first and got stuck. Fix B (2026-06-13) added a `system_prompt_preamble` injected first in the system prompt (before soul/agents.md) that explicitly instructs the agent: use `harbor_bash` for all container file I/O, start with `harbor_bash("ls /app")`, never call `enter_plan_mode`. The preamble is set in `config_benchmark.yaml` and parsed into `AgentConfig.system_prompt_preamble`.
 - **`DagiAgent` model key now falls back to `config_benchmark.yaml`'s `default_model`**: `model_key = os.environ.get("DAGI_BENCH_MODEL") or None` passes `None` to `resolve_model_config`, which then reads `default_model` from the benchmark config. Previously hardcoded to `"claude-sonnet-openrouter"`, which caused a `KeyError` when that key wasn't in `config_benchmark.yaml`.
 - **There is a stale test directory** `C:UsersalexrDriverless_AGItests` (bad path) at the repo root — likely a Windows path mangling artifact, harmless but odd.
+- **`config_benchmark.yaml` lives in `benchmarks/`**: Moved from project root on 2026-06-14. `benchmarks/harbor/agent.py` resolves it via `Path(__file__).parent.parent / "config_benchmark.yaml"`. Do not recreate it at the project root — the agent will silently use the wrong config.
 - **`soul.md` now lives at `.dagi/prompts/soul.md`**: The Dagi-chan persona file was moved from repo root `soul.md` into `.dagi/prompts/soul.md` (commits `579aeca` → `ffdc752`). `load_soul(dagi_root, project_path)` now resolves it from there. Per-project persona overrides go in `{project_path}/.dagi/prompts/soul.md`.
 - **`agent/prompts.py` has project-aware helpers**: `load_main_system_prompt(dagi_root, project_path)` returns the project-local `main_system.md` if it exists, else the dagi root fallback. `load_soul(dagi_root, project_path)` follows the same pattern (project → dagi root → `None`). Both are pure Path lookups — no config file parsing. `dagi_root` is always `Path(__file__).parent.parent` from the caller's perspective.
 - **`system_prompt_preamble` injection differs structurally between `__init__` and rebuild methods**: `__init__` uses a `preamble_parts: list[str]` accumulator that is joined with `\n\n---\n\n` before the base prompt — preamble is one element in that list. The two rebuild methods (`_rebuild_for_normal_mode`, `_rebuild_for_plan_mode`) bypass the accumulator entirely and build `new_system` directly from `_prompt_text.format_map(...)`. Preamble is therefore injected by string-prefixing `new_system` after `format_map`. If a future refactor introduces a 4th build site, the same prefix pattern must be applied — there is no central assembly point.
@@ -476,3 +477,7 @@ tui.py / cli.py / main.py ← entry points (Textual TUI | Rich REPL | single-sho
     - `api_error_retries: 5` and `null_response_retries: 5` (same resilience as main config)
     - `bash_backend: subprocess` (no-op, kept for backwards compatibility)
   Verified: config parses correctly, preamble loads with 14 lines and correct first line, `harbor_bash` survives `filter_to` check. Commit: `5be33dd`.
+
+- **2026-06-14 Refactor**: Moved `config_benchmark.yaml` from project root to `benchmarks/config_benchmark.yaml`.
+  **Cause**: Benchmark config is benchmark-specific and belongs alongside the benchmark code, not at the project root where it could be confused with production config.
+  **Fix**: Moved file; updated `benchmarks/harbor/agent.py` line 65 (`Path(__file__).parent.parent.parent` → `Path(__file__).parent.parent`); updated `docs/terminal-bench.md`, `README.md`, `TODO.md`, and `PROJECT_CONTEXT.md` to reference the new path.

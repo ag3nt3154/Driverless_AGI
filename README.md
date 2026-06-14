@@ -577,7 +577,7 @@ DAGI includes an adapter for the [Harbor Framework](https://harborframework.com)
 
 - Docker running locally
 - `harbor` CLI installed (`pip install harbor-ai`)
-- `config_benchmark.yaml` at the project root (copy `config.example.yaml`, add model entries for `claude-sonnet-openrouter` and/or `claude-opus-openrouter` with your OpenRouter API key)
+- `benchmarks/config_benchmark.yaml` (already present; add model entries or override settings as needed)
 
 **Setup**
 
@@ -624,7 +624,7 @@ conda run -n dagi harbor run --agent-import-path benchmarks.harbor.agent:DagiAge
 **Key implementation notes**
 
 - `HarborBashTool` (`benchmarks/harbor/bash_tool.py`, `name="harbor_bash"`) routes all commands to the Docker container via `environment.exec()`. Only this tool reaches the container — DAGI's built-in `bash` tool runs on the Windows host.
-- The `system_prompt_preamble` field in `config_benchmark.yaml` is injected first in the system prompt (before soul/agents.md), telling the agent to use `harbor_bash` for all file I/O and to start with `ls /app`.
+- The `system_prompt_preamble` field in `benchmarks/config_benchmark.yaml` is injected first in the system prompt (before soul/agents.md), telling the agent to use `harbor_bash` for all file I/O and to start with `ls /app`.
 - `config.project_path` is set to a fresh `tempfile.mkdtemp()` directory so that DAGI's file tools return nothing — nudging the model toward `harbor_bash` rather than host file tools.
 - The dataset is `terminal-bench/terminal-bench-2@latest` (OCI package registry, no auth required).
 - A full 89-task run has not yet been performed; only single-task smoke tests are confirmed working.

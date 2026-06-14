@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import asyncio
 import os
-import tempfile
 from pathlib import Path
 
 from harbor.agents.base import BaseAgent
@@ -18,8 +17,8 @@ class DagiAgent(BaseAgent):
     """Harbor benchmark agent backed by DAGI's AgentLoop.
 
     Configuration via environment variables:
-        DAGI_BENCH_MODEL  — model key from config_benchmark.yaml
-                            (default: whatever default_model is set in config_benchmark.yaml)
+        DAGI_BENCH_MODEL  — model key from benchmarks/config_benchmark.yaml
+                            (default: whatever default_model is set in benchmarks/config_benchmark.yaml)
 
     Architecture:
         harbor run
@@ -61,11 +60,13 @@ class DagiAgent(BaseAgent):
             output = (result.stdout or "") + (result.stderr or "")
             return output.strip() or "[no output]"
 
-        # None → resolve_model_config reads default_model from config_benchmark.yaml
+        # None → resolve_model_config reads default_model from benchmarks/config_benchmark.yaml
         model_key = os.environ.get("DAGI_BENCH_MODEL") or None
-        bench_config = Path(__file__).parent.parent.parent / "config_benchmark.yaml"
+        bench_config = Path(__file__).parent.parent / "config_benchmark.yaml"
         config = resolve_model_config(model_key, config_path=bench_config)
-        config.project_path = Path(tempfile.mkdtemp())
+        # Use Harbor's per-job logs dir so DAGI session logs are persisted under
+        # benchmarks/jobs/{job_name}/.dagi/logs/ rather than a throwaway tempdir.
+        config.project_path = self.logs_dir
 
         bash_tool = HarborBashTool(exec_fn=exec_command)
         loop = AgentLoop(config, callbacks=AgentCallbacks(), _bash_tool=bash_tool)

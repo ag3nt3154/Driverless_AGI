@@ -43,14 +43,14 @@ only `BashTool` is registered when no `_bash_tool` is injected.
 
 ## Choosing a model
 
-Set `DAGI_BENCH_MODEL` to any model key defined in `config_benchmark.yaml`.
+Set `DAGI_BENCH_MODEL` to any model key defined in `benchmarks/config_benchmark.yaml`.
 If unset, defaults to `claude-sonnet-openrouter`.
 
 ```bat
 set DAGI_BENCH_MODEL=claude-opus-openrouter
 ```
 
-Edit `config_benchmark.yaml` to tune other settings (thinking level, subagent
+Edit `benchmarks/config_benchmark.yaml` to tune other settings (thinking level, subagent
 models, max continuations, etc.) before running.
 
 ## Running the benchmark
@@ -114,7 +114,7 @@ existing `parse_jsonl_logs.py` tool.
 benchmarks\run_terminal_bench.bat
   └─ tb run --agent-import-path benchmarks.terminal_bench.agent:DagiAgent
        └─ DagiAgent.perform_task(instruction, tmux_session, logging_dir)
-            ├─ resolve_model_config()   ← reads config_benchmark.yaml
+            ├─ resolve_model_config()   ← reads benchmarks/config_benchmark.yaml
             └─ AgentLoop(config, _bash_tool=bash_tool)
                  ├─ BashTool            ← name "bash",      local subprocess (always registered)
                  └─ TmuxBashTool        ← name "tmux_bash", injected alongside BashTool
@@ -128,5 +128,5 @@ benchmarks\run_terminal_bench.bat
 |---------|-----|
 | `conda: command not found` | Open Anaconda Prompt or add conda to PATH |
 | `Docker not running` | Start Docker Desktop before running |
-| `Model not found in config` | Check `DAGI_BENCH_MODEL` matches a key in `config_benchmark.yaml` |
+| `Model not found in config` | Check `DAGI_BENCH_MODEL` matches a key in `benchmarks/config_benchmark.yaml` |
 | Command timeouts in container | Increase `timeout` via DAGI's bash tool call, or raise `max_continuations` |
