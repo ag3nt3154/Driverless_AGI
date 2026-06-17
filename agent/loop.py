@@ -143,6 +143,10 @@ class AgentConfig:
     # Harbor / benchmark environment preamble injected at the TOP of the system prompt.
     # Set in config_benchmark.yaml to tell the agent about the container environment.
     system_prompt_preamble: str = ""
+    # OpenRouter provider routing: ordered list of provider slugs to try in sequence
+    # (e.g. ["Anthropic", "Together"]). None means use OpenRouter's default load balancing.
+    # Sent as extra_body["provider"]["order"] — ignored by non-OpenRouter endpoints.
+    provider_order: list[str] | None = None
 
 
 @dataclass
@@ -316,12 +320,14 @@ class AgentLoop:
 
         self.client = openai.OpenAI(api_key=config.api_key, base_url=config.base_url)
         self.config = config
-        # Build extra_body for OpenRouter extensions (reasoning, prompt caching).
+        # Build extra_body for OpenRouter extensions (reasoning, prompt caching, provider routing).
         self._extra_body: dict = {}
         if config.thinking and config.thinking.lower() != "none":
             self._extra_body["reasoning"] = {"effort": config.thinking.lower()}
         if config.cache_prompt:
             self._extra_body["cache_prompt"] = True
+        if config.provider_order:
+            self._extra_body["provider"] = {"order": config.provider_order}
 
         # ── Model-tier tracking ───────────────────────────────────────────────
         # Snapshot the five LLM identity fields so "default" tier can always
@@ -731,6 +737,8 @@ class AgentLoop:
             self._extra_body["reasoning"] = {"effort": self.config.thinking.lower()}
         if self.config.cache_prompt:
             self._extra_body["cache_prompt"] = True
+        if self.config.provider_order:
+            self._extra_body["provider"] = {"order": self.config.provider_order}
 
         self.compact_tool.bind(
             self._messages, self.config, self.client,

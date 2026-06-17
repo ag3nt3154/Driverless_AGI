@@ -131,6 +131,7 @@ def _build_config_from_entry(entry: dict, raw: dict) -> AgentConfig:
     tools: list[str] | None = raw.get("tools") or None
     sandbox_mode = bool(raw.get("sandbox_mode", False))
     system_prompt_preamble = str(raw.get("system_prompt_preamble", "") or "")
+    provider_order: list[str] | None = entry.get("provider_order") or None
 
     return AgentConfig(
         model=entry["model"],
@@ -149,6 +150,7 @@ def _build_config_from_entry(entry: dict, raw: dict) -> AgentConfig:
         tools=tools,
         sandbox_mode=sandbox_mode,
         system_prompt_preamble=system_prompt_preamble,
+        provider_order=provider_order,
     )
 
 

@@ -143,6 +143,10 @@ sandbox_mode: false  # true  = file tools (read, write, edit, grep, find, copy) 
 #   reserve_tokens    Per-model override for the compaction reserve (overrides top-level).
 #   keep_recent_tokens  Per-model override for the compaction tail (overrides top-level).
 #   thinking          Per-model override for the reasoning effort (overrides top-level).
+#   provider_order    OpenRouter only: ordered list of provider slugs to try in sequence.
+#                     e.g. ["Anthropic", "Together"] — routes to Anthropic first, falls back
+#                     to Together if unavailable. Omit to use OpenRouter's default load balancing.
+#                     Full slug list: https://openrouter.ai/docs/guides/routing/provider-selection
 
 models:
   gpt-4o-openai:
@@ -162,6 +166,9 @@ models:
     api_url: https://openrouter.ai/api/v1
     model: anthropic/claude-sonnet-4-6
     name: Claude Sonnet 4.6 (OpenRouter)
+    # provider_order:         # Optional: pin to specific provider(s) in priority order.
+    #   - Anthropic           # Try Anthropic's direct endpoint first.
+    #   - Together            # Fall back to Together if Anthropic is unavailable.
 
   claude-opus-openrouter:
     api_key_env: OPENROUTER_API_KEY

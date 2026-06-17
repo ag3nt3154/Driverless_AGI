@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import threading
 from pathlib import Path
 
 from rich.table import Table
@@ -143,17 +144,28 @@ class SlashCommandsMixin:
         if self._active_loop is None:
             conv.append_info("[dim]Nothing to compact — no active conversation.[/dim]")
             return
-        result = self._active_loop.compact_tool.compact(force=True)
-        if result.did_compact:
-            self._stats.update_tokens(
-                result.summary_input_tokens, result.summary_output_tokens, result.summary_cost
-            )
-            conv.append_info(
-                f"[yellow]⚡ Context compacted — removed {result.removed_count} messages, "
-                f"kept {len(self._active_loop._messages)}[/yellow]"
-            )
-        else:
-            conv.append_info("[dim]Nothing to compact.[/dim]")
+        conv.append_info("[dim]⏳ Compacting context…[/dim]")
+        loop = self._active_loop
+
+        def _do_compact() -> None:
+            try:
+                result = loop.compact_tool.compact(force=True)
+            except Exception as exc:
+                self.call_from_thread(conv.append_error, f"Compact failed: {exc}")
+                return
+            if result.did_compact:
+                self._stats.update_tokens(
+                    result.summary_input_tokens, result.summary_output_tokens, result.summary_cost
+                )
+                self.call_from_thread(
+                    conv.append_info,
+                    f"[yellow]⚡ Context compacted — removed {result.removed_count} messages, "
+                    f"kept {len(loop._messages)}[/yellow]",
+                )
+            else:
+                self.call_from_thread(conv.append_info, "[dim]Nothing to compact.[/dim]")
+
+        threading.Thread(target=_do_compact, daemon=True).start()
 
     def _cmd_tools(self) -> None:
         conv = self.query_one(ConversationPane)
