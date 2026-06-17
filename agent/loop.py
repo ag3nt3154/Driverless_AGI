@@ -277,24 +277,7 @@ class AgentLoop:
             dagi_root=str(dagi_root.resolve()),
         ))
 
-        # Load preamble: soul (project first, dagi root fallback), then agents.md files
-        preamble_parts: list[str] = []
-        if config.system_prompt_preamble:
-            preamble_parts.append(config.system_prompt_preamble.strip())
-        soul_text = load_soul(dagi_root, config.project_path)
-        if soul_text:
-            preamble_parts.append(soul_text.strip())
-        dagi_agents = dagi_root / ".dagi" / "agents.md"
-        if dagi_agents.exists():
-            text = dagi_agents.read_text(encoding="utf-8").strip()
-            if text:
-                preamble_parts.append(text)
-        project_agents = config.project_path / ".dagi" / "agents.md"
-        if project_agents.exists():
-            text = project_agents.read_text(encoding="utf-8").strip()
-            if text:
-                preamble_parts.append(text)
-        preamble = "\n\n---\n\n".join(preamble_parts)
+        preamble = self._build_preamble(dagi_root)
 
         sections = [s for s in [preamble, prompt] if s]
         system = "\n\n---\n\n".join(sections)
@@ -752,6 +735,23 @@ class AgentLoop:
 
         return f"Switched to '{target}' tier: {to_name}. Reason: {reason}"
 
+    def _build_preamble(self, dagi_root: Path) -> str:
+        parts: list[str] = []
+        if self.config.system_prompt_preamble:
+            parts.append(self.config.system_prompt_preamble.strip())
+        soul_text = load_soul(dagi_root, self.config.project_path)
+        if soul_text:
+            parts.append(soul_text.strip())
+        for agents_path in [
+            dagi_root / ".dagi" / "agents.md",
+            self.config.project_path / ".dagi" / "agents.md",
+        ]:
+            if agents_path.exists():
+                text = agents_path.read_text(encoding="utf-8").strip()
+                if text:
+                    parts.append(text)
+        return "\n\n---\n\n".join(parts)
+
     def _rebuild_for_normal_mode(self, dagi_root: Path) -> None:
         from agent.tools import create_tool_registry
 
@@ -794,8 +794,9 @@ class AgentLoop:
             memory_root=str(effective_memory_root),
             dagi_root=str(dagi_root.resolve()),
         ))
-        if self.config.system_prompt_preamble:
-            new_system = self.config.system_prompt_preamble.strip() + "\n\n---\n\n" + new_system
+        preamble = self._build_preamble(dagi_root)
+        if preamble:
+            new_system = preamble + "\n\n---\n\n" + new_system
         new_system += f"\n\n---\n\nProject root: {self.config.project_path}"
 
         if self.config.active_plan_file:
@@ -859,8 +860,9 @@ class AgentLoop:
             memory_root=str(effective_memory_root),
             dagi_root=str(dagi_root.resolve()),
         ))
-        if self.config.system_prompt_preamble:
-            new_system = self.config.system_prompt_preamble.strip() + "\n\n---\n\n" + new_system
+        preamble = self._build_preamble(dagi_root)
+        if preamble:
+            new_system = preamble + "\n\n---\n\n" + new_system
         new_system += f"\n\n---\n\nProject root: {self.config.project_path}"
         self._messages[0] = {"role": "system", "content": new_system}
         self.compact_tool.bind(

@@ -157,6 +157,11 @@ class DagiApp(SlashCommandsMixin, App[None]):
         except Exception as exc:
             self.call_from_thread(self.query_one(ConversationPane).append_error, str(exc))
         finally:
+            if loop_ref:
+                try:
+                    loop_ref[0].finish()
+                except Exception:
+                    pass
             self.call_from_thread(sidebar.set_status, "idle")
             self.call_from_thread(self._enable_input)
 
