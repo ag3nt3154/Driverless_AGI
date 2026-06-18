@@ -1,11 +1,12 @@
 # PROJECT_CONTEXT.md
 
-> Last updated: 2026-06-17 | [README](README.md) | [TODO](TODO.md)
+> Last updated: 2026-06-18 | [README](README.md) | [TODO](TODO.md)
 > Session 2026-06-17: Scheduled review — discovered TUI missing `loop.finish()` and soul/agents.md dropped from system prompt after plan-mode transitions. No code changes; findings logged in `_todo/todo_2026-06-17.md`.
 > Session 2026-06-17 (2): Added `provider_order` field to `AgentConfig` — exposes OpenRouter's `provider.order` routing as an optional per-model config field. Wired through `config_loader._build_config_from_entry` and merged into `_extra_body` at both build sites (`__init__` and `_handle_switch_model`). Documented in `config.example.yaml`.
 > Session 2026-06-17 (3): Fixed `/compact` TUI crash — `_cmd_compact()` was making a blocking API call directly on Textual's main event loop thread, freezing the UI. Any API exception also propagated uncaught through the Textual event handler. Fixed by running the compact operation on a background daemon thread with `call_from_thread` for all UI updates and proper exception handling.
 > Session 2026-06-17 (4): Fixed A1 — TUI never called `loop.finish()`. Added `loop_ref[0].finish()` in the `_agent_work` finally block in `tui/app.py`, guarded by `if loop_ref:` (handles constructor raise before append) and wrapped in `try/except Exception: pass` (prevents I/O errors in `finish()` from masking the original agent exception). Every TUI session now writes a complete `session_end` JSONL record with token/cost totals and subagent rollups.
 > Session 2026-06-17 (5): Fixed A2 — soul.md and agents.md were dropped from the system prompt after plan-mode transitions. Extracted preamble assembly into `AgentLoop._build_preamble(dagi_root)` and replaced the inline 17-line block in `__init__` plus the two single-line preamble injections in `_rebuild_for_normal_mode` and `_rebuild_for_plan_mode` with calls to the new shared method. All 3 build sites now inject the full preamble stack (system_prompt_preamble + soul.md + dagi agents.md + project agents.md).
+> Session 2026-06-18: Fixed two bugs introduced by the `_build_preamble` refactor (commit 6591652) — `self.config` assigned after the method that needs it, and `soul_text`/`dagi_agents`/`project_agents` variables referenced after removal of the inline block. `agent/loop.py` only.
 
 
 ---
@@ -497,6 +498,10 @@ tui.py / cli.py / main.py ← entry points (Textual TUI | Rich REPL | single-sho
 - **2026-06-14 Refactor**: Moved `config_benchmark.yaml` from project root to `benchmarks/config_benchmark.yaml`.
   **Cause**: Benchmark config is benchmark-specific and belongs alongside the benchmark code, not at the project root where it could be confused with production config.
   **Fix**: Moved file; updated `benchmarks/harbor/agent.py` line 65 (`Path(__file__).parent.parent.parent` → `Path(__file__).parent.parent`); updated `docs/terminal-bench.md`, `README.md`, `TODO.md`, and `PROJECT_CONTEXT.md` to reference the new path.
+
+- **2026-06-18 Bug**: `AttributeError: 'AgentLoop' object has no attribute 'config'` on startup after commit `6591652`.
+  **Cause**: The `_build_preamble` refactor extracted the inline preamble block into a method that accesses `self.config`, but `self.config = config` was assigned 25 lines *after* the `_build_preamble(dagi_root)` call in `__init__`. The same commit also deleted the inline block that defined `soul_text`, `dagi_agents`, and `project_agents` — but the `system_parts` construction block at lines 290–295 still referenced all three, producing a latent `NameError` that would have fired after the `AttributeError` was fixed.
+  **Fix**: Moved `self.config = config` to immediately before the `_build_preamble` call. Added `soul_text = load_soul(...)`, `dagi_agents = ...`, `project_agents = ...` definitions before the `system_parts` block in `__init__`. All 126 tests pass.
 
 - **2026-06-17 Bug (A2)**: soul.md and both agents.md files were dropped from the system prompt after any plan-mode transition.
   **Cause**: `_rebuild_for_normal_mode` and `_rebuild_for_plan_mode` in `agent/loop.py` each contained only a single-line preamble injection: `if self.config.system_prompt_preamble: new_system = preamble + "\n\n---\n\n" + new_system`. They never loaded `soul.md` or `agents.md`. Only `__init__` assembled the full preamble stack. The bug was introduced when `system_prompt_preamble` was wired to all 3 build sites (commit `fa63170`) but the soul/agents.md loading was never added to the two rebuild methods.

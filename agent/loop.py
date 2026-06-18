@@ -277,6 +277,7 @@ class AgentLoop:
             dagi_root=str(dagi_root.resolve()),
         ))
 
+        self.config = config
         preamble = self._build_preamble(dagi_root)
 
         sections = [s for s in [preamble, prompt] if s]
@@ -286,6 +287,9 @@ class AgentLoop:
         system += f"\n\n---\n\nProject root: {config.project_path}"
 
         # Build labeled system-prompt sections for the UI expander
+        soul_text = load_soul(dagi_root, config.project_path)
+        dagi_agents = dagi_root / ".dagi" / "agents.md"
+        project_agents = config.project_path / ".dagi" / "agents.md"
         self.system_parts: list[dict] = []
         if soul_text:
             self.system_parts.append({"label": "SOUL.md", "content": soul_text.strip()})
@@ -302,7 +306,6 @@ class AgentLoop:
             self._messages = [{"role": "system", "content": system}]
 
         self.client = openai.OpenAI(api_key=config.api_key, base_url=config.base_url)
-        self.config = config
         # Build extra_body for OpenRouter extensions (reasoning, prompt caching, provider routing).
         self._extra_body: dict = {}
         if config.thinking and config.thinking.lower() != "none":
