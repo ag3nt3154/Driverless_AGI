@@ -1,5 +1,12 @@
 # TODO
 
+## Completed
+
+- **README install & troubleshooting update** · `done` · `2026-06-21`
+  - Added conda + venv install paths using `requirements.txt`
+  - Added troubleshooting section: OpenAI credential errors, proxy/auth issues (`no_proxy`)
+  - Added TUI-first workflow (`/wd` to navigate after launch, then `/init`)
+
 ## Work Queue
 
 - **Persistent Memory System** · `priority:high` · `impact:high` · `in-progress`
@@ -28,6 +35,12 @@
   - **Ideal:** Path guard allows the full `dagi-memory/` tree (or whatever the configured `allowed_paths` list specifies) rather than individual subdirectories.
   - **Next:** Review plan · implement · mark done
   - **Source:** Session `2026-04-26_15-20-10` · [review_2026-04-26_15-20-10.md](.dagi/self-review/review_2026-04-26_15-20-10.md) · [plan_2026-04-26_15-20-10.md](.dagi/self-review/plan_2026-04-26_15-20-10.md)
+
+- **Strip base64 image data from compaction summarization** · `priority:high` · `impact:high` · `review-item`
+  - **Current:** `_format_messages_for_summary()` in `tools/compact.py` calls `str(msg["content"])` on list-typed content (OpenAI vision format). Each base64 image dumps ~32K tokens into the summarization prompt.
+  - **Ideal:** Image content blocks replaced with `[image: <filename>]` placeholder before summarization. Only text content is sent to the summarization model.
+  - **Next:** Add a content-type filter in `_format_messages_for_summary()` that skips `image_url` blocks.
+  - **Source:** `_todo/todo_2026-06-20.md` A2
 
 - **Full Harbor benchmark run (89 tasks)** · `priority:medium` · `impact:high`
   - **Current:** Only single-task smoke tests have been run (`--n-tasks 1`). Fix A and Fix B are in place; reward 0.0 was confirmed on the smoke test with Gemma 4 (too weak). Harness, async/sync bridge, and preamble injection are all verified.
@@ -140,5 +153,7 @@
 - [x] Recommend `dir` not `ls` in memory skills for Windows paths — both memory-ingest and memory-add Path Roots tables use `dir` in all bash examples for non-C: drives.
 - [x] Harbor harness Fix A — `DagiAgent.run()` now uses `tempfile.mkdtemp()` for `config.project_path` instead of Harbor's log directory, preventing DAGI's file tools from seeing misleading `.dagi/` internal files and stopping the system prompt from emitting a misleading "Project root: <logs_dir>" line.
 - [x] Harbor harness Fix B — Added `system_prompt_preamble: str = ""` field to `AgentConfig`, parsed from `config_benchmark.yaml`. Injected first in the system prompt at all 3 build sites (`__init__`, `_rebuild_for_normal_mode`, `_rebuild_for_plan_mode`). Preamble instructs the agent to use `harbor_bash` for all container access and never call `enter_plan_mode`. `benchmarks/config_benchmark.yaml` created (later moved to `benchmarks/` subfolder) with model catalog, tool allowlist, and preamble.
+
+- [x] Harden compaction failure path — `_compact_context()` in `agent/loop.py` now catches all exceptions from `compact_tool.compact()`, emits a warning via `on_assistant_text`, and returns `_NO_COMPACTION`. Session survives transient summarization API failures; context-length errors on the next API call are handled by the existing retry logic. (`_todo/todo_2026-06-20.md` A1, fixed 2026-06-21)
 
 - [x] RAM watchdog in test suite — `tests/conftest.py` auto-use fixture monitors system RAM via a daemon thread (0.5 s poll). At 70%: interrupts the running test with `pytest.fail()`. At 90%: hard-kills the process with `os._exit(1)` to protect the machine. Catches infinite-loop OOM bugs like the MagicMock + `yaml.safe_load` issue that previously killed the machine.

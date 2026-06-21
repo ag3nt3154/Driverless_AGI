@@ -37,10 +37,43 @@ OPENAI_API_KEY=sk-...
 OPENROUTER_API_KEY=sk-or-...
 ```
 
-Install:
+Install dependencies. Use whichever environment manager you prefer:
+
+**conda:**
+```bash
+conda activate dagi
+pip install -r requirements.txt
+```
+
+**venv:**
+```bash
+python -m venv .venv
+# Windows
+.venv\Scripts\activate
+# macOS / Linux
+source .venv/bin/activate
+
+pip install -r requirements.txt
+```
+
+---
+
+### Troubleshooting
+
+**OpenAI credentials errors** — if you see authentication failures on startup, confirm your `.env` file exists at the repo root and contains the correct key. Also ensure `langchain` is installed:
 
 ```bash
-pip install -e .
+pip install langchain
+```
+
+**Authorization / proxy errors** — if API requests are blocked by a corporate proxy or firewall, add the API base URL to the `no_proxy` environment variable so requests bypass the proxy:
+
+```bash
+# Windows (PowerShell)
+$env:no_proxy = "openai.com,openrouter.ai,api.openai.com"
+
+# macOS / Linux
+export no_proxy="openai.com,openrouter.ai,api.openai.com"
 ```
 
 ---
@@ -122,14 +155,24 @@ Exit with `q`, `exit`, or `quit`. Conversation history carries across turns.
 
 **1. Point dagi at your project directory**
 
-Every session is scoped to a working directory. Pass it at launch or change it mid-session with `/wd`:
+Every session is scoped to a working directory. You can set it at launch time, or navigate to it inside the TUI after it opens.
 
+**Option A — pass the path at launch:**
 ```bash
 # TUI
 conda run --no-capture-output -n dagi python tui.py --project /path/to/myproject
 
 # CLI
 python cli.py --project /path/to/myproject
+```
+
+**Option B — open the TUI first, then navigate:**
+```bash
+conda run --no-capture-output -n dagi python tui.py
+```
+Then inside the TUI, use `/wd` to set the working directory:
+```
+/wd C:\path\to\myproject
 ```
 
 **2. Scaffold the `.dagi/` directory**

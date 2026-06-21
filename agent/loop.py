@@ -14,7 +14,7 @@ from agent.prompts import load_prompt, load_main_system_prompt, load_soul
 from agent.registry import ToolRegistry
 from agent.session import SessionTracker, ToolCallRecord
 from agent.skills import Skill, SkillLoader
-from tools.compact import CompactTool, CompactionResult
+from tools.compact import CompactTool, CompactionResult, _NO_COMPACTION
 from tools.complete_plan import COMPLETE_PLAN_SENTINEL
 from tools.plan_mode import ENTER_PLAN_MODE_SENTINEL, EXIT_PLAN_MODE_SENTINEL
 from tools.reload_skills import RELOAD_SKILLS_SENTINEL
@@ -358,8 +358,15 @@ class AgentLoop:
         self._pause_event.set()
 
     def _compact_context(self) -> CompactionResult:
-        """Delegates to CompactTool.compact()."""
-        return self.compact_tool.compact()
+        """Delegates to CompactTool.compact(). Failures are non-fatal — the session continues
+        with un-compacted messages rather than crashing."""
+        try:
+            return self.compact_tool.compact()
+        except Exception as exc:
+            self.callbacks.on_assistant_text(
+                f"[Warning: context compaction failed — {exc}. Continuing with full context.]"
+            )
+            return _NO_COMPACTION
 
     def run(self, task: str) -> str:
         if task.strip().lower() == "/reload":
