@@ -10,6 +10,7 @@ from typing import Callable
 
 import openai
 
+from agent import DAGI_ROOT
 from agent.prompts import load_prompt, load_main_system_prompt, load_soul
 from agent.registry import ToolRegistry
 from agent.session import SessionTracker, ToolCallRecord
@@ -212,7 +213,7 @@ class AgentLoop:
         from uuid import uuid4
 
         self.callbacks = callbacks or AgentCallbacks()
-        dagi_root = Path(__file__).parent.parent
+        dagi_root = DAGI_ROOT
 
         # Stash injected bash tool so plan-mode rebuilds can restore it
         self._injected_bash_tool = _bash_tool
@@ -605,7 +606,7 @@ class AgentLoop:
     def _handle_enter_plan_mode(self, args: dict) -> str:
         mode = args.get("mode", "interactive")
         interactive = mode != "autonomous"
-        dagi_root = Path(__file__).parent.parent
+        dagi_root = DAGI_ROOT
         plans_dir = self.config.project_path / ".dagi" / "plans"
         plans_dir.mkdir(parents=True, exist_ok=True)
         ts = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -650,7 +651,7 @@ class AgentLoop:
 
     def _handle_exit_plan_mode(self, args: dict) -> str:
         saved_plan = self.config.plan_file
-        dagi_root = Path(__file__).parent.parent
+        dagi_root = DAGI_ROOT
         self._handle_switch_model("default", {"reason": "plan complete, returning to normal mode"})
         self.config.active_plan_file = saved_plan
         self.exited_plan_file = saved_plan
@@ -889,7 +890,7 @@ class AgentLoop:
 
         Returns (added_names, removed_names, errors) for notification formatting.
         """
-        dagi_root = Path(__file__).parent.parent
+        dagi_root = DAGI_ROOT
         skill_roots = [
             dagi_root / ".dagi" / "skills",
             self.config.project_path / ".dagi" / "skills",

@@ -15,7 +15,7 @@ from pathlib import Path
 
 from agent.base_tool import BaseTool
 
-_DAGI_ROOT = Path(__file__).parent.parent
+from agent import DAGI_ROOT as _DAGI_ROOT
 _CLI_PATH = _DAGI_ROOT / "cli.py"
 
 

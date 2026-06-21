@@ -38,7 +38,7 @@ if TYPE_CHECKING:
     from agent.loop import AgentCallbacks, AgentConfig
     from agent.session import SessionTracker
 
-_DAGI_ROOT = Path(__file__).parent.parent
+from agent import DAGI_ROOT as _DAGI_ROOT
 
 def _load_subagent_config(subagent_type: str, project_path: Path) -> dict:
     """Read and return .dagi/subagents/<type>/subagent_config.yaml as a dict."""
