@@ -316,14 +316,15 @@ class AgentLoop:
             self._extra_body["provider"] = {"order": config.provider_order}
 
         # ── Model-tier tracking ───────────────────────────────────────────────
-        # Snapshot the five LLM identity fields so "default" tier can always
+        # Snapshot the six LLM identity fields so "default" tier can always
         # be restored regardless of how many switch_model calls happen.
         self._base_config_snapshot: dict = {
-            "model":        config.model,
-            "base_url":     config.base_url,
-            "api_key":      config.api_key,
-            "thinking":     config.thinking,
-            "display_name": config.display_name,
+            "model":          config.model,
+            "base_url":       config.base_url,
+            "api_key":        config.api_key,
+            "thinking":       config.thinking,
+            "display_name":   config.display_name,
+            "provider_order": config.provider_order,
         }
         self._current_tier: str = "default"
 
@@ -707,21 +708,23 @@ class AgentLoop:
                 )
         elif target == "default":
             snap = self._base_config_snapshot
-            self.config.model        = snap["model"]
-            self.config.base_url     = snap["base_url"]
-            self.config.api_key      = snap["api_key"]
-            self.config.thinking     = snap["thinking"]
-            self.config.display_name = snap["display_name"]
+            self.config.model          = snap["model"]
+            self.config.base_url       = snap["base_url"]
+            self.config.api_key        = snap["api_key"]
+            self.config.thinking       = snap["thinking"]
+            self.config.display_name   = snap["display_name"]
+            self.config.provider_order = snap["provider_order"]
             tier_cfg = None
         else:
             return f"Unknown model tier '{target}'. Valid values: plan, default, worker."
 
         if tier_cfg is not None:
-            self.config.model        = tier_cfg.model
-            self.config.base_url     = tier_cfg.base_url
-            self.config.api_key      = tier_cfg.api_key
-            self.config.thinking     = tier_cfg.thinking
-            self.config.display_name = tier_cfg.display_name
+            self.config.model          = tier_cfg.model
+            self.config.base_url       = tier_cfg.base_url
+            self.config.api_key        = tier_cfg.api_key
+            self.config.thinking       = tier_cfg.thinking
+            self.config.display_name   = tier_cfg.display_name
+            self.config.provider_order = tier_cfg.provider_order
 
         self.client = openai.OpenAI(api_key=self.config.api_key, base_url=self.config.base_url)
 
