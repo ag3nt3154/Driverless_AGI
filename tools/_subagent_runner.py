@@ -46,6 +46,15 @@ def _stream_stdout(proc: subprocess.Popen, on_event: Callable[[str], None]) -> N
         pass
 
 
+def _drain_stdout(proc: subprocess.Popen) -> None:
+    """Read and discard stdout to prevent pipe buffer deadlock (no relay needed)."""
+    try:
+        for _ in proc.stdout:  # type: ignore[union-attr]
+            pass
+    except Exception:
+        pass
+
+
 def _poll_until(
     state: _SubagentState,
     extra_seconds: float,
@@ -86,6 +95,7 @@ def run_subagent(
     handoff_path: Path,
     timeout: float = 300.0,
     on_event: Callable[[str], None] | None = None,
+    extra_argv: list[str] | None = None,
 ) -> dict:
     """Spawn a subagent subprocess and block until exit or timeout.
 
@@ -109,6 +119,8 @@ def run_subagent(
         "--handoff", str(handoff_path),
         "--project", str(project_path),
     ]
+    if extra_argv:
+        argv.extend(extra_argv)
 
     proc = subprocess.Popen(
         argv,
@@ -131,7 +143,9 @@ def run_subagent(
 
     if on_event:
         t = threading.Thread(target=_stream_stdout, args=(proc, on_event), daemon=True)
-        t.start()
+    else:
+        t = threading.Thread(target=_drain_stdout, args=(proc,), daemon=True)
+    t.start()
 
     return _poll_until(state, timeout)
 

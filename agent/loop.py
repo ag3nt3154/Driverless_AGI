@@ -628,7 +628,8 @@ class AgentLoop:
             "#### Tests\n"
             "<!-- Filled by main agent before executing this subtask — do NOT write tests here -->\n\n"
             "## Notes\n\n"
-            "## Verification\n\n",
+            "## Verification\n\n"
+            "## Execution Protocol\n\n",
             encoding="utf-8",
         )
 
@@ -674,7 +675,7 @@ class AgentLoop:
     def _handle_complete_plan(self) -> str:
         cleared = self.config.active_plan_file
         self.config.active_plan_file = None
-        self._rebuild_for_normal_mode(Path(__file__).parent.parent)
+        self._rebuild_for_normal_mode(DAGI_ROOT)
         return (
             f"Active plan cleared (was: {cleared}). "
             "Handoffs will now go to .dagi/handoffs/. "
@@ -908,7 +909,8 @@ class AgentLoop:
         after_names = {s.name for s in self.skills}
 
         if self.config.plan_mode and self.config.plan_file:
-            self._rebuild_for_plan_mode(dagi_root, Path(self.config.plan_file))
+            interactive = self.config.plan_mode_initiated_by == "user"
+            self._rebuild_for_plan_mode(dagi_root, Path(self.config.plan_file), interactive=interactive)
         else:
             self._rebuild_for_normal_mode(dagi_root)
 

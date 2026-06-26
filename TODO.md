@@ -2,6 +2,38 @@
 
 ## Completed
 
+- **`_rebuild_for_reload` silently resets autonomous plan mode to interactive** · `done` · `2026-06-27`
+  - Derived `interactive = self.config.plan_mode_initiated_by == "user"` before `_rebuild_for_plan_mode` call at `agent/loop.py:910`
+  - Autonomous agents no longer flip to infinite `ask_user` wait on skill reload
+
+- **`build_subagent_registry` fails for non-DAGI projects** · `done` · `2026-06-27`
+  - `_load_subagent_config` now tries `project_path` first, then `_DAGI_ROOT` fallback (`agent/tools.py:43`)
+  - Plan-work-review subagents now work from any project directory
+
+- **Plan skeleton missing `## Execution Protocol` heading** · `done` · `2026-06-27`
+  - Added `"## Execution Protocol\n\n"` after `"## Verification\n\n"` in scaffold at `agent/loop.py:631`
+  - Plan document now self-contained regardless of compaction timing
+
+- **`_subagent_runner.py` pipe buffer deadlock in CLI mode** · `done` · `2026-06-26`
+  - Added `_drain_stdout()` to `tools/_subagent_runner.py`
+  - Drain thread now always started — `_stream_stdout` with relay, `_drain_stdout` without
+  - Added `extra_argv` param to `run_subagent()` for caller-supplied CLI flags
+
+- **`SpawnCliSubagentTool` pipe buffer deadlock** · `done` · `2026-06-26`
+  - Replaced hand-rolled `Popen`+`proc.wait()` with `run_subagent()` in `tools/cli_subagent.py`
+  - Wired `on_event_factory` and `tracker` through constructor + `agent/tools.py` call site
+  - Prompt-file cleanup in `try/finally`; timeout returns resumable PID dict
+  - Custom subagents now appear in TUI, tracked in session logs, resumable after timeout
+
+- **`_handle_complete_plan` uses stale `Path(__file__).parent.parent` instead of `DAGI_ROOT`** · `done` · `2026-06-26`
+  - Replaced `Path(__file__).parent.parent` with `DAGI_ROOT` at `agent/loop.py:677`
+  - Last stale site in `loop.py` — all `_rebuild_for_normal_mode` call sites now use the canonical constant
+
+- **`_rebuild_for_normal_mode` missing `memory_root=` in `create_tool_registry`** · `done` · `2026-06-26`
+  - Added `memory_root=self._effective_memory_root,` at `agent/loop.py:790`
+  - All three `create_tool_registry` call sites now consistently forward custom memory root
+  - Custom `memory_root` no longer silently reverts to default after plan→normal transition
+
 - **README install & troubleshooting update** · `done` · `2026-06-21`
   - Added conda + venv install paths using `requirements.txt`
   - Added troubleshooting section: OpenAI credential errors, proxy/auth issues (`no_proxy`)
@@ -16,60 +48,6 @@
 ---
 
 ### 🔴 HIGH — Bugs
-
-- **`_rebuild_for_normal_mode` missing `memory_root=` in `create_tool_registry`** · `priority:high` · `open:8d` · `effort:XS`
-  - **File:** `agent/loop.py:780-791`
-  - **Problem:** After plan→normal transition with a custom `memory_root`, `SkillTool` silently reverts to the default `project_path/dagi-memory` path. `__init__` and `_rebuild_for_plan_mode` both pass `memory_root=self._effective_memory_root`; the normal-mode rebuild is the only missing site.
-  - **Fix:** Add `memory_root=self._effective_memory_root,` between `tracker=self.tracker,` and `bash_tool=self._injected_bash_tool,` at line ~790.
-  - **Source:** `_todo/todo_2026-06-18.md` A1
-
-- **`_handle_complete_plan` uses stale `Path(__file__).parent.parent` instead of `DAGI_ROOT`** · `priority:high` · `open:5d` · `effort:XS`
-  - **File:** `agent/loop.py:677`
-  - **Problem:** Missed by the `cdf90a8` centralisation commit. Every other call site uses `DAGI_ROOT`; this one still uses `Path(__file__).parent.parent`.
-  - **Fix:** `self._rebuild_for_normal_mode(DAGI_ROOT)`
-  - **Source:** `_todo/todo_2026-06-21.md` A1
-
-- **`_subagent_runner.py` pipe buffer deadlock in CLI mode** · `priority:high` · `open:1d` · `effort:XS`
-  - **File:** `tools/_subagent_runner.py:108-128`
-  - **Problem:** When `on_event is None` (CLI mode), no stdout drain thread is started. If the subagent writes >64KB to stdout (common for verbose sessions), the OS pipe buffer fills and both parent and child deadlock until the timeout fires.
-  - **Fix:** Always start a drain thread — use `_stream_stdout` when `on_event` is set, otherwise a no-op `_drain_only` loop.
-  - **Source:** `_todo/todo_2026-06-25_2.md` A1
-
-- **`SpawnCliSubagentTool` pipe buffer deadlock** · `priority:high` · `open:1d` · `effort:S`
-  - **File:** `tools/cli_subagent.py:90-100`
-  - **Problem:** Uses `stdout=PIPE` + `proc.wait(timeout=...)` with no drain thread. Same 64KB deadlock risk as above. Also bypasses `_subagent_runner.py` entirely — no PID tracking, no TUI event relay, no timeout resume.
-  - **Fix:** Migrate to call `run_subagent()` from `_subagent_runner.py` directly.
-  - **Source:** `_todo/todo_2026-06-25.md` A2
-
-- **Base64 image data dumped into compaction summarization prompt** · `priority:high` · `open:6d` · `effort:XS`
-  - **File:** `tools/compact.py:68-71`
-  - **Problem:** `_format_messages_for_summary()` calls `str(msg["content"])` on list-typed content (vision tool results), dumping ~32K tokens of raw base64 per image into the summarization prompt.
-  - **Fix:** Guard with `isinstance(content, list)` and replace with `[image omitted]` placeholder.
-  - **Source:** `_todo/todo_2026-06-20.md` A2
-
-- **`_estimate_tokens` base64 inflation causes over-aggressive compaction** · `priority:high` · `open:1d` · `effort:XS`
-  - **File:** `tools/compact.py:45-52`
-  - **Problem:** Same `str(content)` issue in `_estimate_tokens()`. When content is a list (image), this inflates token estimates by ~8K tokens per image, shortening the "recent tail" preserved during compaction.
-  - **Fix:** Same `isinstance(content, list)` guard — use 200 token placeholder per image.
-  - **Source:** `_todo/todo_2026-06-25.md` C1
-
-- **`_rebuild_for_reload` silently resets autonomous plan mode to interactive** · `priority:high` · `open:0d` · `effort:XS`
-  - **File:** `agent/loop.py:909-912`
-  - **Problem:** `_rebuild_for_plan_mode` defaults `interactive=True`. When a skill reload fires during autonomous plan mode (`plan_mode_initiated_by="dagi"`), the rebuild passes no `interactive=` arg, flipping `ask_user` timeout from 60s (auto-approve) to `None` (infinite wait) — the autonomous agent hangs forever.
-  - **Fix:** `interactive = self.config.plan_mode_initiated_by == "user"` and pass it through.
-  - **Source:** `_todo/todo_2026-06-26.md` A1
-
-- **`build_subagent_registry` fails for non-DAGI projects** · `priority:high` · `open:0d` · `effort:XS`
-  - **File:** `agent/tools.py:388-396`
-  - **Problem:** `_load_subagent_config` only checks `project_path/.dagi/subagents/`. When spawning a worker/review subagent from a non-DAGI project, the child `cli.py --subagent-type` process crashes with `ValueError` because the project has no `.dagi/subagents/worker/subagent_config.yaml`. Plan-work-review is completely non-functional outside DAGI root.
-  - **Fix:** Add `DAGI_ROOT` fallback: try `project_path`, then `DAGI_ROOT`.
-  - **Source:** `_todo/todo_2026-06-26.md` A2
-
-- **Plan skeleton missing `## Execution Protocol` heading** · `priority:medium` · `open:4d` · `effort:XS`
-  - **File:** `agent/loop.py:616-631`
-  - **Problem:** The plan scaffold written by `_handle_enter_plan_mode` doesn't include `## Execution Protocol`. The 2026-06-21 fix wrote the section to SKILL.md (compaction-immune), but if skills are compacted before the plan is written, the heading won't appear.
-  - **Fix:** Add `"## Execution Protocol\n\n"` after `"## Verification\n\n"` in the scaffold.
-  - **Source:** `_todo/todo_2026-06-22.md` A4
 
 - **5 remaining `DAGI_ROOT` independent computations in cli/tui** · `priority:medium` · `open:5d` · `effort:XS`
   - **Files:** `cli.py:43`, `cli.py:804`, `tui/app.py:52`, `tui/commands.py:20`, `tools/spawn_subagent.py:23`
@@ -110,12 +88,6 @@
   - **Problem:** None of these are registered in `create_tool_registry()` or used anywhere. They duplicate patterns from active code and confuse readers.
   - **Fix:** Audit for external callers; delete if unused.
   - **Source:** `_todo/todo_2026-06-13.md` #4
-
-- **`SpawnCliSubagentTool` bypasses `_subagent_runner.py`** · `priority:medium` · `open:7d` · `effort:S`
-  - **File:** `tools/cli_subagent.py:82-103`
-  - **Problem:** Uses raw `subprocess.Popen` instead of `run_subagent()`. Consequences: no PID tracking (can't resume after timeout), no stdout relay to TUI, no `on_event_factory` wiring. Custom subagents are opaque and non-resumable.
-  - **Fix:** Route through `run_subagent()` with an `on_event_factory` callback.
-  - **Source:** `_todo/todo_2026-06-19.md` A3
 
 - **Split `cli.py` (1327 lines) → `cli/` package** · `priority:high` · `open:10d` · `effort:M`
   - **File:** `cli.py`
@@ -164,12 +136,6 @@
   - **Problem:** Every `skill("name")` call creates a new `SkillLoader`, scans all skill root dirs, reads and parses every SKILL.md. `AgentLoop` already has `self.skills` pre-loaded. ~30 file reads per call.
   - **Fix:** Pass the pre-loaded skills list to `SkillTool` at construction time, or cache after first load.
   - **Source:** `_todo/todo_2026-06-25_2.md` A2
-
-- **`session_end` JSONL record dumps full `raw_messages` with base64 images** · `priority:high` · `open:1d` · `effort:XS`
-  - **Files:** `agent/session.py:213-214`, `agent/loop.py:918`
-  - **Problem:** `self._messages` (full conversation history including image tool results) is written as a single JSON line. A session with 5 images produces a 160KB+ `session_end` line — redundant data already stored in individual `tool_end` records.
-  - **Fix:** Strip list-typed content from `raw_messages` before writing, or stop passing them entirely.
-  - **Source:** `_todo/todo_2026-06-25_2.md` A3
 
 - **`WebFetchTool` silently upgrades HTTP→HTTPS for private IP addresses** · `priority:medium` · `open:1d` · `effort:XS`
   - **File:** `tools/web_fetch.py:123`
@@ -278,10 +244,6 @@
   - Verify graceful degradation path (the 2026-06-21 fix) — mock a failing summarization call and assert session continues.
   - **Source:** `_todo/todo_2026-06-20.md` E1
 
-- **Tests for image-content compaction** · `priority:medium` · `effort:XS`
-  - Insert a list-typed tool result and assert `_format_messages_for_summary` doesn't include raw base64.
-  - **Source:** `_todo/todo_2026-06-20.md` E2
-
 - **Tests for `_handle_switch_model` tier transitions** · `priority:medium` · `effort:S`
   - Parametrize default→plan→worker→default and assert each field is correctly set/restored (covers `provider_order`, `cache_prompt`, `model`, etc.).
   - **Source:** `_todo/todo_2026-06-19.md` E1
@@ -322,6 +284,28 @@
 - **`_effective_memory_root` recomputed inline in both rebuild methods** · `priority:low` · `effort:XS`
   - `agent/loop.py:795-798`, `agent/loop.py:866-869` — both recompute what `self._effective_memory_root` already holds. Replace with the instance attribute.
   - **Source:** `_todo/todo_2026-06-17.md` B2
+
+- **Base64 image data dumped into compaction summarization prompt** · `priority:low` · `effort:XS` · `images-not-yet-supported`
+  - **File:** `tools/compact.py:68-71`
+  - **Problem:** `_format_messages_for_summary()` calls `str(msg["content"])` on list-typed content (vision tool results), dumping ~32K tokens of raw base64 per image into the summarization prompt.
+  - **Fix:** Guard with `isinstance(content, list)` and replace with `[image omitted]` placeholder.
+  - **Source:** `_todo/todo_2026-06-20.md` A2
+
+- **`_estimate_tokens` base64 inflation causes over-aggressive compaction** · `priority:low` · `effort:XS` · `images-not-yet-supported`
+  - **File:** `tools/compact.py:45-52`
+  - **Problem:** `str(content)` on list-typed content inflates token estimates by ~8K tokens per image, shortening the "recent tail" preserved during compaction.
+  - **Fix:** `isinstance(content, list)` guard — use 200 token placeholder per image.
+  - **Source:** `_todo/todo_2026-06-25.md` C1
+
+- **`session_end` JSONL record dumps full `raw_messages` with base64 images** · `priority:low` · `effort:XS` · `images-not-yet-supported`
+  - **Files:** `agent/session.py:213-214`, `agent/loop.py:918`
+  - **Problem:** A session with 5 images produces a 160KB+ `session_end` line — redundant data already stored in individual `tool_end` records.
+  - **Fix:** Strip list-typed content from `raw_messages` before writing, or stop passing them entirely.
+  - **Source:** `_todo/todo_2026-06-25_2.md` A3
+
+- **Tests for image-content compaction** · `priority:low` · `effort:XS` · `images-not-yet-supported`
+  - Insert a list-typed tool result and assert `_format_messages_for_summary` doesn't include raw base64.
+  - **Source:** `_todo/todo_2026-06-20.md` E2
 
 - **9 stale worktrees in `.claude/worktrees/`** · `priority:low` · `effort:XS`
   - Full repo copies from May 2026. Run `commit-commands:clean_gone` or manually remove.
@@ -425,6 +409,8 @@
 - [x] RAM watchdog in test suite — `tests/conftest.py` auto-use fixture monitors system RAM; 70% → `pytest.fail()`; 90% → `os._exit(1)`.
 
 - [x] `tempfile.mktemp()` TOCTOU race fixed at 3 sites — replaced with atomic `mkstemp()` + `os.close(fd)` in `tools/_subagent_runner.py:96` and `tools/cli_subagent.py:70,73`. (`_todo/todo_2026-06-07.md` #4, fixed 2026-06-26)
+
+- [x] `SpawnCliSubagentTool` migrated to `run_subagent()` — pipe deadlock fixed, TUI relay wired, PID tracking added, timeout returns resumable dict, prompt-file cleanup in `try/finally`. (`_todo/todo_2026-06-25.md` A2, fixed 2026-06-26)
 
 - [x] Temp file leak on subagent timeout fixed — `task_file: Path` added to `_SubagentState`; `_poll_until` now calls `state.task_file.unlink()` on process exit, covering both normal and resume paths. (`_todo/todo_2026-06-07.md` #3, fixed 2026-06-26)
 
