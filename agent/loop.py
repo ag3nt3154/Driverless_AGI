@@ -787,6 +787,7 @@ class AgentLoop:
             config=self.config,
             callbacks=self.callbacks,
             tracker=self.tracker,
+            memory_root=self._effective_memory_root,
             bash_tool=self._injected_bash_tool,
         )
 
