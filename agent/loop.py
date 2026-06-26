@@ -818,11 +818,16 @@ class AgentLoop:
                 f"\n\n---\n\n"
                 f"## Active Plan\n\n"
                 f"A plan document is active at: `{self.config.active_plan_file}`\n\n"
-                f"As you implement each step:\n"
-                f"- Read the plan file when the user asks about progress.\n"
-                f"- After completing each todo item, edit the plan file and tick its "
-                f"checkbox: `- [ ]` → `- [x]`.\n"
-                f"- If you deviate from the plan, update the plan document to reflect reality."
+                f"**Before starting any implementation work**, read the plan file "
+                f"in full — it contains both the subtask definitions and the "
+                f"execution protocol you must follow.\n\n"
+                f"As you work:\n"
+                f"- Follow the **Execution Protocol** section in the plan exactly.\n"
+                f"- After completing each subtask, edit the plan and update its "
+                f"status marker.\n"
+                f"- If something feels wrong or unclear, re-read the plan file — "
+                f"the answer is likely there.\n"
+                f"- If you deviate from the plan, update it to reflect reality."
             )
 
         self._messages[0] = {"role": "system", "content": new_system}

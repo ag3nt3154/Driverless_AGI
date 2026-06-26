@@ -7,98 +7,362 @@
   - Added troubleshooting section: OpenAI credential errors, proxy/auth issues (`no_proxy`)
   - Added TUI-first workflow (`/wd` to navigate after launch, then `/init`)
 
+---
+
 ## Work Queue
 
+### 🔴 CRITICAL — Security / Data Loss
+
+---
+
+### 🔴 HIGH — Bugs
+
+- **`_rebuild_for_normal_mode` missing `memory_root=` in `create_tool_registry`** · `priority:high` · `open:8d` · `effort:XS`
+  - **File:** `agent/loop.py:780-791`
+  - **Problem:** After plan→normal transition with a custom `memory_root`, `SkillTool` silently reverts to the default `project_path/dagi-memory` path. `__init__` and `_rebuild_for_plan_mode` both pass `memory_root=self._effective_memory_root`; the normal-mode rebuild is the only missing site.
+  - **Fix:** Add `memory_root=self._effective_memory_root,` between `tracker=self.tracker,` and `bash_tool=self._injected_bash_tool,` at line ~790.
+  - **Source:** `_todo/todo_2026-06-18.md` A1
+
+- **`_handle_complete_plan` uses stale `Path(__file__).parent.parent` instead of `DAGI_ROOT`** · `priority:high` · `open:5d` · `effort:XS`
+  - **File:** `agent/loop.py:677`
+  - **Problem:** Missed by the `cdf90a8` centralisation commit. Every other call site uses `DAGI_ROOT`; this one still uses `Path(__file__).parent.parent`.
+  - **Fix:** `self._rebuild_for_normal_mode(DAGI_ROOT)`
+  - **Source:** `_todo/todo_2026-06-21.md` A1
+
+- **`_subagent_runner.py` pipe buffer deadlock in CLI mode** · `priority:high` · `open:1d` · `effort:XS`
+  - **File:** `tools/_subagent_runner.py:108-128`
+  - **Problem:** When `on_event is None` (CLI mode), no stdout drain thread is started. If the subagent writes >64KB to stdout (common for verbose sessions), the OS pipe buffer fills and both parent and child deadlock until the timeout fires.
+  - **Fix:** Always start a drain thread — use `_stream_stdout` when `on_event` is set, otherwise a no-op `_drain_only` loop.
+  - **Source:** `_todo/todo_2026-06-25_2.md` A1
+
+- **`SpawnCliSubagentTool` pipe buffer deadlock** · `priority:high` · `open:1d` · `effort:S`
+  - **File:** `tools/cli_subagent.py:90-100`
+  - **Problem:** Uses `stdout=PIPE` + `proc.wait(timeout=...)` with no drain thread. Same 64KB deadlock risk as above. Also bypasses `_subagent_runner.py` entirely — no PID tracking, no TUI event relay, no timeout resume.
+  - **Fix:** Migrate to call `run_subagent()` from `_subagent_runner.py` directly.
+  - **Source:** `_todo/todo_2026-06-25.md` A2
+
+- **Base64 image data dumped into compaction summarization prompt** · `priority:high` · `open:6d` · `effort:XS`
+  - **File:** `tools/compact.py:68-71`
+  - **Problem:** `_format_messages_for_summary()` calls `str(msg["content"])` on list-typed content (vision tool results), dumping ~32K tokens of raw base64 per image into the summarization prompt.
+  - **Fix:** Guard with `isinstance(content, list)` and replace with `[image omitted]` placeholder.
+  - **Source:** `_todo/todo_2026-06-20.md` A2
+
+- **`_estimate_tokens` base64 inflation causes over-aggressive compaction** · `priority:high` · `open:1d` · `effort:XS`
+  - **File:** `tools/compact.py:45-52`
+  - **Problem:** Same `str(content)` issue in `_estimate_tokens()`. When content is a list (image), this inflates token estimates by ~8K tokens per image, shortening the "recent tail" preserved during compaction.
+  - **Fix:** Same `isinstance(content, list)` guard — use 200 token placeholder per image.
+  - **Source:** `_todo/todo_2026-06-25.md` C1
+
+- **`_rebuild_for_reload` silently resets autonomous plan mode to interactive** · `priority:high` · `open:0d` · `effort:XS`
+  - **File:** `agent/loop.py:909-912`
+  - **Problem:** `_rebuild_for_plan_mode` defaults `interactive=True`. When a skill reload fires during autonomous plan mode (`plan_mode_initiated_by="dagi"`), the rebuild passes no `interactive=` arg, flipping `ask_user` timeout from 60s (auto-approve) to `None` (infinite wait) — the autonomous agent hangs forever.
+  - **Fix:** `interactive = self.config.plan_mode_initiated_by == "user"` and pass it through.
+  - **Source:** `_todo/todo_2026-06-26.md` A1
+
+- **`build_subagent_registry` fails for non-DAGI projects** · `priority:high` · `open:0d` · `effort:XS`
+  - **File:** `agent/tools.py:388-396`
+  - **Problem:** `_load_subagent_config` only checks `project_path/.dagi/subagents/`. When spawning a worker/review subagent from a non-DAGI project, the child `cli.py --subagent-type` process crashes with `ValueError` because the project has no `.dagi/subagents/worker/subagent_config.yaml`. Plan-work-review is completely non-functional outside DAGI root.
+  - **Fix:** Add `DAGI_ROOT` fallback: try `project_path`, then `DAGI_ROOT`.
+  - **Source:** `_todo/todo_2026-06-26.md` A2
+
+- **Plan skeleton missing `## Execution Protocol` heading** · `priority:medium` · `open:4d` · `effort:XS`
+  - **File:** `agent/loop.py:616-631`
+  - **Problem:** The plan scaffold written by `_handle_enter_plan_mode` doesn't include `## Execution Protocol`. The 2026-06-21 fix wrote the section to SKILL.md (compaction-immune), but if skills are compacted before the plan is written, the heading won't appear.
+  - **Fix:** Add `"## Execution Protocol\n\n"` after `"## Verification\n\n"` in the scaffold.
+  - **Source:** `_todo/todo_2026-06-22.md` A4
+
+- **5 remaining `DAGI_ROOT` independent computations in cli/tui** · `priority:medium` · `open:5d` · `effort:XS`
+  - **Files:** `cli.py:43`, `cli.py:804`, `tui/app.py:52`, `tui/commands.py:20`, `tools/spawn_subagent.py:23`
+  - **Problem:** The `cdf90a8` centralisation fixed `agent/` and `tools/` but missed these 5 sites.
+  - **Fix:** Replace with `from agent import DAGI_ROOT` in each.
+  - **Source:** `_todo/todo_2026-06-21.md` A2
+
+- **`json.loads(tc.function.arguments)` parsed up to 4 times per tool call** · `priority:medium` · `open:9d` · `effort:XS`
+  - **File:** `agent/loop.py:548-563`
+  - **Problem:** The same JSON string is parsed at lines 548, 551, 553, 563. If the JSON is malformed, all 4 parse attempts raise, producing an uncaught `JSONDecodeError` instead of a clean tool error.
+  - **Fix:** Parse once: `args = json.loads(tc.function.arguments)` and reuse everywhere.
+  - **Source:** `_todo/todo_2026-06-17.md` A3
+
+- **Subagent discovery only scans project path — misses DAGI root types** · `priority:medium` · `open:1d` · `effort:S`
+  - **File:** `agent/tools.py:84-133`
+  - **Problem:** `_discover_subagent_tools` only scans `cwd/.dagi/subagents`. When `project_path != DAGI_ROOT`, all four built-in subagent types (worker, review, explore_files, web_research) silently vanish from the registry.
+  - **Fix:** Scan both `DAGI_ROOT/.dagi/subagents` and `cwd/.dagi/subagents`; project types override on name collision.
+  - **Source:** `_todo/todo_2026-06-25.md` A3
+
+---
+
+### 🟠 Architecture Debt
+
+- **Unified `_rebuild_system_prompt()` — eliminate 3-site divergence** · `priority:high` · `open:9d` · `effort:M`
+  - **Files:** `agent/loop.py:264-287`, `agent/loop.py:758-822`, `agent/loop.py:824-875`
+  - **Problem:** `__init__`, `_rebuild_for_normal_mode`, and `_rebuild_for_plan_mode` each independently assemble the system prompt across 8 steps. This pattern has produced 4 confirmed divergence bugs (soul/agents.md dropped, `memory_root` missing, `provider_order` leak, BM25 quadratic). Every new parameter added to `create_tool_registry()` must be applied in 3 places.
+  - **Fix:** Extract a unified `_rebuild_system_prompt(plan_mode, plan_file, ...)` called from all 3 sites.
+  - **Source:** `_todo/todo_2026-06-17.md` B1 (persisting across all reviews)
+
+- **`tui/commands.py` imports from `cli.py` — layering violation** · `priority:medium` · `open:13d` · `effort:XS`
+  - **File:** `tui/commands.py:59,73`
+  - **Problem:** TUI depends on the CLI entry-point module (`_skill_invocation_message`, `_cmd_init`). Future `cli.py` refactors will break TUI imports.
+  - **Fix:** Extract the two shared functions into `agent/cli_utils.py`; import from both.
+  - **Source:** `_todo/todo_2026-06-13.md` #7
+
+- **Dead code: `PlanSubAgent`, `ExploreFilesTool`, `WebResearchTool`, `SubAgentRunner`** · `priority:medium` · `open:13d` · `effort:S`
+  - **Files:** `tools/explore_files.py`, `tools/web_research.py`, `tools/plan_subagent.py`, `agent/sub_agent.py`
+  - **Problem:** None of these are registered in `create_tool_registry()` or used anywhere. They duplicate patterns from active code and confuse readers.
+  - **Fix:** Audit for external callers; delete if unused.
+  - **Source:** `_todo/todo_2026-06-13.md` #4
+
+- **`SpawnCliSubagentTool` bypasses `_subagent_runner.py`** · `priority:medium` · `open:7d` · `effort:S`
+  - **File:** `tools/cli_subagent.py:82-103`
+  - **Problem:** Uses raw `subprocess.Popen` instead of `run_subagent()`. Consequences: no PID tracking (can't resume after timeout), no stdout relay to TUI, no `on_event_factory` wiring. Custom subagents are opaque and non-resumable.
+  - **Fix:** Route through `run_subagent()` with an `on_event_factory` callback.
+  - **Source:** `_todo/todo_2026-06-19.md` A3
+
+- **Split `cli.py` (1327 lines) → `cli/` package** · `priority:high` · `open:10d` · `effort:M`
+  - **File:** `cli.py`
+  - **Problem:** 2.6× over the 500-line coding standard. Mixes rendering, callbacks, slash command handlers, subagent orchestration, and the REPL entry point.
+  - **Suggested split:** `cli/rendering.py`, `cli/callbacks.py`, `cli/commands.py`, `cli/dispatch.py`, `cli/main.py`; root `cli.py` becomes a ~30-line launcher.
+  - **Source:** `_todo/todo_2026-06-16.md` A1
+
+- **`_parse_frontmatter` duplicated verbatim between `agent/skills.py` and `agent/workflows.py`** · `priority:medium` · `open:6d` · `effort:XS`
+  - **Files:** `agent/skills.py:30-42`, `agent/workflows.py:30-42`
+  - **Problem:** Identical regex patterns and function body. Any bug fix must be applied twice.
+  - **Fix:** Extract to `agent/_frontmatter.py`; import in both files.
+  - **Source:** `_todo/todo_2026-06-20.md` B1
+
+- **`_extra_body` construction duplicated in `__init__` and `_handle_switch_model`** · `priority:medium` · `open:7d` · `effort:XS`
+  - **Files:** `agent/loop.py:311-317`, `agent/loop.py:732-738`
+  - **Problem:** Identical 6-line block in two places. New OpenRouter extensions must be added in both or silently break after a tier switch.
+  - **Fix:** Extract `_build_extra_body() -> dict` method.
+  - **Source:** `_todo/todo_2026-06-19.md` B2
+
+- **`ask_user` callback has no deadlock protection (infinite wait)** · `priority:medium` · `open:8d` · `effort:XS`
+  - **File:** `tui/callbacks.py:73-74`
+  - **Problem:** When `ask_user` is called with `timeout=None` (default in plan mode), `evt.wait(timeout=None)` blocks the agent thread indefinitely. If the TUI closes, the agent thread hangs permanently.
+  - **Fix:** Always use a finite safety timeout: `safety = (timeout + 60) if timeout is not None else 600`.
+  - **Source:** `_todo/todo_2026-06-18.md` D1
+
+- **`_tools_from_list` limited to 9 hardcoded tool names** · `priority:medium` · `open:8d` · `effort:S`
+  - **File:** `agent/tools.py:51-81`
+  - **Problem:** Subagent registries can only reference 9 tools. Any other tool name (e.g., `skill`, `ask_user`, `git_status`) is silently dropped with a warning.
+  - **Fix:** Either expand the registry map to cover all tools, or drive subagent registration from `create_tool_registry(tool_names=[...])` and delete `_tools_from_list`.
+  - **Source:** `_todo/todo_2026-06-18.md` D2
+
+- **Sidebar `_system_breakdown` reads stale `soul.md` path** · `priority:medium` · `open:8d` · `effort:XS`
+  - **File:** `tui/utils.py:66`
+  - **Problem:** `_toks(dagi_root / "soul.md")` — `soul.md` was moved to `.dagi/prompts/soul.md`. The old path doesn't exist; sidebar understates system prompt token count by ~150–300 tokens.
+  - **Fix:** Change to `dagi_root / ".dagi" / "prompts" / "soul.md"`.
+  - **Source:** `_todo/todo_2026-06-18.md` A2
+
+- **`_system_breakdown()` reads disk on every Textual render cycle** · `priority:medium` · `open:8d` · `effort:XS`
+  - **File:** `tui/utils.py:58-70` (called from `sidebar.py` render)
+  - **Problem:** 3 file reads per render cycle for files that never change during a session.
+  - **Fix:** Compute once in `Sidebar.__init__` and cache as `self._sys_parts`.
+  - **Source:** `_todo/todo_2026-06-18.md` B1
+
+- **`SkillTool.run()` reloads all skills from disk on every invocation** · `priority:medium` · `open:1d` · `effort:S`
+  - **File:** `tools/skill.py:41-46`
+  - **Problem:** Every `skill("name")` call creates a new `SkillLoader`, scans all skill root dirs, reads and parses every SKILL.md. `AgentLoop` already has `self.skills` pre-loaded. ~30 file reads per call.
+  - **Fix:** Pass the pre-loaded skills list to `SkillTool` at construction time, or cache after first load.
+  - **Source:** `_todo/todo_2026-06-25_2.md` A2
+
+- **`session_end` JSONL record dumps full `raw_messages` with base64 images** · `priority:high` · `open:1d` · `effort:XS`
+  - **Files:** `agent/session.py:213-214`, `agent/loop.py:918`
+  - **Problem:** `self._messages` (full conversation history including image tool results) is written as a single JSON line. A session with 5 images produces a 160KB+ `session_end` line — redundant data already stored in individual `tool_end` records.
+  - **Fix:** Strip list-typed content from `raw_messages` before writing, or stop passing them entirely.
+  - **Source:** `_todo/todo_2026-06-25_2.md` A3
+
+- **`WebFetchTool` silently upgrades HTTP→HTTPS for private IP addresses** · `priority:medium` · `open:1d` · `effort:XS`
+  - **File:** `tools/web_fetch.py:123`
+  - **Problem:** HTTP→HTTPS upgrade excludes `localhost` and `127.0.0.1` but not `192.168.x.x`, `10.x.x.x`, `172.16-31.x.x`, or `[::1]`. Agent fails to fetch local dev servers with a misleading error.
+  - **Fix:** Expand exclusion regex to cover all RFC-1918 and loopback ranges.
+  - **Source:** `_todo/todo_2026-06-25_2.md` A4
+
+- **`BashTool.run()` doesn't handle `subprocess.TimeoutExpired`** · `priority:medium` · `open:8d` · `effort:XS`
+  - **File:** `tools/bash.py:26-37`
+  - **Problem:** `subprocess.run(..., timeout=timeout)` raises `TimeoutExpired` uncaught; propagates to `ToolRegistry.dispatch()` as a terse generic error with no recovery guidance for the LLM.
+  - **Fix:** Catch and return `f"[Command timed out after {timeout}s — command did not finish in time]"`.
+  - **Source:** `_todo/todo_2026-06-18.md` A3
+
+---
+
+### 🟡 Token Efficiency & Observability
+
+- **Session cost tracking always shows `$—`** · `priority:high` · `open:8d` · `effort:S`
+  - **File:** `agent/session.py:108`
+  - **Problem:** Most API providers (including OpenRouter for many models) don't populate `usage.cost`. Sidebar shows `$—`, `session_end` has `total_cost: null`. No cost visibility makes it impossible to benchmark model tiers.
+  - **Fix:** Fall back to computing cost from token counts using a per-model `pricing` section in `config.yaml` (input/output cost per 1M tokens).
+  - **Source:** `_todo/todo_2026-06-18.md` C1
+
+- **`thinking_tokens` (reasoning tokens) not recorded in session JSONL** · `priority:high` · `open:6d` · `effort:S`
+  - **File:** `agent/session.py:100-118`
+  - **Problem:** `completion_tokens_details.reasoning_tokens` is never extracted from API responses. For extended-thinking models (DeepSeek, Claude with thinking), reasoning tokens can be 50%+ of the completion budget — invisible in post-session analysis.
+  - **Fix:** Add `thinking_tokens: int | None = None` to `MessageNode`; extract in `record_assistant()`; include `total_thinking_tokens` in `session_end`.
+  - **Source:** `_todo/todo_2026-06-20.md` C1
+
+- **Cache hit visibility in TUI sidebar** · `priority:high` · `open:10d` · `effort:S`
+  - **File:** `agent/loop.py:480-487`, `tui/sidebar.py`
+  - **Problem:** `cache_prompt: true` is sent to OpenRouter, but `usage.prompt_tokens_details.cached_tokens` is never read. Users have no visibility into whether prompt caching is working.
+  - **Fix:** Extract `cached_tokens` from `usage.prompt_tokens_details`; pass through `on_token_update`; display in sidebar as `{cached_tok}↩ cached`.
+  - **Source:** `_todo/todo_2026-06-16.md` C1
+
+- **Tool result content not truncated in JSONL logs** · `priority:medium` · `open:6d` · `effort:XS`
+  - **File:** `agent/session.py:129-135`
+  - **Problem:** `record_tool_end(name, result_str)` writes the full result. Compare with `record_subagent_end` which truncates to 500 chars. Large tool results (file reads, grep output, base64) are the primary driver of log disk consumption.
+  - **Fix:** Truncate to 2000 chars in `record_tool_end`; record `result_length` for reference.
+  - **Source:** `_todo/todo_2026-06-20.md` C2
+
+- **Token efficiency benchmark harness** · `priority:high` · `open:7d` · `effort:M`
+  - **Problem:** No way to measure whether code changes improve or degrade token efficiency. Harbor/Terminal-bench measure task correctness but not tokens/cost/continuation count per task.
+  - **Fix:** `scripts/benchmark_token_efficiency.py` that parses session JSONL files and produces per-task metrics: `input_tokens`, `output_tokens`, `thinking_tokens`, `tool_call_count`, `continuation_count`, `cache_hit_tokens`.
+  - **Source:** `_todo/todo_2026-06-19.md` D3
+
+- **GNHF self-improvement loop — never bootstrapped (62 days stale)** · `priority:high` · `open:62d`
+  - **Current:** The `review-session` skill and `improve-yourself` workflow exist; `.dagi/self-review/` has 5 files all from April 2026; 198 session logs have accumulated. The entire GNHF feedback cycle has never run.
+  - **Next:** Run `review-session` against the 10 most recent session logs to bootstrap. Then schedule a weekly run.
+  - **Source:** `_todo/todo_2026-06-16.md` C2
+
+---
+
+### 🟢 Features
+
+- **`/stats` slash command for live session diagnostics** · `priority:medium` · `effort:S`
+  - Show total tokens (in/out/thinking), cost, tool call histogram, continuation count, compaction count, and session duration. All data already available on `loop.tracker._messages` and `app._stats`.
+  - **Source:** `_todo/todo_2026-06-17.md` D1
+
+- **PDF reading support for `ReadTool`** · `priority:medium` · `effort:S`
+  - Add PDF support using `PyMuPDF` (fitz) with page range support. Fall back gracefully if not installed.
+  - **Source:** `_todo/todo_2026-06-19.md` D1
+
+- **Worker model for compaction (cheaper)** · `priority:medium` · `effort:XS`
+  - **File:** `tools/compact.py:222`
+  - `compact()` uses `config.model` (the main task model). Summarization is a low-complexity task; prefer `config.worker_config.model` if available.
+  - **Source:** `_todo/todo_2026-06-16.md` B2
+
+- **Parallel subagent dispatch** · `priority:medium` · `effort:M`
+  - **Current:** `_active` dict supports multiple PIDs; TUI relay handles concurrent streams. Missing: a `spawn_parallel_subagents` tool + `wait_subagents(pids, timeout_per)` tool; skill update to use them for independent subtasks.
+  - **Source:** `_todo/todo_2026-06-16.md` D3
+
+- **Structured error context for tool failures** · `priority:medium` · `effort:XS`
+  - **File:** `agent/registry.py:29-35`
+  - Current `except Exception as e: return f"Error: {e}"` loses the exception type. Return `f"Error [{type(e).__name__}]: {e}"` so the LLM can pattern-match on `FileNotFoundError` vs `PermissionError`.
+  - **Source:** `_todo/todo_2026-06-26.md` D1
+
 - **Persistent Memory System** · `priority:high` · `impact:high` · `in-progress`
-  - **Current:** `memory-query` skill uses BM25 (`bm25_query.py`) for fast topic retrieval. System prompt encourages agent to call `skill("memory-query")` after receiving any substantive task (agent uses judgement — skips for greetings/trivial requests).
-  - **Ideal:** CLI slash commands for `memory-ingest`, `memory-lint`, `memory-query` (wiring into `cli.py`).
-  - **Next:** Add `/memory-ingest`, `/memory-lint`, `/memory-query` slash commands to `cli.py`; ingest initial source material into `dagi-memory/raw/` and run `memory-ingest`.
+  - **Current:** `memory-query` skill uses BM25 (`bm25_query.py`) for fast topic retrieval.
+  - **Next:** Add `/memory-ingest`, `/memory-lint`, `/memory-query` slash commands to `cli.py`; ingest initial source material into `dagi-memory/raw/`.
 
 - **Project / Folder Scoping** · `priority:high` · `impact:high`
-  - **Current:** Path guard wired into Read/Write/Edit/Grep/Find (`tools/_path_guard.py`). Roots hardcoded to `[dagi_root, cwd]`. BashTool unsandboxed.
-  - **Ideal:** `allowed_paths` and `blocked_commands` configurable in `config.yaml`; per-project scope UI; BashTool command blacklist.
+  - **Current:** Path guard wired into Read/Write/Edit/Grep/Find. Roots hardcoded to `[dagi_root, cwd]`. BashTool unsandboxed.
   - **Next:** Add `allowed_paths` / `blocked_commands` keys to `config.yaml` and read them in `agent/tools.py`.
 
 - **Error Handling & Retries** · `priority:high` · `impact:high` · `partial`
-  - **Current:** Transient API error retry with exponential backoff (429, 500, 502, 503, connection/timeout). TUI now error-pauses (same semantics as ESC pause) when all retries are exhausted — session stays alive, user sends next message to retry. CLI path unaffected (already preserved context via `loop._messages` return). `_active_loop` pre-assigned in `_agent_work` so non-transient raises also preserve context. `api_error_retries` configurable in `config.yaml` (default 3).
-  - **Ideal:** `os.killpg` on BashTool timeout; actionable empty-API-key error.
+  - **Current:** Transient API error retry with exponential backoff. TUI error-pauses on retry exhaustion.
   - **Next:** Add `os.killpg` to `tools/bash.py`; improve API key validation at startup.
 
-- **Validate project root in system prompt against actual filesystem** · `priority:high` · `impact:high` · `review-item`
-  - **Current:** System prompt can contain an incorrect project root (e.g., inside `raw/` instead of actual `DAGI_ROOT`), causing all tool paths to resolve incorrectly.
-  - **Ideal:** `cli.py` / `main.py` validates the project root at startup and warns if it looks wrong (e.g., path ends in `raw/`, `wiki/`, or similar data dirs).
-  - **Next:** Review plan · implement · mark done
-  - **Source:** Session `2026-04-26_15-20-10` · [review_2026-04-26_15-20-10.md](.dagi/self-review/review_2026-04-26_15-20-10.md) · [plan_2026-04-26_15-20-10.md](.dagi/self-review/plan_2026-04-26_15-20-10.md)
-
-- **Extend path guard to cover full dagi-memory tree on G:** · `priority:high` · `impact:high` · `review-item`
-  - **Current:** Path guard allows only a single subdirectory of `G:\My Drive\black_grimoire\dagi-memory\`, blocking sibling dirs (e.g., `wiki/` blocked when only `raw/` was allowed).
-  - **Ideal:** Path guard allows the full `dagi-memory/` tree (or whatever the configured `allowed_paths` list specifies) rather than individual subdirectories.
-  - **Next:** Review plan · implement · mark done
-  - **Source:** Session `2026-04-26_15-20-10` · [review_2026-04-26_15-20-10.md](.dagi/self-review/review_2026-04-26_15-20-10.md) · [plan_2026-04-26_15-20-10.md](.dagi/self-review/plan_2026-04-26_15-20-10.md)
-
-- **Strip base64 image data from compaction summarization** · `priority:high` · `impact:high` · `review-item`
-  - **Current:** `_format_messages_for_summary()` in `tools/compact.py` calls `str(msg["content"])` on list-typed content (OpenAI vision format). Each base64 image dumps ~32K tokens into the summarization prompt.
-  - **Ideal:** Image content blocks replaced with `[image: <filename>]` placeholder before summarization. Only text content is sent to the summarization model.
-  - **Next:** Add a content-type filter in `_format_messages_for_summary()` that skips `image_url` blocks.
-  - **Source:** `_todo/todo_2026-06-20.md` A2
-
-- **Full Harbor benchmark run (89 tasks)** · `priority:medium` · `impact:high`
-  - **Current:** Only single-task smoke tests have been run (`--n-tasks 1`). Fix A and Fix B are in place; reward 0.0 was confirmed on the smoke test with Gemma 4 (too weak). Harness, async/sync bridge, and preamble injection are all verified.
-  - **Ideal:** Full 89-task run with Claude Sonnet via OpenRouter; per-task score breakdown, token cost, and pass-rate baseline established.
-  - **Next:** Run `set DAGI_BENCH_MODEL=claude-sonnet-openrouter && benchmarks\run_harbor.bat`; record results.
+- **Per-project config (work in projects)** · `priority:medium` · `impact:medium` · `partial`
+  - **Current:** `resolve_model_config(project_path=...)` merges project config over root. Core config merge infra complete.
+  - **Next:** Wire `project_path` into CLI/TUI startup; add `/project <path>` TUI command.
 
 - **Multi-agent / parallel clones** · `priority:medium` · `impact:high`
-  - **Current:** Subagents run sequentially as pipe subprocesses (`tools/_subagent_runner.py`). Output streams to the main TUI `ConversationPane` with a `[subagent-type]` label. Each subagent declares its own `tools:` list in `.dagi/subagents/<type>/subagent_config.yaml`. Agent can extend a timed-out subagent via `extend_subagent_timeout(pid, extra_seconds)`.
-  - **Ideal:** Parallel spawning (multiple subagents concurrently); task queue / manifest structure; each subagent's output visible in TUI with distinct label simultaneously.
-  - **Next:** Prototype parallel dispatch — agent calls `spawn_*` multiple times in one turn; `_active` dict already supports multiple PIDs concurrently; TUI relay callback already handles concurrent event streams from different subagent types.
+  - **Current:** Subagents run sequentially. `_active` dict already supports multiple PIDs.
+  - **Next:** Prototype parallel dispatch; add `spawn_parallel_subagents` tool.
 
-- **Subagent pause propagation** · `priority:low` · `impact:low`
-  - **Current:** ESC pauses the parent loop at its safe checkpoint, but the subagent subprocess continues running.
-  - **Ideal:** Parent's pause signal propagates to the active subagent (e.g., via stdin signal or `proc.terminate()`).
-  - **Next:** Design and implement pause/resume signalling into `_subagent_runner.py`.
+- **Full Harbor benchmark run (89 tasks)** · `priority:medium` · `impact:high`
+  - **Next:** `set DAGI_BENCH_MODEL=claude-sonnet-openrouter && benchmarks\run_harbor.bat`; record results.
+
+---
+
+### 🔵 Testing
+
+- **Tests for compaction failure recovery** · `priority:medium` · `effort:XS`
+  - Verify graceful degradation path (the 2026-06-21 fix) — mock a failing summarization call and assert session continues.
+  - **Source:** `_todo/todo_2026-06-20.md` E1
+
+- **Tests for image-content compaction** · `priority:medium` · `effort:XS`
+  - Insert a list-typed tool result and assert `_format_messages_for_summary` doesn't include raw base64.
+  - **Source:** `_todo/todo_2026-06-20.md` E2
+
+- **Tests for `_handle_switch_model` tier transitions** · `priority:medium` · `effort:S`
+  - Parametrize default→plan→worker→default and assert each field is correctly set/restored (covers `provider_order`, `cache_prompt`, `model`, etc.).
+  - **Source:** `_todo/todo_2026-06-19.md` E1
+
+- **Tests for `_rebuild_for_reload` plan-mode state preservation** · `priority:medium` · `effort:XS`
+  - Assert `plan_mode_initiated_by == "dagi"` is preserved after a skill reload in autonomous plan mode.
+  - **Source:** `_todo/todo_2026-06-26.md` E1
+
+- **RAM watchdog threshold configurable** · `priority:low` · `effort:XS`
+  - **File:** `tests/conftest.py`
+  - Hardcoded 70%/90% thresholds cause test failures on high-baseline machines. Read from `DAGI_RAM_WARN_PCT` / `DAGI_RAM_KILL_PCT` env vars.
+  - **Source:** `_todo/todo_2026-06-16.md` E1
+
+---
+
+### ⚪ LOW — Housekeeping & Dead Code
+
+- **Validate project root in system prompt against actual filesystem** · `priority:high` · `review-item`
+  - System prompt can contain an incorrect project root (e.g., inside `raw/`), causing all tool paths to resolve incorrectly. Add startup validation in `cli.py`/`main.py`.
+  - **Source:** Session `2026-04-26` self-review
+
+- **Extend path guard to cover full dagi-memory tree** · `priority:high` · `review-item`
+  - Path guard allows only a single subdirectory of the dagi-memory tree. Allow the full tree.
+  - **Source:** Session `2026-04-26` self-review
+
+- **Dead `registry` singleton in `registry.py`** · `priority:low` · `effort:XS`
+  - `agent/registry.py:38` — `registry = ToolRegistry()` is never used anywhere. Delete it.
+  - **Source:** `_todo/todo_2026-06-18.md` B3
+
+- **Dead `format_skills_for_prompt()` in `agent/skills.py`** · `priority:low` · `effort:XS`
+  - `agent/skills.py:117-132` — function is never called; actual formatting is done by `_format_tools_and_skills()` in `loop.py`. Delete.
+  - **Source:** `_todo/todo_2026-06-17.md` C2
+
+- **`session.py:finish()` dead `cost_str`/`tools_str` variables** · `priority:low` · `effort:XS`
+  - `agent/session.py:219-224` — `cost_str` and `tools_str` are computed but never included in the `print()` call. Either include them or delete.
+  - **Source:** `_todo/todo_2026-06-17.md` E3
+
+- **`_effective_memory_root` recomputed inline in both rebuild methods** · `priority:low` · `effort:XS`
+  - `agent/loop.py:795-798`, `agent/loop.py:866-869` — both recompute what `self._effective_memory_root` already holds. Replace with the instance attribute.
+  - **Source:** `_todo/todo_2026-06-17.md` B2
+
+- **9 stale worktrees in `.claude/worktrees/`** · `priority:low` · `effort:XS`
+  - Full repo copies from May 2026. Run `commit-commands:clean_gone` or manually remove.
+  - **Source:** `_todo/todo_2026-06-20.md` C4
+
+- **Session log rotation** · `priority:medium` · `effort:XS`
+  - 198 JSONL files accumulating unboundedly. Add `max_session_logs` config field (default 100) and prune oldest files at `SessionTracker.__init__`.
+  - **Source:** `_todo/todo_2026-06-19.md` C1
+
+- **Add pre-flight path check to memory-ingest** · `priority:low` · `review-item`
+  - Agent makes 6+ tool calls discovering failing `dagi-memory/` paths. Add pre-flight check to SKILL.md.
+  - **Source:** Session `2026-04-26` self-review
+
+- **Fix `pyproject.toml` dependencies** · `priority:low`
+  - Add `typer`, `rich`, `textual`; remove `nicegui`, `markdown`, `matplotlib`.
+  - **Source:** `_todo/todo_2026-06-16.md` F3
 
 - **Dynamic tool descriptions** · `priority:medium` · `impact:medium`
-  - **Current:** Tool schemas are static — same description regardless of model or context.
-  - **Ideal:** Tool descriptions tailored per model or context at runtime.
-  - **Next:** Research approach; prototype in `agent/tools.py`.
+  - Tool schemas are static. Prototype runtime tailoring in `agent/tools.py`.
 
-- **Per-project config (work in projects)** · `priority:medium` · `impact:medium` · `partial`
-  - **Current:** `resolve_model_config(project_path=...)` now loads `{project_path}/.dagi/config.yaml` and merges it over root. Project scalars win; model catalog entries are shallow-merged. `agent/prompts.py` resolves `main_system.md` and `soul.md` from the project folder first. Core config merge infra is complete (Tasks 1–3 done).
-  - **Ideal:** Dedicated project folders with per-project `config.yaml` overrides; agent scoped to project on startup; TUI `/project <path>` command.
-  - **Next:** Wire `project_path` into CLI/TUI startup (`cli.py`, `tui/app.py`) so the agent is automatically scoped when launched from a project directory.
+- **Subagent pause propagation** · `priority:low` · `impact:low`
+  - ESC pauses parent loop but subagent subprocess continues. Add pause/resume signalling via `proc.send_signal(signal.SIGSTOP)` (POSIX).
 
 - **Sample project for testing** · `priority:medium` · `impact:medium`
-  - **Current:** No example task, source files, or reference output exists for validating agent behavior.
-  - **Ideal:** Example task + source files + expected tool call sequence + expected output for regression testing.
-  - **Next:** Define a representative task and document expected tool call sequence and output.
-
-- **Add pre-flight path check to memory-ingest** · `priority:low` · `impact:low` · `review-item`
-  - **Current:** Agent makes 6+ tool calls discovering that `dagi-memory/` paths fail — wastes turns on path discovery.
-  - **Ideal:** SKILL.md includes a pre-flight check that sets a path-mode flag on the first operation, skipping wasted discovery.
-  - **Next:** Review plan · implement · mark done
-  - **Source:** Session `2026-04-26_15-24-09` · [review_2026-04-26_15-24-09.md](.dagi/self-review/review_2026-04-26_15-24-09.md) · [plan_2026-04-26_15-24-09.md](.dagi/self-review/plan_2026-04-26_15-24-09.md)
-
-- **Fix `pyproject.toml` dependencies** · `priority:low` · `impact:low`
-  - **Current:** `typer`, `rich`, `textual` missing from declared deps; `crawl4ai` already added; `streamlit` dropped. `requirements.txt` now correctly documents hard vs optional deps.
-  - **Ideal:** `pyproject.toml` matches actual runtime requirements; `pip install -e .` installs all CLI+TUI dependencies.
-  - **Next:** Add `typer`, `rich`, `textual` to `pyproject.toml`; remove `nicegui`, `markdown`, `matplotlib` if unused.
+  - No example task or expected output for regression testing. Define a representative task.
 
 ---
 
 ## Self-Improvement Queue
 
 > Entries appended automatically by the `/improve-yourself` workflow after each test run.
-> Each entry has a verdict (APPROVED / REJECTED / INCONCLUSIVE), primary metrics, and an
-> implementation description ready to apply.
 
 ### [High] Bootstrap the self-improvement loop
 
 **Type:** workflow | **Generated:** 2026-05-03
 
-**Root cause:** The `/improve-yourself` workflow has never been run. Review items in the Work Queue are waiting to be picked up, tested, and described.
+**Root cause:** The `/improve-yourself` workflow has never been run. Review items are waiting. 198 session logs have accumulated; self-review last ran 62 days ago (2026-04-26).
 
-**Quick action:** Start a DAGI session and invoke `/improve-yourself` — the workflow picks the highest-priority unimplemented `review-item` from the Work Queue, runs baseline and after tests in an isolated snapshot, and writes a verdict + implementation description here. (~15–30 min per item)
+**Quick action:** Run `review-session` against the 10 most recent session logs, then invoke `/improve-yourself` in a DAGI session.
 
+- [ ] Run `review-session` on the 10 most recent `.dagi/logs/*.jsonl` files
 - [ ] Invoke `/improve-yourself` in a DAGI session
 - [ ] Review the verdict block appended below by the workflow
 - [ ] Apply the implementation description in `## Tested Improvements`
@@ -108,52 +372,62 @@
 
 ## Tested Improvements
 
-> Entries written by the `/improve-yourself` workflow. Each entry contains a complete,
-> evidence-backed implementation description ready to apply — exact diffs, test evidence,
-> and verdict rationale. Apply the diffs listed, then check off the originating Work Queue item.
+> Entries written by the `/improve-yourself` workflow.
 
 ---
 
 ## Done
 
-- [x] Pipe-based subagent architecture — replaced file-IPC + `CREATE_NEW_CONSOLE` terminal spawning with `subprocess.Popen(stdout=PIPE)`. Deleted `agent/ipc.py` and `tools/_terminal_subagent.py`. New `tools/_subagent_runner.py` runs the subprocess, relays newline-delimited JSON events to the main TUI `ConversationPane` (with `[subagent-type]` label), and polls `proc.poll()` every 2 s against a deadline. New `tools/extend_timeout.py` (`ExtendSubagentTimeoutTool`) lets the agent extend an in-flight subagent's deadline by PID. `SpawnSubagentTool` generates the handoff path at spawn time (`.dagi/handoffs/{type}_{uuid8}.md`), returns it as the tool result after the subagent exits. Each subagent type now declares its tools explicitly in `subagent_config.yaml`; `_scope_tools()` deleted, `_tools_from_list()` added. 81 tests pass.
+- [x] Pipe-based subagent architecture — replaced file-IPC + `CREATE_NEW_CONSOLE` terminal spawning with `subprocess.Popen(stdout=PIPE)`. New `tools/_subagent_runner.py` with event relay, PID tracking, and `extend_timeout` tool.
 
-- [x] TUI submodule refactor — `tui.py` (819 lines) decomposed into a `tui/` package: `utils.py` (helpers + `_Stats`), `conversation.py` (`ConversationPane`), `prompt_input.py` (`PromptInput`), `sidebar.py` (`Sidebar`), `commands.py` (`SlashCommandsMixin`), `callbacks.py` (`build_callbacks()` free function), `app.py` (`DagiApp`, ~180 lines), `__init__.py`. Root `tui.py` is now a 30-line launcher. All behaviour preserved; `python tui.py --help` and all imports verified.
+- [x] TUI submodule refactor — `tui.py` (819 lines) decomposed into a `tui/` package.
 
-- [x] Unified skill invocation — slash commands (`/plan-work-review`, etc.) in both CLI and TUI no longer eagerly inject skill content into the user message. They now produce a plain `"Invoke the \`skill-name\` skill."` instruction, causing the LLM to call `skill()` itself — identical to mid-task internal invocations. Removed `_inject_skill_content()` (cli.py) and `_inject_skill()` (tui.py); added single shared `_skill_invocation_message()` in cli.py imported by tui.py.
+- [x] Unified skill invocation — slash commands produce `"Invoke the skill-name skill."` instruction; LLM calls `skill()` itself.
 
-- [x] Plan mode revision loop — after writing a plan, agent calls `show_plan` to present it to the user. User can request revisions; agent revises and calls `show_plan` again until approved. On approval, agent calls `exit_plan_mode`, outputs one implementation-start sentence ("Starting implementation — Phase 1: …"), and immediately begins tool calls. Wired via `main_system.md` update; `show_plan` tool already handled the loop mechanics. Two bugs fixed in the same session: `_continuation_count` was never reset between `run()` calls (now reset at the start of each `run()`), and `plan_mode_exited` was dead code (field and check removed).
+- [x] Plan mode revision loop — `show_plan` tool handles revision loop; agent calls `exit_plan_mode` on approval.
 
-- [x] TUI text wrap + multi-line input — `ConversationPane(RichLog)` now renders with `wrap=True` so long lines fold instead of truncating. Input replaced with `PromptInput(TextArea)`: Enter submits the full (possibly multi-line) message; Shift+Enter inserts a newline. Input box height increased to 5 rows.
+- [x] TUI text wrap + multi-line input — `ConversationPane(RichLog)` with `wrap=True`; `PromptInput(TextArea)` with Shift+Enter for newlines.
 
-- [x] ESC pause button in TUI — pressing ESC pauses the agent at the end of the current iteration (safe checkpoint: all tool calls in one LLM response complete before blocking). `AgentLoop._pause_event: threading.Event` (set = running) is checked at the top of each `while True` iteration. `pause()` clears it; `inject_and_resume(message)` appends the user message to `_messages` then sets it. TUI sidebar shows `⏸ Paused`; re-enabling input lets the user type a redirect message to continue.
+- [x] ESC pause button in TUI — pauses agent at safe checkpoint; `inject_and_resume(message)` for redirection.
 
-- [x] Full Textual TUI (`tui.py`) — vertical split layout with always-visible sidebar showing live token stats, context window breakdown by role (system/user/assistant/tools/reserve) with `~` estimates and 80%/95% colour warnings, model status indicator, and `/model <id>` switching. `ConversationPane(RichLog)` preserves Rich panel style and scrolls freely during agent runs. Agent runs on a daemon thread with `call_from_thread` bridging all `AgentCallbacks` to the Textual main loop. `cli.py` retained for piped/non-interactive use.
+- [x] Full Textual TUI — vertical split with sidebar showing live token stats, context window breakdown, model status.
 
-- [x] Single response flag — every no-tool-call response must end with `<<END_OF_RESPONSE>>` (applies to greetings, answers, and completions alike). `<<TASK_END>>` kept as a silent legacy alias. Recovery injection replaced hardcoded `"continue"` with a proper prompt in `.dagi/prompts/main/continue.md`. Flag rules placed at the end of `main_system.md` for reliable model compliance. 11 unit tests in `tests/test_continuation.py`.
-- [x] Transient API error retry — 429, 500, 502, 503, connection errors, and timeout errors are retried with exponential backoff (`2^attempt` seconds, capped at 60s) up to `api_error_retries` times (default 3, configurable in `config.yaml`). Non-transient errors propagate immediately. Retry counter resets per loop iteration. Compaction in `tools/compact.py` now snapshots `_messages` before the API call and restores on failure. 11 new tests in `tests/test_continuation.py`.
-- [x] Direct `api_key` in config.yaml — model entries now support `api_key: "sk-..."` as an alternative to `api_key_env`. Direct key takes precedence; empty string falls through to env var lookup. Prevents silent fallback to `OPENAI_API_KEY` env var. 3 unit tests in `tests/test_config_loader.py`.
+- [x] Single response flag — `<<END_OF_RESPONSE>>` required on all no-tool-call responses; recovery injection from `continue.md`.
 
-- [x] GNHF skill — cross-session iterative development with committed milestones. New `tools/git.py` adds `git_status`, `git_commit`, `git_rollback` tools (branch-guarded to `dagi` branch). Skill at `.dagi/skills/gnhf/SKILL.md` teaches the loop: init → plan milestone → implement → verify → commit + append note → repeat. Scripts at `.dagi/skills/gnhf/scripts/init.py` and `append_note.py` manage `.dagi/gnhf/notes.md` — a per-commit freeform log that carries context across sessions.
+- [x] Transient API error retry — exponential backoff (2^n s, cap 60s) for 429/5xx; configurable `api_error_retries`; compaction snapshots messages before API call.
 
-- [x] Prompt architecture refactor — `main_system.md` trimmed to harness-only (tools, plan mode trigger). Behavioral guidelines, memory rules, and Plan-Work-Review Cycle moved to `.dagi/agents.md`. Persona stays in `soul.md`. Unified behavioral rules merged from `temp_system_prompt.txt` (ambiguity calibration, invariants checklist, hard stops, token budgets). Redundant "read agents.md" instruction removed — both files are auto-prepended by `loop.py`.
+- [x] Direct `api_key` in config.yaml — model entries support `api_key:` as alternative to `api_key_env`.
 
-- [x] Terminal-spawned subagents with 5-minute persistence — `web_research`, `explore_files`, and `plan` subagents now spawn in visible `CREATE_NEW_CONSOLE` terminal windows instead of running in-process. Each terminal uses the correct model tier (worker/advanced) resolved from `config.yaml`. Main terminal shows a Rich live spinner with elapsed time. After each task, the terminal displays a 5-minute countdown and auto-closes. Shared spawning logic in `tools/_terminal_subagent.py`; tool registry for subprocess in `agent/tools.build_subagent_registry()`; `cli.py` extended with `--subagent-type` and `--plan-file` hidden args.
-- [x] BM25 wiki retrieval in memory-query skill — `agent/memory_retriever.py` provides BM25 helpers; `.dagi/skills/memory-query/bm25_query.py` is a self-contained CLI script the agent runs in Step 3. Returns ranked `{score, path}` JSON. SKILL.md updated to call the script, review scores, and fall back to grep if needed. System prompt updated to encourage memory-query after receiving any substantive task.
-- [x] Auto compaction for long contexts — Pi-style compaction in `agent/loop.py` (`_compact_context`). Summarizes middle history, preserves system prompt + recent tail, carries forward prior summaries.
-- [x] Plan mode — Full read-only planning mode in `agent/loop.py` (`plan_mode` flag, `plan_file` path). BashTool omitted, WriteTool/EditTool restricted to plan document.
-- [x] `web_search` and `web_fetch` in plan mode — direct web tools are now always registered in plan mode (`agent/tools.py`), alongside the `web_research`/`explore_files` subagent launchers. Previously they only appeared in the no-config fallback path (tests only).
-- [x] Web research tools — `web_search`, `web_fetch`, `web_research`, `explore_files` available in `tools/`. Powered by DuckDuckGo, httpx, beautifulsoup4, crawl4ai.
-- [x] Multi-root search for find and grep — `FindTool` and `GrepTool` accept an optional `path` argument; when omitted, search all `allowed_roots` simultaneously (deduped). Implemented in `tools/find.py` and `tools/grep.py`.
-- [x] Add path resolution warning to memory-ingest SKILL.md — "Path Roots" table at top of `.dagi/skills/memory-ingest/SKILL.md` documents tool vs. bash split for non-C: drives.
-- [x] Add path resolution warning to memory-add SKILL.md — same "Path Roots" table added to `.dagi/skills/memory-add/SKILL.md`.
-- [x] Fix redundant skill-load instruction in memory-ingest Step 6 — Step 6 now says "Call `skill("memory-add")` **once**… do NOT call `skill("memory-add")` again."
-- [x] Add bash-based archiving template to memory-ingest Step 5 — explicit `mkdir`/`type … | Out-File`/`del` template in Step 5.
-- [x] Add bash-fallback guidance to memory-ingest for G: path operations — covered by the Path Roots section added to the skill.
-- [x] Recommend `dir` not `ls` in memory skills for Windows paths — both memory-ingest and memory-add Path Roots tables use `dir` in all bash examples for non-C: drives.
-- [x] Harbor harness Fix A — `DagiAgent.run()` now uses `tempfile.mkdtemp()` for `config.project_path` instead of Harbor's log directory, preventing DAGI's file tools from seeing misleading `.dagi/` internal files and stopping the system prompt from emitting a misleading "Project root: <logs_dir>" line.
-- [x] Harbor harness Fix B — Added `system_prompt_preamble: str = ""` field to `AgentConfig`, parsed from `config_benchmark.yaml`. Injected first in the system prompt at all 3 build sites (`__init__`, `_rebuild_for_normal_mode`, `_rebuild_for_plan_mode`). Preamble instructs the agent to use `harbor_bash` for all container access and never call `enter_plan_mode`. `benchmarks/config_benchmark.yaml` created (later moved to `benchmarks/` subfolder) with model catalog, tool allowlist, and preamble.
+- [x] GNHF skill — `tools/git.py` adds `git_status`, `git_commit`, `git_rollback`; skill at `.dagi/skills/gnhf/SKILL.md`.
 
-- [x] Harden compaction failure path — `_compact_context()` in `agent/loop.py` now catches all exceptions from `compact_tool.compact()`, emits a warning via `on_assistant_text`, and returns `_NO_COMPACTION`. Session survives transient summarization API failures; context-length errors on the next API call are handled by the existing retry logic. (`_todo/todo_2026-06-20.md` A1, fixed 2026-06-21)
+- [x] Prompt architecture refactor — `main_system.md` trimmed to harness-only; behavioral guidelines in `.dagi/agents.md`; persona in `soul.md`.
 
-- [x] RAM watchdog in test suite — `tests/conftest.py` auto-use fixture monitors system RAM via a daemon thread (0.5 s poll). At 70%: interrupts the running test with `pytest.fail()`. At 90%: hard-kills the process with `os._exit(1)` to protect the machine. Catches infinite-loop OOM bugs like the MagicMock + `yaml.safe_load` issue that previously killed the machine.
+- [x] BM25 wiki retrieval in memory-query skill — `agent/memory_retriever.py` + `.dagi/skills/memory-query/bm25_query.py`.
+
+- [x] Auto compaction — Pi-style compaction preserves system prompt + recent tail, carries forward prior summaries.
+
+- [x] Plan mode — full read-only planning mode; BashTool omitted; WriteTool/EditTool restricted to plan document.
+
+- [x] Web research tools — `web_search`, `web_fetch`, `web_research`, `explore_files`.
+
+- [x] Multi-root search — `FindTool` and `GrepTool` search all `allowed_roots` when `path` is omitted.
+
+- [x] Harbor harness Fix A — `DagiAgent.run()` uses `tempfile.mkdtemp()` for `config.project_path`.
+
+- [x] Harbor harness Fix B — `system_prompt_preamble` field in `AgentConfig`; injected first in system prompt at all 3 build sites.
+
+- [x] Harden compaction failure path — `_compact_context()` catches all exceptions from `compact_tool.compact()`, emits a warning, and returns `_NO_COMPACTION`. (`_todo/todo_2026-06-20.md` A1, fixed `0e7fe54` 2026-06-21)
+
+- [x] `provider_order` snapshotted and restored on tier switch — 6th field in `_base_config_snapshot`; copied from `tier_cfg`; restored on "default" switch. (Fixed `0ffff74` 2026-06-21)
+
+- [x] `DAGI_ROOT` centralised in `agent/__init__.py` — replaced 4 independent `Path(__file__).parent.parent` expressions in `agent/tools.py`, `tools/cli_subagent.py`, `tools/_subagent_runner.py`, `agent/loop.py`. (Fixed `cdf90a8` 2026-06-21)
+
+- [x] RAM watchdog in test suite — `tests/conftest.py` auto-use fixture monitors system RAM; 70% → `pytest.fail()`; 90% → `os._exit(1)`.
+
+- [x] `tempfile.mktemp()` TOCTOU race fixed at 3 sites — replaced with atomic `mkstemp()` + `os.close(fd)` in `tools/_subagent_runner.py:96` and `tools/cli_subagent.py:70,73`. (`_todo/todo_2026-06-07.md` #4, fixed 2026-06-26)
+
+- [x] Temp file leak on subagent timeout fixed — `task_file: Path` added to `_SubagentState`; `_poll_until` now calls `state.task_file.unlink()` on process exit, covering both normal and resume paths. (`_todo/todo_2026-06-07.md` #3, fixed 2026-06-26)
+
+- [x] Soul/agents.md re-injected after plan-mode transitions — `_build_preamble(dagi_root)` extracted; called from `__init__`, `_rebuild_for_normal_mode`, `_rebuild_for_plan_mode`. (Fixed `6591652`)
+
+- [x] TUI `loop.finish()` now called on agent work completion — session logs properly finalized with `session_end` record. (Fixed `6591652`)

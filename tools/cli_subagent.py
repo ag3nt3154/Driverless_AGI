@@ -8,6 +8,7 @@ Prefer predefined spawn_*_subagent tools when the task fits a known role.
 """
 from __future__ import annotations
 
+import os
 import sys
 import tempfile
 import uuid
@@ -67,10 +68,14 @@ class SpawnCliSubagentTool(BaseTool):
         subagent_id = uuid.uuid4().hex[:8]
 
         # Write system prompt and task to temp files
-        prompt_file = Path(tempfile.mktemp(suffix=".txt", prefix="dagi_prompt_"))
+        fd, _tmp = tempfile.mkstemp(suffix=".txt", prefix="dagi_prompt_")
+        os.close(fd)
+        prompt_file = Path(_tmp)
         prompt_file.write_text(system_prompt, encoding="utf-8")
 
-        task_file = Path(tempfile.mktemp(suffix=".txt", prefix="dagi_task_"))
+        fd, _tmp = tempfile.mkstemp(suffix=".txt", prefix="dagi_task_")
+        os.close(fd)
+        task_file = Path(_tmp)
         task_file.write_text(task, encoding="utf-8")
 
         handoffs_dir = self._project_path / ".dagi" / "handoffs"

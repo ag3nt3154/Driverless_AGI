@@ -66,6 +66,20 @@ Salient findings, traps to avoid, decisions made during execution.
 
 ## Verification
 How to verify the full implementation end-to-end.
+
+## Execution Protocol
+
+> **MANDATORY — read this section before implementing any subtask.**
+>
+> Do NOT implement subtasks directly. Follow this cycle for each pending subtask:
+>
+> 1. **Write tests** for the subtask in `.dagi/plans/<plan_dir>/tests/`
+> 2. **Spawn a worker subagent** via `spawn_worker_subagent(subtask_name=..., custom_instructions=...)`
+> 3. **Spawn a review subagent** via `spawn_review_subagent(subtask_name=..., worker_handoff_path=..., unit_test_paths=...)`
+> 4. **Evaluate** the review verdict — PASS marks `[x]`, FAIL retries (max 3 attempts)
+>
+> If you find yourself editing implementation files directly, STOP — you are
+> violating this protocol. Re-read this section and delegate to subagents.
 ```
 
 ### Step 6 — Show and Approve

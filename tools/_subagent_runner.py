@@ -8,6 +8,7 @@ call can extend the wait without losing the process handle.
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 import tempfile
@@ -25,6 +26,7 @@ _POLL_INTERVAL = 2.0  # seconds between PID-alive checks
 class _SubagentState:
     proc: subprocess.Popen
     handoff_path: Path
+    task_file: Path
     subagent_type: str
     on_event: Callable[[str], None] | None
 
@@ -65,6 +67,7 @@ def _poll_until(
         if ret is not None:
             with _active_lock:
                 _active.pop(proc.pid, None)
+            state.task_file.unlink(missing_ok=True)
             if state.handoff_path.exists():
                 return {"status": "ok", "handoff": str(state.handoff_path)}
             return {
@@ -93,7 +96,9 @@ def run_subagent(
         {"status": "timeout", "pid": int}        — timed out, proc still alive
         {"status": "error",   "message": str}    — proc exited, no handoff
     """
-    task_file = Path(tempfile.mktemp(suffix=".txt", prefix="dagi_task_"))
+    fd, _tmp = tempfile.mkstemp(suffix=".txt", prefix="dagi_task_")
+    os.close(fd)
+    task_file = Path(_tmp)
     task_file.write_text(task, encoding="utf-8")
     handoff_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -117,6 +122,7 @@ def run_subagent(
     state = _SubagentState(
         proc=proc,
         handoff_path=handoff_path,
+        task_file=task_file,
         subagent_type=subagent_type,
         on_event=on_event,
     )
@@ -127,10 +133,7 @@ def run_subagent(
         t = threading.Thread(target=_stream_stdout, args=(proc, on_event), daemon=True)
         t.start()
 
-    result = _poll_until(state, timeout)
-    if result["status"] != "timeout":
-        task_file.unlink(missing_ok=True)
-    return result
+    return _poll_until(state, timeout)
 
 
 def resume_subagent(pid: int, extra_seconds: float) -> dict:
