@@ -49,23 +49,14 @@
 
 ### 🔴 HIGH — Bugs
 
-- **5 remaining `DAGI_ROOT` independent computations in cli/tui** · `priority:medium` · `open:5d` · `effort:XS`
-  - **Files:** `cli.py:43`, `cli.py:804`, `tui/app.py:52`, `tui/commands.py:20`, `tools/spawn_subagent.py:23`
-  - **Problem:** The `cdf90a8` centralisation fixed `agent/` and `tools/` but missed these 5 sites.
-  - **Fix:** Replace with `from agent import DAGI_ROOT` in each.
-  - **Source:** `_todo/todo_2026-06-21.md` A2
+- ~~**5 remaining `DAGI_ROOT` independent computations in cli/tui**~~ · `done` · `2026-06-27`
+  - Replaced all 5 with `from agent import DAGI_ROOT` — `cli.py` (×2), `tui/app.py`, `tui/commands.py`, `tools/spawn_subagent.py`. (`_todo/todo_2026-06-21.md` A2)
 
-- **`json.loads(tc.function.arguments)` parsed up to 4 times per tool call** · `priority:medium` · `open:9d` · `effort:XS`
-  - **File:** `agent/loop.py:548-563`
-  - **Problem:** The same JSON string is parsed at lines 548, 551, 553, 563. If the JSON is malformed, all 4 parse attempts raise, producing an uncaught `JSONDecodeError` instead of a clean tool error.
-  - **Fix:** Parse once: `args = json.loads(tc.function.arguments)` and reuse everywhere.
-  - **Source:** `_todo/todo_2026-06-17.md` A3
+- ~~**`json.loads(tc.function.arguments)` parsed up to 4 times per tool call**~~ · `done` · `2026-06-27`
+  - Single `args = json.loads(tc.function.arguments)` at `agent/loop.py:547`; reused at all 4 dispatch branches. (`_todo/todo_2026-06-17.md` A3)
 
-- **Subagent discovery only scans project path — misses DAGI root types** · `priority:medium` · `open:1d` · `effort:S`
-  - **File:** `agent/tools.py:84-133`
-  - **Problem:** `_discover_subagent_tools` only scans `cwd/.dagi/subagents`. When `project_path != DAGI_ROOT`, all four built-in subagent types (worker, review, explore_files, web_research) silently vanish from the registry.
-  - **Fix:** Scan both `DAGI_ROOT/.dagi/subagents` and `cwd/.dagi/subagents`; project types override on name collision.
-  - **Source:** `_todo/todo_2026-06-25.md` A3
+- ~~**Subagent discovery only scans project path — misses DAGI root types**~~ · `done` · `2026-06-27`
+  - `_discover_subagent_tools` now scans both `DAGI_ROOT/.dagi/subagents` and `cwd/.dagi/subagents`; project types override built-ins by name. (`_todo/todo_2026-06-25.md` A3)
 
 ---
 

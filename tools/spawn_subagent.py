@@ -20,7 +20,7 @@ if TYPE_CHECKING:
     from agent.loop import AgentConfig
     from agent.session import SessionTracker
 
-_DAGI_ROOT = Path(__file__).parent.parent
+from agent import DAGI_ROOT as _DAGI_ROOT
 
 _FALLBACK_PARAMETERS: dict = {
     "type": "object",

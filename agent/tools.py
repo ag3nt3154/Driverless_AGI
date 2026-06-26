@@ -92,50 +92,53 @@ def _discover_subagent_tools(
     callbacks: "AgentCallbacks | None",
     tracker: "SessionTracker | None",
 ) -> list["BaseTool"]:
-    """Scan .dagi/subagents/ and return one SpawnSubagentTool per valid type.
+    """Scan DAGI_ROOT then cwd for .dagi/subagents/; project types override built-ins by name.
 
     A valid type directory must contain both prompt.md and subagent_config.yaml.
     Directories missing either file are silently skipped.
     """
     from tools.spawn_subagent import SpawnSubagentTool
 
-    subagents_dir = cwd / ".dagi" / "subagents"
-    if not subagents_dir.exists():
-        return []
-
     on_event_factory = (
         callbacks.on_subagent_event_factory if callbacks else None
     )
 
-    tools: list[BaseTool] = []
-    for type_dir in sorted(subagents_dir.iterdir()):
-        if not type_dir.is_dir():
+    scan_dirs = [_DAGI_ROOT / ".dagi" / "subagents"]
+    if cwd != _DAGI_ROOT:
+        scan_dirs.append(cwd / ".dagi" / "subagents")
+
+    tools_by_name: dict[str, BaseTool] = {}
+    for subagents_dir in scan_dirs:
+        if not subagents_dir.exists():
             continue
-        if not (type_dir / "prompt.md").exists():
-            continue
-        if not (type_dir / "subagent_config.yaml").exists():
-            continue
-        type_name = type_dir.name
-        try:
-            cfg = (
-                yaml.safe_load(
-                    (type_dir / "subagent_config.yaml").read_text(encoding="utf-8")
-                ) or {}
-            )
-            description = cfg.get("description", f"Spawn a {type_name} subagent.")
-            tools.append(SpawnSubagentTool(
-                type_name=type_name,
-                description=description,
-                config=config,
-                on_event_factory=on_event_factory,
-                tracker=tracker,
-            ))
-        except Exception as exc:  # noqa: BLE001
-            print(
-                f"[tools] Warning: failed to load subagent type {type_name!r}: {exc}",
-                file=sys.stderr,
-            )
-    return tools
+        for type_dir in sorted(subagents_dir.iterdir()):
+            if not type_dir.is_dir():
+                continue
+            if not (type_dir / "prompt.md").exists():
+                continue
+            if not (type_dir / "subagent_config.yaml").exists():
+                continue
+            type_name = type_dir.name
+            try:
+                cfg = (
+                    yaml.safe_load(
+                        (type_dir / "subagent_config.yaml").read_text(encoding="utf-8")
+                    ) or {}
+                )
+                description = cfg.get("description", f"Spawn a {type_name} subagent.")
+                tools_by_name[type_name] = SpawnSubagentTool(
+                    type_name=type_name,
+                    description=description,
+                    config=config,
+                    on_event_factory=on_event_factory,
+                    tracker=tracker,
+                )
+            except Exception as exc:  # noqa: BLE001
+                print(
+                    f"[tools] Warning: failed to load subagent type {type_name!r}: {exc}",
+                    file=sys.stderr,
+                )
+    return list(tools_by_name.values())
 
 
 # ---------------------------------------------------------------------------

@@ -40,7 +40,7 @@ from agent.config_loader import (
 )
 from agent.loop import AgentCallbacks, AgentLoop
 
-_DAGI_ROOT = Path(__file__).parent
+from agent import DAGI_ROOT as _DAGI_ROOT
 
 console = Console()
 app = typer.Typer(
@@ -801,7 +801,7 @@ def _skill_invocation_message(skill_name: str, user_arg: str) -> str:
 
 def _load_skill_map(proj_path: Path) -> dict:
     from agent.skills import SkillLoader
-    dagi_root = Path(__file__).parent
+    dagi_root = _DAGI_ROOT
     roots = [dagi_root / ".dagi" / "skills", proj_path / ".dagi" / "skills"]
     skills = SkillLoader().load_all(roots, dagi_root=dagi_root)
     return {f"/{s.name}": s for s in skills}

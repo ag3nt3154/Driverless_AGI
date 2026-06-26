@@ -8,6 +8,7 @@ from rich.text import Text
 from textual.app import App, ComposeResult
 from textual.widgets import Static
 
+from agent import DAGI_ROOT
 from agent.config_loader import get_model_display_name, resolve_model_config
 from agent.loop import AgentCallbacks, AgentConfig, AgentLoop
 
@@ -49,7 +50,7 @@ class DagiApp(SlashCommandsMixin, App[None]):
 
     def compose(self) -> ComposeResult:
         cfg = resolve_model_config(self._model_id, project_path=self._project_path)
-        dagi_root = Path(__file__).parent.parent
+        dagi_root = DAGI_ROOT
         yield Sidebar(
             self._model_name, cfg.context_window, cfg.reserve_tokens,
             dagi_root=dagi_root, project_path=self._project_path,

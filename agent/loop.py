@@ -544,13 +544,12 @@ class AgentLoop:
                     self.callbacks.on_tool_start(tc.function.name, description, tc.function.arguments)
                     self.tracker.record_tool_start(tc.function.name, description, tc.function.arguments)
 
-                    result = self.registry.dispatch(
-                        tc.function.name, json.loads(tc.function.arguments)
-                    )
+                    args = json.loads(tc.function.arguments)
+                    result = self.registry.dispatch(tc.function.name, args)
                     if isinstance(result, str) and result.startswith(ENTER_PLAN_MODE_SENTINEL):
-                        result = self._handle_enter_plan_mode(json.loads(tc.function.arguments))
+                        result = self._handle_enter_plan_mode(args)
                     elif result == EXIT_PLAN_MODE_SENTINEL:
-                        result = self._handle_exit_plan_mode(json.loads(tc.function.arguments))
+                        result = self._handle_exit_plan_mode(args)
                     elif result == COMPLETE_PLAN_SENTINEL:
                         result = self._handle_complete_plan()
                     elif result == RELOAD_SKILLS_SENTINEL:
@@ -560,7 +559,7 @@ class AgentLoop:
                     else:
                         _switch_target = parse_switch_sentinel(result)
                         if _switch_target is not None:
-                            result = self._handle_switch_model(_switch_target, json.loads(tc.function.arguments))
+                            result = self._handle_switch_model(_switch_target, args)
                     result_str = result if isinstance(result, str) else "__list__:" + json.dumps(result)
                     self.callbacks.on_tool_end(tc.function.name, result_str)
                     self.tracker.record_tool_end(tc.function.name, result_str)

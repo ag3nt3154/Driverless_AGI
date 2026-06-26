@@ -5,6 +5,8 @@ from pathlib import Path
 
 from rich.table import Table
 
+from agent import DAGI_ROOT
+
 from .conversation import ConversationPane
 from .prompt_input import PromptInput
 from .sidebar import Sidebar
@@ -17,7 +19,7 @@ class SlashCommandsMixin:
     def _load_maps(self) -> None:
         from agent.skills import SkillLoader
         from agent.workflows import WorkflowLoader
-        dagi_root = Path(__file__).parent.parent
+        dagi_root = DAGI_ROOT
         skill_roots = [dagi_root / ".dagi" / "skills", self._project_path / ".dagi" / "skills"]
         self._skill_map = {
             f"/{s.name}": s for s in SkillLoader().load_all(skill_roots, dagi_root=dagi_root)
