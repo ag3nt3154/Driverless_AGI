@@ -262,43 +262,10 @@ class AgentLoop:
                 bash_tool=_bash_tool,
             )
 
-        # ── Build system prompt ───────────────────────────────────────────
-        readme_path = (dagi_root / "README.md").resolve()
-        tools_and_skills_section = _format_tools_and_skills(self.registry, self.skills)
-        system_prompt_text = (
-            config.system_prompt
-            if config.system_prompt
-            else load_main_system_prompt(dagi_root, config.project_path)
-        )
-        prompt = system_prompt_text.format_map(_SafeDict(
-            readme_path=readme_path,
-            tools_and_skills=tools_and_skills_section,
-            cwd=str(config.project_path.resolve()),
-            memory_root=str(self._effective_memory_root),
-            dagi_root=str(dagi_root.resolve()),
-        ))
-
         self.config = config
-        preamble = self._build_preamble(dagi_root)
-
-        sections = [s for s in [preamble, prompt] if s]
-        system = "\n\n---\n\n".join(sections)
-
-        # Project context line appended to system prompt
-        system += f"\n\n---\n\nProject root: {config.project_path}"
-
-        # Build labeled system-prompt sections for the UI expander
-        soul_text = load_soul(dagi_root, config.project_path)
-        dagi_agents = dagi_root / ".dagi" / "agents.md"
-        project_agents = config.project_path / ".dagi" / "agents.md"
-        self.system_parts: list[dict] = []
-        if soul_text:
-            self.system_parts.append({"label": "SOUL.md", "content": soul_text.strip()})
-        if dagi_agents.exists():
-            self.system_parts.append({"label": ".dagi/agents.md (dagi)", "content": dagi_agents.read_text(encoding="utf-8").strip()})
-        if project_agents.exists():
-            self.system_parts.append({"label": ".dagi/agents.md (project)", "content": project_agents.read_text(encoding="utf-8").strip()})
-        self.system_parts.append({"label": "System Prompt", "content": prompt})
+        # ── Build system prompt ───────────────────────────────────────────
+        system = self._assemble_system_string(dagi_root)
+        self.system_parts: list[dict]  # populated by _assemble_system_string
 
         if initial_messages:
             # multi-turn: continue from existing conversation history
@@ -766,6 +733,69 @@ class AgentLoop:
                     parts.append(text)
         return "\n\n---\n\n".join(parts)
 
+    def _assemble_system_string(self, dagi_root: Path) -> str:
+        """Single source of truth for system-prompt assembly.
+
+        Reads self.config and self.registry; also refreshes self.system_parts for
+        the UI expander. Call sites handle _messages assignment and compact_tool.bind().
+        """
+        readme_path = (dagi_root / "README.md").resolve()
+        prompt_text = (
+            self.config.system_prompt
+            if self.config.system_prompt
+            else load_main_system_prompt(dagi_root, self.config.project_path)
+        )
+        tools_and_skills = _format_tools_and_skills(self.registry, self.skills)
+        prompt = prompt_text.format_map(_SafeDict(
+            readme_path=readme_path,
+            tools_and_skills=tools_and_skills,
+            cwd=str(self.config.project_path.resolve()),
+            memory_root=str(self._effective_memory_root),
+            dagi_root=str(dagi_root.resolve()),
+        ))
+
+        soul_text = load_soul(dagi_root, self.config.project_path)
+        dagi_agents = dagi_root / ".dagi" / "agents.md"
+        project_agents = self.config.project_path / ".dagi" / "agents.md"
+        self.system_parts = []
+        if soul_text:
+            self.system_parts.append({"label": "SOUL.md", "content": soul_text.strip()})
+        if dagi_agents.exists():
+            self.system_parts.append({
+                "label": ".dagi/agents.md (dagi)",
+                "content": dagi_agents.read_text(encoding="utf-8").strip(),
+            })
+        if project_agents.exists():
+            self.system_parts.append({
+                "label": ".dagi/agents.md (project)",
+                "content": project_agents.read_text(encoding="utf-8").strip(),
+            })
+        self.system_parts.append({"label": "System Prompt", "content": prompt})
+
+        preamble = self._build_preamble(dagi_root)
+        sections = [s for s in [preamble, prompt] if s]
+        system = "\n\n---\n\n".join(sections)
+        system += f"\n\n---\n\nProject root: {self.config.project_path}"
+
+        if self.config.active_plan_file and not self.config.plan_mode:
+            system += (
+                f"\n\n---\n\n"
+                f"## Active Plan\n\n"
+                f"A plan document is active at: `{self.config.active_plan_file}`\n\n"
+                f"**Before starting any implementation work**, read the plan file "
+                f"in full — it contains both the subtask definitions and the "
+                f"execution protocol you must follow.\n\n"
+                f"As you work:\n"
+                f"- Follow the **Execution Protocol** section in the plan exactly.\n"
+                f"- After completing each subtask, edit the plan and update its "
+                f"status marker.\n"
+                f"- If something feels wrong or unclear, re-read the plan file — "
+                f"the answer is likely there.\n"
+                f"- If you deviate from the plan, update it to reflect reality."
+            )
+
+        return system
+
     def _rebuild_for_normal_mode(self, dagi_root: Path) -> None:
         from agent.tools import create_tool_registry
 
@@ -791,47 +821,7 @@ class AgentLoop:
             bash_tool=self._injected_bash_tool,
         )
 
-        tools_and_skills = _format_tools_and_skills(self.registry, self.skills)
-        readme_path = (dagi_root / "README.md").resolve()
-        effective_memory_root = (
-            self.config.memory_root if self.config.memory_root is not None
-            else self.config.project_path / "dagi-memory"
-        ).resolve()
-        _prompt_text = (
-            self.config.system_prompt
-            if self.config.system_prompt
-            else load_main_system_prompt(dagi_root, self.config.project_path)
-        )
-        new_system = _prompt_text.format_map(_SafeDict(
-            readme_path=readme_path,
-            tools_and_skills=tools_and_skills,
-            cwd=str(self.config.project_path.resolve()),
-            memory_root=str(effective_memory_root),
-            dagi_root=str(dagi_root.resolve()),
-        ))
-        preamble = self._build_preamble(dagi_root)
-        if preamble:
-            new_system = preamble + "\n\n---\n\n" + new_system
-        new_system += f"\n\n---\n\nProject root: {self.config.project_path}"
-
-        if self.config.active_plan_file:
-            new_system += (
-                f"\n\n---\n\n"
-                f"## Active Plan\n\n"
-                f"A plan document is active at: `{self.config.active_plan_file}`\n\n"
-                f"**Before starting any implementation work**, read the plan file "
-                f"in full — it contains both the subtask definitions and the "
-                f"execution protocol you must follow.\n\n"
-                f"As you work:\n"
-                f"- Follow the **Execution Protocol** section in the plan exactly.\n"
-                f"- After completing each subtask, edit the plan and update its "
-                f"status marker.\n"
-                f"- If something feels wrong or unclear, re-read the plan file — "
-                f"the answer is likely there.\n"
-                f"- If you deviate from the plan, update it to reflect reality."
-            )
-
-        self._messages[0] = {"role": "system", "content": new_system}
+        self._messages[0] = {"role": "system", "content": self._assemble_system_string(dagi_root)}
         self.compact_tool.bind(
             self._messages, self.config, self.client,
             on_compaction=self.callbacks.on_compaction,
@@ -862,29 +852,7 @@ class AgentLoop:
             tracker=self.tracker,
             memory_root=self._effective_memory_root,
         )
-        tools_and_skills = _format_tools_and_skills(self.registry, self.skills)
-        readme_path = (dagi_root / "README.md").resolve()
-        effective_memory_root = (
-            self.config.memory_root if self.config.memory_root is not None
-            else self.config.project_path / "dagi-memory"
-        ).resolve()
-        _prompt_text = (
-            self.config.system_prompt
-            if self.config.system_prompt
-            else load_main_system_prompt(dagi_root, self.config.project_path)
-        )
-        new_system = _prompt_text.format_map(_SafeDict(
-            readme_path=readme_path,
-            tools_and_skills=tools_and_skills,
-            cwd=str(self.config.project_path.resolve()),
-            memory_root=str(effective_memory_root),
-            dagi_root=str(dagi_root.resolve()),
-        ))
-        preamble = self._build_preamble(dagi_root)
-        if preamble:
-            new_system = preamble + "\n\n---\n\n" + new_system
-        new_system += f"\n\n---\n\nProject root: {self.config.project_path}"
-        self._messages[0] = {"role": "system", "content": new_system}
+        self._messages[0] = {"role": "system", "content": self._assemble_system_string(dagi_root)}
         self.compact_tool.bind(
             self._messages, self.config, self.client,
             on_compaction=self.callbacks.on_compaction,

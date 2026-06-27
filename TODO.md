@@ -45,6 +45,12 @@
 
 ### 🔴 CRITICAL — Security / Data Loss
 
+- **`pyproject.toml` declares `crawl4ai>=0.4` — allows install of CVE-affected versions** · `priority:high` · `open:0d` · `effort:XS`
+  - **File:** `pyproject.toml:5`
+  - **Problem:** crawl4ai has 3 critical CVEs patched in 0.8.7: CVE-2026-56266 (SSRF), CVE-2026-56265 (hardcoded JWT auth bypass), CVE-2026-56258 (path traversal). The `>=0.4` constraint allows `pip install -e .` to pull any of these vulnerable versions. crawl4ai is runtime-optional (import-guarded in `web_fetch.py`), so the conda env is currently safe — but anyone installing from `pyproject.toml` gets a vulnerable transitive dependency.
+  - **Fix:** Either pin `crawl4ai>=0.8.7` or move it to an `[optional]` extras group to match `requirements.txt` (where it's already commented out).
+  - **Source:** `review/2026-06-27`
+
 ---
 
 ### 🔴 HIGH — Bugs
@@ -62,79 +68,85 @@
 
 ### 🟠 Architecture Debt
 
-- **Unified `_rebuild_system_prompt()` — eliminate 3-site divergence** · `priority:high` · `open:9d` · `effort:M`
+- **Unified `_rebuild_system_prompt()` — eliminate 3-site divergence** · `priority:high` · `open:10d` · `effort:M`
   - **Files:** `agent/loop.py:264-287`, `agent/loop.py:758-822`, `agent/loop.py:824-875`
   - **Problem:** `__init__`, `_rebuild_for_normal_mode`, and `_rebuild_for_plan_mode` each independently assemble the system prompt across 8 steps. This pattern has produced 4 confirmed divergence bugs (soul/agents.md dropped, `memory_root` missing, `provider_order` leak, BM25 quadratic). Every new parameter added to `create_tool_registry()` must be applied in 3 places.
   - **Fix:** Extract a unified `_rebuild_system_prompt(plan_mode, plan_file, ...)` called from all 3 sites.
   - **Source:** `_todo/todo_2026-06-17.md` B1 (persisting across all reviews)
 
-- **`tui/commands.py` imports from `cli.py` — layering violation** · `priority:medium` · `open:13d` · `effort:XS`
+- **`tui/commands.py` imports from `cli.py` — layering violation** · `priority:medium` · `open:14d` · `effort:XS`
   - **File:** `tui/commands.py:59,73`
   - **Problem:** TUI depends on the CLI entry-point module (`_skill_invocation_message`, `_cmd_init`). Future `cli.py` refactors will break TUI imports.
   - **Fix:** Extract the two shared functions into `agent/cli_utils.py`; import from both.
   - **Source:** `_todo/todo_2026-06-13.md` #7
 
-- **Dead code: `PlanSubAgent`, `ExploreFilesTool`, `WebResearchTool`, `SubAgentRunner`** · `priority:medium` · `open:13d` · `effort:S`
+- **Dead code: `PlanSubAgent`, `ExploreFilesTool`, `WebResearchTool`, `SubAgentRunner`** · `priority:medium` · `open:14d` · `effort:S`
   - **Files:** `tools/explore_files.py`, `tools/web_research.py`, `tools/plan_subagent.py`, `agent/sub_agent.py`
   - **Problem:** None of these are registered in `create_tool_registry()` or used anywhere. They duplicate patterns from active code and confuse readers.
   - **Fix:** Audit for external callers; delete if unused.
   - **Source:** `_todo/todo_2026-06-13.md` #4
 
-- **Split `cli.py` (1327 lines) → `cli/` package** · `priority:high` · `open:10d` · `effort:M`
+- **Split `cli.py` (1327 lines) → `cli/` package** · `priority:high` · `open:11d` · `effort:M`
   - **File:** `cli.py`
   - **Problem:** 2.6× over the 500-line coding standard. Mixes rendering, callbacks, slash command handlers, subagent orchestration, and the REPL entry point.
   - **Suggested split:** `cli/rendering.py`, `cli/callbacks.py`, `cli/commands.py`, `cli/dispatch.py`, `cli/main.py`; root `cli.py` becomes a ~30-line launcher.
   - **Source:** `_todo/todo_2026-06-16.md` A1
 
-- **`_parse_frontmatter` duplicated verbatim between `agent/skills.py` and `agent/workflows.py`** · `priority:medium` · `open:6d` · `effort:XS`
+- **`agent/prompts.py` still uses independent `Path(__file__).parent.parent`** · `priority:medium` · `open:0d` · `effort:XS`
+  - **File:** `agent/prompts.py:5-6`
+  - **Problem:** `_PROMPTS_DIR` and `_SUBAGENTS_DIR` are computed via `Path(__file__).parent.parent` — the same pattern that caused 4 confirmed divergence bugs before centralisation in `agent/__init__.py:DAGI_ROOT`. These 2 sites were missed in the 2026-06-27 sweep (`cli.py` ×2, `tui/app.py`, `tui/commands.py`, `tools/spawn_subagent.py`). They work correctly today because `prompts.py` lives inside `agent/`, but any restructuring would break them silently.
+  - **Fix:** Replace with `from agent import DAGI_ROOT; _PROMPTS_DIR = DAGI_ROOT / ".dagi" / "prompts"` (and same for `_SUBAGENTS_DIR`).
+  - **Source:** `review/2026-06-27`
+
+- **`_parse_frontmatter` duplicated verbatim between `agent/skills.py` and `agent/workflows.py`** · `priority:medium` · `open:7d` · `effort:XS`
   - **Files:** `agent/skills.py:30-42`, `agent/workflows.py:30-42`
   - **Problem:** Identical regex patterns and function body. Any bug fix must be applied twice.
   - **Fix:** Extract to `agent/_frontmatter.py`; import in both files.
   - **Source:** `_todo/todo_2026-06-20.md` B1
 
-- **`_extra_body` construction duplicated in `__init__` and `_handle_switch_model`** · `priority:medium` · `open:7d` · `effort:XS`
+- **`_extra_body` construction duplicated in `__init__` and `_handle_switch_model`** · `priority:medium` · `open:8d` · `effort:XS`
   - **Files:** `agent/loop.py:311-317`, `agent/loop.py:732-738`
   - **Problem:** Identical 6-line block in two places. New OpenRouter extensions must be added in both or silently break after a tier switch.
   - **Fix:** Extract `_build_extra_body() -> dict` method.
   - **Source:** `_todo/todo_2026-06-19.md` B2
 
-- **`ask_user` callback has no deadlock protection (infinite wait)** · `priority:medium` · `open:8d` · `effort:XS`
+- **`ask_user` callback has no deadlock protection (infinite wait)** · `priority:medium` · `open:9d` · `effort:XS`
   - **File:** `tui/callbacks.py:73-74`
   - **Problem:** When `ask_user` is called with `timeout=None` (default in plan mode), `evt.wait(timeout=None)` blocks the agent thread indefinitely. If the TUI closes, the agent thread hangs permanently.
   - **Fix:** Always use a finite safety timeout: `safety = (timeout + 60) if timeout is not None else 600`.
   - **Source:** `_todo/todo_2026-06-18.md` D1
 
-- **`_tools_from_list` limited to 9 hardcoded tool names** · `priority:medium` · `open:8d` · `effort:S`
+- **`_tools_from_list` limited to 9 hardcoded tool names** · `priority:medium` · `open:9d` · `effort:S`
   - **File:** `agent/tools.py:51-81`
   - **Problem:** Subagent registries can only reference 9 tools. Any other tool name (e.g., `skill`, `ask_user`, `git_status`) is silently dropped with a warning.
   - **Fix:** Either expand the registry map to cover all tools, or drive subagent registration from `create_tool_registry(tool_names=[...])` and delete `_tools_from_list`.
   - **Source:** `_todo/todo_2026-06-18.md` D2
 
-- **Sidebar `_system_breakdown` reads stale `soul.md` path** · `priority:medium` · `open:8d` · `effort:XS`
+- **Sidebar `_system_breakdown` reads stale `soul.md` path** · `priority:medium` · `open:9d` · `effort:XS`
   - **File:** `tui/utils.py:66`
   - **Problem:** `_toks(dagi_root / "soul.md")` — `soul.md` was moved to `.dagi/prompts/soul.md`. The old path doesn't exist; sidebar understates system prompt token count by ~150–300 tokens.
   - **Fix:** Change to `dagi_root / ".dagi" / "prompts" / "soul.md"`.
   - **Source:** `_todo/todo_2026-06-18.md` A2
 
-- **`_system_breakdown()` reads disk on every Textual render cycle** · `priority:medium` · `open:8d` · `effort:XS`
+- **`_system_breakdown()` reads disk on every Textual render cycle** · `priority:medium` · `open:9d` · `effort:XS`
   - **File:** `tui/utils.py:58-70` (called from `sidebar.py` render)
   - **Problem:** 3 file reads per render cycle for files that never change during a session.
   - **Fix:** Compute once in `Sidebar.__init__` and cache as `self._sys_parts`.
   - **Source:** `_todo/todo_2026-06-18.md` B1
 
-- **`SkillTool.run()` reloads all skills from disk on every invocation** · `priority:medium` · `open:1d` · `effort:S`
+- **`SkillTool.run()` reloads all skills from disk on every invocation** · `priority:medium` · `open:2d` · `effort:S`
   - **File:** `tools/skill.py:41-46`
   - **Problem:** Every `skill("name")` call creates a new `SkillLoader`, scans all skill root dirs, reads and parses every SKILL.md. `AgentLoop` already has `self.skills` pre-loaded. ~30 file reads per call.
   - **Fix:** Pass the pre-loaded skills list to `SkillTool` at construction time, or cache after first load.
   - **Source:** `_todo/todo_2026-06-25_2.md` A2
 
-- **`WebFetchTool` silently upgrades HTTP→HTTPS for private IP addresses** · `priority:medium` · `open:1d` · `effort:XS`
+- **`WebFetchTool` silently upgrades HTTP→HTTPS for private IP addresses** · `priority:medium` · `open:2d` · `effort:XS`
   - **File:** `tools/web_fetch.py:123`
   - **Problem:** HTTP→HTTPS upgrade excludes `localhost` and `127.0.0.1` but not `192.168.x.x`, `10.x.x.x`, `172.16-31.x.x`, or `[::1]`. Agent fails to fetch local dev servers with a misleading error.
   - **Fix:** Expand exclusion regex to cover all RFC-1918 and loopback ranges.
   - **Source:** `_todo/todo_2026-06-25_2.md` A4
 
-- **`BashTool.run()` doesn't handle `subprocess.TimeoutExpired`** · `priority:medium` · `open:8d` · `effort:XS`
+- **`BashTool.run()` doesn't handle `subprocess.TimeoutExpired`** · `priority:medium` · `open:9d` · `effort:XS`
   - **File:** `tools/bash.py:26-37`
   - **Problem:** `subprocess.run(..., timeout=timeout)` raises `TimeoutExpired` uncaught; propagates to `ToolRegistry.dispatch()` as a terse generic error with no recovery guidance for the LLM.
   - **Fix:** Catch and return `f"[Command timed out after {timeout}s — command did not finish in time]"`.
@@ -144,36 +156,36 @@
 
 ### 🟡 Token Efficiency & Observability
 
-- **Session cost tracking always shows `$—`** · `priority:high` · `open:8d` · `effort:S`
+- **Session cost tracking always shows `$—`** · `priority:high` · `open:9d` · `effort:S`
   - **File:** `agent/session.py:108`
   - **Problem:** Most API providers (including OpenRouter for many models) don't populate `usage.cost`. Sidebar shows `$—`, `session_end` has `total_cost: null`. No cost visibility makes it impossible to benchmark model tiers.
   - **Fix:** Fall back to computing cost from token counts using a per-model `pricing` section in `config.yaml` (input/output cost per 1M tokens).
   - **Source:** `_todo/todo_2026-06-18.md` C1
 
-- **`thinking_tokens` (reasoning tokens) not recorded in session JSONL** · `priority:high` · `open:6d` · `effort:S`
+- **`thinking_tokens` (reasoning tokens) not recorded in session JSONL** · `priority:high` · `open:7d` · `effort:S`
   - **File:** `agent/session.py:100-118`
   - **Problem:** `completion_tokens_details.reasoning_tokens` is never extracted from API responses. For extended-thinking models (DeepSeek, Claude with thinking), reasoning tokens can be 50%+ of the completion budget — invisible in post-session analysis.
   - **Fix:** Add `thinking_tokens: int | None = None` to `MessageNode`; extract in `record_assistant()`; include `total_thinking_tokens` in `session_end`.
   - **Source:** `_todo/todo_2026-06-20.md` C1
 
-- **Cache hit visibility in TUI sidebar** · `priority:high` · `open:10d` · `effort:S`
+- **Cache hit visibility in TUI sidebar** · `priority:high` · `open:11d` · `effort:S`
   - **File:** `agent/loop.py:480-487`, `tui/sidebar.py`
   - **Problem:** `cache_prompt: true` is sent to OpenRouter, but `usage.prompt_tokens_details.cached_tokens` is never read. Users have no visibility into whether prompt caching is working.
   - **Fix:** Extract `cached_tokens` from `usage.prompt_tokens_details`; pass through `on_token_update`; display in sidebar as `{cached_tok}↩ cached`.
   - **Source:** `_todo/todo_2026-06-16.md` C1
 
-- **Tool result content not truncated in JSONL logs** · `priority:medium` · `open:6d` · `effort:XS`
+- **Tool result content not truncated in JSONL logs** · `priority:medium` · `open:7d` · `effort:XS`
   - **File:** `agent/session.py:129-135`
   - **Problem:** `record_tool_end(name, result_str)` writes the full result. Compare with `record_subagent_end` which truncates to 500 chars. Large tool results (file reads, grep output, base64) are the primary driver of log disk consumption.
   - **Fix:** Truncate to 2000 chars in `record_tool_end`; record `result_length` for reference.
   - **Source:** `_todo/todo_2026-06-20.md` C2
 
-- **Token efficiency benchmark harness** · `priority:high` · `open:7d` · `effort:M`
+- **Token efficiency benchmark harness** · `priority:high` · `open:8d` · `effort:M`
   - **Problem:** No way to measure whether code changes improve or degrade token efficiency. Harbor/Terminal-bench measure task correctness but not tokens/cost/continuation count per task.
   - **Fix:** `scripts/benchmark_token_efficiency.py` that parses session JSONL files and produces per-task metrics: `input_tokens`, `output_tokens`, `thinking_tokens`, `tool_call_count`, `continuation_count`, `cache_hit_tokens`.
   - **Source:** `_todo/todo_2026-06-19.md` D3
 
-- **GNHF self-improvement loop — never bootstrapped (62 days stale)** · `priority:high` · `open:62d`
+- **GNHF self-improvement loop — never bootstrapped (63 days stale)** · `priority:high` · `open:63d`
   - **Current:** The `review-session` skill and `improve-yourself` workflow exist; `.dagi/self-review/` has 5 files all from April 2026; 198 session logs have accumulated. The entire GNHF feedback cycle has never run.
   - **Next:** Run `review-session` against the 10 most recent session logs to bootstrap. Then schedule a weekly run.
   - **Source:** `_todo/todo_2026-06-16.md` C2
@@ -272,7 +284,7 @@
   - `agent/session.py:219-224` — `cost_str` and `tools_str` are computed but never included in the `print()` call. Either include them or delete.
   - **Source:** `_todo/todo_2026-06-17.md` E3
 
-- **`_effective_memory_root` recomputed inline in both rebuild methods** · `priority:low` · `effort:XS`
+- **`_effective_memory_root` recomputed inline in both rebuild methods** · `priority:low` · `open:10d` · `effort:XS`
   - `agent/loop.py:795-798`, `agent/loop.py:866-869` — both recompute what `self._effective_memory_root` already holds. Replace with the instance attribute.
   - **Source:** `_todo/todo_2026-06-17.md` B2
 
