@@ -1,0 +1,21 @@
+model_tier: default
+description: >-
+  Add or update knowledge in the memory wiki. Routes project-specific content to
+  wiki/projects/{name}/ and general knowledge to wiki/knowledge/{topic}/.
+root: memory_root
+tools:
+  - read
+  - grep
+  - write
+  - edit
+parameters:
+  type: object
+  properties:
+    task:
+      type: string
+      description: >-
+        Description of the knowledge to save. Prefix with "Project: <name>" for
+        project-specific knowledge (e.g. "Project: trading — The risk engine uses
+        Kelly criterion for position sizing."). Omit the prefix for general knowledge.
+  required:
+    - task

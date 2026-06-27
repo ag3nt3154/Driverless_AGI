@@ -2,6 +2,11 @@
 
 ## Completed
 
+- **Unified `_rebuild_system_prompt()` — eliminate 3-site divergence** · `done` · `2026-06-27`
+  - Extracted `_assemble_system_string(dagi_root) -> str` in `agent/loop.py` — all 8 assembly steps in one method
+  - Called from `__init__`, `_rebuild_for_normal_mode`, `_rebuild_for_plan_mode`; each site only handles `_messages` assignment and `compact_tool.bind()`
+  - Also fixes: `system_parts` now refreshed on every rebuild; `_effective_memory_root` inline recomputation removed; `active_plan_file` block now also injected at init time when set
+
 - **`_rebuild_for_reload` silently resets autonomous plan mode to interactive** · `done` · `2026-06-27`
   - Derived `interactive = self.config.plan_mode_initiated_by == "user"` before `_rebuild_for_plan_mode` call at `agent/loop.py:910`
   - Autonomous agents no longer flip to infinite `ask_user` wait on skill reload
@@ -67,12 +72,6 @@
 ---
 
 ### 🟠 Architecture Debt
-
-- **Unified `_rebuild_system_prompt()` — eliminate 3-site divergence** · `priority:high` · `open:10d` · `effort:M`
-  - **Files:** `agent/loop.py:264-287`, `agent/loop.py:758-822`, `agent/loop.py:824-875`
-  - **Problem:** `__init__`, `_rebuild_for_normal_mode`, and `_rebuild_for_plan_mode` each independently assemble the system prompt across 8 steps. This pattern has produced 4 confirmed divergence bugs (soul/agents.md dropped, `memory_root` missing, `provider_order` leak, BM25 quadratic). Every new parameter added to `create_tool_registry()` must be applied in 3 places.
-  - **Fix:** Extract a unified `_rebuild_system_prompt(plan_mode, plan_file, ...)` called from all 3 sites.
-  - **Source:** `_todo/todo_2026-06-17.md` B1 (persisting across all reviews)
 
 - **`tui/commands.py` imports from `cli.py` — layering violation** · `priority:medium` · `open:14d` · `effort:XS`
   - **File:** `tui/commands.py:59,73`
@@ -216,9 +215,12 @@
   - Current `except Exception as e: return f"Error: {e}"` loses the exception type. Return `f"Error [{type(e).__name__}]: {e}"` so the LLM can pattern-match on `FileNotFoundError` vs `PermissionError`.
   - **Source:** `_todo/todo_2026-06-26.md` D1
 
-- **Persistent Memory System** · `priority:high` · `impact:high` · `in-progress`
-  - **Current:** `memory-query` skill uses BM25 (`bm25_query.py`) for fast topic retrieval.
-  - **Next:** Add `/memory-ingest`, `/memory-lint`, `/memory-query` slash commands to `cli.py`; ingest initial source material into `dagi-memory/raw/`.
+- ~~**Persistent Memory System**~~ · `done` · `2026-06-27`
+  - BM25 removed; `memory-query` and `memory-add` converted to subagents with `root: memory_root` file-access restriction.
+  - Wiki restructured into `projects/` and `knowledge/` sections; all indexes renamed to `.index.md`.
+  - Simplified 5-field frontmatter schema (`type`, `topic`, `description`, `date_added`, `tags`).
+  - Wiki index injected at session start; memory protocol added to system prompt.
+  - `/init` command updated to scaffold new structure.
 
 - **Project / Folder Scoping** · `priority:high` · `impact:high`
   - **Current:** Path guard wired into Read/Write/Edit/Grep/Find. Roots hardcoded to `[dagi_root, cwd]`. BashTool unsandboxed.
@@ -283,10 +285,6 @@
 - **`session.py:finish()` dead `cost_str`/`tools_str` variables** · `priority:low` · `effort:XS`
   - `agent/session.py:219-224` — `cost_str` and `tools_str` are computed but never included in the `print()` call. Either include them or delete.
   - **Source:** `_todo/todo_2026-06-17.md` E3
-
-- **`_effective_memory_root` recomputed inline in both rebuild methods** · `priority:low` · `open:10d` · `effort:XS`
-  - `agent/loop.py:795-798`, `agent/loop.py:866-869` — both recompute what `self._effective_memory_root` already holds. Replace with the instance attribute.
-  - **Source:** `_todo/todo_2026-06-17.md` B2
 
 - **Base64 image data dumped into compaction summarization prompt** · `priority:low` · `effort:XS` · `images-not-yet-supported`
   - **File:** `tools/compact.py:68-71`
@@ -389,7 +387,7 @@
 
 - [x] Prompt architecture refactor — `main_system.md` trimmed to harness-only; behavioral guidelines in `.dagi/agents.md`; persona in `soul.md`.
 
-- [x] BM25 wiki retrieval in memory-query skill — `agent/memory_retriever.py` + `.dagi/skills/memory-query/bm25_query.py`.
+- [x] BM25 wiki retrieval in memory-query skill — `agent/memory_retriever.py` + `.dagi/skills/memory-query/bm25_query.py`. (Superseded 2026-06-27 — replaced with subagent-based grep+traversal)
 
 - [x] Auto compaction — Pi-style compaction preserves system prompt + recent tail, carries forward prior summaries.
 
@@ -420,3 +418,5 @@
 - [x] Soul/agents.md re-injected after plan-mode transitions — `_build_preamble(dagi_root)` extracted; called from `__init__`, `_rebuild_for_normal_mode`, `_rebuild_for_plan_mode`. (Fixed `6591652`)
 
 - [x] TUI `loop.finish()` now called on agent work completion — session logs properly finalized with `session_end` record. (Fixed `6591652`)
+
+- [x] 3-site system-prompt divergence eliminated — `_assemble_system_string(dagi_root)` is the single assembly point; all 3 build sites delegate to it. Eliminates the class of divergence bugs (soul dropped, memory_root missing, etc.). (2026-06-27)

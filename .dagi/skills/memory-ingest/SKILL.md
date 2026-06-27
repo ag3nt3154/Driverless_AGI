@@ -100,20 +100,21 @@ determined in Step 6 after `memory-add` completes.
 
 ---
 
-## Step 5 — Invoke memory-add (ingest mode)
+## Step 5 — Invoke memory-add subagent
 
-Call `skill("memory-add")` **once**. The Skill tool returns the full memory-add
-instructions in its result — do NOT call `skill("memory-add")` again. Follow the
-returned steps directly with these inputs:
+Call `spawn_memory_add_subagent` with a task string containing:
 
-- **Mode:** `ingest` (memory-ingest will write the log entry — memory-add must skip its log step)
-- **Content:** the file content read in Step 3
-- **Topic hint:** the topic determined in Step 4 (memory-add may refine it)
+```
+[Ingest mode — do not append to log.md, memory-ingest will do that]
 
-Follow all steps of `memory-add` except its log append step — that is handled here
-in Step 8.
+Topic hint: {topic from Step 4}
+Content: {file content read in Step 3}
+```
 
-Note the final topic and slug(s) from memory-add's report — you will need them in Steps 6–8.
+The subagent will write the wiki node(s), update index files, and return a handoff report.
+Read the handoff report to obtain the final topic and slug(s) — you will need them in Steps 6–8.
+
+Do NOT call `spawn_memory_add_subagent` again for the same file.
 
 ---
 
@@ -158,14 +159,10 @@ See Edge Cases for recovery guidance.
 After the copy succeeds, `read {memory_root}/wiki/log.md`, then `edit` to append:
 
 ```markdown
-## [YYYY-MM-DD] ingest | {original-filename}
-- Topic: {topic}{/subtopic if applicable}
-- Archived: {memory_root}/raw/{original-filename} → {memory_root}/sources/{topic}/{chosen-name}.{ext}
-- Wiki node: {memory_root}/wiki/{topic}/{slug}.md
-- Pages created: {list from memory-add report, or "none"}
-- Pages updated: {list from memory-add report, or "none"}
-- index.md files updated: {list}
+[{YYYY-MM-DD}] ingest | {original-filename} | {memory_root}/wiki/{section}/{topic}/{slug}.md
 ```
+
+Where `{section}` is `projects` or `knowledge`, per the memory-add handoff report.
 
 ---
 
@@ -189,7 +186,7 @@ After all files are processed:
 
 ## Edge Cases
 
-- **Wiki not initialised:** If `{memory_root}/wiki/index.md` does not exist, stop
+- **Wiki not initialised:** If `{memory_root}/wiki/.index.md` does not exist, stop
   and tell the user to run `/init` first.
 - **Already-ingested file:** If original filename appears in `log.md`, warn and skip.
 - **Partial failure (memory-add succeeded, log/copy failed):** The duplicate check in Step 2 scans only `log.md` — if `memory-add` completed but the subsequent log write or `copy` failed, there is no record in `log.md` and the next ingest run will **not** detect the prior partial run. Re-running ingest in this state will create duplicate wiki nodes. Do NOT re-run. Instead, manually verify whether wiki nodes already exist at `{memory_root}/wiki/{topic}/{slug}.md` before re-processing the file. `memory-lint` should cross-reference `log.md` against actual wiki state to surface orphaned nodes.

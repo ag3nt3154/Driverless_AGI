@@ -1,0 +1,20 @@
+model_tier: default
+description: >-
+  Query the memory wiki by traversing its index structure and grepping for
+  relevant content. Returns a synthesised answer with citations.
+root: memory_root
+tools:
+  - read
+  - grep
+  - write
+  - edit
+parameters:
+  type: object
+  properties:
+    task:
+      type: string
+      description: >-
+        The question or topic to look up in the memory wiki.
+        Be specific — include key terms, concepts, or entity names.
+  required:
+    - task

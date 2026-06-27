@@ -368,6 +368,7 @@ def build_subagent_registry(
     plan_file: Path | None = None,
     callbacks: "AgentCallbacks | None" = None,
     tracker: "SessionTracker | None" = None,
+    memory_root: Path | None = None,
 ) -> ToolRegistry:
     """Build a restricted ToolRegistry for a typed terminal subagent.
 
@@ -385,15 +386,17 @@ def build_subagent_registry(
         plan_file:     Unused; kept for signature compatibility.
         callbacks:     Subprocess-side callbacks.
         tracker:       Optional session tracker.
+        memory_root:   Resolved memory root; used when subagent_config.yaml sets
+                       `root: memory_root` to restrict file access to the wiki only.
     """
-    effective_roots: list[Path] | None = None if config.sandbox_mode else [_DAGI_ROOT, project_path]
+    default_roots: list[Path] | None = None if config.sandbox_mode else [_DAGI_ROOT, project_path]
     reg = ToolRegistry()
 
     # ── Custom: full scope for dynamic SpawnCliSubagentTool subagents ─────────
     if subagent_type == "custom":
         for tool in _tools_from_list(
             ["read", "grep", "find", "write", "edit", "bash", "web_search", "web_fetch"],
-            project_path, effective_roots,
+            project_path, default_roots,
         ):
             reg.register(tool)
         return reg
@@ -408,7 +411,16 @@ def build_subagent_registry(
             f"{project_path / '.dagi' / 'subagents' / subagent_type / 'subagent_config.yaml'}"
         )
 
+    # Subagents with `root: memory_root` are restricted to the wiki directory only.
+    root_override = cfg.get("root")
+    if root_override == "memory_root" and memory_root is not None:
+        cwd_for_tools = memory_root
+        effective_roots: list[Path] | None = [memory_root]
+    else:
+        cwd_for_tools = project_path
+        effective_roots = default_roots
+
     tool_names: list[str] = cfg.get("tools", ["read", "grep", "find"])
-    for tool in _tools_from_list(tool_names, project_path, effective_roots):
+    for tool in _tools_from_list(tool_names, cwd_for_tools, effective_roots):
         reg.register(tool)
     return reg

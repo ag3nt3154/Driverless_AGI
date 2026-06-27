@@ -40,6 +40,20 @@ def _is_plan_empty(path: Path) -> bool:
     return len(meaningful) == 0
 
 
+def _build_wiki_index_context(memory_root: Path) -> str | None:
+    """Read wiki root and section .index.md files; return a formatted context block."""
+    wiki_root = memory_root / "wiki"
+    root_index = wiki_root / ".index.md"
+    if not root_index.exists():
+        return None
+    parts = [root_index.read_text(encoding="utf-8")]
+    for section in ("projects", "knowledge"):
+        section_index = wiki_root / section / ".index.md"
+        if section_index.exists():
+            parts.append(section_index.read_text(encoding="utf-8"))
+    return "[WIKI INDEX]\n" + "\n\n---\n\n".join(parts) + "\n[END WIKI INDEX]"
+
+
 def _format_tools_and_skills(registry: ToolRegistry, skills: list[Skill]) -> str:
     """Generate a unified tools + skills section for the system prompt."""
     lines = ["## Available Tools", ""]
@@ -345,6 +359,9 @@ class AgentLoop:
             self.callbacks.on_assistant_text(notification)
             return notification
 
+        wiki_ctx = _build_wiki_index_context(self._effective_memory_root)
+        if wiki_ctx:
+            self._messages.append({"role": "system", "content": wiki_ctx})
         self._messages.append({"role": "user", "content": task})
         self.tracker.record_user(task)
         self._continuation_count = 0

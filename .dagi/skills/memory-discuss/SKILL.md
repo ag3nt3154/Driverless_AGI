@@ -61,7 +61,7 @@ Before reading any files, extract from the attached text or prompt:
 3. **User intent** — quiz mode (user wants to be tested), explore mode (think through
    together), or explain mode (Dagi leads with material)?
 
-Store extracted key terms as `{topic_terms}` for BM25 calls downstream.
+Store extracted key terms as `{topic_terms}` for wiki queries downstream.
 
 ---
 
@@ -97,8 +97,8 @@ If `{candidate_questions}` is non-empty:
 
 If `{candidate_questions}` is empty:
 
-1. Call `skill("memory-query")` with `{topic_terms}` as the query.
-   Store the returned wiki content as `{wiki_context}`.
+1. Call `spawn_memory_query_subagent` with `{topic_terms}` as the query.
+   Read the returned handoff file and store the wiki content as `{wiki_context}`.
 
 2. From `{wiki_context}`, synthesise one Socratic question meeting ALL of these
    **quality criteria**:
@@ -137,7 +137,7 @@ If the correct answer is already fully established from `{wiki_context}` (Step 3
 or from Dagi's direct knowledge, proceed with that as `{authoritative_answer}`.
 
 Otherwise:
-- Re-call `skill("memory-query")` with a more targeted query for this specific sub-question.
+- Call `spawn_memory_query_subagent` with a more targeted query for this specific sub-question; read the handoff.
 - If the wiki query returns nothing useful, call `web_search` with a precise query.
 - Synthesise `{authoritative_answer}` from these sources.
 
@@ -254,9 +254,8 @@ already present in the wiki — use `ask_user` (free-text, no options) to ask:
 > "Our discussion surfaced an interesting insight about {topic}. Shall I file it to
 > memory for future reference? (yes / no)"
 
-If yes: call `skill("memory-add")` in `direct` mode, passing a concise summary of the
-insight, the question that prompted it, and the key claim established.
-Tell `memory-add` explicitly: "Mode: direct."
+If yes: call `spawn_memory_add_subagent` with a concise summary of the insight,
+the question that prompted it, and the key claim established.
 
 If no: skip.
 
@@ -276,7 +275,7 @@ Summarise in Dagi-chan voice:
 | Situation | Handling |
 |---|---|
 | `open_questions.md` does not exist | Note it; skip Steps 2 and 6a/6b; generate questions but do not write them; tell user to run `/init` to create the file |
-| Wiki not initialised (`index.md` missing) | Skip `memory-query` calls; use `web_search` directly; note that memory is uninitialised |
+| Wiki not initialised (`.index.md` missing) | Skip memory-query subagent calls; use `web_search` directly; note that memory is uninitialised |
 | Admiral asks for the answer upfront | Oblige graciously; deliver the authoritative answer; set `{knowledge_gap} = partial`; continue to Step 6 normally |
 | Generated question duplicates existing Pending row | Detect via core-concept phrase match before appending; discard and regenerate a replacement |
 | `ask_user` tool unavailable (non-interactive context) | Stop cleanly: "memory-discuss requires interactive mode (ask_user tool). Aborting." |

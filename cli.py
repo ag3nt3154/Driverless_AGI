@@ -592,7 +592,8 @@ def _cmd_init(project_path: Path) -> None:
         dagi_dir / "logs",
         memory / "raw",
         memory / "sources",
-        memory / "wiki",
+        memory / "wiki" / "projects",
+        memory / "wiki" / "knowledge",
     ]:
         d.mkdir(parents=True, exist_ok=True)
 
@@ -618,40 +619,49 @@ def _cmd_init(project_path: Path) -> None:
         "_Updated by the agent after each task._\n"
     )
     wiki_stubs: dict[Path, str] = {
-        memory / "wiki" / "index.md": (
+        memory / "wiki" / ".index.md": (
             "# Wiki Index\n\n"
             f"> **Last updated:** {today}\n\n"
-            "This is the root navigation index. Each row is a top-level topic folder.\n"
-            "Read the linked topic index.md to drill down into sub-topics and pages.\n\n"
-            "| Topic | Description | Pages | Last Updated |\n"
-            "|-------|-------------|-------|-------------- |\n"
-            "| — | — | — | — |\n"
+            "## Sections\n\n"
+            "| Section | Description |\n"
+            "|---------|-------------|\n"
+            "| [projects](projects/.index.md) | Per-project knowledge, context, and updates |\n"
+            "| [knowledge](knowledge/.index.md) | General domain knowledge and research |\n\n"
+            "## Meta Files\n\n"
+            "- [log.md](log.md) — Operation history\n"
+            "- [open_questions.md](open_questions.md) — Research gaps\n"
         ),
-        memory / "wiki" / "overview.md": (
-            "# Overview\n\n"
+        memory / "wiki" / "projects" / ".index.md": (
+            "# Projects\n\n"
             f"> **Last updated:** {today}\n\n"
-            "_No sources ingested yet. This document will be updated as sources are added._\n"
+            "| Project | Description | Last Updated |\n"
+            "|---------|-------------|-------------- |\n"
+            "| — | — | — |\n"
+        ),
+        memory / "wiki" / "knowledge" / ".index.md": (
+            "# Knowledge\n\n"
+            f"> **Last updated:** {today}\n\n"
+            "| Topic | Description | Pages |\n"
+            "|-------|-------------|-------|\n"
+            "| — | — | — |\n"
         ),
         memory / "wiki" / "log.md": (
             "# Memory Log\n\n"
             "> Append-only. Do not edit manually.\n"
-            "> Each entry format: `## [YYYY-MM-DD] {operation} | {title}`\n"
-            "> Operations: ingest | query | lint\n\n"
+            "> Each entry format: `[YYYY-MM-DD] {operation} | {title} | {path}`\n"
+            "> Operations: add | ingest | query | lint\n\n"
             "<!-- entries appended below -->\n"
         ),
         memory / "wiki" / "open_questions.md": (
             "# Open Questions\n\n"
             f"> **Last updated:** {today}\n\n"
-            "Questions raised by wiki nodes that are relevant to but not yet answered "
-            "by existing wiki content. Move resolved questions to the Resolved section "
-            "with a brief resolution summary.\n\n"
             "## Pending\n\n"
-            "| # | Question | Context | Node | Date Raised |\n"
-            "|---|----------|---------|------|-------------|\n"
+            "| # | Question | Context | Source Page | Date Raised |\n"
+            "|---|----------|---------|-------------|-------------|\n"
             "| — | — | — | — | — |\n\n"
             "## Resolved\n\n"
-            "| # | Question | Resolution | Node | Date Resolved |\n"
-            "|---|----------|-----------|------|---------------|\n"
+            "| # | Question | Answer Summary | Wiki Page | Date Resolved |\n"
+            "|---|----------|----------------|-----------|---------------|\n"
             "| — | — | — | — | — |\n"
         ),
     }
@@ -681,8 +691,8 @@ def _cmd_init(project_path: Path) -> None:
     if not created and not skipped:
         console.print(f"[dim]Already initialised: {dagi_dir}[/dim]")
     console.print(
-        "[dim]Next: drop files into [bold]dagi-memory/raw/[/bold] "
-        "then invoke [bold]memory-ingest[/bold]. "
+        "[dim]Next: use [bold]spawn_memory_add_subagent[/bold] to add knowledge, "
+        "or drop files into [bold]dagi-memory/raw/[/bold] then invoke [bold]memory-ingest[/bold]. "
         "Add workflows to [bold].dagi/workflow/<name>/workflow.md[/bold].[/dim]"
     )
 
@@ -945,6 +955,7 @@ def _run_typed_subagent_task(
         project_path=project_path,
         plan_file=plan_file,
         callbacks=callbacks,
+        memory_root=config.memory_root,
     )
 
     loop = AgentLoop(
@@ -1086,6 +1097,7 @@ def _run_subagent_pipe_mode(
         config=typed_config,
         project_path=project_path,
         callbacks=callbacks,
+        memory_root=typed_config.memory_root,
     )
 
     if system_prompt_file:

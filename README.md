@@ -19,7 +19,7 @@ When the conversation exceeds the model's context window, **Pi-style context com
 
 Every agent response with no tool calls must end with `<<END_OF_RESPONSE>>` — this applies to greetings, answers, and completed tasks alike. If the flag is absent, the harness treats the response as accidentally truncated and injects a recovery prompt (`.dagi/prompts/main/continue.md`) as a user message to resume the loop. A safety valve (`max_continuations`, default 10, configurable in `config.yaml`) prevents runaway recovery loops. `<<TASK_END>>` is kept as a silent legacy alias.
 
-At session start, **BM25 memory injection** automatically retrieves relevant pages from the wiki knowledge base and prepends them as context before the first API call — giving the agent instant access to accumulated knowledge without any manual skill invocation.
+At session start, **wiki index injection** automatically reads the root and section `.index.md` files from the memory wiki and prepends them as a system message before the first API call — giving the agent a structural map of accumulated knowledge without any manual invocation. The agent then uses `spawn_memory_query_subagent` for targeted retrieval and `spawn_memory_add_subagent` to persist new knowledge after each task.
 
 ---
 

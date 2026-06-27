@@ -38,6 +38,25 @@ After completing any task that changes the codebase, introduces new tools or ski
 
 Skip for conversational turns, factual questions, and tasks that leave nothing new to document.
 
+## Memory Protocol
+
+The memory wiki (at `{memory_root}/wiki/`) stores persistent knowledge across sessions.
+The wiki index is injected into context at the start of each task — use it to orient
+yourself before acting.
+
+**Before starting any non-trivial task:** Call `spawn_memory_query_subagent` with the
+task description as the query. Use retrieved context to inform your approach — prior
+decisions, known gotchas, or existing architecture documented in the wiki.
+
+**After completing any task that produces new knowledge:** Call `spawn_memory_add_subagent`
+to save insights, decisions, resolved errors, or architectural changes. Prefix with
+`"Project: <name>"` for project-specific knowledge.
+
+Skip memory operations for conversational turns, trivial fixes, and tasks that produce
+no knowledge worth persisting.
+
+---
+
 ## Autonomous Plan Mode
 
 Call `enter_plan_mode` when the task has ANY of these characteristics:
