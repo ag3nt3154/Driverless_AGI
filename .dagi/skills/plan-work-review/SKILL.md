@@ -15,22 +15,19 @@ This skill owns the full lifecycle for complex tasks: planning, approval, and ex
 ### Step 1 — Enter Plan Mode
 Call `enter_plan_mode(mode="interactive")` if this skill was invoked by the user (slash command or explicit request). Call `enter_plan_mode(mode="autonomous")` if DAGI initiated this internally.
 
-### Step 2 — Explore via Subagent
-Delegate all codebase discovery to the explore subagent — do not use `read`, `grep`, or `find` directly for exploration.
+### Step 2 — Grill (interactive mode only)
+**This step runs before any exploration or planning.** Invoke `skill("grill-me")` immediately after entering plan mode. The skill will stress-test the requirements, surface hidden assumptions, and force concrete decisions. Answer questions using any knowledge already in context — do NOT spawn the explore subagent yet. Proceed to Step 3 once the user signals readiness (e.g. "ready", "proceed", "let's go"). Skip this step in autonomous mode.
+
+### Step 3 — Explore via Subagent
+Now that requirements are clear from grilling, delegate targeted codebase discovery to the explore subagent — do not use `read`, `grep`, or `find` directly for exploration.
 
 Call `spawn_explore_files_subagent(...)` with:
-- `task`: a clear description of what to discover (e.g. "Map all tool registration paths and explain how tools are loaded at startup. Identify files that will need to change for X.")
+- `task`: a precise description of what to discover, informed by what grilling revealed (e.g. "Map all tool registration paths and explain how tools are loaded at startup. Identify files that will need to change for X.")
 - `handoff_file`: leave this unset — the tool generates the path automatically
 
 Once the tool returns, read the handoff file it reports. Use its **Findings** and **Recommendations** sections to inform the plan.
 
-### Step 3 — Clarify (interactive mode only)
-Before writing the plan, use `ask_user` to surface ambiguities or requirements gaps identified during exploration. Ask one question at a time. Skip this step in autonomous mode.
-
-### Step 4 — Grill (interactive mode only)
-Before writing the plan, invoke `skill("grill-me")` to stress-test your understanding of the requirements. The skill will ask questions one at a time — answer them or use codebase exploration to resolve them. Proceed to Step 5 once the user signals readiness (e.g. "ready", "proceed", "let's go"). Skip this step in autonomous mode.
-
-### Step 5 — Write the Plan
+### Step 4 — Write the Plan
 Write the plan document to the plan file. Use this structure:
 
 ```markdown
@@ -82,11 +79,11 @@ How to verify the full implementation end-to-end.
 > violating this protocol. Re-read this section and delegate to subagents.
 ```
 
-### Step 6 — Show and Approve
+### Step 5 — Show and Approve
 1. Call `show_plan` to render the plan.
 2. In interactive mode: call `ask_user("Approve this plan? Type [approve] to proceed, describe changes to modify, or [cancel] to abort.")`
    - **approve** → call `exit_plan_mode`, proceed to Phase 2
-   - **modify** → edit the plan file to incorporate feedback, go back to Step 6
+   - **modify** → edit the plan file to incorporate feedback, go back to Step 5
    - **cancel** → call `exit_plan_mode`, stop — do NOT proceed to execution
 3. In autonomous mode: `show_plan` auto-approves — call `exit_plan_mode`, proceed to Phase 2.
 

@@ -37,10 +37,17 @@ tags: keyword1, keyword2, keyword3
 
 ## Protocol
 
-### Step 1 — Check context
-The wiki index is provided at the start of this session. Scan it to identify candidate
-sections (projects or knowledge) and likely topics. Note any project names or topic
-headings that are relevant to the query.
+### Step 1 — Load indexes
+Read all three index files explicitly (they are not auto-injected):
+
+```
+Read("{memory_root}/wiki/index.md")          ← root: lists sections
+Read("{memory_root}/wiki/projects/.index.md") ← all tracked projects
+Read("{memory_root}/wiki/knowledge/.index.md") ← all knowledge topics
+```
+
+Skip any that do not yet exist. Scan the loaded content to identify candidate sections
+and likely topics relevant to the query before grepping.
 
 ### Step 2 — Grep for key terms
 Extract the most specific terms from the query (entity names, technical terms, project

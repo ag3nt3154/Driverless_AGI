@@ -193,6 +193,15 @@
 
 ### 🟢 Features
 
+- **Task scheduler** · `done` · `2026-06-28`
+  - `scheduler/` package: `models.py` (ScheduledTask, parse_interval), `tracker.py` (RunTracker), `runner.py` (entry point)
+  - `tools/schedule_tools.py`: `schedule_task`, `list_scheduled_tasks`, `remove_scheduled_task` (interactive sessions only)
+  - `run_scheduler.bat`: Windows trigger; wire into Task Scheduler
+  - `AgentConfig.ask_user_timeout` field; `create_tool_registry` respects it
+  - `.dagi/scheduler/schedule.yaml` for task definitions (hours-based intervals)
+  - `.dagi/scheduler/runs.jsonl` for execution log; per-task `output_file` support
+  - 40 unit tests — all passing; float-only `interval` (seconds) throughout
+
 - **`/stats` slash command for live session diagnostics** · `priority:medium` · `effort:S`
   - Show total tokens (in/out/thinking), cost, tool call histogram, continuation count, compaction count, and session duration. All data already available on `loop.tracker._messages` and `app._stats`.
   - **Source:** `_todo/todo_2026-06-17.md` D1

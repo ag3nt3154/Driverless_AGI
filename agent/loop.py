@@ -162,6 +162,9 @@ class AgentConfig:
     # (e.g. ["Anthropic", "Together"]). None means use OpenRouter's default load balancing.
     # Sent as extra_body["provider"]["order"] — ignored by non-OpenRouter endpoints.
     provider_order: list[str] | None = None
+    # Scheduler: override the ask_user timeout (seconds). None = use default (300s).
+    # Set to 60 by the scheduler runner for fully autonomous execution.
+    ask_user_timeout: int | None = None
 
 
 @dataclass

@@ -28,7 +28,7 @@ Every wiki page must use exactly this schema:
 ```yaml
 ---
 type: note | entity | source-summary | reflection | insight | analysis | context | update
-topic: {topic-name}           # or {project-name} for project pages
+topic: {topic-name}           # or project/{project-name} for project pages
 description: one-line summary of what this page contains
 date_added: YYYY-MM-DD
 tags: keyword1, keyword2, keyword3
@@ -70,7 +70,7 @@ Use this template:
 ```markdown
 ---
 type: {type}
-topic: {topic}
+topic: {topic}                # project/{project-name} if this is a project page
 description: {one-line summary}
 date_added: {YYYY-MM-DD}
 tags: {tag1}, {tag2}, {tag3}
@@ -106,9 +106,16 @@ After writing the page, update the relevant `.index.md` files:
 ```
 
 **Section `.index.md`** (`projects/.index.md` or `knowledge/.index.md`) — if this is
-a **new** project or topic, add a row:
+a **new** project or topic, add a row using the section-appropriate format:
+
+For `knowledge/.index.md` (4 columns):
 ```markdown
-| [{project-name or topic}]({name}/.index.md) | {one-line description} | {date_added} |
+| [{topic}]({topic}/.index.md) | {one-line description} | {page count or —} | {date_added} |
+```
+
+For `projects/.index.md` (3 columns):
+```markdown
+| [{project-name}]({project-name}/.index.md) | {one-line description} | {date_added} |
 ```
 
 If the project/topic `.index.md` does not exist yet, create it:

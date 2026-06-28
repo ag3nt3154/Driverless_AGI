@@ -294,7 +294,12 @@ def create_tool_registry(
         reg.register(CompletePlanTool())
         from tools.ask_user import AskUserTool
         _on_ask = callbacks.on_ask_user if callbacks else _default_ask_user
-        reg.register(AskUserTool(on_ask_user=_on_ask, timeout=300))
+        _ask_timeout = (
+            config.ask_user_timeout
+            if (config and config.ask_user_timeout is not None)
+            else 300
+        )
+        reg.register(AskUserTool(on_ask_user=_on_ask, timeout=_ask_timeout))
         if config is not None and (config.advanced_config is not None or config.worker_config is not None):
             from tools.switch_model import SwitchModelTool
             reg.register(SwitchModelTool())
@@ -347,6 +352,23 @@ def create_tool_registry(
                 reg.register(SkillTool(skill_roots=skill_roots, dagi_root=_DAGI_ROOT, cwd=cwd, memory_root=_effective_memory_root))
                 from tools.run_skill_script import RunSkillScriptTool
                 reg.register(RunSkillScriptTool(skill_roots=skill_roots, dagi_root=_DAGI_ROOT))
+
+            # Schedule management tools — interactive sessions only.
+            # Autonomous tasks (plan_mode_initiated_by == "dagi") cannot see or
+            # call these, preventing self-modification of the schedule.
+            if plan_mode_initiated_by == "user":
+                from tools.schedule_tools import (
+                    ListScheduledTasksTool,
+                    RemoveScheduledTaskTool,
+                    ScheduleTaskTool,
+                )
+                _sched_path = cwd / ".dagi" / "scheduler" / "schedule.yaml"
+                _runs_path = cwd / ".dagi" / "scheduler" / "runs.jsonl"
+                reg.register(ScheduleTaskTool(schedule_path=_sched_path))
+                reg.register(ListScheduledTasksTool(
+                    schedule_path=_sched_path, runs_path=_runs_path,
+                ))
+                reg.register(RemoveScheduledTaskTool(schedule_path=_sched_path))
         else:
             # Fallback for callers that do not supply config (e.g. tests)
             from tools.web_fetch import WebFetchTool

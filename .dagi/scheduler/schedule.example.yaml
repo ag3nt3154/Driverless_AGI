@@ -1,0 +1,34 @@
+# .dagi/scheduler/schedule.yaml — DAGI task scheduler configuration
+#
+# `interval` is a float in seconds (end-to-start gap between runs).
+#   86400.0  → daily  (24 h)
+#   604800.0 → weekly (7 days)
+#   21600.0  → every 6 hours
+#   1800.0   → every 30 minutes
+#   60.0     → every 1 minute (minimum)
+#
+# Minimum interval: 60 s (1 minute).
+# The scheduler is triggered by run_scheduler.bat. Run it frequently
+# (e.g. every hour via Windows Task Scheduler) — the due-check prevents
+# tasks from running more often than their configured interval.
+
+tasks:
+  - name: "daily-code-review"
+    prompt: >
+      Review the most recent git commits for code quality issues.
+      Check for TODO items that have been open more than 14 days.
+      Append any new findings to TODO.md under the appropriate section.
+    interval: 86400.0
+    project_path: "C:/Users/alexr/Driverless_AGI"
+    model: "claude-sonnet-openrouter"
+    timeout_minutes: 30
+    output_file: ".dagi/scheduler/output/daily-review.md"
+
+  - name: "dependency-check"
+    prompt: >
+      Check pyproject.toml and requirements.txt for outdated or vulnerable
+      dependencies. Search for recent CVEs affecting installed packages.
+      If any are found, add them to TODO.md under the CRITICAL section.
+    interval: 604800.0
+    project_path: "C:/Users/alexr/Driverless_AGI"
+    timeout_minutes: 20
