@@ -8,6 +8,10 @@ textual>=0.80.0             # TUI framework for the full-canvas terminal UI (tui
 langchain>=1.3.4            # Core LLM orchestration and agent framework
 langchain-openai>=1.2.2     # OpenAI provider for LangChain
 
+# ── Optional: Telegram bot ───────────────────────────────────────────────────
+# Install to enable the telegram_bot.py entry point.
+# python-telegram-bot>=21.0  # Async Telegram bot framework
+
 # ── Optional: web tools ───────────────────────────────────────────────────────
 # Install to enable the web_search and web_fetch tools.
 # dagi starts and runs without these; affected tools return a friendly error message.

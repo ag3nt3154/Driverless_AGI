@@ -2,6 +2,13 @@
 
 ## Completed
 
+- **Telegram bot interface** · `done` · `2026-06-28`
+  - New `tg/` package: `bot.py` (TelegramBot class, handlers), `callbacks.py` (AgentCallbacks wired to Telegram), `session.py` (per-chat state), `utils.py` (message chunking)
+  - Entry point: `telegram_bot.py` (thin typer launcher, mirrors `tui.py`)
+  - Async/sync bridge: `run_in_executor` (Harbor pattern) + `run_coroutine_threadsafe` (callback bridge)
+  - `load_telegram_config()` added to `agent/config_loader.py` (reads `telegram.bot_token_env` from config.yaml)
+  - Package named `tg/` (not `telegram/`) to avoid shadowing `python-telegram-bot`'s own `telegram` module
+
 - **Unified `_rebuild_system_prompt()` — eliminate 3-site divergence** · `done` · `2026-06-27`
   - Extracted `_assemble_system_string(dagi_root) -> str` in `agent/loop.py` — all 8 assembly steps in one method
   - Called from `__init__`, `_rebuild_for_normal_mode`, `_rebuild_for_plan_mode`; each site only handles `_messages` assignment and `compact_tool.bind()`

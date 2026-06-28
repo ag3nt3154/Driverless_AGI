@@ -37,6 +37,58 @@ tags: keyword1, keyword2, keyword3
 
 ## Protocol
 
+### Step 0.5 — Detect TODO intent
+
+Before classifying content, check whether the input expresses a **personal intention or plan**
+by the user. Detection signals (any match triggers the TODO flow):
+
+- Phrases: `I want to`, `I plan to`, `I need to`, `I'm going to`, `I will`, `I should`,
+  `I intend to`, `I'd like to`, `remind me to`, `I was thinking of`, `I'm planning`,
+  `TODO:`, `my goal is to`, `I am going to`
+- The input must be about the **user** doing something (first-person intent), not a request
+  for you to execute a task right now
+
+**If TODO intent detected → run the TODO append flow (skip Steps 1–6):**
+
+```
+a. Read wiki/user-todo.md
+b. Count existing [TODO-NNN] entries to determine next number (zero-pad to 3 digits)
+c. Infer from input:
+   - Task title (short imperative phrase, max ~8 words)
+   - Task description (expand on what the user said)
+   - Date due (extract explicit date/timeframe if mentioned; else —)
+   - Proposed method (any "by doing X" / "using Y" hints; else infer a sensible approach)
+   - Related nodes (grep wiki/ for key terms from the content; list up to 3 wikilinks, or —)
+d. Append new entry block to wiki/user-todo.md using this format:
+
+   ## [TODO-NNN] {Task Title}
+   - **Date Added**: YYYY-MM-DD
+   - **Date Due**: YYYY-MM-DD  *(or — if unset)*
+   - **Status**: `pending`
+   - **Task Description**: {full description}
+   - **Proposed Method**: {approach}
+   - **Related Nodes**: [[topic/slug]], …  *(or —)*
+
+e. Append to wiki/log.md:
+   [{YYYY-MM-DD}] add-todo | {task title} | wiki/user-todo.md#TODO-{NNN}
+f. Write handoff:
+
+   # Memory Add Result
+
+   **Filed:** TODO-{NNN} — {task title}
+   **Path:** wiki/user-todo.md
+   **Action:** appended
+
+   ## Files Modified
+
+   - wiki/user-todo.md — appended TODO-{NNN}
+   - wiki/log.md — appended entry
+```
+
+Status values: `pending` | `in-progress` | `completed` | `dropped`
+
+**If NOT detected → continue to Step 1 as normal.**
+
 ### Step 1 — Classify the content
 Read the task. Determine:
 - **Is it project-specific?** Look for a "Project: <name>" prefix.

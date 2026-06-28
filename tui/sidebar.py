@@ -12,6 +12,12 @@ from .utils import _system_breakdown
 _EMOTE_FALLBACK = "(◉ ᴗ ◉)"
 
 
+def _path_tail(path: Path | str, max_chars: int = 36) -> str:
+    """Return the rightmost portion of a path string, prefixed with … when truncated."""
+    s = str(path)
+    return s if len(s) <= max_chars else "…" + s[-(max_chars - 1):]
+
+
 class Sidebar(Widget):
     """Fixed-height top header: status/emote, token+context, plan — three columns."""
 
@@ -74,9 +80,9 @@ class Sidebar(Widget):
 
     def render(self):
         t = Table(expand=True, box=None, padding=(0, 1))
-        t.add_column(ratio=2)
-        t.add_column(ratio=4)
-        t.add_column(ratio=3)
+        t.add_column(ratio=1)
+        t.add_column(ratio=1)
+        t.add_column(ratio=1)
         t.add_row(self._status_col(), self._tokens_context_col(), self._plan_col())
         return t
 
@@ -87,26 +93,31 @@ class Sidebar(Widget):
         except OSError:
             return _EMOTE_FALLBACK
 
-    def _status_col(self) -> Table:
+    def _status_col(self) -> Group:
         face = self._load_face()
         if self._status == "running":
-            dot, label = "[bold green]●[/bold green]", "Running"
+            dot = "[bold green]●[/bold green]"
+            status_mu = "[bold green]running[/bold green]"
         elif self._status == "paused":
-            dot, label = "[bold yellow]⏸[/bold yellow]", "Paused"
+            dot = "[bold yellow]⏸[/bold yellow]"
+            status_mu = "[bold yellow]paused[/bold yellow]"
         else:
-            dot, label = "[dim]○[/dim]", "Idle"
-        t = Table.grid(padding=(0, 1))
-        t.add_column(style="dim", no_wrap=True)
-        t.add_column(no_wrap=True, overflow="ellipsis")
-        t.add_row(Text.from_markup(f"[#4da6ff]{face}[/#4da6ff]"), "")
-        t.add_row(Text.from_markup(f"{dot} {label}"), "")
-        t.add_row(Text.from_markup(f"[bold]{self._model_name}[/bold]"), "")
-        t.add_row("", "")
-        t.add_row("cwd", str(self._project_path))
-        t.add_row("app", str(self._dagi_root))
+            dot = "[dim]○[/dim]"
+            status_mu = "[dim]idle[/dim]"
+
+        info = Table.grid(padding=(0, 1))
+        info.add_column(style="dim", no_wrap=True)
+        info.add_column(no_wrap=True)
+        info.add_row(
+            Text.from_markup(f"{dot} {status_mu}"),
+            Text.from_markup(f"[bold]{self._model_name}[/bold]"),
+        )
+        info.add_row("cwd", _path_tail(self._project_path))
+        info.add_row("app", _path_tail(self._dagi_root))
         if self._memory_root is not None:
-            t.add_row("mem", str(self._memory_root))
-        return t
+            info.add_row("mem", _path_tail(self._memory_root))
+
+        return Group(Text.from_markup(f"[#4da6ff]{face}[/#4da6ff]"), info)
 
     def _tokens_context_col(self) -> Group:
         cost_str = f"${self._cost:.5f}" if self._cost is not None else "$—"

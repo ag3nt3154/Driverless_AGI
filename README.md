@@ -145,6 +145,39 @@ python cli.py -m claude-opus-openrouter -v "task"
 
 Exit with `q`, `exit`, or `quit`. Conversation history carries across turns.
 
+### Telegram Bot (`telegram_bot.py`)
+
+Chat with DAGI from your phone via Telegram. Requires a bot token from [@BotFather](https://t.me/BotFather).
+
+**Setup:**
+
+1. Message [@BotFather](https://t.me/BotFather) on Telegram → `/newbot` → follow the prompts → copy the token
+2. Add the token to your `.env` file:
+   ```env
+   TELEGRAM_BOT_TOKEN=123456:ABC-DEF...
+   ```
+3. Optionally add to `config.yaml`:
+   ```yaml
+   telegram:
+     bot_token_env: TELEGRAM_BOT_TOKEN
+   ```
+
+**Run:**
+```bash
+conda run -n dagi python telegram_bot.py
+conda run -n dagi python telegram_bot.py --model claude-sonnet-openrouter
+conda run -n dagi python telegram_bot.py --project /path/to/project
+```
+
+| Flag | Description |
+|------|-------------|
+| `--model` / `-m` | Model ID from `config.yaml` |
+| `--project` / `-p` | Project directory |
+
+**Telegram commands:** `/start`, `/clear`, `/help`
+
+Multi-turn conversations are supported — context carries across messages within a chat.
+
 > **Archived UIs:** `archive/app.py` (Streamlit) and `archive/nicegui_app/` (NiceGUI) are no longer maintained.
 
 ---

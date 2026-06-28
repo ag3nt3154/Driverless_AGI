@@ -1,7 +1,8 @@
 model_tier: default
 description: >-
-  Add or update knowledge in the memory wiki. Routes project-specific content to
-  wiki/projects/{name}/ and general knowledge to wiki/knowledge/{topic}/.
+  Add or update knowledge in the memory wiki. Detects user TODO intent (plans,
+  goals, intentions) and appends to wiki/user-todo.md. Routes project-specific
+  content to wiki/projects/{name}/ and general knowledge to wiki/knowledge/{topic}/.
 root: memory_root
 tools:
   - read

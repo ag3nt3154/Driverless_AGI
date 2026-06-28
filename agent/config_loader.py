@@ -61,6 +61,21 @@ def load_cli_config() -> CliConfig:
     )
 
 
+@dataclass
+class TelegramConfig:
+    """Telegram bot settings loaded from the `telegram:` key in config.yaml."""
+    bot_token: str = ""
+
+
+def load_telegram_config() -> TelegramConfig:
+    """Return Telegram settings from config.yaml, resolving bot token from env."""
+    raw = load_raw_config()
+    tg = raw.get("telegram", {}) or {}
+    token_env = tg.get("bot_token_env", "TELEGRAM_BOT_TOKEN")
+    token = os.environ.get(token_env, "")
+    return TelegramConfig(bot_token=token)
+
+
 def load_raw_config(config_path: Path | None = None) -> dict:
     """Return the full parsed config dict, or {} if the file is absent.
 
