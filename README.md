@@ -510,7 +510,7 @@ Driverless_AGI/
 | `web_search` | DuckDuckGo web search. Returns titles, URLs, and snippets |
 | `web_fetch` | Fetch and parse a URL. Returns cleaned page text |
 | `web_research` | Multi-page research task: searches, fetches, and synthesizes results. Runs as a pipe subagent; output streams to the main TUI with a `[web_research]` label |
-| `explore_files` | Large-scale codebase scan: reads many files and returns a structured summary. Runs as a pipe subagent; output streams to the main TUI with an `[explore_files]` label |
+| `explore_files` | Large-scale codebase scan: explores with broad-to-narrow strategy (glob/grep first, targeted reads second) and returns a citation-first handoff (`path:line_start-line_end` entries). Runs as a pipe subagent; output streams to the main TUI with an `[explore_files]` label |
 | `extend_subagent_timeout` | Extend the deadline of an in-flight subagent by PID. Called by the agent when `spawn_*` returns a timeout dict |
 | `compact` | Manually trigger Pi-style context compaction |
 | `switch_model` | Swap to a different model (from `config.yaml`) mid-session |
