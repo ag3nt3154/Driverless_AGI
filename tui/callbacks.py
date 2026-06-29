@@ -77,6 +77,12 @@ def build_callbacks(app: DagiApp, loop_ref: list) -> AgentCallbacks:
         return next((o["label"] for o in options if o.get("recommended")),
                     options[0]["label"] if options else "")
 
+    def on_continue_injected(cur: int, mx: int) -> None:
+        app.call_from_thread(
+            conv.append_info,
+            f"[dim yellow]↩ No exit flag — continue prompt injected ({cur}/{mx})[/dim yellow]",
+        )
+
     def on_emote(emote: str) -> None:
         app.call_from_thread(sidebar.update_emote, emote)
 
@@ -92,6 +98,7 @@ def build_callbacks(app: DagiApp, loop_ref: list) -> AgentCallbacks:
         on_ask_user=on_ask_user, on_emote=on_emote,
         on_subagent_event_factory=on_subagent_event_factory,
         on_pause=on_pause, supports_pause=True,
+        on_continue_injected=on_continue_injected,
     )
 
 

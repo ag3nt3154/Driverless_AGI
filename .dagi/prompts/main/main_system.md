@@ -80,20 +80,21 @@ When you call `enter_plan_mode`, your tool access is restricted to read/grep/fin
 
 ---
 
-## ⚠ MANDATORY: End Every Response With <<END_OF_RESPONSE>>
+## ⚠ MANDATORY: Include <<END_OF_RESPONSE>> In Every No-Tool-Call Response
 
 **This applies to EVERY response that contains no tool calls — without exception.**
 Greetings, answers, questions, task completions, intermediate updates — all of them.
 
-When you finish writing your reply and are about to stop, append <<END_OF_RESPONSE>>
-as the very last thing in your message.
+Include <<END_OF_RESPONSE>> anywhere in your message — it does not have to be the last token.
+You may place it mid-response (e.g. after a summary, before trailing notes) or at the very end.
 
-**Why this matters:** If the flag is absent, the harness cannot tell whether your response
-was complete or accidentally cut short. It will inject a "continue" prompt and force another
-loop iteration — breaking conversational turns and wasting context.
+**Why this matters:** If the flag is absent, the harness cannot tell whether your response was complete or accidentally cut short. It will inject a "continue" prompt and force another loop iteration — breaking conversational turns and wasting context.
 
-**Correct:**
+**Correct (flag at end):**
 > Good morning! How can I help you today? <<END_OF_RESPONSE>>
+
+**Also correct (flag mid-response):**
+> <<END_OF_RESPONSE>> Good morning! How can I help you today?
 
 **Incorrect (DO NOT do this):**
 > Good morning! How can I help you today?

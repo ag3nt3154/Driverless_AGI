@@ -197,6 +197,9 @@ class AgentCallbacks:
     # CLI and subagents leave it False so existing raise behaviour is fully preserved.
     on_pause:       Callable[[], None] = field(default=lambda: None)
     supports_pause: bool               = False
+    # Fired when the harness injects a "continue" prompt because the response had no exit flag.
+    # Args: (current_count, max_continuations)
+    on_continue_injected: Callable[[int, int], None] = field(default=lambda cur, mx: None)
 
 
 def _extract_reasoning(message) -> str:
@@ -506,6 +509,9 @@ class AgentLoop:
                         return result
                     self._continuation_count += 1
                     self._messages.append({"role": "user", "content": CONTINUE_PROMPT})
+                    self.callbacks.on_continue_injected(
+                        self._continuation_count, self.config.max_continuations
+                    )
                     continue  # next while True iteration
 
                 # Interleave: each tool call is immediately followed by its result.
