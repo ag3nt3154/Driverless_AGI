@@ -44,6 +44,9 @@ context_window: 128000      # Model's hard token limit (prompt + response combin
 reserve_tokens: 16384        # Tokens held back for the assistant's next reply and the
                              # compaction summary itself. Compaction fires when
                              # prompt_tokens > context_window - reserve_tokens.
+                             # Also used as the output-filter threshold: tool results
+                             # >= reserve_tokens tokens are truncated to reserve_tokens/2
+                             # tokens in context; full output is saved to .dagi/temp/.
 keep_recent_tokens: 20000    # Minimum number of recent message tokens preserved verbatim
                              # (tail of the conversation) during compaction.
 
