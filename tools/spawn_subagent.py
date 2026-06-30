@@ -118,7 +118,7 @@ class SpawnSubagentTool(BaseTool):
         config: "AgentConfig",
         on_event_factory: Callable[[str], Callable[[str], None]] | None = None,
         tracker: "SessionTracker | None" = None,
-        timeout: float = 300.0,
+        timeout: float = 1800.0,
     ) -> None:
         self.name = f"spawn_{type_name}_subagent"
         self.description = description

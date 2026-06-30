@@ -93,7 +93,7 @@ def run_subagent(
     task: str,
     project_path: Path,
     handoff_path: Path,
-    timeout: float = 300.0,
+    timeout: float = 1800.0,
     on_event: Callable[[str], None] | None = None,
     extra_argv: list[str] | None = None,
 ) -> dict:
