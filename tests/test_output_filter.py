@@ -123,3 +123,76 @@ class TestErrorHandling:
         ctx, full = filter_tool_output(large, reserve_tokens=0, temp_dir=tmp_path)
         assert ctx == large
         assert list(tmp_path.iterdir()) == []
+
+
+class TestLoopIntegration:
+    """
+    Verify that AgentLoop feeds context_result (not full_str) into _messages
+    and full_str (not context_result) into tracker.record_tool_end.
+    """
+
+    def test_large_result_filtered_in_messages(self, tmp_path):
+        from unittest.mock import MagicMock, patch
+        from agent.loop import AgentLoop, AgentConfig, AWAIT_USER_FLAG
+
+        cfg = AgentConfig(
+            model="gpt-4o", base_url="http://localhost",
+            api_key="test", reserve_tokens=100, project_path=tmp_path,
+        )
+        with patch("agent.loop.openai.OpenAI"):
+            loop = AgentLoop(cfg)
+
+        large_output = "z" * 500   # 500 chars = 125 tokens > reserve_tokens=100
+
+        loop.registry = MagicMock()
+        loop.registry.dispatch.return_value = large_output
+        loop.registry._tools = {}
+        loop.registry.get_openai_tools_list.return_value = []
+
+        # Build a minimal fake tool-call response
+        tc = MagicMock()
+        tc.id = "call_1"
+        tc.function.name = "bash"
+        tc.function.arguments = "{}"
+
+        message = MagicMock()
+        message.tool_calls = [tc]
+        message.content = None
+
+        usage = MagicMock()
+        usage.prompt_tokens = 10
+        usage.completion_tokens = 5
+        usage.cost = None
+        usage.completion_tokens_details = MagicMock(reasoning_tokens=0)
+
+        tool_response = MagicMock()
+        tool_response.choices = [MagicMock(message=message, finish_reason="tool_calls")]
+        tool_response.usage = usage
+
+        # Second response ends the loop cleanly
+        end_msg = MagicMock()
+        end_msg.tool_calls = None
+        end_msg.content = AWAIT_USER_FLAG
+        end_response = MagicMock()
+        end_response.choices = [MagicMock(message=end_msg, finish_reason="stop")]
+        end_response.usage = usage
+
+        loop.tracker = MagicMock()
+        loop.callbacks = MagicMock()
+        loop.client = MagicMock()
+        loop.client.chat.completions.create.side_effect = [tool_response, end_response]
+
+        loop.run("test task")
+
+        # _messages must contain the filtered (truncated) content, not the raw output
+        tool_messages = [m for m in loop._messages if m.get("role") == "tool"]
+        assert len(tool_messages) == 1
+        content = tool_messages[0]["content"]
+        assert isinstance(content, str)
+        assert "OUTPUT TRUNCATED" in content
+        assert large_output not in content  # not the full 500-char string
+
+        # Tracker must have received the FULL string
+        loop.tracker.record_tool_end.assert_called_once()
+        _name_arg, full_arg = loop.tracker.record_tool_end.call_args[0]
+        assert full_arg == large_output

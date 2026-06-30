@@ -19,6 +19,7 @@ from tools.compact import CompactTool, CompactionResult, _NO_COMPACTION
 from tools.complete_plan import COMPLETE_PLAN_SENTINEL
 from tools.plan_mode import ENTER_PLAN_MODE_SENTINEL, EXIT_PLAN_MODE_SENTINEL
 from tools.reload_skills import RELOAD_SKILLS_SENTINEL
+from tools.output_filter import filter_tool_output
 from tools.switch_model import parse_switch_sentinel
 
 TASK_END_FLAG = "<<TASK_END>>"           # legacy alias — still recognised
@@ -553,18 +554,33 @@ class AgentLoop:
                         _switch_target = parse_switch_sentinel(result)
                         if _switch_target is not None:
                             result = self._handle_switch_model(_switch_target, args)
-                    result_str = result if isinstance(result, str) else "__list__:" + json.dumps(result)
-                    self.callbacks.on_tool_end(tc.function.name, result_str)
-                    self.tracker.record_tool_end(tc.function.name, result_str)
+                    # ── Output filter ────────────────────────────────────────
+                    _filter_temp = DAGI_ROOT / ".dagi" / "temp"
+                    context_result, full_str = filter_tool_output(
+                        result, self.config.reserve_tokens, _filter_temp
+                    )
+                    if context_result is not result:
+                        # Filtering fired — warn the user via the assistant text stream
+                        self.callbacks.on_assistant_text(
+                            f"[output filter] Tool result was large and has been truncated. "
+                            f"Full output saved to {_filter_temp}."
+                        )
+                    # ─────────────────────────────────────────────────────────
+                    result_str = (
+                        context_result if isinstance(context_result, str)
+                        else "__list__:" + json.dumps(context_result)
+                    )
+                    self.callbacks.on_tool_end(tc.function.name, result_str)   # filtered
+                    self.tracker.record_tool_end(tc.function.name, full_str)    # full (JSONL)
 
                     tool_records.append(ToolCallRecord(
                         name=tc.function.name,
                         description=description,
                         input=tc.function.arguments,
-                        result=result_str,
+                        result=full_str,                                        # full (JSONL)
                     ))
                     self._messages.append(
-                        {"role": "tool", "tool_call_id": tc.id, "content": result}
+                        {"role": "tool", "tool_call_id": tc.id, "content": context_result}
                     )
 
                 self.tracker.record_assistant(message.content, response.usage, tool_records)
