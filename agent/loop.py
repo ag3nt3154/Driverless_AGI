@@ -284,7 +284,7 @@ class AgentLoop:
             )
 
         self.config = config
-        self._filter_temp = DAGI_ROOT / ".dagi" / "temp"
+        self._filter_temp = Path(config.project_path) / ".dagi" / "temp"
         # ── Build system prompt ───────────────────────────────────────────
         system = self._assemble_system_string(dagi_root)
         self.system_parts: list[dict]  # populated by _assemble_system_string
