@@ -4,7 +4,7 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 import pytest
 
 from tools.output_filter import filter_tool_output
@@ -31,11 +31,18 @@ class TestPassThrough:
         assert ctx == result          # original list, not serialised
         assert full == "__list__:" + json.dumps(result)
 
-    def test_exactly_at_threshold_passes_through(self, tmp_path):
-        # _RESERVE tokens = _RESERVE * 4 chars — boundary is <, so equal passes
+    def test_one_below_threshold_passes_through(self, tmp_path):
+        # threshold is strict <, so _RESERVE - 1 tokens passes through
         result = "x" * (_RESERVE * 4 - 1)
         ctx, full = filter_tool_output(result, _RESERVE, tmp_path)
         assert ctx == result
+
+    def test_at_threshold_is_filtered(self, tmp_path):
+        # exactly _RESERVE tokens (>= threshold) fires the filter
+        result = "x" * (_RESERVE * 4)
+        ctx, _ = filter_tool_output(result, _RESERVE, tmp_path)
+        assert isinstance(ctx, str)
+        assert "OUTPUT TRUNCATED" in ctx
 
 
 class TestFiltering:

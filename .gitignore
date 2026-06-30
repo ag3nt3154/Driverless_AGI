@@ -193,3 +193,4 @@ dagi-memory/*
 snapshots/
 benchmarks/jobs/*
 jobs/*
+.dagi/temp/
