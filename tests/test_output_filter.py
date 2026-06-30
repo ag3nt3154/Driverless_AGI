@@ -196,3 +196,13 @@ class TestLoopIntegration:
         loop.tracker.record_tool_end.assert_called_once()
         _name_arg, full_arg = loop.tracker.record_tool_end.call_args[0]
         assert full_arg == large_output
+
+        # The warning callback must have fired at least once with the truncation notice
+        warning_calls = [
+            str(call_args)
+            for call_args in loop.callbacks.on_assistant_text.call_args_list
+        ]
+        assert any("[output filter]" in c for c in warning_calls), (
+            "Expected on_assistant_text to be called with '[output filter]' warning "
+            f"but calls were: {warning_calls}"
+        )

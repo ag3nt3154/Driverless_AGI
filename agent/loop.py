@@ -284,6 +284,7 @@ class AgentLoop:
             )
 
         self.config = config
+        self._filter_temp = DAGI_ROOT / ".dagi" / "temp"
         # ── Build system prompt ───────────────────────────────────────────
         system = self._assemble_system_string(dagi_root)
         self.system_parts: list[dict]  # populated by _assemble_system_string
@@ -546,6 +547,9 @@ class AgentLoop:
                         result = self._handle_exit_plan_mode(args)
                     elif result == COMPLETE_PLAN_SENTINEL:
                         result = self._handle_complete_plan()
+                    # NOTE: RELOAD_SKILLS_SENTINEL appends a system message here and
+                    # then falls through to the tool-message append below — intentional
+                    # double-append (pre-existing behaviour, not introduced by this PR).
                     elif result == RELOAD_SKILLS_SENTINEL:
                         added, removed, errors = self._rebuild_for_reload()
                         result = _format_reload_notification(len(self.skills), added, removed, errors)
@@ -555,15 +559,14 @@ class AgentLoop:
                         if _switch_target is not None:
                             result = self._handle_switch_model(_switch_target, args)
                     # ── Output filter ────────────────────────────────────────
-                    _filter_temp = DAGI_ROOT / ".dagi" / "temp"
                     context_result, full_str = filter_tool_output(
-                        result, self.config.reserve_tokens, _filter_temp
+                        result, self.config.reserve_tokens, self._filter_temp
                     )
                     if context_result is not result:
                         # Filtering fired — warn the user via the assistant text stream
                         self.callbacks.on_assistant_text(
                             f"[output filter] Tool result was large and has been truncated. "
-                            f"Full output saved to {_filter_temp}."
+                            f"Full output saved to {self._filter_temp}."
                         )
                     # ─────────────────────────────────────────────────────────
                     result_str = (
