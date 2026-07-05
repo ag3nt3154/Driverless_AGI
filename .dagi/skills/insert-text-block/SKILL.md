@@ -19,6 +19,36 @@ This skill handles all three. The critical constraint is that every edit must le
 
 ---
 
+## Reference Block Mandate
+
+> **The user has already read both the original text and the reference block. The presence of a reference block is an explicit instruction: use this version, not the original.**
+
+This is non-negotiable and applies regardless of:
+- Whether the original text appears to say the same thing
+- Whether the original text is more polished, cleaner, or shorter
+- Whether the reference block was previously derived from the original
+- Whether the differences between them seem minor
+
+**The reference block is the base. The neighbouring document text adapts to it — not the other way around.**
+
+When a REFERENCE_BLOCK is encountered, the workflow is:
+1. Treat the reference block content as the starting point for the final passage
+2. Edit the reference block as needed — wording, structure, and depth may all change — so that it fits the document well
+3. Rewrite neighbouring sentences so the adapted reference block fits naturally into them
+4. The original overlapping text is removed entirely — it has no authority over the final result
+
+**Rationalizations to reject outright:**
+
+| Rationalization | Why it is wrong |
+|---|---|
+| "The original already says this, so I'll keep it" | The user chose the reference block over the original. Keep the reference. |
+| "They're nearly identical — I'll use the original phrasing" | Even near-identical text has different word choices and emphasis. The reference version is the one the user wants. |
+| "I'll blend the best parts of both" | Blending is not what was asked. The reference block is the base; the original is discarded. |
+| "The original is clearer / better written" | Irrelevant. The user has made the decision. Implement it. |
+| "The reference block was probably derived from the original anyway" | Irrelevant. The current bracketed version is the user's preferred state. |
+
+---
+
 ## Phase 1: Scan and Classify
 
 Read the entire document. Extract every `[...]` occurrence and classify it.
@@ -64,12 +94,20 @@ For every marker, draft the proposed resolution. Consider the following for each
 
 ### For Reference Blocks
 
-The bracketed content is treated as the authoritative version. The existing overlapping text is the version to be replaced.
+See the **Reference Block Mandate** above. The reference block is the base. Start from it. Do not start from the original text and patch in elements of the reference.
 
-1. **Identify the displaced passage** — the specific sentence(s) or paragraph in the document that cover the same ground as the reference block. This is what will be removed.
-2. **Adapt the reference block to the document** — edit it for tonal register, tense, POV, and stylistic consistency with the rest of the document. Do not change the substance of the reference material; only surface-level style should change.
-3. **Draft the replacement** — show the adapted reference block as it will appear in place of the displaced passage, with any join edits to neighbouring text.
-4. **Scope the displacement carefully** — only remove the text that genuinely overlaps. If the existing passage contains details not present in the reference block, flag this in the plan for the user to decide whether to retain them.
+**Step-by-step:**
+
+1. **Write the reference block text down as your working draft.** Do not look at the original text while doing this step.
+2. **Edit the reference block freely** — wording, sentence structure, depth, and phrasing may all be changed to make the passage fit the document well. The reference block is the *starting point*, not a verbatim constraint. What must not happen is discarding the reference block's content or intent in favour of the original text.
+3. **Identify the displaced passage** — the sentence(s) or paragraph that cover the same ground. Mark it for full removal.
+4. **Adapt the neighbouring sentences** — edit the sentence immediately before and the sentence immediately after the reference block so they connect smoothly to it. The neighbours change to accommodate the reference block; the reference block does not change to accommodate the neighbours.
+5. **Flag displaced-only details** — if the original passage contains a specific fact, name, or detail that the reference block does not mention, flag it in the plan. Do not silently absorb it into the reference block draft; let the user decide.
+
+**What the plan draft must show:**
+- The reference block text as it will appear (post surface edits), clearly identified as coming from the reference block
+- The original text it replaces, shown separately and struck from the plan
+- Any edits to neighbouring sentences, shown explicitly
 
 ### For Editorial Comments
 
@@ -111,6 +149,8 @@ End the plan with a summary count: `N text blocks, R reference blocks (replaceme
 
 **Wait for the user to confirm** before proceeding to Phase 4. If the user adjusts a proposed edit, update that entry and re-confirm.
 
+> **Hard gate: do not touch the document until the user explicitly approves the plan.** Phrases like "looks good," "yes," "proceed," or "go ahead" count as approval. Silence, a question, or a correction do not. If uncertain whether the user has approved, ask — do not assume and begin.
+
 ---
 
 ## Phase 4: Implement
@@ -148,8 +188,12 @@ Neighbouring edits: <brief summary of any significant surrounding text changes>
 | Mistake | Fix |
 |---|---|
 | Inserting a text block verbatim without adjusting surrounding connective tissue | Always check the join — edit the sentence before or after as needed |
-| Treating a reference block as a plain insertion, leaving the overlapping original text in place | When a text block covers the same ground as nearby text, classify as REFERENCE_BLOCK and replace the overlapping passage rather than appending |
-| Over-displacing — removing existing text that contains details not in the reference block | Scope the displaced passage precisely; flag any details present in the document but absent from the reference block for the user to decide |
+| Treating a reference block as a plain insertion, leaving the overlapping original text in place | Classify as REFERENCE_BLOCK and replace the overlapping passage — do not append alongside it |
+| Drafting from the original and patching in reference block phrasing | Draft from the reference block verbatim first; edit neighbours to fit it — never the reverse |
+| Keeping the original because it is "cleaner" or "already says the same thing" | See the Reference Block Mandate. The user has chosen the reference. Implement it. |
+| Blending the original and reference into a composite | Not asked for. The reference block is the base; the original is discarded. |
+| Silently absorbing displaced-only details into the reference block draft | Flag them explicitly in the plan; let the user decide whether to retain them |
+| Implementing edits before explicit user approval | The plan must be confirmed before any file is touched. Ambiguous responses require clarification, not assumption |
 | Treating all `[...]` as editorial when some are prose | Apply the classification rules; when uncertain, read it in context |
 | Implementing before presenting the plan | Phase 3 (plan) is mandatory — always present first |
 | Missing a nested or adjacent marker | Scan with a regex pass (`\[.+?\]`) to ensure nothing is skipped |
