@@ -31,10 +31,17 @@ class EditTool(BaseTool):
             p = self.cwd / p
         p = validate_path(p, self.allowed_roots)
         content = p.read_text(encoding="utf-8")
-        count = content.count(oldText)
+        # read_text() uses universal newlines (CRLF/CR → LF).  Normalise
+        # oldText/newText the same way so that LLM-generated CRLF (e.g. copied
+        # from bash/grep output on Windows) doesn't silently fail to match.
+        old_norm = oldText.replace("\r\n", "\n").replace("\r", "\n")
+        new_norm = newText.replace("\r\n", "\n").replace("\r", "\n")
+        count = content.count(old_norm)
         if count == 0:
             return f"Error: oldText not found in {p}"
         if count > 1:
             return f"Error: oldText found {count} times in {p} — must be unique"
-        p.write_text(content.replace(oldText, newText, 1), encoding="utf-8")
+        # newline="\n" prevents Windows text-mode from converting \n → \r\n,
+        # which would double any \r already present and corrupt the file.
+        p.write_text(content.replace(old_norm, new_norm, 1), encoding="utf-8", newline="\n")
         return f"Edited {p}"

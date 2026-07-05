@@ -1,447 +1,311 @@
 ---
 name: review-session
-description: Deep-read session logs, analyse tasks/actions/errors/corrections, self-evaluate performance, and write review reports to .dagi/self-review/. Accepts a session ID, time filters, count, or no args (last 5 unreviewed above min length).
-triggers: review session, review this session, session review, analyse session, analyze session, review the session, review last session, review unreviewed sessions, review recent sessions, review sessions from last hour
+description: Deep-read DAGI session logs described in free text (a folder, explicit files, a time window, "last N", etc.), analyse tasks/actions/errors/corrections across all of them, and accumulate findings into one running markdown report. Cross-session shortcomings and improvement items are synthesised once at the end.
+triggers: review session, review these sessions, review sessions in, session review, analyse session, analyze session, review the session, review last session, review recent sessions, review sessions from last hour, review today's sessions
 ---
 
-# review-session — Session Deep Review
+# review-session — Cross-Session Deep Review
 
 ## Purpose
 
-Read DAGI session log(s) in full, understand what happened, evaluate
-the agent's performance, and produce structured markdown self-review reports.
+Read one or more DAGI session log(s) in full, understand what happened in each, and
+accumulate findings into a **single running report** so that patterns which recur across
+sessions become visible as one insight instead of being written up separately per session.
 
-Unlike `self-improve` (which skims 5 sessions for patterns), this skill reads
-sessions completely and produces thorough, per-session documents.
-
-**Output:** `{DAGI_ROOT}/.dagi/self-review/review_{session-id}.md` per session
+**Output:** one file per invocation —
+`{DAGI_ROOT}/.dagi/self-review/review_{run-datetime}.md`
 
 **Determine DAGI_ROOT** from this file's own path:
 this file is at `{DAGI_ROOT}/.dagi/skills/review-session/SKILL.md`,
 so DAGI_ROOT is three levels up.
 
-The chunking script lives alongside this file:
+The helper scripts live alongside this file:
+`{DAGI_ROOT}/.dagi/skills/review-session/parse_jsonl_logs.py`
 `{DAGI_ROOT}/.dagi/skills/review-session/chunk_session.py`
 
----
+`run-datetime` is fixed once, at the start of the invocation (format `YYYY-MM-DD_HH-MM-SS`),
+and used for both the report filename and the plan filename. It is **not** a session ID.
 
-## Parameters
-
-The user may provide any combination of these. All are optional.
-
-| Parameter form | Example | Effect |
-|---|---|---|
-| Session ID | `2026-04-23_14-59-47` | Review exactly that session; skip all discovery |
-| `latest` | `review session latest` | Review the single most recent session |
-| Time filter | `last hour`, `last 2 hours`, `today`, `since 3pm`, `since yesterday` | Restrict to sessions started within the window |
-| Count | `last 3` | Review at most N sessions (default: 5) |
-| Min length | `above 50 nodes` | Override the minimum node count (default: 20) |
-| `unreviewed` | `unreviewed` (implied when no ID given) | Exclude sessions that already have a review file |
-| `re-review` | `re-review` | Include sessions that already have a review file |
-| Combinations | `last 3 unreviewed above 30 nodes last hour` | All filters apply together |
+This skill does not write to `TODO.md`. It only produces the review report — turning
+findings into work-queue items is a separate, manual decision.
 
 ---
 
-## Step 1 — Parse user parameters and build session list
+## Step 1 — Resolve the session list from free text
 
-### 1a — Session ID provided
-If the user gave a specific session ID (format `YYYY-MM-DD_HH-MM-SS`) or said "latest":
-- For an explicit ID: `path = {DAGI_ROOT}/.dagi/logs/session_{id}.jsonl`
-- For "latest": run `chunk_session.py --latest {DAGI_ROOT}/.dagi/logs`
+There is no fixed parameter grammar. The user describes what to review in plain language;
+interpret it using judgment plus the discovery tools below. Do not force the user into a
+specific syntax.
 
-Set `session_list = [path]`. Skip to Step 1f (meaningfulness check optional for single sessions).
+**Discovery tools:**
+- `find` — for an explicit folder, explicit file list, or glob the user names directly
+  (e.g. "review the sessions in G:\logs\batch3", "review session_2026-07-01_09-00-00.jsonl
+  and session_2026-07-01_10-15-00.jsonl")
+- `conda run -n dagi python {SKILL_DIR}/chunk_session.py --list {logs_dir}` — for anything
+  implying recency, a date, or "the usual logs directory" (`{DAGI_ROOT}/.dagi/logs` unless
+  the user names another folder). Returns metadata (`path`, `started_at`, `model`,
+  `node_count`) sorted newest-first — filter and reorder as needed.
+- `datetime_now()` (if available) — to resolve relative time phrases ("today", "since
+  yesterday 3pm", "last 2 hours"). If unavailable, fall back to the most recent session's
+  `started_at` as a proxy for "now" and note the limitation.
 
-### 1b — No session ID: get current time if needed
-If the user gave a time filter (`last hour`, `today`, `since 3pm`, etc.), call:
+**Worked examples:**
+
+| User says | Resolution |
+|---|---|
+| "review sessions in G:\some\folder" | `find` that folder for `*.jsonl`, sort by filename ascending |
+| "review session_A.jsonl and session_B.jsonl" | Use exactly those two paths, in the order given (or chronological if order isn't meaningful) |
+| "review the last 3 sessions" | `chunk_session.py --list`, take the first 3 (newest-first), then reverse to chronological order |
+| "review today's sessions" | `datetime_now()` → local midnight cutoff → `chunk_session.py --list`, keep entries with `started_at >= cutoff` |
+| "review sessions since yesterday 3pm" | Same pattern, cutoff = yesterday 15:00 local |
+| no description given | See **default** below |
+
+**Default (no description given):**
+Look for the most recent `review_*.md` file already in `{DAGI_ROOT}/.dagi/self-review/`.
+Parse its `run-datetime` from the filename and treat it as a cursor: review sessions with
+`started_at` after that cursor. If no prior report file exists, default to the 5 most recent
+sessions in `{DAGI_ROOT}/.dagi/logs`.
+
+**Ordering:** chronological oldest → newest by default, so the report reads as a narrative
+over time. Only reverse this if the user's phrasing explicitly implies newest-first.
+
+**Empty result:** if the resolved list is empty, report why and stop — do not create a
+report file:
+> "No sessions found matching '{description}'. {brief reason}."
+
+---
+
+## Step 2 — Initialize the report file
+
+Create `{DAGI_ROOT}/.dagi/self-review/review_{run-datetime}.md` (create the
+`.dagi/self-review/` directory first if it doesn't exist) with this skeleton:
+
+```markdown
+# Session Review — {run-datetime}
+
+## Run Info
+- Sessions requested: "{verbatim user description, or "(default — since last review)"}"
+- Interpreted as: {N} session file(s) — {one-line resolution explanation}
+- Sessions reviewed: (pending)
+- Sessions skipped: (pending)
+
+## Sessions Reviewed
+| Session ID | Model | Started | Tokens (in/out) | Tool calls | Errors | Corrections |
+|---|---|---|---|---|---|---|
+
+## Sessions Skipped
+
+## Tasks
+
+## Agent Actions
+
+## Errors & Problems
+
+## User Corrections
+
+## User Feedback
 ```
-datetime_now()
-```
-Parse the returned `utc` and `local` fields to compute the cutoff timestamp.
 
-Time filter parsing:
-- `last N hours` / `last hour` → cutoff = now − N hours
-- `today` → cutoff = start of today (local midnight)
-- `since HH:MM` → cutoff = today at HH:MM local time
-- `since yesterday` → cutoff = start of yesterday local time
-- `last N minutes` → cutoff = now − N minutes
+The "Sessions reviewed"/"Sessions skipped" counts and the closing sections
+(`## Cross-Session Analysis`, `## Suggested Improvements`, `## Plan File`) are filled in
+later — see Steps 4 and 5.
 
-### 1c — List all sessions
-```
-conda run -n dagi python {SKILL_DIR}/chunk_session.py --list {DAGI_ROOT}/.dagi/logs
-```
-Returns a JSON array sorted newest-first. Each entry has `path`, `node_count`,
-`started_at`, `model`, etc.
+---
 
-### 1d — Apply filters
-Work through the list and apply all active filters:
+## Step 3 — Process each session in order
 
-1. **Min length**: keep sessions with `node_count >= min_length` (default 20; user-overridable)
-2. **Time filter**: if a cutoff was computed in 1b, keep sessions where `started_at >= cutoff`
-   (both are ISO 8601 strings — compare lexicographically or parse to datetime)
-3. **Unreviewed**: unless the user said `re-review`, exclude sessions where
-   `{DAGI_ROOT}/.dagi/self-review/review_{session-id}.md` already exists
-   (derive session ID: strip `session_` prefix and `.jsonl` suffix from filename)
-4. **Count**: take the first N entries after filtering (default 5; user-overridable)
+For every session path in the resolved list, do all of the following before moving to the
+next session.
 
-### 1e — No candidates
-If the filtered list is empty, report and stop:
-> "No sessions found matching the given filters. {brief reason — e.g. 'All recent sessions are already reviewed.' or 'No sessions above 20 nodes in the last hour.'}"
+### 3a — Meaningfulness check
 
-### 1f — Meaningfulness check
-For each candidate, quickly decide if it is worth a full review.
-Read only the first 10 records of the raw JSONL file (use the `read` tool with a line limit).
+Read only the first 10 records of the raw JSONL file (use the `read` tool with a line
+limit).
 
-**Drop the session** (skip; note the reason) if ALL of the following are true:
+**Skip the session** (go to 3f below, do not analyse further) if ALL of the following are
+true:
 - `node_count` < 5, OR
 - The only user message is a single word or test phrase ("test", "hello", "hi", "ok"), OR
 - There are no tool calls and no assistant content (empty exchange)
 
-**Always keep** sessions that have errors, user corrections, or meaningful tool activity —
-even if they look short, those are the most valuable to review.
+**Always analyse** sessions that have errors, user corrections, or meaningful tool activity
+— even if short, those are the most valuable to review.
 
-Skipped sessions are noted in the final summary:
-> "Skipping `{session-id}` — trivially short ({N} nodes, no task)."
+### 3b — Simplify and decide reading strategy
 
-### 1g — Dispatch
-- `session_list` has **one entry** → proceed to Steps 2–6 directly; omit the batch summary
-- `session_list` has **multiple entries** → loop Steps 2–6 for each, then print the batch summary below
-
-**Batch summary format** (after all reviews are written):
-```
-## Batch Review Complete — {date}
-
-Candidates found: {N} | Dropped (unmeaningful): {N} | Reviewed: {N}
-
-Reports written:
-- review_{id}.md — {one-sentence task summary}
-- review_{id}.md — {one-sentence task summary}
-
-Skipped (unmeaningful):
-- {id} — {reason}
-
-Already reviewed (excluded):
-- {id}
-```
-
-The **session ID** is derived from the filename:
-`session_2026-04-23_14-59-47.jsonl` → ID is `2026-04-23_14-59-47`.
-
----
-
-## Step 2 — Simplify the log and decide reading strategy
-
-First, get the session metadata (model, tokens, cost) and check whether the
-simplified log fits in context:
-
+Get metadata for the report table:
 ```
 conda run -n dagi python {SKILL_DIR}/chunk_session.py <path> --info
 ```
-Save the returned metadata for the report header.
 
-Then run the log simplifier in stats-only mode:
+Run the simplifier in stats-only mode to decide the reading strategy:
 ```
 conda run -n dagi python {SKILL_DIR}/parse_jsonl_logs.py <path> --stats
 ```
 
-This returns a JSON object with:
-- `original_nodes` — raw line count in the file
-- `simplified_nodes` — record count after merging tool pairs and stripping noise
-- `estimated_chars` — total character length of the simplified output
-- `fits_in_context` — true if `estimated_chars` < 60,000 chars (≈15k tokens)
+- If `fits_in_context` is **true** → generate the simplified log
+  (`parse_jsonl_logs.py <path> --output /tmp/dagi_simplified.jsonl`) and read it directly
+  in one pass.
+- If `fits_in_context` is **false** → generate the simplified log the same way, then chunk
+  it: `conda run -n dagi python {SKILL_DIR}/chunk_session.py /tmp/dagi_simplified.jsonl`
+  (default `--chunk-size 60 --overlap 10`). Process chunks in order; for chunks with
+  `is_overlap_start: true`, read the leading `overlap_node_count` records for context only
+  — do not re-extract findings from them, they were already processed in the previous chunk.
 
-**Reading strategy:**
-- If `fits_in_context` is **true** → **single pass** (Step 3a): generate the
-  simplified log and read it directly
-- If `fits_in_context` is **false** → **chunked reading** (Step 3b): save the
-  simplified log to a temp file and chunk it
+### 3c — Extract findings
+
+Apply these criteria to the records read in 3b (all of them for single-pass, only the new
+records per chunk for windowed reading):
+
+**Tasks** — `"type": "message"`, `"entity": "user"` records. The first user message is
+usually the primary task; later user messages may introduce sub-tasks. Record each as a
+short one-sentence description.
+
+**Agent actions** — `"type": "tool_call"` records (tool name + brief summary of what was
+invoked), significant decisions/explanations in assistant `content`, and
+`subagent_start`/`subagent_end` records (note type + task).
+
+**Errors & problems** — `"type": "tool_call"` records with `"error": true`; the same tool
+name with near-identical input appearing 3+ times in a row (retry loop); assistant messages
+stating something can't be done.
+
+**User corrections** — mid-session (not first) user messages containing "no", "wrong",
+"not right", "not what I", "redo", "try again", "start over", "actually", "wait",
+"instead", or a rephrased repeat of an earlier instruction. Quote the relevant portion
+verbatim.
+
+**User feedback** — explicit positive ("good", "perfect", "great", "exactly", "yes that's
+right") or negative ("stop doing X", "don't do that", "I don't want you to") signals.
+
+### 3d — Dedup against the running report
+
+Read the report file's current content (it's cheap — only extracted bullets, not raw logs).
+For each new finding, compare it against existing bullets in the matching section for
+semantic equivalence (same error type + tool, same root cause, same correction theme, same
+task already recorded, etc.):
+
+- **Match found** → append this session's ID to that bullet's tag list, e.g.
+  `[2026-06-30_10-15-00, 2026-07-01_09-02-11]`. Do not duplicate the line.
+- **No match** → add a new bullet tagged with just this session's ID:
+  `[{session-id}] {finding text}`.
+
+### 3e — Apply the update
+
+Use **one `edit` call** to apply everything for this session at once: the new/updated
+bullets across all finding sections, plus the new row in the "Sessions Reviewed" table
+(session ID, model, started, tokens in/out, tool call count, error count, correction count
+— all from the 3b metadata + 3c extraction). Do not make multiple partial edits per session.
+
+Then continue to the next session in the list (back to 3a).
+
+### 3f — Skipped sessions
+
+If 3a determined the session should be skipped, use a small `edit` call to append one line
+to "Sessions Skipped":
+```
+- {session-id} — {reason, e.g. "trivially short (3 nodes, no task)"}
+```
+Then continue to the next session.
 
 ---
 
-## Step 3a — Single pass (fits_in_context = true)
+## Step 4 — Update run totals
 
-Generate the simplified log and save to a temp file:
+Once every session in the list has been processed (analysed or skipped), edit the
+"Run Info" section to fill in the final counts:
 ```
-conda run -n dagi python {SKILL_DIR}/parse_jsonl_logs.py <path> --output /tmp/dagi_simplified.jsonl
+- Sessions reviewed: {N}
+- Sessions skipped: {N}
 ```
 
-Read `/tmp/dagi_simplified.jsonl` with the `read` tool. Extract all findings
-in one pass using the analysis criteria in Step 4. Skip to Step 5.
+If **every** session was skipped, note this plainly in Run Info
+("No meaningful sessions found among the candidates.") and skip Step 5 (synthesis) entirely
+— there is nothing to synthesise. The report file still stands as the record of what was
+skipped and why.
 
 ---
 
-## Step 3b — Chunked reading (fits_in_context = false)
+## Step 5 — Cross-session synthesis (once, at the end)
 
-Generate the simplified log to a temp file:
-```
-conda run -n dagi python {SKILL_DIR}/parse_jsonl_logs.py <path> --output /tmp/dagi_simplified.jsonl
-```
-
-Then chunk the **simplified** file:
-```
-conda run -n dagi python {SKILL_DIR}/chunk_session.py /tmp/dagi_simplified.jsonl
-```
-(Uses `--chunk-size 60 --overlap 10` by default.)
-
-This returns a JSON array of chunk objects. Each chunk has:
-- `chunk_index`, `total_chunks`
-- `node_range`: [start, end] inclusive indices into the simplified file
-- `is_overlap_start`: true for chunks 2+ (the first `overlap_node_count` records are repeated from the previous chunk)
-- `overlap_node_count`: how many leading records are repeated context
-- `records`: the simplified node dicts for this chunk
-
-**Process each chunk in order.** Maintain a running `session_notes` dict:
-
-```
-session_notes = {
-  "tasks": [],
-  "agent_actions": [],
-  "errors": [],
-  "user_corrections": [],
-  "user_feedback": []
-}
-```
-
-For each chunk:
-
-1. If `is_overlap_start` is true, **read the first `overlap_node_count` records
-   for context only** — do not add new findings from them. They were already
-   processed in the previous chunk.
-
-2. For the remaining (new) records in this chunk, extract findings per Step 4's
-   analysis criteria below.
-
-3. Append new findings to `session_notes`.
-
----
-
-## Step 4 — Analysis criteria
-
-Apply these to all records (single pass) or to the new (non-overlap) records
-in each chunk. Populate `session_notes` as you go.
-
-### Tasks
-Look at `"type": "message"`, `"entity": "user"` records. The first user
-message is usually the primary task. Subsequent user messages may introduce
-new tasks or sub-tasks.
-
-Record each distinct task as a short one-sentence description.
-
-### Agent actions
-Look at:
-- `"type": "tool_call"` records (merged tool pairs in simplified log): note
-  the tool name and a brief summary of what was invoked
-- `"type": "message"`, `"entity": "assistant"`: note significant decisions or
-  explanations in the `content` field
-- `"type": "subagent_start"` / `"subagent_end"`: note that a sub-agent was
-  spawned and its task
-
-### Errors & problems
-- `"type": "tool_call"` records where `"error": true`
-- Tool calls with the same `name` and identical or very similar `input`
-  appearing 3+ times in a row (retry loop)
-- Assistant messages where the agent says it cannot do something
-
-### User corrections
-User messages (mid-session, not the first message) containing:
-- "no", "wrong", "not right", "that's not", "not what I"
-- "redo", "try again", "do it again", "start over"
-- "actually", "wait", "instead"
-- The same instruction rephrased after an assistant response
-
-Quote the relevant portion of the user message verbatim.
-
-### User feedback
-Explicit positive or negative feedback:
-- Positive: "good", "perfect", "great", "exactly", "yes that's right"
-- Negative: "stop doing X", "don't do that", "I don't want you to"
-
----
-
-## Step 5 — Enter plan mode and generate the improvement plan
-
-After completing the reading phase (Steps 3a or 3b) and populating
-`session_notes`, switch into plan mode to structure the self-evaluation
-and improvement items. This ensures the analysis is thorough and well-formed
-rather than ad-hoc.
+Skip this step entirely if no sessions were analysed (see Step 4).
 
 ### 5a — Enter plan mode
-Call:
 ```
-enter_plan_mode(reason="Analysing session {session-id}: structuring shortcomings, performance review, and improvement plan")
+enter_plan_mode(reason="Synthesising cross-session shortcomings and improvements from {N} reviewed sessions")
 ```
 
-### 5b — Draft the analysis (inside plan mode)
+### 5b — Draft the analysis
 
-In plan mode, write a plan file at:
-`{DAGI_ROOT}/.dagi/self-review/plan_{session-id}.md`
+Read the full running report (all sections are now populated with tagged findings). Write a
+plan file at `{DAGI_ROOT}/.dagi/self-review/plan_{run-datetime}.md` with:
 
-Evaluate and write these sections to the plan file:
+**Shortcomings** — concrete problems observed across the reviewed sessions:
+1. **Task completion**: were tasks completed? If not, in how many sessions, and why?
+2. **Error handling**: were errors recovered from gracefully, or retried blindly? How often
+   does the same error recur (use the tag counts from Step 3d as evidence)?
+3. **Efficiency**: redundant steps, repeated file reads, excessive tool calls — recurring
+   across sessions or isolated?
+4. **Understanding**: did corrections indicate misunderstanding? How many sessions needed
+   corrections, and of what kind?
+5. **Token efficiency**: aggregate `total_input_tokens` across sessions; flag task types that
+   are disproportionately expensive.
 
-**Shortcomings** — concrete problems observed:
-1. **Task completion**: Was each task completed? If not, why not?
-2. **Error handling**: Were errors recovered from gracefully, or retried blindly?
-3. **Efficiency**: Redundant steps, repeated file reads, excessive tool calls?
-4. **Understanding**: Did corrections indicate misunderstanding? How many?
-5. **Token efficiency**: Use `total_input_tokens`; >40k for a simple task is a signal.
+**Areas of improvement** — higher-level patterns behind the shortcomings. Use the
+session-tag counts on each finding to distinguish genuinely recurring issues (strong signal,
+multiple session tags) from one-off noise (single session tag). Generalize: if the same root
+cause produced findings tagged across several sessions, that is one area of improvement, not
+several.
 
-**Areas of improvement** — higher-level patterns behind the shortcomings
-(e.g. "agent over-reads files", "agent retries without changing approach",
-"agent misinterprets terse instructions").
-
-**Improvement items** — concrete, actionable items:
-- Try to generalize for findings that points to similar roots causes, e.g. if agent cannot find files in multiple sessions, this should point to lack of directory information as a single cause, rather than having 1 item for each issue encountered.
-- Determine if agent require architectural changes or simple edits or additions.
-- Each item should specify: what to change, where (file/tool/prompt), and why
-- Format each as: `[priority: high/medium/low] {verb phrase} — {one-sentence rationale}`
-- Examples:
-  - `[high] Add a check before re-reading a file already loaded in context — reduces redundant reads`
-  - `[medium] Clarify AGENTS.md instruction about terse user corrections — reduces misinterpretation`
+**Improvement items** — concrete, actionable:
+- Format: `[priority: high/medium/low] {verb phrase} — {one-sentence rationale} — evidence: sessions {ids}`
+- Prefer items that address a root cause behind multiple tagged findings over items that
+  address a single session's one-off issue.
+- Each item should specify what to change, where (file/tool/prompt), and why.
+- Determine whether each item needs an architectural change or a simple edit/addition.
 
 ### 5c — Exit plan mode
-Call:
 ```
-exit_plan_mode(summary="Improvement plan for session {session-id}: {N} shortcomings, {N} improvement items")
-```
-
-### 5d — Retain the plan
-The plan file at `{DAGI_ROOT}/.dagi/self-review/plan_{session-id}.md` is kept
-as a permanent artifact. The improvement items from the plan are included
-verbatim in the report's **Suggested Improvements** section (Step 6).
-
----
-
-## Step 6 — Write the report
-
-Create the output directory if it doesn't exist:
-```
-mkdir -p {DAGI_ROOT}/.dagi/self-review
+exit_plan_mode(summary="Cross-session analysis: {N} shortcomings, {N} improvement items across {N} sessions")
 ```
 
-Write to: `{DAGI_ROOT}/.dagi/self-review/review_{session-id}.md`
+### 5d — Append synthesis to the report
 
-Use this format exactly:
+Use **one `edit` call** to append these sections to
+`{DAGI_ROOT}/.dagi/self-review/review_{run-datetime}.md`:
 
 ```markdown
-# Session Review — {session-id}
+## Cross-Session Analysis
 
-## Metadata
-| Field | Value |
-|-------|-------|
-| Model | {model} |
-| Started | {started_at} |
-| Finished | {finished_at or "incomplete"} |
-| Total input tokens | {total_input_tokens} |
-| Total output tokens | {total_output_tokens} |
-| Estimated cost | ${total_cost} |
-| Tool calls | {tool_call_counts formatted as "tool×count, tool×count, ..."} |
-| Node count | {node_count} |
+### Shortcomings
+{copied from the plan file, Step 5b}
 
-## Tasks
-1. {task description}
-2. {task description — omit if only one task}
-
-## What the Agent Did
-{2–5 sentence narrative: what the agent actually did, in the order it happened,
-with specific tool names and files mentioned}
-
-## Errors & Problems
-{Use a bullet list. If none: "No errors recorded."}
-- {brief description of the error, with context}
-
-## User Corrections
-{Use a bullet list. If none: "No corrections recorded."}
-- {quote or close paraphrase of the correction} → {what it addressed}
-
-## User Feedback
-{Use a bullet list. If none: "No explicit feedback recorded."}
-- [positive/negative] {quote or paraphrase}
-
-## Performance Review
-{2–4 sentences: honest self-assessment. What went well, what didn't,
-whether the task was completed, how many corrections were needed.
-Be specific — reference actual events from the session.}
+### Areas of Improvement
+{copied from the plan file, Step 5b}
 
 ## Suggested Improvements
-{Copy the improvement items verbatim from the plan file written in Step 5b.
-If no significant issues: "No improvements identified."}
-1. [priority] {improvement item}
-2. [priority] {improvement item}
+1. [priority] {improvement item} — evidence: sessions {ids}
+2. [priority] {improvement item} — evidence: sessions {ids}
 
 ## Plan File
-{DAGI_ROOT}/.dagi/self-review/plan_{session-id}.md
+{DAGI_ROOT}/.dagi/self-review/plan_{run-datetime}.md
 ```
 
----
-
-## Step 7 — Append improvement items to TODO.md
-
-After writing the report, add the improvement items from the plan to
-`{DAGI_ROOT}/TODO.md` so they enter the main work queue.
-
-**Skip this step** if the plan produced no improvement items ("No improvements
-identified") — do not append empty or placeholder entries.
-
-### 7a — Read TODO.md
-Read `{DAGI_ROOT}/TODO.md` to find whether a `## Work Queue` section
-already exists. If it does not exist, you will create it.
-
-### 7b — Format entries
-For each improvement item from the plan (Step 5b), format one bullet entry:
-
-```markdown
-- **{improvement item verb phrase}** · `priority:{priority}` · `impact:{priority}` · `review-item`
-  - **Current:** {one sentence — the shortcoming this addresses, quoted from the plan}
-  - **Ideal:** The agent no longer encounters this issue; the fix is implemented.
-  - **Next:** Review plan at `.dagi/self-review/plan_{session-id}.md` · implement · mark done
-  - **Source:** Session `{session-id}` · [review_{session-id}.md](.dagi/self-review/review_{session-id}.md) · [plan_{session-id}.md](.dagi/self-review/plan_{session-id}.md)
-```
-
-`impact` defaults to the same value as `priority` unless the observation suggests otherwise.
-
-### 7c — Single edit call
-Use a **single `edit` call** to append all entries for this session at once.
-Do not make multiple edits — append the whole block in one operation.
-
-Insert the new bullets at the end of the `## Work Queue` item list, before the
-closing `---` separator (or at the end of the section if no separator exists).
-
-If the `## Work Queue` section does not exist yet, prepend it:
-```markdown
-## Work Queue
-
-> Main task list. Items from backlog, in-progress work, and session reviews are all tracked here.
-
-```
-
-### 7d — Batch behaviour
-When reviewing multiple sessions (Step 1g multi-session path), append all
-sessions' entries in a single edit after all reviews are written. Group
-entries under a shared comment if more than one session was reviewed:
-
-```markdown
-<!-- Session review batch: {date} — {N} sessions -->
-```
+The plan file is retained as a permanent artifact alongside the report.
 
 ---
 
 ## Edge Cases
 
 | Situation | Handling |
-|-----------|----------|
-| `incomplete: true` in metadata | Note "session ended without session_end record" in Metadata table and Performance Review |
-| No user messages found | Note "no user messages — possibly a sub-agent-only session" in Tasks section |
-| Session has only sub-agent records (all `depth > 0`) | Still analyse; note in Metadata that this appears to be a sub-agent session |
-| All records are system/assistant (no user turns) | Identify task from system prompt content |
-| parse_jsonl_logs.py fails (corrupt file) | Fall back to reading the raw JSONL with the `read` tool; note degraded quality |
-| /tmp/dagi_simplified.jsonl already exists | Overwrite — it is a temp file |
-| enter_plan_mode unavailable | Skip plan mode; write the shortcomings and improvements inline in the report (note the limitation) |
-| Session ID not found | Report: "No session file found at {path}. Run --list to see available sessions." |
-| Output file already exists | Overwrite — this is a re-review (or honour `re-review` param) |
-| TODO.md does not exist | Create it with a `## Work Queue` header, then append entries |
-| Re-review: TODO entries already exist for this session ID | Append new entries anyway (plan may have changed); note "re-review" in the Source field |
-| No improvement items in plan | Skip Step 7 entirely — do not append empty entries |
-| All sessions already reviewed | Report "No unreviewed sessions found matching filters" and stop |
-| All candidates dropped as unmeaningful | Report each with reason; stop — no reports written |
-| Time filter yields no sessions | Report "No sessions started within the given window" |
-| `datetime_now()` unavailable | Fall back to reading timestamps from the most recent session file's `started_at` as a proxy; note the limitation |
+|---|---|
+| No sessions resolved from the description | Report why, stop — do not create a report file |
+| All resolved sessions are trivial | Write the report header + Sessions Skipped list + note "no meaningful sessions found"; skip Step 5 entirely |
+| A session's simplified log doesn't fit in context | Windowed read via `chunk_session.py` (Step 3b), unchanged |
+| `parse_jsonl_logs.py` fails on a corrupt file | Fall back to reading the raw JSONL with the `read` tool; note degraded quality for that session in its report entries |
+| `enter_plan_mode` unavailable | Skip Step 5's plan-mode wrapping; write Shortcomings/Areas of Improvement/Suggested Improvements directly into the report from the accumulated findings, note the limitation |
+| Session ID/path not found | Note it in "Sessions Skipped" with reason "file not found", continue with the rest of the list |
+| `/tmp/dagi_simplified.jsonl` already exists | Overwrite — it is a per-session temp file |
+| Report file already exists at the target path (re-run within the same second) | Extremely unlikely given second-resolution timestamps; if it happens, overwrite |
+| User re-invokes with a session list overlapping a prior report | No cross-run dedup — each invocation's report is self-contained; only within-run duplicates are merged (Step 3d) |
+| `datetime_now()` unavailable for a relative time phrase | Fall back to the most recent session's `started_at` as a proxy for "now"; note the limitation in Run Info |
 | Ambiguous time ("since 3pm" but it's 2am) | Interpret as "since 3pm yesterday" (most recent occurrence of that time) |

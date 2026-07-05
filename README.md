@@ -348,7 +348,7 @@ Or as a slash command if the skill is loaded:
 | `memory-query` | Look up information in the wiki |
 | `memory-lint` | Validate wiki structure and internal links |
 | `create-skill` | Scaffold a new skill document |
-| `review-session` | Analyse recent session logs and write structured review reports |
+| `review-session` | Analyse sessions described in free text (folder, files, time window) into one running cross-session review report |
 | `grill-me` | Adversarial interrogation of a plan or idea before implementation |
 | `update-project-context` | Update `PROJECT_CONTEXT.md` with current project state |
 
@@ -382,7 +382,7 @@ The context carries over — no need to restart.
 - **Use plan mode for anything non-trivial.** It prevents the agent from making opinionated implementation choices before you've agreed on the approach.
 - **Build the memory wiki over time.** The more domain knowledge in `dagi-memory/wiki/`, the less you need to re-explain project context each session.
 - **Pause instead of cancelling.** `Esc` in the TUI preserves the agent's full context; you can inject corrections and resume rather than restarting from scratch.
-- **Review sessions with `/hist`.** Session summaries in `.dagi/logs/` capture token counts, cost, and what the agent did. The `review-session` skill turns raw logs into actionable improvement notes.
+- **Review sessions with `/hist`.** Session summaries in `.dagi/logs/` capture token counts, cost, and what the agent did. The `review-session` skill accepts a free-text description of which sessions to look at and accumulates findings from all of them into one report, so patterns that recur across sessions surface as a single insight.
 - **Add a `.dagi/agents.md` to your project.** This file is injected into every session for that project. Use it to encode coding standards, architecture invariants, and anything you would otherwise repeat in every task prompt.
 
 ---
@@ -594,7 +594,7 @@ Built-in skills:
 | `memory-query` | Look up information in the wiki |
 | `memory-lint` | Validate wiki structure and wikilinks |
 | `create-skill` | Scaffold a new skill document |
-| `review-session` | Deep-read session logs, analyse tasks/actions/errors/corrections, and write structured review reports to `.dagi/self-review/` |
+| `review-session` | Deep-read sessions described in free text, analyse tasks/actions/errors/corrections across all of them, and accumulate findings into one running review report at `.dagi/self-review/` |
 
 Add a custom skill by creating `.dagi/skills/<name>/SKILL.md`.
 

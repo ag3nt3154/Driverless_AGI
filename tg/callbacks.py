@@ -62,7 +62,7 @@ def build_callbacks(
         container: list[str] = []
         session.pending_ask = (evt, container)
 
-        safety = (timeout + 60) if timeout is not None else None
+        safety = (timeout + 60) if timeout is not None else 600
         evt.wait(timeout=safety)
         session.pending_ask = None
 

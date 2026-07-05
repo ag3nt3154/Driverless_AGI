@@ -153,10 +153,6 @@ class TelegramBot:
             await asyncio.get_event_loop().run_in_executor(
                 None, loop.run, task
             )
-
-            session.messages = loop._messages
-
-            loop.finish()
         except Exception as exc:
             logger.exception("Agent task failed for chat %s", chat_id)
             try:
@@ -164,4 +160,7 @@ class TelegramBot:
             except Exception:
                 pass
         finally:
+            if loop:
+                session.messages = loop._messages
+                loop.finish()
             session.busy = False

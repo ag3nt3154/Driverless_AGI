@@ -29,5 +29,7 @@ class WriteTool(BaseTool):
             p = self.cwd / p
         p = validate_path(p, self.allowed_roots)
         p.parent.mkdir(parents=True, exist_ok=True)
-        p.write_text(content, encoding="utf-8")
+        # Normalise line endings and write with explicit LF to prevent Windows
+        # text-mode from converting \n → \r\n (which doubles any \r present).
+        p.write_text(content.replace("\r\n", "\n").replace("\r", "\n"), encoding="utf-8", newline="\n")
         return f"Written {len(content)} characters to {p}"

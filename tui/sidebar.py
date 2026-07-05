@@ -89,7 +89,7 @@ class Sidebar(Widget):
     def _load_face(self) -> str:
         path = self._dagi_root / ".dagi" / "emotes" / f"{self._emote}.md"
         try:
-            return path.read_text(encoding="utf-8").strip()
+            return path.read_text(encoding="utf-8")
         except OSError:
             return _EMOTE_FALLBACK
 

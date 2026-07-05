@@ -1,7 +1,7 @@
 # ── Core (required) ───────────────────────────────────────────────────────────
 openai>=1.0.0               # OpenAI-compatible API client — used for all model providers
 pyyaml>=6.0                 # config.yaml parsing
-python-dotenv>=1.0          # .env file loading for API keys
+python-dotenv>=1.2.2        # .env file loading for API keys
 rich>=13.0                  # Rich text rendering in the CLI (markdown, panels, tables)
 typer>=0.26.3               # CLI framework for cli.py and tui.py entry points
 textual>=0.80.0             # TUI framework for the full-canvas terminal UI (tui.py)
@@ -16,6 +16,6 @@ langchain-openai>=1.2.2     # OpenAI provider for LangChain
 # Install to enable the web_search and web_fetch tools.
 # dagi starts and runs without these; affected tools return a friendly error message.
 # ddgs>=2.0              # DuckDuckGo search (web_search tool)
-# crawl4ai>=0.4          # Primary web fetcher — Playwright-based, returns clean Markdown
+# crawl4ai>=0.8.7        # Primary web fetcher — Playwright-based, returns clean Markdown
 # httpx>=0.27            # HTTP client used as the fallback web fetcher
 # beautifulsoup4>=4.12   # HTML parser used alongside httpx when crawl4ai is unavailable

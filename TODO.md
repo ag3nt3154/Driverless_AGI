@@ -2,6 +2,24 @@
 
 ## Completed
 
+- **Windows line-ending triple-bug fix in `EditTool` / `WriteTool`** · `done` · `2026-07-05`
+  - Root cause: `write_text()` default text-mode on Windows added `\r\n` to every file; bash/grep tool output returned CRLF bytes to LLM; LLM copied them into `oldText`; `read_text()` normalised file content to LF but `oldText` was not normalised → `content.count(CRLF_oldText) == 0` → silent "not found". Secondary: `\r\n` in `newText` + `write_text()` CRLF translation → `\r\r\n` on disk → phantom blank line on next read.
+  - `tools/edit.py`: normalise `oldText`/`newText` via `.replace("\r\n","\n").replace("\r","\n")` before match/replace; pass `newline="\n"` to `write_text()`.
+  - `tools/write.py`: same normalisation + `newline="\n"`. All DAGI-written files now have LF endings on disk regardless of OS. 184/184 tests pass.
+
+- **`review-session` skill reworked — free-text selection + single running cross-session report** · `done` · `2026-07-03`
+  - Full rewrite of `.dagi/skills/review-session/SKILL.md`. Replaces the old rigid selection grammar (session ID / `latest` / time filter / count / min-length / unreviewed-re-review) with free-text descriptions DAGI interprets itself via `find` and `chunk_session.py --list`.
+  - Replaces per-session output files (`review_{session-id}.md`) with one running report per invocation (`review_{run-datetime}.md`); findings from later sessions are deduped against the report and merged as tag-accumulation on existing bullets rather than duplicated.
+  - Shortcomings/improvement-item synthesis moved from per-session to once, at the end of the run, in plan mode — enables real cross-session pattern-spotting (e.g. the same error recurring across N sessions surfaces as one item citing all evidence sessions).
+  - Dropped the `TODO.md` auto-append step (old Step 7) — this skill now only produces the review report.
+  - `parse_jsonl_logs.py` and `chunk_session.py` unchanged — reused as-is inside the new per-session loop.
+  - Old per-session `review_*.md` files left untouched on disk; skill no longer produces that format.
+
+- **`requirements.txt` crawl4ai CVE patch** · `done` · `2026-07-01` — bumped to `>=0.8.7`, fixing 3 CVEs (SSRF, JWT auth bypass, path traversal); synced `PROJECT_CONTEXT.md`.
+- **5 remaining `DAGI_ROOT` independent computations in cli/tui** · `done` · `2026-06-27` — replaced with `from agent import DAGI_ROOT` across `cli.py` (×2), `tui/app.py`, `tui/commands.py`, `tools/spawn_subagent.py`.
+- **`json.loads(tc.function.arguments)` parsed up to 4 times per tool call** · `done` · `2026-06-27` — single parse reused at all 4 dispatch branches in `agent/loop.py`.
+- **Subagent discovery only scans project path — misses DAGI root types** · `done` · `2026-06-27` — `_discover_subagent_tools` now scans both DAGI root and project path; project types override built-ins.
+- **Persistent Memory System** · `done` · `2026-06-27` — BM25 removed in favor of subagent-based memory-query/memory-add; wiki restructured; simplified frontmatter schema; `/init` updated.
 - **Tool Output Filter — Task 2: wire `filter_tool_output` into `AgentLoop`** · `done` · `2026-06-30`
   - Added `from tools.output_filter import filter_tool_output` import to `agent/loop.py`
   - Replaced the `result_str` dispatch block (lines 556–568) with the filter call: `context_result, full_str = filter_tool_output(result, self.config.reserve_tokens, DAGI_ROOT / ".dagi" / "temp")`
@@ -75,44 +93,39 @@
 
 ### 🔴 CRITICAL — Security / Data Loss
 
-- **`requirements.txt` still declares `crawl4ai>=0.4` — allows install of CVE-affected versions** · `priority:high` · `open:3d` · `effort:XS`
-  - **File:** `requirements.txt:19`
-  - **Problem:** `pyproject.toml` was fixed to `>=0.8.7` (confirmed 2026-06-28), but `requirements.txt` line 19 still says `crawl4ai>=0.4`. crawl4ai has 3 critical CVEs patched in 0.8.7: CVE-2026-56266 (SSRF), CVE-2026-56265 (hardcoded JWT auth bypass), CVE-2026-56258 (path traversal). Anyone installing from `requirements.txt` (uncommented) gets the vulnerable version.
-  - **Fix:** Change `requirements.txt` line 19 from `# crawl4ai>=0.4` to `# crawl4ai>=0.8.7`.
-  - **Source:** `review/2026-06-27`, updated `review/2026-06-28`
+- **`python-dotenv` CVE-2026-28684 — symlink file overwrite** · `priority:high` · `open:2d` · `effort:XS` · **FIXED in uncommitted changes**
+  - **File:** `requirements.txt:3`
+  - **Problem:** Bumped from `>=1.0` to `>=1.2.2` in uncommitted working tree.
+  - **Source:** `review/2026-07-02`
 
 ---
 
 ### 🔴 HIGH — Bugs
 
-- ~~**5 remaining `DAGI_ROOT` independent computations in cli/tui**~~ · `done` · `2026-06-27`
-  - Replaced all 5 with `from agent import DAGI_ROOT` — `cli.py` (×2), `tui/app.py`, `tui/commands.py`, `tools/spawn_subagent.py`. (`_todo/todo_2026-06-21.md` A2)
-
-- ~~**`json.loads(tc.function.arguments)` parsed up to 4 times per tool call**~~ · `done` · `2026-06-27`
-  - Single `args = json.loads(tc.function.arguments)` at `agent/loop.py:547`; reused at all 4 dispatch branches. (`_todo/todo_2026-06-17.md` A3)
-
-- ~~**Subagent discovery only scans project path — misses DAGI root types**~~ · `done` · `2026-06-27`
-  - `_discover_subagent_tools` now scans both `DAGI_ROOT/.dagi/subagents` and `cwd/.dagi/subagents`; project types override built-ins by name. (`_todo/todo_2026-06-25.md` A3)
-
-- **Telegram bot `loop.finish()` skipped on exception — session log lost** · `priority:high` · `open:2d` · `effort:XS`
-  - **File:** `tg/bot.py:159`
-  - **Problem:** `loop.finish()` is inside the `try` block, not a `finally`. When `loop.run(task)` raises an exception, `finish()` is never called and the `session_end` JSONL record is dropped. Same bug class as the TUI `_agent_work` issue fixed 2026-06-17 (session A1). Additionally, `session.messages = loop._messages` at line 157 is also skipped — the conversation context is lost on error.
-  - **Fix:** Move `session.messages = loop._messages` and `loop.finish()` into the `finally` block, guarded by `if loop:`. Pattern: `finally: session.messages = loop._messages; loop.finish(); session.busy = False`.
+- **Telegram bot `loop.finish()` skipped on exception — session log lost** · `priority:high` · `open:6d` · `effort:XS` · **FIXED in uncommitted changes**
+  - **File:** `tg/bot.py:162-165`
+  - **Problem:** `loop.finish()` was inside the `try` block. Fixed by moving to `finally`, guarded by `if loop:`.
+  - **Note:** Fix introduces a secondary bug — see `UnboundLocalError` item below.
   - **Source:** `review/2026-06-28`
 
-- **Telegram bot `ask_user` hangs forever when `timeout=None` — chat permanently locked** · `priority:high` · `open:2d` · `effort:XS`
-  - **File:** `tg/callbacks.py:65-66`
-  - **Problem:** `safety = (timeout + 60) if timeout is not None else None` passes `None` to `evt.wait()`, blocking the executor thread indefinitely. Unlike the TUI (where the user can close the window), a Telegram chat has no escape: `session.busy` stays `True` forever, rejecting all future messages. The TUI has the same issue (`tui/callbacks.py:73-74`, already tracked) but the Telegram impact is worse — no kill switch.
-  - **Fix:** `safety = (timeout + 60) if timeout is not None else 600` (same fix proposed for TUI). A 10-minute timeout is generous; after that, return the recommended option and log a warning.
+- **Telegram bot `ask_user` hangs forever when `timeout=None` — chat permanently locked** · `priority:high` · `open:6d` · `effort:XS` · **FIXED in uncommitted changes**
+  - **File:** `tg/callbacks.py:65`
+  - **Problem:** `safety` was `None` when timeout was `None`. Fixed: `safety = ... else 600`.
   - **Source:** `review/2026-06-28`
 
-- **Scheduler `loop.finish()` races with daemon thread on timeout** · `priority:medium` · `open:1d` · `effort:XS`
+- **`tg/bot.py` `UnboundLocalError` in `finally` block — masks original exception** · `priority:high` · `open:0d` · `effort:XS`
+  - **File:** `tg/bot.py:163`
+  - **Problem:** The uncommitted fix moves `if loop:` into a `finally` block, but `loop` is only assigned at line 147 (`loop = AgentLoop(...)`). If `resolve_model_config()` (line 134) or `build_callbacks()` (line 140) raises, the `finally` block hits `UnboundLocalError: cannot access local variable 'loop' before assignment`, which masks the original exception and crashes the handler without setting `session.busy = False`.
+  - **Fix:** Add `loop = None` before the `try` block (line 133).
+  - **Source:** `review/2026-07-04`
+
+- **Scheduler `loop.finish()` races with daemon thread on timeout** · `priority:medium` · `open:5d` · `effort:XS`
   - **File:** `scheduler/runner.py:113`
   - **Problem:** `loop.finish()` is called unconditionally after `thread.join(timeout=...)`. On timeout, the daemon thread is still running `loop.run()` — mutating `loop._messages` concurrently. `finish()` calls `tracker.finish(raw_messages=self._messages)` which serializes `_messages` via `json.dumps`. The daemon thread may be appending to `_messages` at the same time — data race on the list. CPython's GIL prevents crashes but the serialized output can be inconsistent (missing or partial messages).
   - **Fix:** Only call `loop.finish()` after confirming `not thread.is_alive()`. On timeout, defer `finish()` or take a snapshot: `msgs_copy = list(loop._messages); tracker.finish(raw_messages=msgs_copy)`.
   - **Source:** `review/2026-06-29`
 
-- **Telegram `build_callbacks` doesn't wire `on_subagent_event_factory` — subagent output invisible** · `priority:medium` · `open:1d` · `effort:S`
+- **Telegram `build_callbacks` doesn't wire `on_subagent_event_factory` — subagent output invisible** · `priority:medium` · `open:5d` · `effort:S`
   - **File:** `tg/callbacks.py:82-97`
   - **Problem:** `build_callbacks()` in `tg/callbacks.py` doesn't set `on_subagent_event_factory`. The default is `None`, so subagent stdout (worker, review, explore_files, web_research) is silently discarded. When a Telegram user triggers plan-work-review, they see no progress from worker/review subagents — only the final result.
   - **Fix:** Add an `on_subagent_event_factory` that returns a callback forwarding subagent lines via `_send()` (with a `[subagent-type]` prefix and message batching to avoid Telegram rate limits).
@@ -122,80 +135,94 @@
 
 ### 🟠 Architecture Debt
 
-- **`tui/commands.py` imports from `cli.py` — layering violation** · `priority:medium` · `open:17d` · `effort:XS`
+- **`tui/commands.py` imports from `cli.py` — layering violation** · `priority:medium` · `open:21d` · `effort:XS`
+  - **Escalated 2026-07-03:** Open 21 days — blocks the cli.py→cli/ package split (can't restructure cli.py while TUI imports from it).
   - **File:** `tui/commands.py:59,73`
   - **Problem:** TUI depends on the CLI entry-point module (`_skill_invocation_message`, `_cmd_init`). Future `cli.py` refactors will break TUI imports.
   - **Fix:** Extract the two shared functions into `agent/cli_utils.py`; import from both.
   - **Source:** `_todo/todo_2026-06-13.md` #7
 
-- **Dead code: `PlanSubAgent`, `ExploreFilesTool`, `WebResearchTool`, `SubAgentRunner`** · `priority:medium` · `open:17d` · `effort:S`
+- **Dead code: `PlanSubAgent`, `ExploreFilesTool`, `WebResearchTool`, `SubAgentRunner`** · `priority:high` · `open:21d` · `effort:S`
+  - **Escalated 2026-07-02:** Open 21 days with no fix commit — raised to high.
   - **Files:** `tools/explore_files.py`, `tools/web_research.py`, `tools/plan_subagent.py`, `agent/sub_agent.py`
   - **Problem:** None of these are registered in `create_tool_registry()` or used anywhere. They duplicate patterns from active code and confuse readers.
   - **Fix:** Audit for external callers; delete if unused.
   - **Source:** `_todo/todo_2026-06-13.md` #4
 
-- **Split `cli.py` (1173 lines) → `cli/` package** · `priority:high` · `open:14d` · `effort:M`
-  - **Escalated 2026-06-30:** Open 14 days with no fix commit — line count dropped from 1355→1173 but still 2.3× over the 500-line standard.
+- **Split `cli.py` (1173 lines) → `cli/` package** · `priority:high` · `open:18d` · `effort:M`
+  - **Escalated 2026-07-02:** Open 18 days. **Corrected 2026-07-03:** cli.py is 1173 lines (2.3× over 500-line standard), not 1355 — previous review miscounted. Still well over the limit.
   - **File:** `cli.py`
-  - **Problem:** 2.7× over the 500-line coding standard. Mixes rendering, callbacks, slash command handlers, subagent orchestration, and the REPL entry point.
+  - **Problem:** 2.3× over the 500-line coding standard. Mixes rendering, callbacks, slash command handlers, subagent orchestration, and the REPL entry point.
   - **Suggested split:** `cli/rendering.py`, `cli/callbacks.py`, `cli/commands.py`, `cli/dispatch.py`, `cli/main.py`; root `cli.py` becomes a ~30-line launcher.
   - **Source:** `_todo/todo_2026-06-16.md` A1
 
-- **`agent/prompts.py` still uses independent `Path(__file__).parent.parent`** · `priority:medium` · `open:3d` · `effort:XS`
+- **`agent/prompts.py` still uses independent `Path(__file__).parent.parent`** · `priority:medium` · `open:7d` · `effort:XS`
   - **File:** `agent/prompts.py:5-6`
   - **Problem:** `_PROMPTS_DIR` and `_SUBAGENTS_DIR` are computed via `Path(__file__).parent.parent` — the same pattern that caused 4 confirmed divergence bugs before centralisation in `agent/__init__.py:DAGI_ROOT`. These 2 sites were missed in the 2026-06-27 sweep (`cli.py` ×2, `tui/app.py`, `tui/commands.py`, `tools/spawn_subagent.py`). They work correctly today because `prompts.py` lives inside `agent/`, but any restructuring would break them silently.
   - **Fix:** Replace with `from agent import DAGI_ROOT; _PROMPTS_DIR = DAGI_ROOT / ".dagi" / "prompts"` (and same for `_SUBAGENTS_DIR`).
   - **Source:** `review/2026-06-27`
 
-- **`_parse_frontmatter` duplicated verbatim between `agent/skills.py` and `agent/workflows.py`** · `priority:medium` · `open:10d` · `effort:XS`
+- **`_parse_frontmatter` duplicated verbatim between `agent/skills.py` and `agent/workflows.py`** · `priority:medium` · `open:14d` · `effort:XS`
   - **Files:** `agent/skills.py:30-42`, `agent/workflows.py:30-42`
   - **Problem:** Identical regex patterns and function body. Any bug fix must be applied twice.
   - **Fix:** Extract to `agent/_frontmatter.py`; import in both files.
   - **Source:** `_todo/todo_2026-06-20.md` B1
 
-- **`_extra_body` construction duplicated in `__init__` and `_handle_switch_model`** · `priority:medium` · `open:11d` · `effort:XS`
+- **`_extra_body` construction duplicated in `__init__` and `_handle_switch_model`** · `priority:medium` · `open:15d` · `effort:XS`
   - **Files:** `agent/loop.py:311-317`, `agent/loop.py:732-738`
   - **Problem:** Identical 6-line block in two places. New OpenRouter extensions must be added in both or silently break after a tier switch.
   - **Fix:** Extract `_build_extra_body() -> dict` method.
   - **Source:** `_todo/todo_2026-06-19.md` B2
 
-- **`ask_user` callback has no deadlock protection (infinite wait)** · `priority:medium` · `open:12d` · `effort:XS`
+- **`ask_user` callback has no deadlock protection (infinite wait)** · `priority:medium` · `open:16d` · `effort:XS`
   - **Files:** `tui/callbacks.py:73-74`, `tg/callbacks.py:65-66`
   - **Problem:** When `ask_user` is called with `timeout=None` (default in plan mode), `evt.wait(timeout=None)` blocks the agent thread indefinitely. If the TUI closes, the agent thread hangs permanently. The Telegram bot has an identical pattern (tracked separately as HIGH because the impact is worse — no user kill switch).
   - **Fix:** Always use a finite safety timeout: `safety = (timeout + 60) if timeout is not None else 600`.
   - **Source:** `_todo/todo_2026-06-18.md` D1
 
-- **`_tools_from_list` limited to 9 hardcoded tool names** · `priority:medium` · `open:12d` · `effort:S`
+- **`_tools_from_list` limited to 9 hardcoded tool names** · `priority:medium` · `open:16d` · `effort:S`
   - **File:** `agent/tools.py:51-81`
   - **Problem:** Subagent registries can only reference 9 tools. Any other tool name (e.g., `skill`, `ask_user`, `git_status`) is silently dropped with a warning.
   - **Fix:** Either expand the registry map to cover all tools, or drive subagent registration from `create_tool_registry(tool_names=[...])` and delete `_tools_from_list`.
   - **Source:** `_todo/todo_2026-06-18.md` D2
 
-- **Sidebar `_system_breakdown` reads stale `soul.md` path** · `priority:medium` · `open:12d` · `effort:XS`
+- **Sidebar `_system_breakdown` reads stale `soul.md` path** · `priority:medium` · `open:16d` · `effort:XS`
   - **File:** `tui/utils.py:66`
   - **Problem:** `_toks(dagi_root / "soul.md")` — `soul.md` was moved to `.dagi/prompts/soul.md`. The old path doesn't exist; sidebar understates system prompt token count by ~150–300 tokens.
   - **Fix:** Change to `dagi_root / ".dagi" / "prompts" / "soul.md"`.
   - **Source:** `_todo/todo_2026-06-18.md` A2
 
-- **`_system_breakdown()` reads disk on every Textual render cycle** · `priority:medium` · `open:12d` · `effort:XS`
+- **`_system_breakdown()` reads disk on every Textual render cycle** · `priority:medium` · `open:16d` · `effort:XS`
   - **File:** `tui/utils.py:58-70` (called from `sidebar.py` render)
   - **Problem:** 3 file reads per render cycle for files that never change during a session.
   - **Fix:** Compute once in `Sidebar.__init__` and cache as `self._sys_parts`.
   - **Source:** `_todo/todo_2026-06-18.md` B1
 
-- **`SkillTool.run()` reloads all skills from disk on every invocation** · `priority:medium` · `open:5d` · `effort:S`
+- **`SkillTool.run()` reloads all skills from disk on every invocation** · `priority:medium` · `open:9d` · `effort:S`
   - **File:** `tools/skill.py:41-46`
   - **Problem:** Every `skill("name")` call creates a new `SkillLoader`, scans all skill root dirs, reads and parses every SKILL.md. `AgentLoop` already has `self.skills` pre-loaded. ~30 file reads per call.
   - **Fix:** Pass the pre-loaded skills list to `SkillTool` at construction time, or cache after first load.
   - **Source:** `_todo/todo_2026-06-25_2.md` A2
 
-- **`WebFetchTool` silently upgrades HTTP→HTTPS for private IP addresses** · `priority:medium` · `open:5d` · `effort:XS`
+- **`WebFetchTool` silently upgrades HTTP→HTTPS for private IP addresses** · `priority:medium` · `open:9d` · `effort:XS`
   - **File:** `tools/web_fetch.py:123`
   - **Problem:** HTTP→HTTPS upgrade excludes `localhost` and `127.0.0.1` but not `192.168.x.x`, `10.x.x.x`, `172.16-31.x.x`, or `[::1]`. Agent fails to fetch local dev servers with a misleading error.
   - **Fix:** Expand exclusion regex to cover all RFC-1918 and loopback ranges.
   - **Source:** `_todo/todo_2026-06-25_2.md` A4
 
-- **`BashTool.run()` doesn't handle `subprocess.TimeoutExpired`** · `priority:medium` · `open:12d` · `effort:XS`
+- **`filter_tool_output` temp files never cleaned up — unbounded accumulation** · `priority:medium` · `open:2d` · `effort:XS`
+  - **File:** `tools/output_filter.py:68-72`, `agent/loop.py:287`
+  - **Problem:** `filter_tool_output()` writes `tool_output_*.txt` files into `.dagi/temp/` via `mkstemp()`. No code path (session finish, loop exit, periodic cleanup) ever removes them. After 2 days of testing, 8 files have accumulated. Over weeks of heavy tool use (grep on large codebases, verbose bash output), this directory will grow unboundedly.
+  - **Fix:** Add cleanup in `AgentLoop.finish()`: `shutil.rmtree(self._filter_temp, ignore_errors=True)` — temp files are session-scoped and serve no purpose after the session ends.
+  - **Source:** `review/2026-07-02`
+
+- **`tg/bot.py:153` uses deprecated `asyncio.get_event_loop()` — Python 3.14 breakage risk** · `priority:medium` · `open:0d` · `effort:XS`
+  - **File:** `tg/bot.py:153`
+  - **Problem:** `asyncio.get_event_loop()` is deprecated since Python 3.10 and emits `DeprecationWarning` in 3.12+. In Python 3.14 (which this project's conda env runs), it may raise `DeprecationWarning` or behave unexpectedly when called inside a running coroutine. Line 61 already correctly uses `asyncio.get_running_loop()`. The method `_run_agent_task` is `async`, so a running loop is guaranteed.
+  - **Fix:** Replace `asyncio.get_event_loop()` with `asyncio.get_running_loop()` at line 153.
+  - **Source:** `review/2026-07-04`
+
+- **`BashTool.run()` doesn't handle `subprocess.TimeoutExpired`** · `priority:medium` · `open:16d` · `effort:XS`
   - **File:** `tools/bash.py:26-37`
   - **Problem:** `subprocess.run(..., timeout=timeout)` raises `TimeoutExpired` uncaught; propagates to `ToolRegistry.dispatch()` as a terse generic error with no recovery guidance for the LLM.
   - **Fix:** Catch and return `f"[Command timed out after {timeout}s — command did not finish in time]"`.
@@ -205,39 +232,38 @@
 
 ### 🟡 Token Efficiency & Observability
 
-- **Session cost tracking always shows `$—`** · `priority:high` · `open:12d` · `effort:S`
+- **Session cost tracking always shows `$—`** · `priority:high` · `open:16d` · `effort:S`
   - **File:** `agent/session.py:108`
   - **Problem:** Most API providers (including OpenRouter for many models) don't populate `usage.cost`. Sidebar shows `$—`, `session_end` has `total_cost: null`. No cost visibility makes it impossible to benchmark model tiers.
   - **Fix:** Fall back to computing cost from token counts using a per-model `pricing` section in `config.yaml` (input/output cost per 1M tokens).
   - **Source:** `_todo/todo_2026-06-18.md` C1
 
-- **`thinking_tokens` (reasoning tokens) not recorded in session JSONL** · `priority:high` · `open:10d` · `effort:S`
+- **`thinking_tokens` (reasoning tokens) not recorded in session JSONL** · `priority:high` · `open:14d` · `effort:S`
   - **File:** `agent/session.py:100-118`
   - **Problem:** `completion_tokens_details.reasoning_tokens` is never extracted from API responses. For extended-thinking models (DeepSeek, Claude with thinking), reasoning tokens can be 50%+ of the completion budget — invisible in post-session analysis.
   - **Fix:** Add `thinking_tokens: int | None = None` to `MessageNode`; extract in `record_assistant()`; include `total_thinking_tokens` in `session_end`.
   - **Source:** `_todo/todo_2026-06-20.md` C1
 
-- **Cache hit visibility in TUI sidebar** · `priority:high` · `open:14d` · `effort:S`
-  - **Escalated 2026-06-30:** Open 14 days — raises to high (already high, no change needed but noted for tracking).
+- **Cache hit visibility in TUI sidebar** · `priority:high` · `open:18d` · `effort:S`
   - **File:** `agent/loop.py:480-487`, `tui/sidebar.py`
   - **Problem:** `cache_prompt: true` is sent to OpenRouter, but `usage.prompt_tokens_details.cached_tokens` is never read. Users have no visibility into whether prompt caching is working.
   - **Fix:** Extract `cached_tokens` from `usage.prompt_tokens_details`; pass through `on_token_update`; display in sidebar as `{cached_tok}↩ cached`.
   - **Source:** `_todo/todo_2026-06-16.md` C1
 
-- **Tool result content not truncated in JSONL logs** · `priority:medium` · `open:10d` · `effort:XS`
+- **Tool result content not truncated in JSONL logs** · `priority:medium` · `open:14d` · `effort:XS`
   - **File:** `agent/session.py:129-135`
   - **Problem:** `record_tool_end(name, result_str)` writes the full result. Compare with `record_subagent_end` which truncates to 500 chars. Large tool results (file reads, grep output, base64) are the primary driver of log disk consumption.
   - **Fix:** Truncate to 2000 chars in `record_tool_end`; record `result_length` for reference.
   - **Source:** `_todo/todo_2026-06-20.md` C2
 
-- **Token efficiency benchmark harness** · `priority:high` · `open:11d` · `effort:M`
+- **Token efficiency benchmark harness** · `priority:high` · `open:15d` · `effort:M`
   - **Problem:** No way to measure whether code changes improve or degrade token efficiency. Harbor/Terminal-bench measure task correctness but not tokens/cost/continuation count per task.
   - **Fix:** `scripts/benchmark_token_efficiency.py` that parses session JSONL files and produces per-task metrics: `input_tokens`, `output_tokens`, `thinking_tokens`, `tool_call_count`, `continuation_count`, `cache_hit_tokens`.
   - **Source:** `_todo/todo_2026-06-19.md` D3
 
-- **GNHF self-improvement loop — never bootstrapped (65 days stale)** · `priority:high` · `open:65d`
-  - **Current:** The `review-session` skill and `improve-yourself` workflow exist; `.dagi/self-review/` has 5 files all from April 2026; 198 session logs have accumulated. The entire GNHF feedback cycle has never run.
-  - **Next:** Run `review-session` against the 10 most recent session logs to bootstrap. Then schedule a weekly run.
+- **GNHF self-improvement loop — never bootstrapped (69 days stale)** · `priority:high` · `open:69d`
+  - **Current:** The `review-session` skill (reworked 2026-07-03 to accept free-text session selection and accumulate cross-session findings into one running report) and `improve-yourself` workflow exist; `.dagi/self-review/` has 5 files all from April 2026; 208 session logs have accumulated. The entire GNHF feedback cycle has never run.
+  - **Next:** Invoke `review-session` once with "review the 10 most recent sessions" to bootstrap a single cross-session report. Then schedule a weekly run.
   - **Source:** `_todo/todo_2026-06-16.md` C2
 
 ---
@@ -274,13 +300,6 @@
   - **File:** `agent/registry.py:29-35`
   - Current `except Exception as e: return f"Error: {e}"` loses the exception type. Return `f"Error [{type(e).__name__}]: {e}"` so the LLM can pattern-match on `FileNotFoundError` vs `PermissionError`.
   - **Source:** `_todo/todo_2026-06-26.md` D1
-
-- ~~**Persistent Memory System**~~ · `done` · `2026-06-27`
-  - BM25 removed; `memory-query` and `memory-add` converted to subagents with `root: memory_root` file-access restriction.
-  - Wiki restructured into `projects/` and `knowledge/` sections; all indexes renamed to `.index.md`.
-  - Simplified 5-field frontmatter schema (`type`, `topic`, `description`, `date_added`, `tags`).
-  - Wiki index injected at session start; memory protocol added to system prompt.
-  - `/init` command updated to scaffold new structure.
 
 - **Project / Folder Scoping** · `priority:high` · `impact:high`
   - **Current:** Path guard wired into Read/Write/Edit/Grep/Find. Roots hardcoded to `[dagi_root, cwd]`. BashTool unsandboxed.
@@ -384,19 +403,25 @@
   - Add `typer`, `rich`, `textual`; remove `nicegui`, `markdown`, `matplotlib`.
   - **Source:** `_todo/todo_2026-06-16.md` F3
 
-- **`langchain` + `langchain-openai` are dead dependencies in `requirements.txt`** · `priority:low` · `open:2d` · `effort:XS`
+- **`langchain` + `langchain-openai` are dead dependencies in `requirements.txt`** · `priority:low` · `open:6d` · `effort:XS`
   - **File:** `requirements.txt:8-9`
   - **Problem:** `langchain>=1.3.4` and `langchain-openai>=1.2.2` are listed as core required deps, but no Python file in the project imports from either package. They add ~100MB of transitive dependencies (numpy, pydantic, aiohttp, etc.) for zero value. Likely a remnant from an earlier architecture. Additionally, CVE-2026-34070 (CVSS 7.5) is a path traversal in `langchain_core/prompts/loading.py` — having the package installed exposes this vulnerability even though DAGI doesn't call it.
   - **Fix:** Remove both lines from `requirements.txt`.
   - **Source:** `review/2026-06-28`, CVE note added `review/2026-06-30`
 
-- **Dead `ChatSession.lock` field in `tg/session.py`** · `priority:low` · `open:0d` · `effort:XS`
+- **Dead `ChatSession.lock` field in `tg/session.py`** · `priority:low` · `open:4d` · `effort:XS`
   - **File:** `tg/session.py:13`
   - **Problem:** `ChatSession` declares `lock: threading.Lock = field(default_factory=threading.Lock)` but no code in the `tg/` package ever acquires or releases it. The `busy` flag is the actual concurrency guard. The unused lock misleads readers into thinking thread-safe access patterns are in place when they are not.
   - **Fix:** Remove the `lock` field from `ChatSession` and its `import threading` if no other usage remains.
   - **Source:** `review/2026-06-30`
 
-- **Telegram bot redundant `config.project_path` assignment** · `priority:low` · `open:0d` · `effort:XS`
+- **`config.example.yaml:85` stale BM25 reference in `memory_root` comment** · `priority:low` · `open:2d` · `effort:XS`
+  - **File:** `config.example.yaml:85`
+  - **Problem:** Comment says "persistent knowledge retrieval (BM25)" — BM25 was removed 2026-06-27 in favor of subagent-based grep+traversal. Stale reference confuses readers into thinking BM25 is still used.
+  - **Fix:** Change to "persistent knowledge wiki (subagent-based retrieval)".
+  - **Source:** `review/2026-07-02`
+
+- **Telegram bot redundant `config.project_path` assignment** · `priority:low` · `open:4d` · `effort:XS`
   - **File:** `tg/bot.py:137`
   - **Problem:** `config.project_path = self._project_path` is redundant — `resolve_model_config` at line 134–136 already passes `project_path=self._project_path`, which calls `replace(cfg, project_path=project_path)` at `config_loader.py:235`. This is the exact pattern cleaned up in CLI/TUI call sites on 2026-06-13 but missed here because the Telegram bot was added later (2026-06-28).
   - **Fix:** Delete line 137 (`config.project_path = self._project_path`).
@@ -421,11 +446,11 @@
 
 **Type:** workflow | **Generated:** 2026-05-03
 
-**Root cause:** The `/improve-yourself` workflow has never been run. Review items are waiting. 202 session logs have accumulated; self-review last ran 65 days ago (2026-04-26).
+**Root cause:** The `/improve-yourself` workflow has never been run. Review items are waiting. 208 session logs have accumulated; self-review last ran 69 days ago (2026-04-26).
 
-**Quick action:** Run `review-session` against the 10 most recent session logs, then invoke `/improve-yourself` in a DAGI session.
+**Quick action:** Invoke `review-session` once ("review the 10 most recent sessions") to produce a single cross-session report, then invoke `/improve-yourself` in a DAGI session.
 
-- [ ] Run `review-session` on the 10 most recent `.dagi/logs/*.jsonl` files
+- [ ] Invoke `review-session` once against the 10 most recent `.dagi/logs/*.jsonl` files (single running report, not per-file)
 - [ ] Invoke `/improve-yourself` in a DAGI session
 - [ ] Review the verdict block appended below by the workflow
 - [ ] Apply the implementation description in `## Tested Improvements`
@@ -441,60 +466,48 @@
 
 ## Done
 
-- [x] Pipe-based subagent architecture — replaced file-IPC + `CREATE_NEW_CONSOLE` terminal spawning with `subprocess.Popen(stdout=PIPE)`. New `tools/_subagent_runner.py` with event relay, PID tracking, and `extend_timeout` tool.
-
-- [x] TUI submodule refactor — `tui.py` (819 lines) decomposed into a `tui/` package.
-
-- [x] Unified skill invocation — slash commands produce `"Invoke the skill-name skill."` instruction; LLM calls `skill()` itself.
-
-- [x] Plan mode revision loop — `show_plan` tool handles revision loop; agent calls `exit_plan_mode` on approval.
-
-- [x] TUI text wrap + multi-line input — `ConversationPane(RichLog)` with `wrap=True`; `PromptInput(TextArea)` with Shift+Enter for newlines.
-
-- [x] ESC pause button in TUI — pauses agent at safe checkpoint; `inject_and_resume(message)` for redirection.
-
-- [x] Full Textual TUI — vertical split with sidebar showing live token stats, context window breakdown, model status.
-
-- [x] Single response flag — `<<END_OF_RESPONSE>>` required on all no-tool-call responses; recovery injection from `continue.md`.
-
-- [x] Transient API error retry — exponential backoff (2^n s, cap 60s) for 429/5xx; configurable `api_error_retries`; compaction snapshots messages before API call.
-
-- [x] Direct `api_key` in config.yaml — model entries support `api_key:` as alternative to `api_key_env`.
-
-- [x] GNHF skill — `tools/git.py` adds `git_status`, `git_commit`, `git_rollback`; skill at `.dagi/skills/gnhf/SKILL.md`.
-
-- [x] Prompt architecture refactor — `main_system.md` trimmed to harness-only; behavioral guidelines in `.dagi/agents.md`; persona in `soul.md`.
+- [x] Pipe-based subagent architecture — replaced file-IPC + `CREATE_NEW_CONSOLE` terminal spawning with `subprocess.Popen(stdout=PIPE)`. New `tools/_subagent_runner.py` with event relay, PID tracking, and `extend_timeout` tool. (~2026-06-06)
 
 - [x] BM25 wiki retrieval in memory-query skill — `agent/memory_retriever.py` + `.dagi/skills/memory-query/bm25_query.py`. (Superseded 2026-06-27 — replaced with subagent-based grep+traversal)
 
-- [x] Auto compaction — Pi-style compaction preserves system prompt + recent tail, carries forward prior summaries.
+- [x] Transient API error retry — exponential backoff (2^n s, cap 60s) for 429/5xx; configurable `api_error_retries`; compaction snapshots messages before API call. (2026-06-08)
 
-- [x] Plan mode — full read-only planning mode; BashTool omitted; WriteTool/EditTool restricted to plan document.
+- [x] Harbor harness Fix A — `DagiAgent.run()` uses `tempfile.mkdtemp()` for `config.project_path`. (2026-06-13)
 
-- [x] Web research tools — `web_search`, `web_fetch`, `web_research`, `explore_files`.
+- [x] Harbor harness Fix B — `system_prompt_preamble` field in `AgentConfig`; injected first in system prompt at all 3 build sites. (2026-06-13)
 
-- [x] Multi-root search — `FindTool` and `GrepTool` search all `allowed_roots` when `path` is omitted.
+- [x] RAM watchdog in test suite — `tests/conftest.py` auto-use fixture monitors system RAM; 70% → `pytest.fail()`; 90% → `os._exit(1)`. (~2026-06-13)
 
-- [x] Harbor harness Fix A — `DagiAgent.run()` uses `tempfile.mkdtemp()` for `config.project_path`.
+- [x] Soul/agents.md re-injected after plan-mode transitions — `_build_preamble(dagi_root)` extracted; called from `__init__`, `_rebuild_for_normal_mode`, `_rebuild_for_plan_mode`. (2026-06-17)
 
-- [x] Harbor harness Fix B — `system_prompt_preamble` field in `AgentConfig`; injected first in system prompt at all 3 build sites.
+- [x] TUI `loop.finish()` now called on agent work completion — session logs properly finalized with `session_end` record. (2026-06-17)
 
-- [x] Harden compaction failure path — `_compact_context()` catches all exceptions from `compact_tool.compact()`, emits a warning, and returns `_NO_COMPACTION`. (`_todo/todo_2026-06-20.md` A1, fixed `0e7fe54` 2026-06-21)
+- [x] Harden compaction failure path — `_compact_context()` catches all exceptions from `compact_tool.compact()`, emits a warning, and returns `_NO_COMPACTION`. (2026-06-21)
 
-- [x] `provider_order` snapshotted and restored on tier switch — 6th field in `_base_config_snapshot`; copied from `tier_cfg`; restored on "default" switch. (Fixed `0ffff74` 2026-06-21)
+- [x] `provider_order` snapshotted and restored on tier switch — 6th field in `_base_config_snapshot`; copied from `tier_cfg`; restored on "default" switch. (2026-06-21)
 
-- [x] `DAGI_ROOT` centralised in `agent/__init__.py` — replaced 4 independent `Path(__file__).parent.parent` expressions in `agent/tools.py`, `tools/cli_subagent.py`, `tools/_subagent_runner.py`, `agent/loop.py`. (Fixed `cdf90a8` 2026-06-21)
+- [x] `DAGI_ROOT` centralised in `agent/__init__.py` — replaced 4 independent `Path(__file__).parent.parent` expressions in `agent/tools.py`, `tools/cli_subagent.py`, `tools/_subagent_runner.py`, `agent/loop.py`. (2026-06-21)
 
-- [x] RAM watchdog in test suite — `tests/conftest.py` auto-use fixture monitors system RAM; 70% → `pytest.fail()`; 90% → `os._exit(1)`.
+- [x] `tempfile.mktemp()` TOCTOU race fixed at 3 sites — replaced with atomic `mkstemp()` + `os.close(fd)` in `tools/_subagent_runner.py:96` and `tools/cli_subagent.py:70,73`. (2026-06-26)
 
-- [x] `tempfile.mktemp()` TOCTOU race fixed at 3 sites — replaced with atomic `mkstemp()` + `os.close(fd)` in `tools/_subagent_runner.py:96` and `tools/cli_subagent.py:70,73`. (`_todo/todo_2026-06-07.md` #4, fixed 2026-06-26)
+- [x] `SpawnCliSubagentTool` migrated to `run_subagent()` — pipe deadlock fixed, TUI relay wired, PID tracking added, timeout returns resumable dict, prompt-file cleanup in `try/finally`. (2026-06-26)
 
-- [x] `SpawnCliSubagentTool` migrated to `run_subagent()` — pipe deadlock fixed, TUI relay wired, PID tracking added, timeout returns resumable dict, prompt-file cleanup in `try/finally`. (`_todo/todo_2026-06-25.md` A2, fixed 2026-06-26)
-
-- [x] Temp file leak on subagent timeout fixed — `task_file: Path` added to `_SubagentState`; `_poll_until` now calls `state.task_file.unlink()` on process exit, covering both normal and resume paths. (`_todo/todo_2026-06-07.md` #3, fixed 2026-06-26)
-
-- [x] Soul/agents.md re-injected after plan-mode transitions — `_build_preamble(dagi_root)` extracted; called from `__init__`, `_rebuild_for_normal_mode`, `_rebuild_for_plan_mode`. (Fixed `6591652`)
-
-- [x] TUI `loop.finish()` now called on agent work completion — session logs properly finalized with `session_end` record. (Fixed `6591652`)
+- [x] Temp file leak on subagent timeout fixed — `task_file: Path` added to `_SubagentState`; `_poll_until` now calls `state.task_file.unlink()` on process exit, covering both normal and resume paths. (2026-06-26)
 
 - [x] 3-site system-prompt divergence eliminated — `_assemble_system_string(dagi_root)` is the single assembly point; all 3 build sites delegate to it. Eliminates the class of divergence bugs (soul dropped, memory_root missing, etc.). (2026-06-27)
+
+### Archived (> 30 days)
+- Full Textual TUI · `done:~2026-05-30`
+- TUI text wrap + multi-line input · `done:~2026-05-30`
+- TUI submodule refactor · `done:~2026-05-30`
+- ESC pause button in TUI · `done:~2026-05-31`
+- Unified skill invocation · `done:~2026-05-31`
+- Plan mode revision loop · `done:~2026-05-31`
+- Single response flag (`<<END_OF_RESPONSE>>`) · `done:~2026-05-31`
+- Direct `api_key` in config.yaml · `done:~2026-05-29`
+- GNHF skill (`git_status`, `git_commit`, `git_rollback`) · `done:~2026-05-03`
+- Prompt architecture refactor (`main_system.md`, `agents.md`, `soul.md`) · `done:~2026-05-14`
+- Auto compaction (Pi-style) · `done:~2026-05-14`
+- Plan mode (read-only planning) · `done:~2026-05-14`
+- Web research tools (`web_search`, `web_fetch`, `web_research`, `explore_files`) · `done:~2026-05-14`
+- Multi-root search (`FindTool`, `GrepTool`) · `done:~2026-05-14`
