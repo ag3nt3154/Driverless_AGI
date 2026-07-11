@@ -102,7 +102,43 @@
 
 ### 🔴 CRITICAL — Security / Data Loss
 
+- **Telegram bot has no authorization — unauthenticated remote code execution** · `priority:critical` · `open:0d` · `effort:S`
+  - **File:** `tg/bot.py:102-122` (`_handle_message`), `agent/tools.py:285` (BashTool always registered)
+  - **Problem:** `_handle_message` dispatches input from *any* `chat_id` straight into `AgentLoop` with the full tool registry (`bash` = `subprocess.run(shell=True)`, unrestricted `write`/`edit`/`copy`). No allowlist, no owner check. Anyone who finds/guesses the bot can run arbitrary shell commands on the host.
+  - **Fix:** Add an allowlist (`TELEGRAM_ALLOWED_CHAT_IDS`) checked before dispatch; reject others. Consider restricting `config.tools` on the remote surface via the existing `registry.filter_to`.
+  - **Source:** `fable_code_review_2026-07-11` (#3)
+
+- **Memory-subagent wiki sandbox fails open when `memory_root` is unset (the default)** · `priority:critical` · `open:0d` · `effort:S`
+  - **File:** `agent/tools.py:436-443`; interacts with `agent/config_loader.py:142-143`, `cli.py:1116,974`
+  - **Problem:** `root: memory_root` restriction only applies when `memory_root is not None`, but `config.memory_root` defaults to `None` (`config.example.yaml:87` ships it commented out). In the default config, `memory-add`/`memory-query` subagents fall through to full project scope with `write`+`edit` — they can modify `agent/loop.py`, `.env`, anything. The resolved root (`loop.py:254`) is not the value threaded into `build_subagent_registry`; the raw `None` is.
+  - **Fix:** Pass the resolved effective memory root into `build_subagent_registry`, or default the fallback to `project_path / "dagi-memory"` when `root == "memory_root"` and `memory_root is None`. Never fall through to full scope on a sandbox request.
+  - **Source:** `fable_code_review_2026-07-11` (#4)
+
 ### 🔴 HIGH — Bugs
+
+- **Reading any image file crashes the entire agent loop** · `priority:critical` · `open:0d` · `effort:XS`
+  - **File:** `agent/loop.py:544-560` (triggered by `tools/read.py:46-48`)
+  - **Problem:** `ReadTool.run()` returns a `list` for images. The sentinel chain's `else` calls `parse_switch_sentinel(result)` → `list.startswith(...)` → `AttributeError`, which propagates to `loop.py:611` and kills the task. **Reproduced:** `parse_switch_sentinel([...]) → AttributeError: 'list' object has no attribute 'startswith'`.
+  - **Fix:** Guard the whole sentinel chain on `isinstance(result, str)`; let non-string (image) results fall through to `filter_tool_output`.
+  - **Source:** `fable_code_review_2026-07-11` (#1)
+
+- **`active_loop.plan_mode_exited` — AttributeError after every interactive CLI task (regression)** · `priority:critical` · `open:0d` · `effort:XS`
+  - **File:** `cli.py:1239`
+  - **Problem:** `AgentLoop` never defines `plan_mode_exited` (only `exited_plan_file`, `loop.py:323`) and has no `__getattr__`. `run_one` reads it after every task, unwrapped, so the first task crashes the CLI. Regression of the bug logged in `todo_2026-06-07.md` / removed per `PROJECT_CONTEXT.md:183` — reintroduced in recent commits.
+  - **Fix:** Use `active_loop.exited_plan_file` and reset it after handling. Add a `run_one` smoke test to prevent re-regression.
+  - **Source:** `fable_code_review_2026-07-11` (#2)
+
+- **`_PLAN_SUBAGENT_SYSTEM_PROMPT` referenced but never defined (NameError landmine)** · `priority:medium` · `open:0d` · `effort:XS`
+  - **File:** `tools/plan_subagent.py:30`
+  - **Problem:** The name has exactly one occurrence in the repo — the *use*. `build_plan_agent_config()` raises `NameError` the moment it's called. Only unreached because the whole module is dead code.
+  - **Fix:** Delete the dead module (preferred) or define/load the prompt constant.
+  - **Source:** `fable_code_review_2026-07-11` (#6)
+
+- **`grep` Python fallback returns zero matches under any dotted directory** · `priority:medium` · `open:0d` · `effort:XS`
+  - **File:** `tools/grep.py:96-101`
+  - **Problem:** The hidden-file filter tests the full `p.parts`, so searching a path inside `.dagi/` excludes every file (the `.dagi` component matches). Masked when ripgrep is present; silent `[no matches]` when it isn't. **Reproduced** statically.
+  - **Fix:** Apply the dot filter only to `p.relative_to(search_path).parts`, not the search root.
+  - **Source:** `fable_code_review_2026-07-11` (#7)
 
 - **`tg/bot.py` `UnboundLocalError` in `finally` block — masks original exception** · `priority:high` · `open:1d` · `effort:XS`
   - **File:** `tg/bot.py:163`
