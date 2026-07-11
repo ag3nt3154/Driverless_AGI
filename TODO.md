@@ -439,6 +439,8 @@
 
 > Entries appended automatically by the `/improve-yourself` workflow after each test run.
 
+> **Long-horizon ideation:** see [fable_docs_self_improve_moonshots.md](fable_docs_self_improve_moonshots.md) (2026-07-11) — 10 far-fetched architecture/process ideas for making DAGI self-learning and self-improving, with a phased roadmap. Recommended starting pair: counterfactual replay engine + experience distillation.
+
 ### [High] Bootstrap the self-improvement loop
 
 **Type:** workflow | **Generated:** 2026-05-03
