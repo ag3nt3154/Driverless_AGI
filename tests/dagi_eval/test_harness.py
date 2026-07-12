@@ -1,0 +1,84 @@
+import subprocess
+import sys
+from pathlib import Path
+
+import pytest
+
+from benchmarks.dagi_eval import harness, scoring
+
+FIXTURE = Path(__file__).parent / "fixture_task"
+_TASKS_ROOT = Path(__file__).resolve().parents[2] / "benchmarks" / "dagi_eval" / "tasks"
+REAL_TASKS = sorted(
+    p for p in _TASKS_ROOT.glob("coding_*") if (p / "task.yaml").exists()
+) if _TASKS_ROOT.exists() else []
+
+
+@pytest.fixture(scope="module", autouse=True)
+def fixture_data():
+    subprocess.run([sys.executable, str(FIXTURE / "hidden" / "make_inputs.py")],
+                   check=True, capture_output=True, timeout=300)
+
+
+def test_prepare_workspace_copies_only_public(tmp_path):
+    ws = harness.prepare_workspace(FIXTURE)
+    assert (ws / "spec.md").exists()
+    assert (ws / "pipeline.py").exists()
+    assert not (ws / "hidden").exists()
+    assert not (ws / "task.yaml").exists()
+
+
+def test_naive_solver_scores_near_parity():
+    ws = harness.prepare_workspace(FIXTURE)
+    harness.apply_canned_solver(ws, FIXTURE, "naive", "coding")
+    res = scoring.score_coding_task(FIXTURE, ws)
+    assert res["error"] is None
+    assert res["correct"] is True
+    assert 0.3 <= res["speedup"] <= 3.0  # same code, timing noise only
+
+
+def test_gold_solver_correct_and_faster():
+    ws = harness.prepare_workspace(FIXTURE)
+    harness.apply_canned_solver(ws, FIXTURE, "gold", "coding")
+    res = scoring.score_coding_task(FIXTURE, ws)
+    assert res["error"] is None
+    assert res["correct"] is True
+    assert res["speedup"] > 2.0
+
+
+def test_broken_solution_scores_zero(tmp_path):
+    ws = harness.prepare_workspace(FIXTURE)
+    (ws / "pipeline.py").write_text("def run(input_dir):\n    return {'total': -1}\n",
+                                    encoding="utf-8")
+    res = scoring.score_coding_task(FIXTURE, ws)
+    assert res["correct"] is False
+    assert res["speedup"] == 0.0
+    assert "mismatch" in res["error"]
+
+
+def test_discover_tasks_rejects_unknown(tmp_path):
+    (tmp_path / "t1").mkdir()
+    (tmp_path / "t1" / "task.yaml").write_text("kind: coding\n", encoding="utf-8")
+    assert [p.name for p in harness.discover_tasks(tmp_path)] == ["t1"]
+    with pytest.raises(SystemExit):
+        harness.discover_tasks(tmp_path, only=["nope"])
+
+
+def test_append_result_and_git_info(tmp_path):
+    out = tmp_path / "results.jsonl"
+    harness.append_result({"a": 1}, out)
+    harness.append_result({"b": 2}, out)
+    lines = out.read_text(encoding="utf-8").strip().splitlines()
+    assert len(lines) == 2
+    sha, dirty = harness.git_commit_info()
+    assert len(sha) == 40
+    assert isinstance(dirty, bool)
+
+
+@pytest.mark.parametrize("task_dir", REAL_TASKS, ids=lambda p: p.name)
+def test_baseline_is_pristine_copy_of_public(task_dir):
+    """Guards drift between the shipped slow code and the timing baseline."""
+    meta = scoring.load_task_meta(task_dir)
+    fname = meta["entry_module"] + ".py"
+    pub = (task_dir / "public" / fname).read_text(encoding="utf-8")
+    base = (task_dir / "hidden" / "baseline" / fname).read_text(encoding="utf-8")
+    assert pub == base
