@@ -324,8 +324,6 @@ class AgentLoop:
 
         self.tracker.record_system(system)
 
-        self.exited_plan_file: str | None = None
-
         # Reset at the start of each run() call — counts "continue" injections for that task only
         self._continuation_count: int = 0
 
@@ -560,9 +558,10 @@ class AgentLoop:
                         result = _format_reload_notification(len(self.skills), added, removed, errors)
                         self._messages.append({"role": "system", "content": result})
                     else:
-                        _switch_target = parse_switch_sentinel(result)
-                        if _switch_target is not None:
-                            result = self._handle_switch_model(_switch_target, args)
+                        if isinstance(result, str):
+                            _switch_target = parse_switch_sentinel(result)
+                            if _switch_target is not None:
+                                result = self._handle_switch_model(_switch_target, args)
                     # ── Output filter ────────────────────────────────────────
                     context_result, full_str = filter_tool_output(
                         result, self.config.reserve_tokens, self._filter_temp
@@ -694,7 +693,6 @@ class AgentLoop:
         dagi_root = DAGI_ROOT
         self._handle_switch_model("default", {"reason": "plan complete, returning to normal mode"})
         self.config.active_plan_file = saved_plan
-        self.exited_plan_file = saved_plan
         self._rebuild_for_normal_mode(dagi_root)
         if saved_plan and _is_plan_empty(Path(saved_plan)):
             return (

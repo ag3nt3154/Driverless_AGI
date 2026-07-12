@@ -470,9 +470,13 @@ def build_subagent_registry(
 
     # Subagents with `root: memory_root` are restricted to the wiki directory only.
     root_override = cfg.get("root")
-    if root_override == "memory_root" and memory_root is not None:
-        cwd_for_tools = memory_root
-        effective_roots: list[Path] | None = [memory_root]
+    if root_override == "memory_root":
+        if memory_root is not None:
+            wiki_root = memory_root
+        else:
+            wiki_root = (project_path / "dagi-memory").resolve()
+        cwd_for_tools = wiki_root
+        effective_roots: list[Path] | None = [wiki_root]
     else:
         cwd_for_tools = project_path
         effective_roots = default_roots

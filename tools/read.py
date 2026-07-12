@@ -4,6 +4,8 @@ from pathlib import Path
 from agent.base_tool import BaseTool
 from tools._path_guard import validate_path
 
+# Image extensions — currently blocked until the endpoint supports image tool results.
+# TODO: remove _IMAGE_EXTS from _BLOCKED_EXTS and re-enable the image path below.
 _IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
 _MIME = {
     ".jpg": "image/jpeg",
@@ -13,13 +15,19 @@ _MIME = {
     ".webp": "image/webp",
 }
 
+# File types that the read tool explicitly cannot handle.
+# Everything else is attempted as UTF-8 text.
+# Add future unsupported formats here (pdf, docx, etc.) until they gain read support.
+_BLOCKED_EXTS = _IMAGE_EXTS.copy()
+
 
 class ReadTool(BaseTool):
     name = "read"
     description = (
-        "Read the contents of a file. Supports text files and images (jpg, png, gif, webp). "
-        "Images are sent as attachments. For text files, defaults to first 2000 lines. "
-        "Use offset/limit for large files. Accepts both relative paths (resolved from the project root) and absolute paths. "
+        "Read the contents of a file. Supports all text files (any extension) — "
+        "attempts UTF-8 decoding. Defaults to first 2000 lines. "
+        "Use offset/limit for large files. Accepts both relative paths "
+        "(resolved from the project root) and absolute paths. "
         "For large-scale codebase exploration, prefer `explore_files`."
     )
     _parameters = {
@@ -41,11 +49,25 @@ class ReadTool(BaseTool):
         if not p.is_absolute():
             p = self.cwd / p
         p = validate_path(p, self.allowed_roots)
+
         ext = p.suffix.lower()
-        if ext in _IMAGE_EXTS:
-            b64 = base64.b64encode(p.read_bytes()).decode()
-            mime = _MIME[ext]
-            return [{"type": "image_url", "image_url": {"url": f"data:{mime};base64,{b64}"}}]
-        lines = p.read_text(encoding="utf-8").splitlines()
+
+        # ── Blocked file type gate ────────────────────────────────────────
+        if ext in _BLOCKED_EXTS:
+            return (
+                f"Error: Cannot read file type '{ext}'. This file type is not currently "
+                f"supported by the read tool. If this file type should be supported, "
+                f"update _BLOCKED_EXTS in tools/read.py."
+            )
+        # ──────────────────────────────────────────────────────────────────
+
+        try:
+            lines = p.read_text(encoding="utf-8").splitlines()
+        except UnicodeDecodeError:
+            return (
+                f"Error: Cannot read '{p.name}' as text. The file appears to be binary "
+                f"or uses an encoding other than UTF-8."
+            )
+
         start = max(0, offset - 1)
         return "\n".join(lines[start : start + limit])
