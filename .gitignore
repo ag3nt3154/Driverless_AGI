@@ -194,3 +194,6 @@ snapshots/
 benchmarks/jobs/*
 jobs/*
 .dagi/temp/
+
+# git worktrees
+.worktrees/
