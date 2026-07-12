@@ -23,7 +23,8 @@ def _load_arrays(ents):
     return x, y, vx, vy, state
 
 
-def _move_and_bounce_vec(x, y, vx, vy, w, h):
+def _move_and_bounce_vec(x, y, vx, vy, bounds):
+    w, h = bounds
     x += vx
     y += vy
     m = x < 0
@@ -40,7 +41,8 @@ def _move_and_bounce_vec(x, y, vx, vy, w, h):
     vy[m] = -vy[m]
 
 
-def _build_cells(inf_idx, x, y, radius):
+def _build_cells(inf_idx, pos, radius):
+    x, y = pos
     cells = {}
     for j in inf_idx:
         key = (int(x[j] // radius), int(y[j] // radius))
@@ -48,7 +50,9 @@ def _build_cells(inf_idx, x, y, radius):
     return cells
 
 
-def _neighbor_hit(i, x, y, cells, r2, cx, cy):
+def _neighbor_hit(i, pos, cells, r2, cell_xy):
+    x, y = pos
+    cx, cy = cell_xy
     for dcx in (-1, 0, 1):
         for dcy in (-1, 0, 1):
             for j in cells.get((cx + dcx, cy + dcy), ()):
@@ -59,13 +63,14 @@ def _neighbor_hit(i, x, y, cells, r2, cx, cy):
     return False
 
 
-def _find_newly_infected_spatial(sus, inf, x, y, radius, r2):
+def _find_newly_infected_spatial(sus, inf, pos, radius, r2):
+    x, y = pos
     newly = []
     if len(sus) and len(inf):
-        cells = _build_cells(inf, x, y, radius)
+        cells = _build_cells(inf, pos, radius)
         for i in sus:
             cx, cy = int(x[i] // radius), int(y[i] // radius)
-            if _neighbor_hit(i, x, y, cells, r2, cx, cy):
+            if _neighbor_hit(i, pos, cells, r2, (cx, cy)):
                 newly.append(i)
     return newly
 
@@ -95,11 +100,11 @@ def run(input_dir):
 
     infected_per_step = []
     for _ in range(steps):
-        _move_and_bounce_vec(x, y, vx, vy, w, h)
+        _move_and_bounce_vec(x, y, vx, vy, (w, h))
 
         sus = np.flatnonzero(state == S)
         inf = np.flatnonzero(state == I)
-        newly = _find_newly_infected_spatial(sus, inf, x, y, radius, r2)
+        newly = _find_newly_infected_spatial(sus, inf, (x, y), radius, r2)
 
         _advance_recovery_vec(state, infected_for, newly, recover)
         infected_per_step.append(int((state == I).sum()))
