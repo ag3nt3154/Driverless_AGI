@@ -504,6 +504,7 @@ Driverless_AGI/
 │   ├── plan_mode.py       # Enter / exit read-only plan mode
 │   ├── switch_model.py    # Swap models mid-session
 │   ├── ask_user.py        # Prompt user for clarification
+│   ├── escalate_issue.py  # Worker/review subagents: sidecar-file escalation to the main agent
 │   └── _path_guard.py     # Path sandboxing utilities
 │
 ├── .dagi/
@@ -553,6 +554,7 @@ Driverless_AGI/
 | `switch_model` | Swap to a different model (from `config.yaml`) mid-session |
 | `ask_user` | Pause and ask the user a clarifying question with optional choices |
 | `show_plan` | In plan mode: render the current plan document and ask the user for revisions. Returns "Plan approved" (call `exit_plan_mode`) or "Modifications requested" (revise and call `show_plan` again). In autonomous mode, auto-approves immediately |
+| `escalate_issue` | Worker/review subagent only: raise a blocking question to the main agent instead of guessing. Writes a sidecar file next to the subagent's handoff report; the main agent's subprocess poll loop detects it, terminates the subagent, and surfaces `"[worker escalated]"` / `"[review escalated]"` with the question and context — does not consume a plan-work-review retry attempt |
 
 File tools (`read`, `write`, `edit`, `grep`, `find`) are sandboxed to allowed roots via `tools/_path_guard.py`. `bash` is intentionally unsandboxed.
 
