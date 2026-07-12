@@ -127,23 +127,16 @@ conda run --no-capture-output -n dagi python tui.py -m deepseek-v4-pro-openroute
 
 Exit with `/exit`, `exit`, `quit`, or `Ctrl-C`. Conversation history carries across turns.
 
-### Interactive CLI (`cli.py`)
+### Interactive CLI (`archives/cli.py`) [DEPRECATED]
 
-Lightweight scrolling REPL — useful for piped/scripted use or when a full TUI is not needed.
+The legacy CLI REPL has been **archived** in favour of the TUI (`python tui.py`).
+It remains available at `archives/cli.py` for reference and is still used internally
+as the subagent binary for explore_files, web_research, etc.
 
 ```bash
-python cli.py                          # start REPL
-python cli.py "one-shot task"          # single task then REPL
-python cli.py -m claude-opus-openrouter -v "task"
+conda run --no-capture-output -n dagi python archives/cli.py
+conda run --no-capture-output -n dagi python tui.py   # preferred
 ```
-
-| Flag | Description |
-|------|-------------|
-| `--model` / `-m` | Model ID from `config.yaml` |
-| `--verbose` / `-v` | Show full tool input/output |
-| `--sync` | Disable threaded mode (no spinner) |
-
-Exit with `q`, `exit`, or `quit`. Conversation history carries across turns.
 
 ### Telegram Bot (`telegram_bot.py`)
 
@@ -195,8 +188,8 @@ Every session is scoped to a working directory. You can set it at launch time, o
 # TUI
 conda run --no-capture-output -n dagi python tui.py --project /path/to/myproject
 
-# CLI
-python cli.py --project /path/to/myproject
+# CLI [DEPRECATED — use `python tui.py`]
+python archives/cli.py --project /path/to/myproject
 ```
 
 **Option B — open the TUI first, then navigate:**
@@ -459,7 +452,8 @@ When reasoning is active:
 ```
 Driverless_AGI/
 ├── main.py                # Single-shot CLI (argparse)
-├── cli.py                 # Interactive CLI / REPL (typer + rich)
+├── archives/              # Deprecated CLI (moved from root)
+│   └── cli.py             #   Interactive CLI / subagent binary (typer + rich)
 ├── config.yaml            # Runtime config (gitignored)
 ├── config.example.yaml    # Config template
 ├── .env                   # API keys (gitignored)
@@ -613,7 +607,7 @@ with optional YAML frontmatter (`name`, `description`). Unlike skills, they are 
 into the system prompt** and are not autonomously discoverable by the agent — they are invoked
 only when the user types a slash command in the interactive CLI.
 
-**Discovery and invocation (in `cli.py`):**
+**Discovery and invocation (in `archives/cli.py`):**
 - At startup, all workflows under `.dagi/workflow/` are loaded via `agent/workflows.py`
 - `/workflows` — list all loaded workflows with their descriptions
 - `/<workflow-name>` — inject the workflow document as the next agent task; any sibling scripts
@@ -729,5 +723,5 @@ Core (from `pyproject.toml`):
 
 Additional (install separately if using the interactive CLI):
 
-- `typer` + `rich` — interactive CLI (`cli.py`)
+- `typer` + `rich` — interactive CLI (`archives/cli.py`)
 - No extra native libraries required — subagents use stdlib `subprocess` with stdout pipe

@@ -25,12 +25,6 @@ import yaml
 from agent.loop import AgentConfig
 
 
-@dataclass
-class CliConfig:
-    """CLI-specific settings loaded from the top-level `cli:` key in config.yaml."""
-    threading: str = "threaded"  # "threaded" | "sync"
-    verbose: bool = False
-
 _CONFIG_PATH = Path("config.yaml")
 
 _FALLBACK_MODEL_ID = "gpt-4o-openai"
@@ -50,15 +44,6 @@ def get_model_display_name(model_id: str | None = None) -> str:
     entry = catalog.get(chosen_id, _FALLBACK_ENTRY)
     return entry.get("name", chosen_id or "unknown")
 
-
-def load_cli_config() -> CliConfig:
-    """Return CLI settings from the `cli:` section of config.yaml, with safe defaults."""
-    raw = load_raw_config()
-    cli = raw.get("cli", {}) or {}
-    return CliConfig(
-        threading=cli.get("threading", "threaded"),
-        verbose=bool(cli.get("verbose", False)),
-    )
 
 
 @dataclass
@@ -121,7 +106,7 @@ def _merge_configs(root_raw: dict, project_raw: dict) -> dict:
     return merged
 
 
-def _build_config_from_entry(entry: dict, raw: dict) -> AgentConfig:
+def _build_config_from_entry(entry: dict, raw: dict, model_id: str = "") -> AgentConfig:
     """Build an AgentConfig from a catalog entry dict and the top-level raw config."""
     direct_key = entry.get("api_key", "")
     if direct_key:
@@ -152,6 +137,7 @@ def _build_config_from_entry(entry: dict, raw: dict) -> AgentConfig:
         model=entry["model"],
         base_url=entry["api_url"],
         api_key=api_key,
+        model_id=model_id,
         thinking=str(thinking).lower(),
         context_window=int(context_window),
         reserve_tokens=int(reserve_tokens),
@@ -229,7 +215,7 @@ def resolve_model_config(
 
     from dataclasses import replace
 
-    cfg = _build_config_from_entry(entry, raw)
+    cfg = _build_config_from_entry(entry, raw, model_id=chosen_id)
     cfg = replace(cfg, display_name=entry.get("name", chosen_id))
     if project_path is not None:
         cfg = replace(cfg, project_path=project_path)
@@ -238,14 +224,14 @@ def resolve_model_config(
     worker_id = raw.get("worker_model")
     worker_cfg: AgentConfig | None = None
     if worker_id and worker_id in catalog:
-        worker_cfg = _build_config_from_entry(catalog[worker_id], raw)
+        worker_cfg = _build_config_from_entry(catalog[worker_id], raw, model_id=worker_id)
         worker_cfg = replace(worker_cfg, display_name=catalog[worker_id].get("name", worker_id))
 
     # Resolve optional advanced model for plan mode; silently fall back if unset/invalid.
     advanced_id = raw.get("advanced_model")
     advanced_cfg: AgentConfig | None = None
     if advanced_id and advanced_id in catalog:
-        advanced_cfg = _build_config_from_entry(catalog[advanced_id], raw)
+        advanced_cfg = _build_config_from_entry(catalog[advanced_id], raw, model_id=advanced_id)
         advanced_cfg = replace(advanced_cfg, display_name=catalog[advanced_id].get("name", advanced_id))
 
     return replace(cfg, worker_config=worker_cfg, advanced_config=advanced_cfg)

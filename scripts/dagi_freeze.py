@@ -59,7 +59,7 @@ SNAPSHOT_PATHS = [
     "tools",
     ".dagi/skills",
     ".dagi/prompts",
-    "cli.py",
+    "archives/cli.py",
     "main.py",
     "hist.py",
     "_probe.py",

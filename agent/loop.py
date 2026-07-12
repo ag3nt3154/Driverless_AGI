@@ -139,6 +139,9 @@ class AgentConfig:
     active_plan_file: str | None = None
     # Human-readable label from the config catalog (e.g. "GPT-4o (OpenAI)")
     display_name: str = ""
+    # Resolved model ID from the catalog (e.g. "gpt-4o-openai"). Set by resolve_model_config.
+    # Used by the TUI to update sidebar state when /wd triggers a project switch.
+    model_id: str = ""
     # Continuation: max times the harness injects "continue" before giving up
     max_continuations: int = 10
     # Ghost-response retries: how many times to silently retry an API call that

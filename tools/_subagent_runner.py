@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import Callable
 
 from agent import DAGI_ROOT as _DAGI_ROOT
-_CLI_PATH = _DAGI_ROOT / "cli.py"
+_CLI_PATH = _DAGI_ROOT / "archives" / "cli.py"
 _POLL_INTERVAL = 2.0  # seconds between PID-alive checks
 
 

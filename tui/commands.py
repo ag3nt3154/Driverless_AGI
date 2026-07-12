@@ -134,11 +134,20 @@ class SlashCommandsMixin:
             conv.append_info(f"[red]Not a directory:[/red] {new}")
             return
         self._project_path = new
-        from agent.config_loader import resolve_model_config
+        from agent.config_loader import get_model_display_name, resolve_model_config
         self._config = resolve_model_config(self._model_id, project_path=new)
+        # If no explicit model was chosen, pick up the new project's default_model.
+        resolved_id = getattr(self._config, 'model_id', '') or self._model_id or ''
+        if resolved_id and resolved_id != self._model_id:
+            self._model_id = resolved_id
+            self._model_name = get_model_display_name(resolved_id)
+        sidebar = self.query_one(Sidebar)
+        sidebar.update_model(self._model_name)
+        sidebar._context_window = self._config.context_window
+        sidebar._reserve_tokens = self._config.reserve_tokens
         self._active_loop = None
         self._load_maps()
-        self.query_one(Sidebar).set_project_path(new)
+        sidebar.set_project_path(new)
         conv.append_info(f"[green]✓ Working directory →[/green] {new}")
 
     def _cmd_compact(self) -> None:
