@@ -11,7 +11,9 @@ class EnterPlanModeTool(BaseTool):
     description = (
         "Switch to plan mode. Restricts tools to read/grep/find and plan-file write only. "
         "Pass mode='interactive' when invoked by the user (plan requires approval before execution). "
-        "Pass mode='autonomous' when DAGI initiates internally (plan is auto-approved)."
+        "Pass mode='autonomous' when DAGI initiates internally (plan is auto-approved). "
+        "task_summary is a short kebab-case slug describing the task (e.g. 'fix-git-tools') — "
+        "it seeds the plan title and names the git branch auto-created for this task."
     )
     _parameters = {
         "type": "object",
@@ -20,12 +22,16 @@ class EnterPlanModeTool(BaseTool):
                 "type": "string",
                 "enum": ["interactive", "autonomous"],
                 "description": "interactive: user must approve the plan. autonomous: plan is auto-approved.",
-            }
+            },
+            "task_summary": {
+                "type": "string",
+                "description": "Short kebab-case slug summarizing the task, e.g. 'fix-git-tools'.",
+            },
         },
-        "required": ["mode"],
+        "required": ["mode", "task_summary"],
     }
 
-    def run(self, mode: str) -> str:
+    def run(self, mode: str, task_summary: str) -> str:  # noqa: ARG002
         return f"{ENTER_PLAN_MODE_SENTINEL}:{mode}"
 
 

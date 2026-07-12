@@ -11,6 +11,7 @@ from typing import Callable
 import openai
 
 from agent import DAGI_ROOT
+from agent._git_branch import create_task_branch
 from agent.prompts import load_prompt, load_main_system_prompt, load_soul
 from agent.registry import ToolRegistry
 from agent.session import SessionTracker, ToolCallRecord
@@ -616,6 +617,10 @@ class AgentLoop:
 
     def _handle_enter_plan_mode(self, args: dict) -> str:
         mode = args.get("mode", "interactive")
+        task_summary = (args.get("task_summary") or "").strip()
+        if not task_summary:
+            return "Error: task_summary is required when entering plan mode."
+
         interactive = mode != "autonomous"
         dagi_root = DAGI_ROOT
         plans_dir = self.config.project_path / ".dagi" / "plans"
@@ -625,7 +630,7 @@ class AgentLoop:
         plan_dir.mkdir(parents=True, exist_ok=True)
         plan_file = plan_dir / "plan.md"
         plan_file.write_text(
-            "# Plan: \n\n"
+            f"# Plan: {task_summary}\n\n"
             "## Context\n\n\n"
             "## Approach\n\n\n"
             "## Files to Modify\n\n\n"
@@ -644,12 +649,23 @@ class AgentLoop:
             encoding="utf-8",
         )
 
+        branch_name: str | None = None
+        try:
+            branch_name = create_task_branch(self.config.project_path, task_summary, plan_dir.name)
+        except RuntimeError as e:
+            self.callbacks.on_assistant_text(f"[git] Could not create task branch: {e}")
+
+        if branch_name:
+            branch_note = f"**Branch:** `{branch_name}`"
+        else:
+            branch_note = "**Branch:** (no git repository detected — skipping git workflow)"
+
         self._handle_switch_model("plan", {"reason": "entering plan mode"})
         to_name = self.config.display_name or self.config.model
 
         self.callbacks.on_assistant_text(
             f"Entering plan mode — switching to advanced model ({to_name}).\n\n"
-            f"**Plan file:** `{plan_file}`\n\n**Mode:** {mode}"
+            f"**Plan file:** `{plan_file}`\n\n**Mode:** {mode}\n\n{branch_note}"
         )
 
         self._rebuild_for_plan_mode(dagi_root, plan_file, interactive=interactive)
@@ -657,6 +673,7 @@ class AgentLoop:
         return (
             f"Plan mode activated ({mode} mode). Advanced model: {to_name}.\n\n"
             f"Plan file: {plan_file}\n\n"
+            f"{branch_note}\n\n"
             f"Tools restricted to: read, grep, find, write/edit (plan file only), "
             f"web_research, skill, run_skill_script, ask_user, show_plan, exit_plan_mode."
         )
