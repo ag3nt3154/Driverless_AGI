@@ -47,6 +47,20 @@ class TestEscalationDetection:
         result = _poll_until(state, extra_seconds=1)
 
         assert result["status"] == "escalated"
+        # Escalation must be detected before any proc.poll() call happens.
+        proc.poll.assert_not_called()
+
+    def test_terminate_timeout_falls_back_to_kill(self, tmp_path):
+        import subprocess as sp
+        escalation_path = tmp_path / "worker_ab12cd34_escalation.md"
+        escalation_path.write_text("# Escalation\n\n## Question\nQ\n\n## Context\nC\n", encoding="utf-8")
+        state, proc = _make_state(tmp_path, poll_side_effect=lambda: None)
+        proc.wait.side_effect = sp.TimeoutExpired(cmd="x", timeout=5)
+
+        result = _poll_until(state, extra_seconds=10)
+
+        assert result["status"] == "escalated"
+        proc.kill.assert_called_once()
 
     def test_no_escalation_file_falls_through_to_normal_ok_path(self, tmp_path):
         state, proc = _make_state(tmp_path, poll_side_effect=[None, 0])

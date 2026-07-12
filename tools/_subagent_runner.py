@@ -72,6 +72,7 @@ def _poll_until(
 
     deadline = time.monotonic() + extra_seconds
     proc = state.proc
+    # Sidecar file written by tools/escalate_issue.py when a subagent needs help.
     escalation_path = state.handoff_path.with_name(
         state.handoff_path.stem + "_escalation.md"
     )
@@ -81,7 +82,9 @@ def _poll_until(
             proc.terminate()
             try:
                 proc.wait(timeout=5)
-            except Exception:
+            except subprocess.TimeoutExpired:
+                # Terminate didn't reap in time; force-kill. No proc.wait() follow-up
+                # here — acceptable given process lifetime, but noted intentionally.
                 proc.kill()
             with _active_lock:
                 _active.pop(proc.pid, None)
