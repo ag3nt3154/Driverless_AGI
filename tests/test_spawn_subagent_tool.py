@@ -422,7 +422,7 @@ class TestRunMethod:
         with patch("tools._subagent_runner.run_subagent", return_value=escalated_result):
             result = tool.run(subtask_name="Do the thing")
 
-        assert "escalated" in result.lower()
+        assert "[worker escalated]" in result
         assert "Which lib?" in result
         assert "Ambiguous." in result
 
@@ -442,7 +442,7 @@ class TestRunMethod:
                 unit_test_paths=["tests/test_thing.py"],
             )
 
-        assert "escalated" in result.lower()
+        assert "[review escalated]" in result
         assert "Expected status code?" in result
 
     def test_run_worker_composes_subtask_context(self, tmp_path):
