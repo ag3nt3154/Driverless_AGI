@@ -80,3 +80,16 @@ class TestEnterPlanModeAutoBranch:
         loop._handle_enter_plan_mode({"mode": "interactive", "task_summary": "Fix Git Tools"})
         plan_file = Path(loop.config.plan_file)
         assert "# Plan: Fix Git Tools" in plan_file.read_text(encoding="utf-8")
+
+    def test_distinguishes_branch_creation_failure_from_no_repo(self, git_repo: Path):
+        loop = _make_loop(git_repo)
+        with patch(
+            "agent.loop.create_task_branch",
+            side_effect=RuntimeError("branch already exists"),
+        ):
+            result = loop._handle_enter_plan_mode(
+                {"mode": "interactive", "task_summary": "Fix Git Tools"}
+            )
+
+        assert "no git repository detected" not in result.lower()
+        assert "branch creation failed" in result.lower()

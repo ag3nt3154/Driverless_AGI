@@ -650,13 +650,20 @@ class AgentLoop:
         )
 
         branch_name: str | None = None
+        branch_creation_failed = False
         try:
             branch_name = create_task_branch(self.config.project_path, task_summary, plan_dir.name)
         except RuntimeError as e:
+            branch_creation_failed = True
             self.callbacks.on_assistant_text(f"[git] Could not create task branch: {e}")
 
         if branch_name:
             branch_note = f"**Branch:** `{branch_name}`"
+        elif branch_creation_failed:
+            branch_note = (
+                "**Branch:** (branch creation failed — see notice above — "
+                "continuing without a git workflow)"
+            )
         else:
             branch_note = "**Branch:** (no git repository detected — skipping git workflow)"
 
