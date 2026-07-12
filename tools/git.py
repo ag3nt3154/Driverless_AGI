@@ -88,7 +88,13 @@ class GitDiffTool(BaseTool):
     _parameters = {
         "type": "object",
         "properties": {
-            "staged": {"type": "boolean", "description": "Show staged (cached) diff instead of the working tree diff. Default: false."},
+            "staged": {
+                "type": "boolean",
+                "description": (
+                    "Show staged (cached) diff instead of the working tree diff. "
+                    "Default: false."
+                ),
+            },
             "path": {"type": "string", "description": "Limit the diff to this file or directory."},
         },
         "required": [],
@@ -147,7 +153,12 @@ class GitBranchTool(BaseTool):
     _parameters = {
         "type": "object",
         "properties": {
-            "create": {"type": "string", "description": "If set, create a new branch with this name (does not switch to it)."},
+            "create": {
+                "type": "string",
+                "description": (
+                    "If set, create a new branch with this name (does not switch to it)."
+                ),
+            },
         },
         "required": [],
     }
@@ -180,7 +191,10 @@ class GitCheckoutTool(BaseTool):
         "type": "object",
         "properties": {
             "branch": {"type": "string", "description": "Branch name to switch to."},
-            "create": {"type": "boolean", "description": "If true, create the branch (git checkout -b). Default: false."},
+            "create": {
+                "type": "boolean",
+                "description": "If true, create the branch (git checkout -b). Default: false.",
+            },
         },
         "required": ["branch"],
     }
@@ -295,8 +309,15 @@ class GitResetTool(BaseTool):
         "type": "object",
         "properties": {
             "ref": {"type": "string", "description": "Commit-ish to reset to. Default: HEAD~1."},
-            "mode": {"type": "string", "enum": ["soft", "mixed", "hard"], "description": "Reset mode. Default: mixed."},
-            "clean": {"type": "boolean", "description": "Also remove untracked files. Default: false."},
+            "mode": {
+                "type": "string",
+                "enum": ["soft", "mixed", "hard"],
+                "description": "Reset mode. Default: mixed.",
+            },
+            "clean": {
+                "type": "boolean",
+                "description": "Also remove untracked files. Default: false.",
+            },
         },
         "required": [],
     }

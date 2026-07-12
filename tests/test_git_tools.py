@@ -170,6 +170,33 @@ class TestGitResetTool:
         GitResetTool(cwd=repo).run(ref="HEAD~1", mode="hard")
         assert (repo / "README.md").read_text(encoding="utf-8") == "init\n"
 
+    def test_soft_reset_keeps_changes_staged(self, repo: Path):
+        (repo / "README.md").write_text("v2\n", encoding="utf-8")
+        subprocess.run(["git", "add", "README.md"], cwd=repo, check=True)
+        subprocess.run(["git", "commit", "-m", "v2"], cwd=repo, check=True, capture_output=True)
+
+        result = GitResetTool(cwd=repo).run(ref="HEAD~1", mode="soft")
+        assert "Reset (soft)" in result
+        assert (repo / "README.md").read_text(encoding="utf-8") == "v2\n"  # content differs from HEAD~1
+
+        staged = subprocess.run(
+            ["git", "diff", "--cached", "--name-only"], cwd=repo, capture_output=True, text=True, check=True
+        ).stdout.strip()
+        assert "README.md" in staged.splitlines()
+
+        unstaged = subprocess.run(
+            ["git", "diff", "--name-only"], cwd=repo, capture_output=True, text=True, check=True
+        ).stdout.strip()
+        assert "README.md" not in unstaged.splitlines()
+
+    def test_clean_removes_untracked_files(self, repo: Path):
+        (repo / "untracked.txt").write_text("scratch\n", encoding="utf-8")
+        assert (repo / "untracked.txt").exists()
+
+        GitResetTool(cwd=repo).run(ref="HEAD", mode="mixed", clean=True)
+
+        assert not (repo / "untracked.txt").exists()
+
     def test_invalid_mode_rejected(self, repo: Path):
         result = GitResetTool(cwd=repo).run(mode="bogus")
         assert "Error" in result
