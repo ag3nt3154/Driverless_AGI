@@ -477,14 +477,18 @@ Driverless_AGI/
 │   ├── prompts.py         # Loads system/user prompts from .dagi/prompts/ and .dagi/subagents/
 │   ├── skills.py          # SkillLoader — loads .dagi/skills/
 │   ├── workflows.py       # WorkflowLoader — loads .dagi/workflow/
-│   └── sub_agent.py       # SubAgentRunner — legacy in-process subagent (used by cli_subagent)
+│   ├── sub_agent.py       # SubAgentRunner — legacy in-process subagent (used by cli_subagent)
+│   └── _git_branch.py     # Plan-mode auto-branching — creates/checks out dagi/<slug>_<plan_id> from HEAD
 │
 ├── tools/
 │   ├── read.py            # Read files (text + image)
 │   ├── write.py           # Write / overwrite files
 │   ├── edit.py            # Exact-text replacement
 │   ├── bash.py            # Run shell commands
-│   ├── git.py             # git_status, git_commit, git_rollback (branch-guarded to dagi branch)
+│   ├── git.py             # git_status, git_diff, git_log, git_branch, git_checkout, git_add, git_commit, git_reset
+│   │                       #   (git_add/git_commit/git_reset are whitelist-guarded to dagi/* branches only;
+│   │                       #   git_commit requires explicit git_add staging first — no implicit add -A;
+│   │                       #   entering plan mode auto-creates/checks out a dagi/<slug>_<plan_id> branch)
 │   ├── grep.py            # Regex search across files (ripgrep)
 │   ├── find.py            # Glob-pattern file finder
 │   ├── skill.py           # Load a .dagi/skills/ guidance document
