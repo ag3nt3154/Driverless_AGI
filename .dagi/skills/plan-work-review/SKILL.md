@@ -73,7 +73,7 @@ How to verify the full implementation end-to-end.
 > 1. **Write tests** for the subtask in `.dagi/plans/<plan_dir>/tests/`
 > 2. **Spawn a worker subagent** via `spawn_worker_subagent(subtask_name=..., custom_instructions=...)`
 > 3. **Spawn a review subagent** via `spawn_review_subagent(subtask_name=..., worker_handoff_path=..., unit_test_paths=...)`
-> 4. **Evaluate** the review verdict — PASS marks `[x]`, FAIL retries (max 3 attempts)
+> 4. **Evaluate** the review verdict — PASS marks `[x]`, FAIL retries (max 2 attempts), ESCALATED re-spawns free of charge
 >
 > If you find yourself editing implementation files directly, STOP — you are
 > violating this protocol. Re-read this section and delegate to subagents.
@@ -129,6 +129,18 @@ When the tool returns, it reports the path to the review report. Read it in Step
 ### Step 4 — Evaluate and Decide
 Read the review report. Pass/fail is determined by the review subagent's verdict — not your own judgment.
 
+**If ESCALATED:** The worker or review subagent raised a blocking question instead of producing a
+handoff/review report (the tool result starts with `[worker escalated]` or `[review escalated]`).
+- Read the question and context in full.
+- Decide the answer yourself if you can — you have full repo access and the plan/conversation
+  context the subagent doesn't. Only call `ask_user` if it's a genuine judgment call the user must
+  make (e.g. a product decision, not a technical detail you can look up or infer).
+- Re-spawn the **same subagent type** for the **same subtask**, passing the answer via
+  `custom_instructions` (e.g. `"custom_instructions": "Answering your escalation: use bcrypt, not argon2, per existing auth.py conventions."`).
+- **This does not consume a retry attempt.** Escalations are free — do not increment your attempt
+  count for this subtask. Go back to Step 2 (or Step 3, if it was the review subagent that
+  escalated) with the same attempt number as before.
+
 **If PASS:**
 - Edit `plan.md` and mark the subtask `[x] complete`
 - If this task has a git branch (see Step 1 — skip this bullet if none was created): call `git_add` with the list of files this subtask touched, then `git_commit` with a message summarizing the subtask (e.g. `"Subtask 2: Add login endpoint"`). Do this every time a subtask passes review — never batch commits across subtasks.
@@ -143,7 +155,8 @@ Read the review report. Pass/fail is determined by the review subagent's verdict
   - **Worker fell into a trap** (plan is sound, execution failed): retry with augmented custom instructions
   - **Plan is flawed** (subtask requirements or approach are wrong): edit the subtask in `plan.md`, then retry
 
-**If 3 attempts are exhausted without PASS:**
+**If 2 attempts are exhausted without PASS** (1 initial attempt + 1 retry — escalations are free
+and do not count toward this budget):
 - Mark the subtask `[!] failed` in `plan.md`
 - Stop the cycle
 - Present a structured escalation report:
