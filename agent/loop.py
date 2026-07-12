@@ -379,6 +379,7 @@ class AgentLoop:
             iteration = 0
             while True:
                 iteration += 1
+                self._refresh_active_plan_tail()
                 self.callbacks.on_iteration(iteration)
                 self._pause_event.wait()  # blocks here when paused; instant no-op otherwise
 
@@ -907,11 +908,9 @@ class AgentLoop:
     def _refresh_active_plan_tail(self) -> None:
         """Re-splice the Active Plan + Plan Status tail onto the cached prefix.
 
-        NOT YET CALLED as of this commit — wiring this into the top of run()'s
-        per-iteration loop is a separate, later task. Once wired, this should run
-        at the top of every iteration; it's cheap (one file read + one regex
-        parse) and never touches self._system_prefix, so cache_prompt's hit rate
-        on the large static prefix is unaffected.
+        Called at the top of every iteration of run()'s main loop. It's cheap
+        (one file read + one regex parse) and never touches self._system_prefix,
+        so cache_prompt's hit rate on the large static prefix is unaffected.
         """
         if self.config.active_plan_file and not self.config.plan_mode:
             self._messages[0] = {

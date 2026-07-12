@@ -124,3 +124,45 @@ class TestSystemPrefixCaching:
 
         full = loop._messages[0]["content"]
         assert full == loop._system_prefix + loop._build_active_plan_tail()
+
+
+class TestPerIterationRefresh:
+    def test_status_board_reflects_change_between_iterations(self, tmp_path):
+        plan_file = tmp_path / "plan.md"
+        plan_file.write_text(PLAN_TEXT, encoding="utf-8")
+        loop = _make_loop(tmp_path, active_plan_file=str(plan_file))
+
+        loop._refresh_active_plan_tail()
+        assert "[~] Wire runner escalation detection" in loop._messages[0]["content"]
+
+        # Simulate the subtask completing between iterations.
+        plan_file.write_text(
+            PLAN_TEXT.replace(
+                "### Subtask 2: [~] Wire runner escalation detection",
+                "### Subtask 2: [x] Wire runner escalation detection",
+            ),
+            encoding="utf-8",
+        )
+        loop._refresh_active_plan_tail()
+
+        assert "[x] Wire runner escalation detection" in loop._messages[0]["content"]
+        assert "[~] Wire runner escalation detection" not in loop._messages[0]["content"]
+
+    def test_prefix_unchanged_across_refreshes(self, tmp_path):
+        plan_file = tmp_path / "plan.md"
+        plan_file.write_text(PLAN_TEXT, encoding="utf-8")
+        loop = _make_loop(tmp_path, active_plan_file=str(plan_file))
+        prefix_before = loop._system_prefix
+
+        plan_file.write_text(PLAN_TEXT.replace("[~]", "[x]"), encoding="utf-8")
+        loop._refresh_active_plan_tail()
+
+        assert loop._system_prefix == prefix_before
+
+    def test_no_active_plan_refresh_is_a_no_op(self, tmp_path):
+        loop = _make_loop(tmp_path, active_plan_file=None)
+        content_before = loop._messages[0]["content"]
+
+        loop._refresh_active_plan_tail()
+
+        assert loop._messages[0]["content"] == content_before
