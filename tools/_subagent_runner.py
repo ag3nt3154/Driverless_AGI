@@ -59,19 +59,42 @@ def _poll_until(
     state: _SubagentState,
     extra_seconds: float,
 ) -> dict:
-    """Poll proc until it exits or extra_seconds elapses.
+    """Poll proc until it exits, escalates, or extra_seconds elapses.
 
     Returns:
-        {"status": "ok",      "handoff": str}   — done, handoff written
-        {"status": "timeout", "pid": int}        — still alive, deadline expired
-        {"status": "error",   "message": str}    — exited without writing handoff
+        {"status": "ok",        "handoff": str}   — done, handoff written
+        {"status": "escalated", "escalation": str} — subagent raised a blocking issue
+        {"status": "timeout",   "pid": int}        — still alive, deadline expired
+        {"status": "error",     "message": str}    — exited without writing handoff,
+                                                      or escalation file unreadable
     """
     import time
 
     deadline = time.monotonic() + extra_seconds
     proc = state.proc
+    escalation_path = state.handoff_path.with_name(
+        state.handoff_path.stem + "_escalation.md"
+    )
 
     while True:
+        if escalation_path.exists():
+            proc.terminate()
+            try:
+                proc.wait(timeout=5)
+            except Exception:
+                proc.kill()
+            with _active_lock:
+                _active.pop(proc.pid, None)
+            state.task_file.unlink(missing_ok=True)
+            try:
+                content = escalation_path.read_text(encoding="utf-8")
+            except (OSError, UnicodeDecodeError) as exc:
+                return {
+                    "status": "error",
+                    "message": f"escalation file present but unreadable: {exc}",
+                }
+            return {"status": "escalated", "escalation": content}
+
         ret = proc.poll()
         if ret is not None:
             with _active_lock:
