@@ -1,10 +1,13 @@
 """tools/escalate_issue.py — Let a worker/review subagent raise a blocking issue to the main agent.
 
 Writes a sidecar "<handoff-stem>_escalation.md" file next to the subagent's own
-handoff path. tools/_subagent_runner.py polls for this file and, on finding it,
-terminates the subagent subprocess and surfaces the escalation to the main agent
-as a tool result (see tools/spawn_subagent.py). This is a fast-fail channel, not
-live Q&A: the subagent's turn ends the moment it calls this tool.
+handoff path. This file is the escalation channel's data format: a planned change
+to tools/_subagent_runner.py will poll for it and, on finding it, terminate the
+subagent subprocess; a planned change to tools/spawn_subagent.py will then surface
+its contents to the main agent as a tool result. Until those changes land, this
+tool only writes the file — nothing yet consumes it. This is designed as a
+fast-fail channel, not live Q&A: the subagent's turn should end the moment it
+calls this tool.
 """
 from __future__ import annotations
 
