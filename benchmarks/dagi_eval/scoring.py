@@ -44,7 +44,7 @@ def outputs_match(a, b, rel_tol: float = 1e-6, abs_tol: float = 1e-9) -> bool:
     return a == b
 
 
-def run_entry(code_dir: Path, module: str, func: str, input_dir: Path,
+def run_entry(code_dir: Path, module: str, func: str, input_dir: Path, *,
               timing_runs: int = 0,
               per_call_timeout_s: int = AGENT_CALL_TIMEOUT_S) -> dict:
     """Run <module>:<func>(input_dir) from code_dir in an isolated subprocess."""
