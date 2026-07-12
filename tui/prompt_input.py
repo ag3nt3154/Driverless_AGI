@@ -6,7 +6,7 @@ from textual.widgets import TextArea
 
 
 class PromptInput(TextArea):
-    """Single-submit text area: Enter submits, Shift+Enter inserts newline."""
+    """Single-submit text area: Enter submits, Shift+Enter / Ctrl+N / Ctrl+Enter inserts newline."""
 
     class Submitted(Message):
         def __init__(self, value: str) -> None:

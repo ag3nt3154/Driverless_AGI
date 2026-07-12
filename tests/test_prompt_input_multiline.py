@@ -72,10 +72,26 @@ def test_enter_with_text_submits_and_clears() -> None:
             widget = app.query_one(PromptInput)
             app.set_focus(widget)
             await pilot.pause()
-            widget.load_text("hello")
+            for char in "hello":
+                await pilot.press(char)
             await pilot.press("enter")
             assert app.submitted == ["hello"]
             assert widget.text == ""
+
+    asyncio.run(run())
+
+
+def test_enter_on_whitespace_only_does_not_submit() -> None:
+    async def run() -> None:
+        app = _App()
+        async with app.run_test() as pilot:
+            widget = app.query_one(PromptInput)
+            app.set_focus(widget)
+            await pilot.pause()
+            await pilot.press("ctrl+n")   # inserts "\n"
+            await pilot.press("enter")    # should NOT submit — text.strip() == ""
+            assert app.submitted == []
+            assert widget.text == ""      # load_text("") called, cleared
 
     asyncio.run(run())
 
