@@ -114,7 +114,8 @@ conda run --no-capture-output -n dagi python tui.py -m deepseek-v4-pro-openroute
 
 **Keyboard shortcuts:**
 - `Enter` — submit the input box contents as a task (single or multi-line)
-- `Shift+Enter` — insert a newline in the input box for multi-line messages
+- `Shift+Enter` / `Ctrl+N` / `Ctrl+Enter` — insert a newline in the input box for multi-line messages (`Ctrl+N` and `Ctrl+Enter` are reliable alternatives on Windows Terminal, which sends identical bytes for `Shift+Enter` and `Enter`)
+- `Ctrl+O` — toggle compose mode: hides the conversation pane and expands the input box to fill the screen, giving a distraction-free writing area for long multi-line messages. Press `Ctrl+O` again to restore normal layout, or just press `Enter` to submit (auto-collapses on submit).
 - `Esc` — pause the running agent at the end of the current iteration (after all tool calls in the current LLM response complete). Status changes to `⏸ Paused`. Type any message and press Enter to inject it into the agent's context and resume. ESC has no effect when idle or during an `ask_user` prompt.
 - `Ctrl-C` — quit the TUI entirely
 

@@ -2,6 +2,19 @@
 
 ## Completed
 
+- **`ctrl+o` compose mode in TUI** · `done` · `2026-07-12`
+  - `DagiApp._input_expanded: bool = False` state added to `__init__`.
+  - `BINDINGS` gains `("ctrl+o", "toggle_compose", "Compose")`.
+  - `action_toggle_compose()` hides `ConversationPane` and expands `PromptInput` to full height (`"1fr"`); second press restores normal layout (height=8, conversation visible).
+  - `on_prompt_input_submitted` auto-collapses compose mode at the very top, before any submit-path branching, so all paths (ask_user, inject_and_resume, slash commands, agent dispatch) receive the normal layout.
+  - All 260 tests pass. Commit: `f4ac818`.
+
+- **`ctrl+n` / `ctrl+enter` as universal newline bindings in `PromptInput`** · `done` · `2026-07-12`
+  - Windows Terminal sends identical bytes for `shift+enter` and `enter`, making the existing `shift+enter` newline binding unreliable.
+  - Fixed by collapsing `shift+enter`, `ctrl+n`, `ctrl+enter` into one `elif event.key in (...)` branch in `tui/prompt_input.py`.
+  - `ctrl+n` (ASCII 0x0E) is always distinct from Enter (0x0D), making it a reliable newline key.
+  - New: `tests/test_prompt_input_multiline.py` — 5 Textual pilot tests covering all three newline keys, submit on non-empty, and no-submit on empty. All passing.
+
 - **DAGI git workflow — expanded git toolkit, auto-branch per plan, dagi/\* guard, per-subtask commits** · `done` · `2026-07-12`
   - `tools/git.py` rewritten: `git_diff`, `git_log`, `git_branch`, `git_checkout`, `git_add`, `git_reset` added; `git_commit` now requires explicit `git_add` staging first (no more implicit `add -A`); `git_rollback` removed from the agent registry entirely (no replacement tool).
   - `agent/_git_branch.py` (new): `create_task_branch(cwd, task_summary, plan_id)` auto-creates and checks out `dagi/<slug>_<plan_id>` from HEAD when `enter_plan_mode` is called; skips silently (not an error) outside a git repo.
