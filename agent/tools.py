@@ -91,6 +91,15 @@ def _tools_from_list(
         tool = registry_map.get(name)
         if tool is not None:
             result.append(tool)
+        elif name == "escalate_issue" and handoff_path is None:
+            # Not actually "unknown" — escalate_issue requires a handoff_path to
+            # construct, which this caller didn't provide (e.g. the "custom"
+            # subagent branch, or an in-process build with no handoff file).
+            print(
+                "[tools] Warning: 'escalate_issue' requires handoff_path, which "
+                "was not provided; skipping",
+                file=sys.stderr,
+            )
         else:
             print(
                 f"[tools] Warning: unknown tool name {name!r} in subagent_config.yaml",
@@ -438,6 +447,9 @@ def build_subagent_registry(
 
     # ── Custom: full scope for dynamic SpawnCliSubagentTool subagents ─────────
     if subagent_type == "custom":
+        # handoff_path is threaded through here for signature consistency with the
+        # config-driven branch below, but "escalate_issue" is deliberately absent
+        # from this tool list — custom/dynamic subagents do not get escalation support.
         for tool in _tools_from_list(
             ["read", "grep", "find", "write", "edit", "bash", "web_search", "web_fetch"],
             project_path, default_roots,
