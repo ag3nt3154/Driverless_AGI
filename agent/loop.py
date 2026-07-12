@@ -846,24 +846,74 @@ class AgentLoop:
         system = "\n\n---\n\n".join(sections)
         system += f"\n\n---\n\nProject root: {self.config.project_path}"
 
-        if self.config.active_plan_file and not self.config.plan_mode:
-            system += (
-                f"\n\n---\n\n"
-                f"## Active Plan\n\n"
-                f"A plan document is active at: `{self.config.active_plan_file}`\n\n"
-                f"**Before starting any implementation work**, read the plan file "
-                f"in full — it contains both the subtask definitions and the "
-                f"execution protocol you must follow.\n\n"
-                f"As you work:\n"
-                f"- Follow the **Execution Protocol** section in the plan exactly.\n"
-                f"- After completing each subtask, edit the plan and update its "
-                f"status marker.\n"
-                f"- If something feels wrong or unclear, re-read the plan file — "
-                f"the answer is likely there.\n"
-                f"- If you deviate from the plan, update it to reflect reality."
-            )
+        self._system_prefix = system
+        return system + self._build_active_plan_tail()
 
-        return system
+    def _build_active_plan_tail(self) -> str:
+        """Build the '## Active Plan' + live status board tail.
+
+        Returns an empty string when no plan is active (or plan mode is active,
+        in which case the plan file is being edited directly and doesn't need
+        this reminder). Called both at system-string assembly time and, every
+        loop iteration, by _refresh_active_plan_tail() to keep the status board
+        current without rebuilding the (cache-relevant) prefix.
+        """
+        if not (self.config.active_plan_file and not self.config.plan_mode):
+            return ""
+
+        tail = (
+            f"\n\n---\n\n"
+            f"## Active Plan\n\n"
+            f"A plan document is active at: `{self.config.active_plan_file}`\n\n"
+            f"**Before starting any implementation work**, read the plan file "
+            f"in full — it contains both the subtask definitions and the "
+            f"execution protocol you must follow.\n\n"
+            f"As you work:\n"
+            f"- Follow the **Execution Protocol** section in the plan exactly.\n"
+            f"- After completing each subtask, edit the plan and update its "
+            f"status marker.\n"
+            f"- If something feels wrong or unclear, re-read the plan file — "
+            f"the answer is likely there.\n"
+            f"- If you deviate from the plan, update it to reflect reality."
+        )
+        tail += self._render_plan_status_section()
+        return tail
+
+    def _render_plan_status_section(self) -> str:
+        """Render the '## Plan Status' board from the active plan file's subtask markers."""
+        from tools._plan_parser import parse_subtask_statuses
+
+        try:
+            plan_text = Path(self.config.active_plan_file).read_text(encoding="utf-8")
+        except OSError:
+            return ""
+
+        statuses = parse_subtask_statuses(plan_text)
+        if not statuses:
+            return ""
+
+        marker_map = {
+            "pending": " ", "in_progress": "~", "complete": "x",
+            "failed": "!", "unknown": "?",
+        }
+        lines = [
+            f"{i}. [{marker_map.get(s['status'], '?')}] {s['name']}"
+            for i, s in enumerate(statuses, start=1)
+        ]
+        return "\n\n## Plan Status\n" + "\n".join(lines)
+
+    def _refresh_active_plan_tail(self) -> None:
+        """Re-splice the Active Plan + Plan Status tail onto the cached prefix.
+
+        Called at the top of every loop iteration in run(). Cheap: one file read
+        + one regex parse. Never touches self._system_prefix, so cache_prompt's
+        hit rate on the large static prefix is unaffected.
+        """
+        if self.config.active_plan_file and not self.config.plan_mode:
+            self._messages[0] = {
+                "role": "system",
+                "content": self._system_prefix + self._build_active_plan_tail(),
+            }
 
     def _rebuild_for_normal_mode(self, dagi_root: Path) -> None:
         from agent.tools import create_tool_registry
