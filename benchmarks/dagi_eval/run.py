@@ -18,37 +18,15 @@ from pathlib import Path
 from benchmarks.dagi_eval import harness, scoring
 
 
-def main() -> None:
-    ap = argparse.ArgumentParser(description="Run the DAGI eval benchmark")
-    ap.add_argument("--model", default=None, help="model id from config_dagi_eval.yaml")
-    ap.add_argument("--label", default="", help="free-text note stored in the row")
-    ap.add_argument("--task", action="append", dest="tasks", metavar="NAME",
-                    help="run only named task(s); default: all")
-    ap.add_argument("--timeout-min", type=float, default=20.0,
-                    help="wall-clock budget per task (agent solver)")
-    ap.add_argument("--solver", choices=["agent", "gold", "naive"], default="agent")
-    ap.add_argument("--tasks-dir", type=Path, default=harness.TASKS_DIR,
-                    help=argparse.SUPPRESS)
-    ap.add_argument("--results", type=Path, default=harness.RESULTS_PATH,
-                    help=argparse.SUPPRESS)
-    args = ap.parse_args()
+def run_task(task_dir: Path, args: argparse.Namespace, row: dict, speedups: list) -> None:
+    """Run and score a single task, mutating `row` (and `speedups`) in place.
 
-    sha, dirty = harness.git_commit_info()
-    row = {
-        "timestamp": datetime.datetime.now().isoformat(timespec="seconds"),
-        "dagi_git_commit": sha, "dirty_tree": dirty,
-        "model": args.model, "solver": args.solver, "label": args.label,
-        "coding_score": None, "coding_tasks": {},
-        "ds_score": None, "ds_auc": None,
-        # tokens_think is null: SessionTracker does not track reasoning tokens
-        # separately (spec schema parity)
-        "wall_time_s": 0.0, "tokens_in": 0, "tokens_think": None, "tokens_out": 0,
-        "cost_usd": None, "iterations": 0, "timed_out": [], "errors": [],
-    }
-
-    speedups = []
-    for task_dir in harness.discover_tasks(args.tasks_dir, args.tasks):
-        name = task_dir.name
+    Any exception raised while running the agent/canned solver or scoring the
+    task is caught and recorded in ``row["errors"]`` so a single bad task does
+    not abort the whole benchmark sweep.
+    """
+    name = task_dir.name
+    try:
         meta = scoring.load_task_meta(task_dir)
         kind = meta["kind"]
         ws = harness.prepare_workspace(task_dir)
@@ -83,6 +61,42 @@ def main() -> None:
             if res["error"]:
                 row["errors"].append(f"{name}: {res['error']}")
             print(f"[{name}] auc={res['auc']} ds_score={res['ds_score']}")
+    except Exception as exc:  # noqa: BLE001 - keep the sweep alive
+        row["errors"].append(f"{name}: unhandled {type(exc).__name__}: {exc}")
+        print(f"[{name}] ERROR: unhandled {type(exc).__name__}: {exc}")
+
+
+def main() -> None:
+    ap = argparse.ArgumentParser(description="Run the DAGI eval benchmark")
+    ap.add_argument("--model", default=None, help="model id from config_dagi_eval.yaml")
+    ap.add_argument("--label", default="", help="free-text note stored in the row")
+    ap.add_argument("--task", action="append", dest="tasks", metavar="NAME",
+                    help="run only named task(s); default: all")
+    ap.add_argument("--timeout-min", type=float, default=20.0,
+                    help="wall-clock budget per task (agent solver)")
+    ap.add_argument("--solver", choices=["agent", "gold", "naive"], default="agent")
+    ap.add_argument("--tasks-dir", type=Path, default=harness.TASKS_DIR,
+                    help=argparse.SUPPRESS)
+    ap.add_argument("--results", type=Path, default=harness.RESULTS_PATH,
+                    help=argparse.SUPPRESS)
+    args = ap.parse_args()
+
+    sha, dirty = harness.git_commit_info()
+    row = {
+        "timestamp": datetime.datetime.now().isoformat(timespec="seconds"),
+        "dagi_git_commit": sha, "dirty_tree": dirty,
+        "model": args.model, "solver": args.solver, "label": args.label,
+        "coding_score": None, "coding_tasks": {},
+        "ds_score": None, "ds_auc": None,
+        # tokens_think is null: SessionTracker does not track reasoning tokens
+        # separately (spec schema parity)
+        "wall_time_s": 0.0, "tokens_in": 0, "tokens_think": None, "tokens_out": 0,
+        "cost_usd": None, "iterations": 0, "timed_out": [], "errors": [],
+    }
+
+    speedups = []
+    for task_dir in harness.discover_tasks(args.tasks_dir, args.tasks):
+        run_task(task_dir, args, row, speedups)
 
     if speedups:
         row["coding_score"] = round(sum(speedups) / len(speedups), 2)
