@@ -13,7 +13,7 @@ This skill owns the full lifecycle for complex tasks: planning, approval, and ex
 ## Phase 1 — Planning
 
 ### Step 1 — Enter Plan Mode
-Call `enter_plan_mode(mode="interactive")` if this skill was invoked by the user (slash command or explicit request). Call `enter_plan_mode(mode="autonomous")` if DAGI initiated this internally.
+Call `enter_plan_mode(mode="interactive", task_summary="<short-kebab-case-slug>")` if this skill was invoked by the user (slash command or explicit request). Call `enter_plan_mode(mode="autonomous", task_summary="<short-kebab-case-slug>")` if DAGI initiated this internally. `task_summary` should be a short kebab-case slug capturing the task (e.g. `"fix-login-bug"`) — it seeds the plan title and names the git branch DAGI automatically creates and checks out for this task. If the tool result's `**Branch:**` line shows "no git repository detected", DAGI has no git workflow for this task — proceed with planning normally, just skip all git_* steps below.
 
 ### Step 2 — Grill (interactive mode only)
 **This step runs before any exploration or planning.** Invoke `skill("grill-me")` immediately after entering plan mode. The skill will stress-test the requirements, surface hidden assumptions, and force concrete decisions. Answer questions using any knowledge already in context — do NOT spawn the explore subagent yet. Proceed to Step 3 once the user signals readiness (e.g. "ready", "proceed", "let's go"). Skip this step in autonomous mode.
@@ -131,6 +131,7 @@ Read the review report. Pass/fail is determined by the review subagent's verdict
 
 **If PASS:**
 - Edit `plan.md` and mark the subtask `[x] complete`
+- If this task has a git branch (see Step 1 — skip this bullet if none was created): call `git_add` with the list of files this subtask touched, then `git_commit` with a message summarizing the subtask (e.g. `"Subtask 2: Add login endpoint"`). Do this every time a subtask passes review — never batch commits across subtasks.
 - Append a PASS entry to `cycle_log.md` in the plan subfolder
 - Update the `## Notes` section of `plan.md` with salient findings from the review
 - Proceed to the next subtask
@@ -160,6 +161,13 @@ This clears the active plan reference from the loop. After this call:
 - The plan document is preserved on disk at its original path — reference it by path if needed
 
 Do NOT call `complete_plan()` mid-cycle or before all subtasks are settled.
+
+**After `complete_plan()`, if this task has a git branch:** finish any remaining housekeeping first (e.g. invoke the `update-project-context` skill if the change is significant), then report a summary to the user covering:
+- The branch name (from Step 1's `**Branch:**` line)
+- Number of commits made and files changed (use `git_log` and `git_diff main...HEAD --name-only` via `git_diff(path=...)` calls, or summarize from `cycle_log.md`)
+- A reminder that the branch is ready for the user to review and merge manually — DAGI does not merge branches itself.
+
+Do NOT attempt to merge the branch, switch back to `main`, or delete the task branch. Leave it exactly as-is for the user.
 
 ---
 
