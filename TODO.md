@@ -114,13 +114,13 @@
   - **File:** `tg/bot.py:102-122` (`_handle_message`), `agent/tools.py:285` (BashTool always registered)
   - **Problem:** `_handle_message` dispatches input from *any* `chat_id` straight into `AgentLoop` with the full tool registry (`bash` = `subprocess.run(shell=True)`, unrestricted `write`/`edit`/`copy`). No allowlist, no owner check. Anyone who finds/guesses the bot can run arbitrary shell commands on the host.
   - **Fix:** Add an allowlist (`TELEGRAM_ALLOWED_CHAT_IDS`) checked before dispatch; reject others. Consider restricting `config.tools` on the remote surface via the existing `registry.filter_to`.
-  - **Source:** `fable_code_review_2026-07-11` (#3)
+  - **Source:** `docs/fable/code_review_2026-07-11.md` (#3)
 
 - **Memory-subagent wiki sandbox fails open when `memory_root` is unset (the default)** · `priority:critical` · `open:0d` · `effort:S`
   - **File:** `agent/tools.py:436-443`; interacts with `agent/config_loader.py:142-143`, `cli.py:1116,974`
   - **Problem:** `root: memory_root` restriction only applies when `memory_root is not None`, but `config.memory_root` defaults to `None` (`config.example.yaml:87` ships it commented out). In the default config, `memory-add`/`memory-query` subagents fall through to full project scope with `write`+`edit` — they can modify `agent/loop.py`, `.env`, anything. The resolved root (`loop.py:254`) is not the value threaded into `build_subagent_registry`; the raw `None` is.
   - **Fix:** Pass the resolved effective memory root into `build_subagent_registry`, or default the fallback to `project_path / "dagi-memory"` when `root == "memory_root"` and `memory_root is None`. Never fall through to full scope on a sandbox request.
-  - **Source:** `fable_code_review_2026-07-11` (#4)
+  - **Source:** `docs/fable/code_review_2026-07-11.md` (#4)
 
 ### 🔴 HIGH — Bugs
 
@@ -128,13 +128,13 @@
   - **File:** `agent/loop.py:557-558`
   - **Problem:** `ReadTool.run()` returns a `list` for image files. The sentinel-detection chain's `else` branch at line 558 calls `parse_switch_sentinel(result)` which does `value.startswith(...)` — crashes with `AttributeError: 'list' object has no attribute 'startswith'`. Any image read kills the task.
   - **Fix:** Wrap the sentinel chain (lines 546–560) with `if isinstance(result, str):` so non-string results skip straight to the output filter. The first check (line 544) already guards but the `else` branch doesn't.
-  - **Source:** `fable_code_review_2026-07-11` (#1)
+  - **Source:** `docs/fable/code_review_2026-07-11.md` (#1)
 
 - **`cli.py:1239` `plan_mode_exited` — AttributeError after every CLI task** · `priority:critical` · `open:0d` · `effort:XS`
   - **File:** `cli.py:1239`
   - **Problem:** `active_loop.plan_mode_exited` is referenced but the attribute was removed on 2026-05-31 and never re-added. `run_one()` is called for every REPL turn and one-shot path — unhandled `AttributeError` tears down the CLI. Regression of a previously-fixed bug.
   - **Fix:** Replace with `if active_loop.exited_plan_file:` (the attribute that actually exists); reset it after use.
-  - **Source:** `fable_code_review_2026-07-11` (#2)
+  - **Source:** `docs/fable/code_review_2026-07-11.md` (#2)
 
 - **`tg/bot.py` `UnboundLocalError` in `finally` block — masks original exception** · `priority:high` · `open:7d` · `effort:XS`
   - **File:** `tg/bot.py:163`
@@ -146,7 +146,7 @@
   - **File:** `tools/grep.py:96-101`
   - **Problem:** When ripgrep is unavailable, the fallback filters out files where *any* `p.parts` component starts with `.` — but `p.parts` includes the absolute path. Grepping inside `.dagi/skills/` (a normal operation) returns zero matches because `.dagi` is in the path. ripgrep masks this on most machines, making it hard to diagnose when it bites.
   - **Fix:** Filter only path components *below* `search_path`: `rel_parts = p.relative_to(search_path).parts`.
-  - **Source:** `fable_code_review_2026-07-11` (#7)
+  - **Source:** `docs/fable/code_review_2026-07-11.md` (#7)
 
 - **Scheduler `loop.finish()` races with daemon thread on timeout** · `priority:medium` · `open:14d` · `effort:XS`
   - **File:** `scheduler/runner.py:113`
@@ -183,7 +183,7 @@
   - **Files:** `tools/explore_files.py`, `tools/web_research.py`, `tools/plan_subagent.py`, `agent/sub_agent.py`, `cli.py:77`
   - **Problem:** None of these are registered in `create_tool_registry()` or used anywhere. `tools/plan_subagent.py:30` additionally references an undefined `_PLAN_SUBAGENT_SYSTEM_PROMPT` (NameError landmine). `cli.py:77` `_resolve_option` is defined but never called.
   - **Fix:** Audit for external callers; delete if unused.
-  - **Source:** `_todo/todo_2026-06-13.md` #4, `fable_code_review_2026-07-11` (#6, #12)
+  - **Source:** `_todo/todo_2026-06-13.md` #4, `docs/fable/code_review_2026-07-11.md` (#6, #12)
 
 - **Split `cli.py` (1355 lines) → `cli/` package** · `priority:high` · `open:25d` · `effort:M`
   - **Escalated 2026-07-02:** Open 19 days. **Corrected 2026-07-05:** cli.py is 1355 lines (2.7× over 500-line standard) — the 2026-07-03 "correction" to 1173 was wrong; `wc -l` confirms 1355.
@@ -244,19 +244,19 @@
   - **File:** `agent/config_loader.py:133-135`
   - **Problem:** `entry.get("context_window") or raw.get(...)` treats a legitimately configured `0` as "unset" and falls through to the default. `reserve_tokens: 0` (explicitly supported to disable output filtering) and `keep_recent_tokens: 0` can never be set from a per-model entry.
   - **Fix:** Replace `X or Y` with explicit presence check: `entry[k] if k in entry else raw.get(k, default)`.
-  - **Source:** `fable_code_review_2026-07-11` (#9)
+  - **Source:** `docs/fable/code_review_2026-07-11.md` (#9)
 
 - **`AskUserTool` double-timeout race — user answers but tool already returned fallback** · `priority:medium` · `open:0d` · `effort:XS`
   - **File:** `tools/ask_user.py:89-96`
   - **Problem:** The callback (`on_ask_user`) already enforces its own timeout (+60s safety). Wrapping it in a *second* `t.join(timeout=effective_timeout)` means the tool can return the fallback while the user is still in the callback's safety window. The daemon thread is left dangling with a result nobody reads.
   - **Fix:** Let the callback own the timeout. Drop the `t.join` timeout (join without timeout) or call `_on_ask_user` synchronously and rely on the single timeout inside the callback.
-  - **Source:** `fable_code_review_2026-07-11` (#10)
+  - **Source:** `docs/fable/code_review_2026-07-11.md` (#10)
 
 - **`explore_files` schema requires `handoff_file` param the code ignores — token waste** · `priority:medium` · `open:0d` · `effort:XS`
   - **File:** `.dagi/subagents/explore_files/subagent_config.yaml`
   - **Problem:** `parameters` marks both `task` and `handoff_file` as `required`, but `SpawnSubagentTool.run()` generates the handoff path internally (line 162) and discards the LLM-supplied value. The model is forced to invent a path that's thrown away — wasting tokens.
   - **Fix:** Remove `handoff_file` from `parameters`/`required` in the config (matching how `web_research` is defined).
-  - **Source:** `fable_code_review_2026-07-11` (#11)
+  - **Source:** `docs/fable/code_review_2026-07-11.md` (#11)
 
 - **`WebFetchTool` silently upgrades HTTP→HTTPS for private IP addresses** · `priority:medium` · `open:16d` · `effort:XS`
   - **File:** `tools/web_fetch.py:123`
@@ -502,7 +502,7 @@
 
 > Entries appended automatically by the `/improve-yourself` workflow after each test run.
 
-> **Long-horizon ideation:** see [fable_docs_self_improve_moonshots.md](fable_docs_self_improve_moonshots.md) (2026-07-11) — 10 far-fetched architecture/process ideas for making DAGI self-learning and self-improving, with a phased roadmap. Recommended starting pair: counterfactual replay engine + experience distillation.
+> **Long-horizon ideation:** see [docs/fable/self_improve_moonshots.md](docs/fable/self_improve_moonshots.md) (2026-07-11) — 10 far-fetched architecture/process ideas for making DAGI self-learning and self-improving, with a phased roadmap. Recommended starting pair: counterfactual replay engine + experience distillation.
 
 ### [High] Bootstrap the self-improvement loop
 
