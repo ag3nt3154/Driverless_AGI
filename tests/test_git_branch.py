@@ -55,11 +55,15 @@ class TestCreateTaskBranch:
     @pytest.fixture
     def repo(self, tmp_path: Path) -> Path:
         subprocess.run(["git", "init", "-b", "main"], cwd=tmp_path, check=True, capture_output=True)
-        subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=tmp_path, check=True)
+        subprocess.run(
+            ["git", "config", "user.email", "test@example.com"], cwd=tmp_path, check=True
+        )
         subprocess.run(["git", "config", "user.name", "Test"], cwd=tmp_path, check=True)
         (tmp_path / "README.md").write_text("init\n", encoding="utf-8")
         subprocess.run(["git", "add", "README.md"], cwd=tmp_path, check=True)
-        subprocess.run(["git", "commit", "-m", "init"], cwd=tmp_path, check=True, capture_output=True)
+        subprocess.run(
+            ["git", "commit", "-m", "init"], cwd=tmp_path, check=True, capture_output=True
+        )
         return tmp_path
 
     def test_creates_and_checks_out_branch(self, repo: Path):
@@ -67,7 +71,11 @@ class TestCreateTaskBranch:
         assert branch_name == "dagi/fix-git-tools_plan_20260712_153045"
 
         result = subprocess.run(
-            ["git", "branch", "--show-current"], cwd=repo, capture_output=True, text=True, check=True
+            ["git", "branch", "--show-current"],
+            cwd=repo,
+            capture_output=True,
+            text=True,
+            check=True,
         )
         assert result.stdout.strip() == branch_name
 
