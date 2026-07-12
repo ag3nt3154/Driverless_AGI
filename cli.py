@@ -1114,6 +1114,7 @@ def _run_subagent_pipe_mode(
         project_path=project_path,
         callbacks=callbacks,
         memory_root=typed_config.memory_root,
+        handoff_path=handoff_path,
     )
 
     if system_prompt_file:

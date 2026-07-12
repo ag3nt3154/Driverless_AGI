@@ -66,10 +66,12 @@ def _tools_from_list(
     tool_names: list[str],
     cwd: Path,
     allowed_roots: list[Path] | None,
+    handoff_path: Path | None = None,
 ) -> list[BaseTool]:
     """Instantiate tools by name for a subagent registry."""
     from tools.web_fetch import WebFetchTool
     from tools.web_search import WebSearchTool
+    from tools.escalate_issue import EscalateIssueTool
 
     registry_map: dict[str, BaseTool] = {
         "read":       ReadTool(cwd=cwd, allowed_roots=allowed_roots),
@@ -82,6 +84,8 @@ def _tools_from_list(
         "web_search": WebSearchTool(),
         "web_fetch":  WebFetchTool(),
     }
+    if handoff_path is not None:
+        registry_map["escalate_issue"] = EscalateIssueTool(handoff_path=handoff_path)
     result: list[BaseTool] = []
     for name in tool_names:
         tool = registry_map.get(name)
@@ -405,6 +409,7 @@ def build_subagent_registry(
     callbacks: "AgentCallbacks | None" = None,
     tracker: "SessionTracker | None" = None,
     memory_root: Path | None = None,
+    handoff_path: Path | None = None,
 ) -> ToolRegistry:
     """Build a restricted ToolRegistry for a typed terminal subagent.
 
@@ -424,6 +429,9 @@ def build_subagent_registry(
         tracker:       Optional session tracker.
         memory_root:   Resolved memory root; used when subagent_config.yaml sets
                        `root: memory_root` to restrict file access to the wiki only.
+        handoff_path:  Path where this subagent must write its handoff report;
+                       threaded to escalate_issue so it knows where to write
+                       its sidecar escalation file.
     """
     default_roots: list[Path] | None = None if config.sandbox_mode else [_DAGI_ROOT, project_path]
     reg = ToolRegistry()
@@ -433,6 +441,7 @@ def build_subagent_registry(
         for tool in _tools_from_list(
             ["read", "grep", "find", "write", "edit", "bash", "web_search", "web_fetch"],
             project_path, default_roots,
+            handoff_path=handoff_path,
         ):
             reg.register(tool)
         return reg
@@ -457,6 +466,8 @@ def build_subagent_registry(
         effective_roots = default_roots
 
     tool_names: list[str] = cfg.get("tools", ["read", "grep", "find"])
-    for tool in _tools_from_list(tool_names, cwd_for_tools, effective_roots):
+    for tool in _tools_from_list(
+        tool_names, cwd_for_tools, effective_roots, handoff_path=handoff_path
+    ):
         reg.register(tool)
     return reg

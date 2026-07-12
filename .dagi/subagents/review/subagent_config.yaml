@@ -8,6 +8,7 @@ tools:
   - grep
   - find
   - bash
+  - escalate_issue
 parameters:
   type: object
   properties:
