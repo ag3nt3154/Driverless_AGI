@@ -7,6 +7,7 @@ from tools._path_guard import validate_path
 
 _MAX_RESULTS = 200
 _DEFAULT_PATH = object()  # sentinel: "no path given" → search all allowed_roots
+_HIDDEN_WHITELIST = {'.dagi', '.index.md'}
 
 
 class GrepTool(BaseTool):
@@ -95,8 +96,12 @@ class GrepTool(BaseTool):
             else:
                 files = sorted(
                     p for p in search_path.rglob("*")
-                    if p.is_file() and not any(
-                        part.startswith(".") for part in p.parts
+                    if p.is_file() and (
+                        p.relative_to(search_path).parts[0] == ".dagi"
+                        or not any(
+                            part.startswith(".") and part not in _HIDDEN_WHITELIST
+                            for part in p.relative_to(search_path).parts
+                        )
                     )
                 )
 
