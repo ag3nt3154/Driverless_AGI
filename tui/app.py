@@ -21,6 +21,8 @@ from .utils import _Stats
 
 
 class DagiApp(SlashCommandsMixin, App[None]):
+    _PROMPT_HEIGHT_COLLAPSED: int = 8  # must match CSS `#prompt { height: 8 }`
+
     CSS = """
     Screen           { layout: vertical; }
     ConversationPane { height: 1fr; }
@@ -80,11 +82,11 @@ class DagiApp(SlashCommandsMixin, App[None]):
         self.set_interval(0.1, self._tick_spinner)
 
     def on_prompt_input_submitted(self, event: PromptInput.Submitted) -> None:
-        if self._input_expanded:
-            self.action_toggle_compose()
         raw = event.value.strip()
         if not raw:
             return
+        if self._input_expanded:
+            self.action_toggle_compose()
         if self._pending_ask is not None:
             ask_evt, container, options, _ = self._pending_ask
             self._pending_ask = None
@@ -138,11 +140,25 @@ class DagiApp(SlashCommandsMixin, App[None]):
         self._enable_input()
 
     def action_toggle_compose(self) -> None:
+        if self._worker and self._worker.is_alive() and self._pending_ask is None:
+            return  # block compose toggle while agent is running
         self._input_expanded = not self._input_expanded
         conv = self.query_one(ConversationPane)
         inp = self.query_one("#prompt", PromptInput)
-        conv.display = not self._input_expanded
-        inp.styles.height = "1fr" if self._input_expanded else 8
+        bar = self.query_one("#running-indicator", Static)
+        hide = self._input_expanded
+        conv.display = not hide
+        if hide:
+            self._bar_was_visible = bar.display
+            bar.display = False
+        else:
+            bar.display = getattr(self, "_bar_was_visible", False)
+        inp.styles.height = "1fr" if hide else self._PROMPT_HEIGHT_COLLAPSED
+        inp.border_title = (
+            "COMPOSE — Enter to submit · ctrl+o to collapse"
+            if hide else
+            "ctrl+n = newline · ctrl+o = compose"
+        )
 
     def _dispatch_agent(self, task: str) -> None:
         if self._worker and self._worker.is_alive():
