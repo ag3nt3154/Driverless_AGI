@@ -30,7 +30,11 @@ class DagiApp(SlashCommandsMixin, App[None]):
     """
 
     _SPINNER = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
-    BINDINGS = [("ctrl+c", "quit", "Quit"), ("escape", "pause", "Pause")]
+    BINDINGS = [
+        ("ctrl+c", "quit", "Quit"),
+        ("escape", "pause", "Pause"),
+        ("ctrl+o", "toggle_compose", "Compose"),
+    ]
 
     def __init__(self, model_id: str | None, project: str | None, verbose: bool) -> None:
         super().__init__()
@@ -47,6 +51,7 @@ class DagiApp(SlashCommandsMixin, App[None]):
         self._skill_map: dict = {}
         self._workflow_map: dict = {}
         self._spinner_idx: int = 0
+        self._input_expanded: bool = False
 
     def compose(self) -> ComposeResult:
         cfg = resolve_model_config(self._model_id, project_path=self._project_path)
@@ -75,6 +80,8 @@ class DagiApp(SlashCommandsMixin, App[None]):
         self.set_interval(0.1, self._tick_spinner)
 
     def on_prompt_input_submitted(self, event: PromptInput.Submitted) -> None:
+        if self._input_expanded:
+            self.action_toggle_compose()
         raw = event.value.strip()
         if not raw:
             return
@@ -129,6 +136,13 @@ class DagiApp(SlashCommandsMixin, App[None]):
         )
         self._hide_running_indicator()
         self._enable_input()
+
+    def action_toggle_compose(self) -> None:
+        self._input_expanded = not self._input_expanded
+        conv = self.query_one(ConversationPane)
+        inp = self.query_one("#prompt", PromptInput)
+        conv.display = not self._input_expanded
+        inp.styles.height = "1fr" if self._input_expanded else 8
 
     def _dispatch_agent(self, task: str) -> None:
         if self._worker and self._worker.is_alive():
