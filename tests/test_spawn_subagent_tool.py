@@ -410,6 +410,41 @@ class TestRunMethod:
         assert "[web_research error]" in result
         assert "something went wrong" in result
 
+    def test_run_returns_escalation_content_on_escalated_status(self, tmp_path):
+        """run() surfaces the escalation question/context when status is 'escalated'."""
+        config = _make_config(tmp_path)
+        tool = _make_tool("worker", config, WORKER_SCHEMA)
+        escalated_result = {
+            "status": "escalated",
+            "escalation": "# Escalation\n\n## Question\nWhich lib?\n\n## Context\nAmbiguous.\n",
+        }
+
+        with patch("tools._subagent_runner.run_subagent", return_value=escalated_result):
+            result = tool.run(subtask_name="Do the thing")
+
+        assert "escalated" in result.lower()
+        assert "Which lib?" in result
+        assert "Ambiguous." in result
+
+    def test_run_escalated_works_for_review_type_too(self, tmp_path):
+        """Escalated branch is not worker-specific — review subagents use it too."""
+        config = _make_config(tmp_path)
+        tool = _make_tool("review", config, REVIEW_SCHEMA)
+        escalated_result = {
+            "status": "escalated",
+            "escalation": "# Escalation\n\n## Question\nExpected status code?\n\n## Context\nMismatch.\n",
+        }
+
+        with patch("tools._subagent_runner.run_subagent", return_value=escalated_result):
+            result = tool.run(
+                subtask_name="Do the thing",
+                worker_handoff_path="/tmp/handoff.md",
+                unit_test_paths=["tests/test_thing.py"],
+            )
+
+        assert "escalated" in result.lower()
+        assert "Expected status code?" in result
+
     def test_run_worker_composes_subtask_context(self, tmp_path):
         """run() for worker type includes subtask content in the task sent to run_subagent."""
         plan_file = tmp_path / "plan.md"
