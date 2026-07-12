@@ -164,7 +164,7 @@ Do NOT call `complete_plan()` mid-cycle or before all subtasks are settled.
 
 **After `complete_plan()`, if this task has a git branch:** finish any remaining housekeeping first (e.g. invoke the `update-project-context` skill if the change is significant), then report a summary to the user covering:
 - The branch name (from Step 1's `**Branch:**` line)
-- Number of commits made and files changed (use `git_log` and `git_diff main...HEAD --name-only` via `git_diff(path=...)` calls, or summarize from `cycle_log.md`)
+- Number of commits made and files changed — summarize from `cycle_log.md` (each PASS entry logged there corresponds to one commit), or call `git_log(count=<n>)` to list the commits made on this branch since it was created.
 - A reminder that the branch is ready for the user to review and merge manually — DAGI does not merge branches itself.
 
 Do NOT attempt to merge the branch, switch back to `main`, or delete the task branch. Leave it exactly as-is for the user.
