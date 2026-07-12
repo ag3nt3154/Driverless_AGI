@@ -885,7 +885,7 @@ class AgentLoop:
 
         try:
             plan_text = Path(self.config.active_plan_file).read_text(encoding="utf-8")
-        except OSError:
+        except (OSError, UnicodeDecodeError):
             return ""
 
         statuses = parse_subtask_statuses(plan_text)
@@ -896,6 +896,8 @@ class AgentLoop:
             "pending": " ", "in_progress": "~", "complete": "x",
             "failed": "!", "unknown": "?",
         }
+        # Numbering here is positional/display-only (1, 2, 3...) — intentionally
+        # decoupled from each subtask's own "### Subtask N" number in plan.md.
         lines = [
             f"{i}. [{marker_map.get(s['status'], '?')}] {s['name']}"
             for i, s in enumerate(statuses, start=1)
@@ -905,9 +907,11 @@ class AgentLoop:
     def _refresh_active_plan_tail(self) -> None:
         """Re-splice the Active Plan + Plan Status tail onto the cached prefix.
 
-        Called at the top of every loop iteration in run(). Cheap: one file read
-        + one regex parse. Never touches self._system_prefix, so cache_prompt's
-        hit rate on the large static prefix is unaffected.
+        NOT YET CALLED as of this commit — wiring this into the top of run()'s
+        per-iteration loop is a separate, later task. Once wired, this should run
+        at the top of every iteration; it's cheap (one file read + one regex
+        parse) and never touches self._system_prefix, so cache_prompt's hit rate
+        on the large static prefix is unaffected.
         """
         if self.config.active_plan_file and not self.config.plan_mode:
             self._messages[0] = {
