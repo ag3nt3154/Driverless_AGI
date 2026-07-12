@@ -1,3 +1,4 @@
+import json
 import subprocess
 import sys
 from pathlib import Path
@@ -82,3 +83,22 @@ def test_baseline_is_pristine_copy_of_public(task_dir):
     pub = (task_dir / "public" / fname).read_text(encoding="utf-8")
     base = (task_dir / "hidden" / "baseline" / fname).read_text(encoding="utf-8")
     assert pub == base
+
+
+def test_cli_end_to_end_naive_on_fixture(tmp_path):
+    results = tmp_path / "results.jsonl"
+    repo_root = Path(__file__).resolve().parents[2]
+    proc = subprocess.run(
+        [sys.executable, "-m", "benchmarks.dagi_eval.run",
+         "--solver", "naive", "--task", "fixture_task",
+         "--tasks-dir", str(FIXTURE.parent), "--results", str(results),
+         "--label", "e2e-test"],
+        capture_output=True, text=True, cwd=repo_root, timeout=600)
+    assert proc.returncode == 0, proc.stderr
+    rows = [json.loads(l) for l in results.read_text(encoding="utf-8").splitlines()]
+    assert len(rows) == 1
+    row = rows[0]
+    assert row["solver"] == "naive"
+    assert row["label"] == "e2e-test"
+    assert row["coding_tasks"]["fixture_task"]["correct"] is True
+    assert 0.3 <= row["coding_score"] <= 3.0

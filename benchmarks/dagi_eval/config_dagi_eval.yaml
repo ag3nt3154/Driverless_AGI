@@ -1,0 +1,38 @@
+# Benchmark config for the dagi eval harness (benchmarks/dagi_eval/run.py).
+# Same schema as config.yaml; passed to resolve_model_config(config_path=...).
+default_model: claude-sonnet-openrouter
+max_continuations: 30
+cache_prompt: true
+
+# Only these tools are registered for benchmark runs. No ask_user (runs are
+# unattended — the on_ask_user callback auto-answers anyway), no web tools
+# (the tasks are self-contained), no plan mode.
+tools:
+  - read
+  - write
+  - edit
+  - bash
+  - grep
+  - find
+  - compact
+
+system_prompt_preamble: |
+  ## Benchmark Environment
+  You are being evaluated in an unattended benchmark run. The task specification
+  is in spec.md in your working directory — read it first. Work fully
+  autonomously: never ask the user questions and never wait for confirmation.
+  Your working directory contains everything you need; produce the required
+  artifacts there. Python packages available: numpy, pandas, scipy, scikit-learn.
+  Run python via: conda run -n dagi python <script>
+
+models:
+  claude-sonnet-openrouter:
+    name: "Claude Sonnet (OpenRouter)"
+    model: "anthropic/claude-sonnet-4-6"
+    api_url: "https://openrouter.ai/api/v1"
+    api_key_env: "OPENROUTER_API_KEY"
+  deepseek-openrouter:
+    name: "DeepSeek (OpenRouter)"
+    model: "deepseek/deepseek-chat"
+    api_url: "https://openrouter.ai/api/v1"
+    api_key_env: "OPENROUTER_API_KEY"
