@@ -21,7 +21,7 @@ class PromptInput(TextArea):
             if text.strip():
                 self.post_message(self.Submitted(text))
             self.load_text("")
-        elif event.key == "shift+enter":
+        elif event.key in ("shift+enter", "ctrl+n", "ctrl+enter"):
             event.prevent_default()
             event.stop()
             self.insert("\n")
