@@ -26,7 +26,7 @@ class DagiApp(SlashCommandsMixin, App[None]):
     ConversationPane { height: 1fr; }
     Sidebar          { height: 12; border-bottom: solid $panel; }
     #running-indicator { height: 1; display: none; color: $success; text-align: center; }
-    #prompt          { dock: bottom; height: 5; border-top: solid $panel; }
+    #prompt          { dock: bottom; height: 8; border-top: solid $panel; }
     """
 
     _SPINNER = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
@@ -70,6 +70,7 @@ class DagiApp(SlashCommandsMixin, App[None]):
         ))
         conv.write(Text("Type /help for commands · /exit to leave", style="dim"))
         self.query_one("#prompt", PromptInput).focus()
+        self.query_one("#prompt", PromptInput).border_title = "ctrl+n = newline · ctrl+o = compose"
         self.set_interval(2.0, self._poll_plan)
         self.set_interval(0.1, self._tick_spinner)
 
