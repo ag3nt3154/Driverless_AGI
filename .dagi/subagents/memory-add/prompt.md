@@ -99,10 +99,10 @@ Read the task. Determine:
 - What `tags` (3–6 comma-separated keywords) would help grep find it?
 
 ### Step 2 — Check for existing content
-Grep the relevant section for key terms from the content:
+grep the relevant section for key terms from the content:
 
 ```
-Grep(pattern="<key term>", path="wiki/projects/<name>/")   # or wiki/knowledge/<topic>/
+grep(pattern="<key term>", path="wiki/projects/<name>/")   # or wiki/knowledge/<topic>/
 ```
 
 Read the section's `.index.md` to see what pages already exist.

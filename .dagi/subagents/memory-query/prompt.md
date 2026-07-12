@@ -41,20 +41,20 @@ tags: keyword1, keyword2, keyword3
 Read all three index files explicitly (they are not auto-injected):
 
 ```
-Read("{memory_root}/wiki/index.md")          ← root: lists sections
-Read("{memory_root}/wiki/projects/.index.md") ← all tracked projects
-Read("{memory_root}/wiki/knowledge/.index.md") ← all knowledge topics
+read("{memory_root}/wiki/.index.md")
+read("{memory_root}/wiki/projects/.index.md")
+read("{memory_root}/wiki/knowledge/.index.md")
 ```
 
 Skip any that do not yet exist. Scan the loaded content to identify candidate sections
 and likely topics relevant to the query before grepping.
 
-### Step 2 — Grep for key terms
+### Step 2 — grep for key terms
 Extract the most specific terms from the query (entity names, technical terms, project
-names). Grep the wiki directory for each:
+names). grep the wiki directory for each:
 
 ```
-Grep(pattern="<term>", path="<memory_root>/wiki/", output_mode="content")
+grep(pattern="<term>", path="<memory_root>/wiki/")
 ```
 
 Rank candidate pages by grep hit density (number of matching lines).

@@ -9,17 +9,17 @@ description: Ingest raw source files from {memory_root}/raw/ — classify, deleg
 
 All paths in this skill are under **memory root** (`{memory_root}`), NOT under CWD (`{cwd}`).
 
-The `Read`, `Write`, `Edit`, `Grep`, and `Glob` tools all accept **absolute paths** and work
+The `read`, `write`, `edit`, `grep`, and `find` tools all accept **absolute paths** and work
 with any location on the filesystem, including `{memory_root}` even when it differs from CWD
 or the dagi root. Use them directly:
 
 | Operation | Tool |
 |-----------|------|
-| Read a file | `Read` with absolute path |
-| Write/overwrite a file | `Write` with absolute path |
-| Edit a file in-place | `Edit` with absolute path |
-| Search file contents | `Grep` with `path: {memory_root}/` |
-| Find files by pattern | `Glob` with `path: {memory_root}/` |
+| Read a file | `read` with absolute path |
+| Write/overwrite a file | `write` with absolute path |
+| Edit a file in-place | `edit` with absolute path |
+| Search file contents | `grep` with `path: {memory_root}/` |
+| Find files by pattern | `find` with `path: {memory_root}/` |
 
 Use **bash** only for operations the tools cannot do:
 
@@ -129,7 +129,7 @@ still gets exactly one archive filename.
    `notes-on-knowledge-graphs`). Use the document's own title or main subject — not the
    wiki slugs produced by memory-add.
 2. Preserve the original file extension.
-3. Use `Glob` to list `{memory_root}/sources/{topic}/` and check for any existing file
+3. Use `find` to list `{memory_root}/sources/{topic}/` and check for any existing file
    with the chosen name. If a conflict exists, append `-2`, `-3`, etc. until a free name
    is found.
 4. The final archive path is: `{memory_root}/sources/{topic}/{chosen-name}.{ext}`
