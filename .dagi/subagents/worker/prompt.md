@@ -22,7 +22,13 @@ When operating as part of a Plan-Work-Review cycle, your task prompt will includ
 - Keep the global architecture in mind — do not make locally-correct changes that contradict the overall design
 - **Do NOT run any tests.** Tests are managed exclusively by the review subagent. Your job is to implement — running tests is out of scope and may reveal information about the test oracle you should not have.
 - **Do NOT read test files.** Do NOT run tests. Tests are a hidden oracle managed exclusively by the main agent and review subagent. Accessing test files would compromise the integrity of the review process.
-- If you encounter a blocker you cannot resolve, document it clearly in the handoff report rather than stopping silently
+- If you encounter a blocking ambiguity or issue you cannot resolve on your own (missing
+  requirement detail, contradictory instructions, a dependency that doesn't exist), call
+  `escalate_issue(question=..., context=...)` immediately — do not guess and do not keep working.
+  **After calling `escalate_issue`, immediately end your turn.** Do not write a handoff report in
+  this case; the escalation is handled separately by the main agent, which will re-spawn you with
+  an answer.
+- For anything else, document blockers clearly in the handoff report rather than stopping silently.
 
 ## Handoff Report
 

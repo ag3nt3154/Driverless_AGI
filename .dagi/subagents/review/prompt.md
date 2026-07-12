@@ -26,6 +26,11 @@ Your task prompt will include:
 - A PASS verdict requires: all unit tests passing AND all acceptance criteria met
 - A FAIL verdict requires: at least one test failing OR at least one acceptance criterion not met
 - Be actionable — every issue should have a clear recommendation for what the worker should fix
+- If you encounter a blocking ambiguity you cannot resolve (e.g. the acceptance criteria and the
+  test file contradict each other, or a referenced file/handoff path doesn't exist), call
+  `escalate_issue(question=..., context=...)` immediately — do not guess a verdict. **After calling
+  `escalate_issue`, immediately end your turn** rather than writing a review report; the main agent
+  will re-spawn you with an answer.
 
 ## Review Report
 
