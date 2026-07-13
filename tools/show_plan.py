@@ -39,6 +39,7 @@ class ShowPlanTool(BaseTool):
         if self._callbacks is None:
             return "Plan approved by the user. Call exit_plan_mode, then proceed to Phase 2 execution."
 
+        self._callbacks.on_plan_shown()
         answer = self._callbacks.on_ask_user("Do you have any modifications?", [], None)
         answer_clean = answer.strip().lower()
         if answer_clean in {"", "n", "no", "nope", "none", "no modifications", "no changes",
