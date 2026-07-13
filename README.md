@@ -732,3 +732,7 @@ Additional (install separately if using the interactive CLI):
 
 - `typer` + `rich` — interactive CLI (`archives/cli.py`)
 - No extra native libraries required — subagents use stdlib `subprocess` with stdout pipe
+
+### Windows notifications (TUI, optional)
+
+- `win11toast` — native Windows 10/11 toast notifications, installed by default via `requirements.txt`. `tui.py` fires a toast (`tui/notifications.py::notify()`) when DAGI asks a question, presents a plan for interactive review, or reaches end-of-response. Lazily imported and exception-guarded — degrades silently to a no-op on non-Windows hosts or if the package is missing, never blocking the TUI. Not used by `cli.py`, `telegram_bot.py`, subagents, or the scheduler.

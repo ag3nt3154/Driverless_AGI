@@ -2,6 +2,12 @@
 
 ## Completed
 
+- **Windows toast notifications for TUI** · `done` · `2026-07-13`
+  - **Fires at three points:** `ask_user`, interactive `show_plan`, and end-of-response (`on_done`) via `tui/notifications.py::notify()`
+  - **New callback:** `AgentCallbacks.on_plan_shown` distinguishes plan review from a generic question
+  - **Scope:** `tui.py` only — `cli.py`, `telegram_bot.py`, subagents, and the scheduler are unaffected
+  - **Dependency:** `win11toast`, lazily imported and exception-guarded — degrades to silent no-op if missing or non-Windows
+
 - **Subagent spawning broken after `cli.py` deprecation — `CliConfig` import error** · `done` · `2026-07-13`
   - **Symptom:** every `spawn_*_subagent` tool call failed with `ImportError: cannot import name 'CliConfig' from 'agent.config_loader'`. The 2026-07-12 "deprecate cli" commit (`d6f7f25`) moved `cli.py` → `archives/cli.py` and removed `CliConfig`/`load_cli_config` from `agent/config_loader.py`, but `tools/_subagent_runner.py` still shelled out to `archives/cli.py` to run piped subagents — a live path, not just the deprecated interactive REPL.
   - **Fix:** extracted the pipe-mode subagent runner (`_run_subagent_pipe_mode` and its helpers — `_apply_worker_config`, `_apply_advanced_config`, `_extract_final_assistant_text`, `_build_pipe_callbacks`, `_build_subagent_system_prompt`) out of `archives/cli.py` into a new standalone entry point, `tools/subagent_main.py`, with a plain `argparse` CLI (`--subagent-type`, `--task-file`, `--handoff`, `--project`, `--model`, `--system-prompt-file`). `tools/_subagent_runner.py` now spawns it via `python -m tools.subagent_main` (module invocation, not a file path — running it by path would put `tools/` at `sys.path[0]` and let `tools/copy.py` shadow the stdlib `copy` module, which `dataclasses` imports internally). `archives/cli.py` is now truly dead — nothing in the live codebase imports or executes it.
