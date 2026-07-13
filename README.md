@@ -649,6 +649,56 @@ Logs are append-only JSONL — each line is a self-contained JSON record.
 
 ## Running Benchmarks
 
+### DAGI Eval Benchmark (coding speedup + DS scorecard)
+
+`benchmarks/dagi_eval/` is a self-contained scorecard for comparing dagi
+versions/models: 5 coding-speedup tasks (write a faster program than a
+supplied working-but-naive baseline, scored on correctness + wall-clock
+speedup) and 1 data-science task (train the best model you can on a frozen
+tabular dataset, scored on ROC-AUC). There is **no composite score** —
+results are a scorecard row (`coding_score`, `ds_score`, wall time, tokens,
+cost) appended to `benchmarks/dagi_eval/results.jsonl`, not a single number.
+
+**Running a real benchmark:**
+
+```bash
+conda run -n dagi python -m benchmarks.dagi_eval.run --model <id> --label "<note>"
+```
+
+`--model` selects an entry from `benchmarks/config_dagi_eval.yaml`. Omit
+`--task` to run all 6 tasks, or pass `--task <name>` (repeatable) to run a
+subset. Each run appends one row to `benchmarks/dagi_eval/results.jsonl`
+(default path; override with the hidden `--results` flag).
+
+**Self-test mode (no LLM calls, no cost):**
+
+```bash
+conda run -n dagi python -m benchmarks.dagi_eval.run --solver naive --label "self-test"
+conda run -n dagi python -m benchmarks.dagi_eval.run --solver gold  --label "self-test"
+```
+
+`--solver naive|gold` runs a canned reference solution instead of the real
+agent — `naive` re-runs each task's own baseline (sanity check: speedups
+should land near 1.0, `ds_score` near 1.0) and `gold` runs each task's
+reference fast solution (every coding speedup should clear that task's
+`gold_min_speedup` from its `task.yaml`, and `ds_score` should be ≥ 1.3).
+`--solver agent` (the default when `--solver` is omitted) invokes a real,
+billed LLM call via dagi's `AgentLoop` — only use it with an actual model
+budgeted for the run.
+
+**Task inputs:** each coding task's `hidden/` test inputs are regenerated
+per machine by that task's own `hidden/make_inputs.py` (seeded, so
+deterministic on a given machine, but not committed to git — this keeps the
+repo small and avoids environment-specific frozen artifacts). The one DS
+task, `ds_01_tabular`, is the exception: its dataset (`train.csv`,
+`test_features.csv`, `test_labels.csv`, `meta.json`) is generated once and
+committed frozen, since retraining/regenerating it would silently change
+the benchmark's difficulty across runs.
+
+See `docs/superpowers/specs/2026-07-06-dagi-eval-benchmark-design.md` for
+the full design rationale and `docs/superpowers/plans/2026-07-06-dagi-eval-benchmark.md`
+for the implementation plan.
+
 ### Harbor Framework (89-task Terminal Benchmark)
 
 DAGI includes an adapter for the [Harbor Framework](https://harborframework.com) benchmark suite.
