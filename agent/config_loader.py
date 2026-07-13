@@ -45,7 +45,6 @@ def get_model_display_name(model_id: str | None = None) -> str:
     return entry.get("name", chosen_id or "unknown")
 
 
-
 @dataclass
 class TelegramConfig:
     """Telegram bot settings loaded from the `telegram:` key in config.yaml."""

@@ -1,9 +1,10 @@
 """tools/_subagent_runner.py — Spawn a typed subagent as a piped subprocess.
 
-The subagent runs cli.py with --subagent-type, --task-file, and --handoff flags.
-Stdout is streamed as newline-delimited JSON events relayed to the parent TUI.
-The parent polls the process PID until exit or timeout; a separate resume_subagent()
-call can extend the wait without losing the process handle.
+The subagent runs tools/subagent_main.py with --subagent-type, --task-file,
+and --handoff flags. Stdout is streamed as newline-delimited JSON events
+relayed to the parent TUI. The parent polls the process PID until exit or
+timeout; a separate resume_subagent() call can extend the wait without
+losing the process handle.
 """
 from __future__ import annotations
 
@@ -18,7 +19,6 @@ from pathlib import Path
 from typing import Callable
 
 from agent import DAGI_ROOT as _DAGI_ROOT
-_CLI_PATH = _DAGI_ROOT / "archives" / "cli.py"
 _POLL_INTERVAL = 2.0  # seconds between PID-alive checks
 
 
@@ -139,7 +139,7 @@ def run_subagent(
     handoff_path.parent.mkdir(parents=True, exist_ok=True)
 
     argv = [
-        sys.executable, str(_CLI_PATH),
+        sys.executable, "-m", "tools.subagent_main",
         "--subagent-type", subagent_type,
         "--task-file", str(task_file),
         "--handoff", str(handoff_path),
@@ -148,16 +148,9 @@ def run_subagent(
     if extra_argv:
         argv.extend(extra_argv)
 
-    # archives/cli.py lives one directory below the project root, so Python
-    # sets sys.path[0] to archives/ when spawning it directly — `agent` and
-    # other root-level packages won't resolve without the root on PYTHONPATH.
-    env = os.environ.copy()
-    env["PYTHONPATH"] = str(_DAGI_ROOT) + os.pathsep + env.get("PYTHONPATH", "")
-
     proc = subprocess.Popen(
         argv,
         cwd=str(_DAGI_ROOT),
-        env=env,
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         text=True,

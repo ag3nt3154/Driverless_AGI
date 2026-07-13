@@ -131,11 +131,12 @@ Exit with `/exit`, `exit`, `quit`, or `Ctrl-C`. Conversation history carries acr
 ### Interactive CLI (`archives/cli.py`) [DEPRECATED]
 
 The legacy CLI REPL has been **archived** in favour of the TUI (`python tui.py`).
-It remains available at `archives/cli.py` for reference and is still used internally
-as the subagent binary for explore_files, web_research, memory-query, etc. Since it
-lives one directory below the project root, `tools/_subagent_runner.py` explicitly
-sets `cwd`/`PYTHONPATH` to the project root when spawning it, so root-level packages
-(`agent`, `tools`) still resolve.
+It remains available at `archives/cli.py` for reference only — nothing in the live
+codebase imports or executes it. The piped subagent binary (used by
+`tools/_subagent_runner.py` for explore_files, web_research, memory-query, etc.) is
+`tools/subagent_main.py`, extracted from the old CLI's pipe-mode path and run as
+`python -m tools.subagent_main` (so the project root, not `tools/`, is on `sys.path[0]` —
+running it by file path instead would let `tools/copy.py` shadow the stdlib `copy` module).
 
 ```bash
 conda run --no-capture-output -n dagi python archives/cli.py
@@ -456,8 +457,8 @@ When reasoning is active:
 ```
 Driverless_AGI/
 ├── main.py                # Single-shot CLI (argparse)
-├── archives/              # Deprecated CLI (moved from root)
-│   └── cli.py             #   Interactive CLI / subagent binary (typer + rich)
+├── archives/              # Deprecated, unused — reference only
+│   └── cli.py             #   Old interactive CLI REPL (typer + rich)
 ├── config.yaml            # Runtime config (gitignored)
 ├── config.example.yaml    # Config template
 ├── .env                   # API keys (gitignored)
@@ -497,6 +498,7 @@ Driverless_AGI/
 │   ├── web_research.py    # Multi-page web research (spawns pipe subagent)
 │   ├── explore_files.py   # Large-scale codebase scanning (spawns pipe subagent)
 │   ├── _subagent_runner.py # Core runner — Popen(stdout=PIPE), JSON event relay, PID polling
+│   ├── subagent_main.py   # Piped subagent entry point (spawned via `python -m tools.subagent_main`)
 │   ├── extend_timeout.py  # ExtendSubagentTimeoutTool — resume in-flight subagent deadline
 │   ├── cli_subagent.py    # Custom subagent with caller-supplied system prompt
 │   ├── compact.py         # Trigger context compaction
