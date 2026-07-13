@@ -148,8 +148,16 @@ def run_subagent(
     if extra_argv:
         argv.extend(extra_argv)
 
+    # archives/cli.py lives one directory below the project root, so Python
+    # sets sys.path[0] to archives/ when spawning it directly — `agent` and
+    # other root-level packages won't resolve without the root on PYTHONPATH.
+    env = os.environ.copy()
+    env["PYTHONPATH"] = str(_DAGI_ROOT) + os.pathsep + env.get("PYTHONPATH", "")
+
     proc = subprocess.Popen(
         argv,
+        cwd=str(_DAGI_ROOT),
+        env=env,
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         text=True,

@@ -132,7 +132,10 @@ Exit with `/exit`, `exit`, `quit`, or `Ctrl-C`. Conversation history carries acr
 
 The legacy CLI REPL has been **archived** in favour of the TUI (`python tui.py`).
 It remains available at `archives/cli.py` for reference and is still used internally
-as the subagent binary for explore_files, web_research, etc.
+as the subagent binary for explore_files, web_research, memory-query, etc. Since it
+lives one directory below the project root, `tools/_subagent_runner.py` explicitly
+sets `cwd`/`PYTHONPATH` to the project root when spawning it, so root-level packages
+(`agent`, `tools`) still resolve.
 
 ```bash
 conda run --no-capture-output -n dagi python archives/cli.py
@@ -473,6 +476,7 @@ Driverless_AGI/
 │   ├── skills.py          # SkillLoader — loads .dagi/skills/
 │   ├── workflows.py       # WorkflowLoader — loads .dagi/workflow/
 │   ├── sub_agent.py       # SubAgentRunner — legacy in-process subagent (used by cli_subagent)
+│   ├── cli_utils.py       # Shared TUI helpers (_cmd_init, _skill_invocation_message) — extracted from archives/cli.py
 │   └── _git_branch.py     # Plan-mode auto-branching — creates/checks out dagi/<slug>_<plan_id> from HEAD
 │
 ├── tools/

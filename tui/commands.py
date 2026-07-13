@@ -59,7 +59,7 @@ class SlashCommandsMixin:
         elif cmd == "/compact":
             self._cmd_compact()
         elif cmd == "/plan":
-            from cli import _skill_invocation_message
+            from agent.cli_utils import _skill_invocation_message
             self._dispatch_agent(_skill_invocation_message("plan-work-review", arg or ""))
         elif cmd == "/help":
             self._cmd_help()
@@ -72,10 +72,10 @@ class SlashCommandsMixin:
         elif cmd == "/hist":
             self._cmd_hist(arg)
         elif cmd == "/init":
-            from cli import _cmd_init
+            from agent.cli_utils import _cmd_init
             _cmd_init(self._project_path)
         elif cmd in self._skill_map:
-            from cli import _skill_invocation_message
+            from agent.cli_utils import _skill_invocation_message
             self._dispatch_agent(_skill_invocation_message(self._skill_map[cmd].name, arg or ""))
         elif cmd in self._workflow_map:
             from tools.workflow import load_workflow_content

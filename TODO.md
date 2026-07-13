@@ -184,12 +184,14 @@
   - **Fix:** Add `newline="\n"` to all 10 call sites. Grep `\.write_text\(` to ensure no new sites are missed.
   - **Source:** `review/2026-07-05`
 
-- **`tui/commands.py` imports from `cli.py` — layering violation** · `priority:medium` · `open:28d` · `effort:XS`
-  - **Escalated 2026-07-03:** Open 22 days — blocks the cli.py→cli/ package split (can't restructure cli.py while TUI imports from it).
-  - **File:** `tui/commands.py:59,73`
-  - **Problem:** TUI depends on the CLI entry-point module (`_skill_invocation_message`, `_cmd_init`). Future `cli.py` refactors will break TUI imports.
-  - **Fix:** Extract the two shared functions into `agent/cli_utils.py`; import from both.
+- **`tui/commands.py` imports from `cli.py` — layering violation** · `done` · `2026-07-13`
+  - **Fix applied:** `cli.py` was deprecated and moved to `archives/cli.py`, which broke `/init` and `/plan` at runtime (`ModuleNotFoundError: No module named 'cli'`). Extracted `_cmd_init` and `_skill_invocation_message` into `agent/cli_utils.py`; `tui/commands.py:62,75,78` now import from there instead of the archived module.
   - **Source:** `_todo/todo_2026-06-13.md` #7
+
+- **`explore_files` / `memory-query` subagents fail with `ModuleNotFoundError: No module named 'agent'`** · `done` · `2026-07-13`
+  - **Root cause:** The 2026-07-12 "deprecate cli" commit (`d6f7f25`) moved `cli.py` from the project root to `archives/cli.py` but only updated the path string in `tools/_subagent_runner.py:21`. Python sets `sys.path[0]` to a script's own directory when run directly (`python archives/cli.py`), so once the entry point moved one level deeper, `from agent.config_loader import ...` in `archives/cli.py:35` could no longer resolve — breaking every subagent spawned via `run_subagent()` (`explore_files`, `web_research`, memory-query/memory-add, worker/review, custom CLI subagents).
+  - **Fix applied:** `tools/_subagent_runner.py::run_subagent()` now passes `cwd=str(_DAGI_ROOT)` and an `env` with `PYTHONPATH` prefixed with `_DAGI_ROOT` to the `subprocess.Popen()` call, so `archives/cli.py` can always resolve root-level packages regardless of the subprocess's default `sys.path[0]`.
+  - **Source:** user report, 2026-07-13
 
 - **Dead code: `PlanSubAgent`, `ExploreFilesTool`, `WebResearchTool`, `SubAgentRunner`, `_resolve_option`** · `priority:high` · `open:28d` · `effort:S`
   - **Escalated 2026-07-02:** Open 22 days with no fix commit — raised to high.
