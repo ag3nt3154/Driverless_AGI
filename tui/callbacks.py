@@ -9,6 +9,7 @@ from agent.loop import AgentCallbacks
 from .conversation import ConversationPane
 from .sidebar import Sidebar
 from .utils import _breakdown
+from .notifications import notify
 
 if TYPE_CHECKING:
     from .app import DagiApp
@@ -67,6 +68,7 @@ def build_callbacks(app: DagiApp, loop_ref: list) -> AgentCallbacks:
         app.call_from_thread(sidebar.update_context, _breakdown(messages))
 
     def on_ask_user(question, options, timeout):
+        notify("DAGI has a question", question)
         evt = threading.Event()
         container: list = []
         app.call_from_thread(app._show_ask_user, question, options, timeout, evt, container)
@@ -76,6 +78,9 @@ def build_callbacks(app: DagiApp, loop_ref: list) -> AgentCallbacks:
             return container[0]
         return next((o["label"] for o in options if o.get("recommended")),
                     options[0]["label"] if options else "")
+
+    def on_plan_shown():
+        notify("DAGI's plan is ready", "Review the plan and reply with any changes.")
 
     def on_continue_injected(cur: int, mx: int) -> None:
         app.call_from_thread(
@@ -89,16 +94,20 @@ def build_callbacks(app: DagiApp, loop_ref: list) -> AgentCallbacks:
     def on_subagent_event_factory(subagent_type: str) -> Callable[[str], None]:
         return build_subagent_relay_callback(app, subagent_type)
 
+    def on_done(result: str) -> None:
+        notify("DAGI is done", result or "Response complete.")
+
     return AgentCallbacks(
         on_tool_start=on_tool_start, on_tool_end=on_tool_end,
         on_assistant_text=on_assistant_text, on_token_update=on_token_update,
-        on_iteration=lambda _: None, on_done=lambda _: None, on_error=on_error,
+        on_iteration=lambda _: None, on_done=on_done, on_error=on_error,
         on_api_call=on_api_call, on_reasoning=on_reasoning,
         on_compaction=on_compaction, on_model_switch=on_model_switch,
         on_ask_user=on_ask_user, on_emote=on_emote,
         on_subagent_event_factory=on_subagent_event_factory,
         on_pause=on_pause, supports_pause=True,
         on_continue_injected=on_continue_injected,
+        on_plan_shown=on_plan_shown,
     )
 
 
