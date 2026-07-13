@@ -1,0 +1,10 @@
+kind: coding
+entry_module: pipeline
+entry_func: run
+gold_min_speedup: 10.0
+instruction: |
+  Read spec.md in your working directory first. Optimize the log-analytics
+  pipeline in pipeline.py for speed. The outputs of pipeline.run(input_dir)
+  must remain exactly identical for any valid input — you will be scored on
+  runtime speedup on hidden inputs, with correctness as a hard gate. Work
+  autonomously; do not ask questions.

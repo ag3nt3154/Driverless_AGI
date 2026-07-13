@@ -14,6 +14,13 @@ langchain-openai>=1.2.2     # OpenAI provider for LangChain
 # non-Windows hosts or if this package is missing — never blocks the TUI.
 win11toast>=0.35            # Native Windows 10/11 toast notifications
 
+# ── Optional: DAGI Eval Benchmark ────────────────────────────────────────────
+# Install to run benchmarks/dagi_eval (coding speedup + DS scorecard tasks).
+# numpy>=1.26              # vectorized gold solutions (coding_03/04/05), ds_01 features
+# pandas>=2.0              # ds_01_tabular data loading and CSV I/O
+# scipy>=1.11              # scientific helpers used by scikit-learn transforms
+# scikit-learn>=1.4        # ds_01_tabular baseline (LogisticRegression) + gold (HistGradientBoostingClassifier)
+
 # ── Optional: Telegram bot ───────────────────────────────────────────────────
 # Install to enable the telegram_bot.py entry point.
 # python-telegram-bot>=21.0  # Async Telegram bot framework

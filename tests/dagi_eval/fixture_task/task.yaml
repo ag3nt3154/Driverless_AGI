@@ -1,0 +1,7 @@
+kind: coding
+entry_module: pipeline
+entry_func: run
+gold_min_speedup: 2.0
+instruction: |
+  Read spec.md in your working directory and optimize pipeline.py for speed
+  while preserving exact outputs.

@@ -197,3 +197,5 @@ jobs/*
 
 # git worktrees
 .worktrees/
+
+benchmarks/dagi_eval/tasks/*/hidden/data/

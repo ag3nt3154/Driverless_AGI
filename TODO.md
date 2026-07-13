@@ -2,6 +2,16 @@
 
 ## Completed
 
+- **DAGI Eval Benchmark — coding speedup + DS scorecard harness** · `done` · `2026-07-13`
+  - New `benchmarks/dagi_eval/` package: subprocess entry executor, `scoring.py` (output-match/timing/ROC-AUC), `harness.py` (workspace prep, canned-solver + real-agent invocation), `run.py` CLI (`--model`, `--task`, `--solver agent|gold|naive`, `--label`, `--results`).
+  - 6 tasks: `coding_01_logpipe`, `coding_02_querymini`, `coding_03_simgrid`, `coding_04_dedup`, `coding_05_sheetcalc` (coding-speedup, each with a naive baseline + a fast gold solution and a `gold_min_speedup` gate), and `ds_01_tabular` (DS, ROC-AUC vs. a frozen synthetic dataset with a deliberate leaky-feature trap column).
+  - No composite score by design — a scorecard row (`coding_score`, `ds_score`, tokens/cost/wall-time) is appended to `benchmarks/dagi_eval/results.jsonl` per run.
+  - `--solver naive|gold` self-test modes make zero real LLM calls (canned solutions only) — used throughout development and for the final full-sweep self-test instead of a real agent run.
+  - Full harness self-test (`--solver naive` then `--solver gold`, all 6 tasks): naive speedups 0.81-1.01 / `ds_score=1.0`, gold speedups 49.8-1628.5 (all clearing their task's `gold_min_speedup`) / `ds_score=1.537`; `errors: []` on both runs. Full suite `pytest tests/ -q` → 280 passed.
+  - Added `numpy`/`pandas`/`scipy`/`scikit-learn` as an optional dependency group in `requirements.txt` (used by `coding_03/04/05` gold solutions and `ds_01_tabular`).
+  - Spec: `docs/superpowers/specs/2026-07-06-dagi-eval-benchmark-design.md`. Plan: `docs/superpowers/plans/2026-07-06-dagi-eval-benchmark.md`.
+  - **Not done / follow-up**: Task 11's optional "first real benchmark run" smoke test (Step 4 of the plan, needs an API key and makes a real billed LLM call) was intentionally skipped per explicit standing instruction not to make real LLM calls without permission — the harness is otherwise fully self-tested and ready for a real `--model` run whenever budget is available.
+
 - **Windows toast notifications for TUI** · `done` · `2026-07-13`
   - **Fires at three points:** `ask_user`, interactive `show_plan`, and end-of-response (`on_done`) via `tui/notifications.py::notify()`
   - **New callback:** `AgentCallbacks.on_plan_shown` distinguishes plan review from a generic question
