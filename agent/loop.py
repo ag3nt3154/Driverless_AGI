@@ -205,6 +205,8 @@ class AgentCallbacks:
     # Fired when the harness injects a "continue" prompt because the response had no exit flag.
     # Args: (current_count, max_continuations)
     on_continue_injected: Callable[[int, int], None] = field(default=lambda cur, mx: None)
+    # Fired when a plan is rendered for interactive review (ShowPlanTool, interactive mode only).
+    on_plan_shown: Callable[[], None] = field(default=lambda: None)
 
 
 def _extract_reasoning(message) -> str:
