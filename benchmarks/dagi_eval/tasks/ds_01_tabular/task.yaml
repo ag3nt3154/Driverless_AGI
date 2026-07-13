@@ -1,0 +1,6 @@
+kind: ds
+instruction: |
+  Read spec.md in your working directory first. Build the best predictive
+  model you can from train.csv and write predictions.csv (columns: id,
+  probability) covering every row of test_features.csv. You are scored on
+  ROC-AUC against held-out labels. Work autonomously; do not ask questions.

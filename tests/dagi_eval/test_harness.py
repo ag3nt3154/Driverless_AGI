@@ -12,6 +12,7 @@ _TASKS_ROOT = Path(__file__).resolve().parents[2] / "benchmarks" / "dagi_eval" /
 REAL_TASKS = sorted(
     p for p in _TASKS_ROOT.glob("coding_*") if (p / "task.yaml").exists()
 ) if _TASKS_ROOT.exists() else []
+DS_TASK = _TASKS_ROOT / "ds_01_tabular"
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -83,6 +84,28 @@ def test_baseline_is_pristine_copy_of_public(task_dir):
     pub = (task_dir / "public" / fname).read_text(encoding="utf-8")
     base = (task_dir / "hidden" / "baseline" / fname).read_text(encoding="utf-8")
     assert pub == base
+
+
+@pytest.mark.skipif(not (DS_TASK / "hidden" / "meta.json").exists(),
+                    reason="ds_01_tabular dataset not generated on this machine")
+def test_ds_task_naive_solver_scores_parity():
+    ws = harness.prepare_workspace(DS_TASK)
+    harness.apply_canned_solver(ws, DS_TASK, "naive", "ds")
+    res = scoring.score_ds_task(DS_TASK, ws)
+    assert res["error"] is None
+    assert 0.98 <= res["ds_score"] <= 1.02
+
+
+@pytest.mark.skipif(not (DS_TASK / "hidden" / "meta.json").exists(),
+                    reason="ds_01_tabular dataset not generated on this machine")
+def test_ds_task_gold_solver_beats_baseline():
+    ws = harness.prepare_workspace(DS_TASK)
+    harness.apply_canned_solver(ws, DS_TASK, "gold", "ds")
+    res = scoring.score_ds_task(DS_TASK, ws)
+    meta = json.loads((DS_TASK / "hidden" / "meta.json").read_text(encoding="utf-8"))
+    assert res["error"] is None
+    assert res["ds_score"] >= 1.3
+    assert res["auc"] < meta["oracle_auc"]
 
 
 def test_cli_end_to_end_naive_on_fixture(tmp_path):
