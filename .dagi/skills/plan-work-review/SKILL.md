@@ -16,7 +16,9 @@ This skill owns the full lifecycle for complex tasks: planning, approval, and ex
 Call `enter_plan_mode(mode="interactive", task_summary="<short-kebab-case-slug>")` if this skill was invoked by the user (slash command or explicit request). Call `enter_plan_mode(mode="autonomous", task_summary="<short-kebab-case-slug>")` if DAGI initiated this internally. `task_summary` should be a short kebab-case slug capturing the task (e.g. `"fix-login-bug"`) — it seeds the plan title and names the git branch DAGI automatically creates and checks out for this task. If the tool result's `**Branch:**` line shows "no git repository detected", DAGI has no git workflow for this task — proceed with planning normally, just skip all git_* steps below.
 
 ### Step 2 — Grill (interactive mode only)
-**This step runs before any exploration or planning.** Invoke `skill("grill-me")` immediately after entering plan mode. The skill will stress-test the requirements, surface hidden assumptions, and force concrete decisions. Answer questions using any knowledge already in context — do NOT spawn the explore subagent yet. Proceed to Step 3 once the user signals readiness (e.g. "ready", "proceed", "let's go"). Skip this step in autonomous mode.
+**This step runs before any exploration or planning.** Invoke `skill("grill-me")` immediately after entering plan mode. The skill will stress-test the requirements, surface hidden assumptions, and force concrete decisions. Answer questions using any knowledge already in context — do NOT spawn the explore subagent yet.
+
+**Do not exit this step early.** A user saying "ready", "proceed", or "let's go" is not by itself a signal to stop — grill-me ends its own interrogation per its Phase 3 closing criteria (every decision-tree branch resolved, a closing summary produced), not on user impatience. Only treat an explicit override ("skip the grilling", "stop questioning me", "cancel") as license to cut the interrogation short. Otherwise, keep answering grill-me's questions until it produces its Phase 3 closing summary, then proceed to Step 3.
 
 ### Step 3 — Explore via Subagent
 Now that requirements are clear from grilling, delegate targeted codebase discovery to the explore subagent — do not use `read`, `grep`, or `find` directly for exploration.
@@ -25,7 +27,9 @@ Call `spawn_explore_files_subagent(...)` with:
 - `task`: a precise description of what to discover, informed by what grilling revealed (e.g. "Map all tool registration paths and explain how tools are loaded at startup. Identify files that will need to change for X.")
 - `handoff_file`: leave this unset — the tool generates the path automatically
 
-Once the tool returns, read the handoff file it reports. Use its **Findings** and **Recommendations** sections to inform the plan.
+The subagent's job is to describe the codebase, not to plan — its handoff contains **Summary**, **Citations**, and **Notes** sections only (see `.dagi/subagents/explore_files/prompt.md`). If its output reads like a plan (proposed steps, ordered implementation, architecture decisions), that is out of scope for it — treat any such content as raw findings, not as the plan itself, and do the actual planning yourself in Step 4.
+
+Once the tool returns, read the handoff file it reports. Use its **Summary**, **Citations**, and **Notes** to inform the plan you write yourself in Step 4.
 
 ### Step 4 — Write the Plan
 Write the plan document to the plan file. Use this structure:

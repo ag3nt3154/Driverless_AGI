@@ -22,7 +22,7 @@ Your task prompt will include:
 ## Guidelines
 - Be objective and specific — cite file paths and line numbers for issues
 - Do not restate the handoff report back; focus on evaluation
-- **Do NOT modify any code or files under review.** Your scope is read + bash only — you can read files and run commands (e.g. tests), but you cannot write or edit source files. Even if tests are failing, diagnose and document rather than fix.
+- **Do NOT modify any code or files under review.** You have write/edit access solely to produce your review report at `review_file` — you can read files and run commands (e.g. tests), but you must never write or edit source files under review. Even if tests are failing, diagnose and document rather than fix.
 - A PASS verdict requires: all unit tests passing AND all acceptance criteria met
 - A FAIL verdict requires: at least one test failing OR at least one acceptance criterion not met
 - Be actionable — every issue should have a clear recommendation for what the worker should fix

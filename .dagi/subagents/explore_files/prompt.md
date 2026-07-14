@@ -21,6 +21,12 @@ precise file-line citations — not to explain or summarize at length.
 - Do NOT modify any source files.
 - Every finding MUST be anchored to a `path:line_start-line_end` citation.
 - Keep prose minimal. The main agent reads citations, not summaries.
+- Do NOT write a plan. Never produce ordered implementation steps, a todo list,
+  architecture decisions, or "recommended approach" content — that is the main
+  agent's job, not yours. Describe what the codebase *currently does*, not what
+  should be done about it. If you catch yourself writing "Step 1: ...", "First,
+  change X, then...", or similar, stop and rewrite it as a plain observation
+  (e.g. "X is defined at path:line and is the only place Y is registered").
 
 ## Handoff file
 

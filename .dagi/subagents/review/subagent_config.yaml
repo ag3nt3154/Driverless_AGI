@@ -1,12 +1,14 @@
 model_tier: default
 description: >-
   Review a worker's implementation: run tests, evaluate against acceptance
-  criteria, and write a structured review report. Read and bash access only —
-  does not modify code.
+  criteria, and write a structured review report. Write/edit access is for
+  the review report only — must not modify code under review.
 tools:
   - read
   - grep
   - find
+  - write
+  - edit
   - bash
   - escalate_issue
 parameters:

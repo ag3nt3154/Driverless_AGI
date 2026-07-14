@@ -70,7 +70,11 @@ missing decision boundary first.
 Break the plan into branches: user goals, target audience, scope, architecture,
 workflow, dependencies, timeline, risk tolerance, resources, success metrics,
 rollout/fallback, operational ownership.
-Resolve the highest-impact branch first.
+Resolve the highest-impact branch first, but track every branch explicitly —
+list them before you start asking. A branch is only "resolved" when it has
+either an explicit decision or an explicit, stated reason it's out of scope
+("not applicable because...", not silence). Do not let a branch go unaddressed
+just because the user hasn't brought it up.
 
 **Stage 3 — Interrogate each branch**
 State the assumption underneath the user's statement. Challenge it. Ask for the
@@ -83,8 +87,13 @@ or security/reliability/usability concerns. If there is a contradiction, name it
 force a choice.
 
 **Stage 5 — Close**
-Done only when: the main decisions are explicit, remaining unknowns are non-blocking,
-major risks have been named, and the plan can be executed without guessing.
+Before closing, re-read the branch list from Stage 2 and confirm every single one has
+an explicit decision or an explicit out-of-scope call — not "probably fine" or
+unaddressed silence. Done only when: every branch is accounted for this way, remaining
+unknowns are explicitly named and justified as non-blocking (not merely unmentioned),
+major risks have been named, and the plan can be executed without guessing. A user
+saying "ready" or "let's go" is not a substitute for this checklist — if branches
+remain unresolved, say so and ask the next question instead of closing.
 
 ### Challenge pattern (Mode A)
 
