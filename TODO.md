@@ -12,11 +12,12 @@
   - Spec: `docs/superpowers/specs/2026-07-06-dagi-eval-benchmark-design.md`. Plan: `docs/superpowers/plans/2026-07-06-dagi-eval-benchmark.md`.
   - **Not done / follow-up**: Task 11's optional "first real benchmark run" smoke test (Step 4 of the plan, needs an API key and makes a real billed LLM call) was intentionally skipped per explicit standing instruction not to make real LLM calls without permission — the harness is otherwise fully self-tested and ready for a real `--model` run whenever budget is available.
 
-- **Windows toast notifications for TUI** · `done` · `2026-07-13`
+- **Windows toast notifications for TUI** · `done` · `2026-07-14`
   - **Fires at three points:** `ask_user`, interactive `show_plan`, and end-of-response (`on_done`) via `tui/notifications.py::notify()`
   - **New callback:** `AgentCallbacks.on_plan_shown` distinguishes plan review from a generic question
   - **Scope:** `tui.py` only — `cli.py`, `telegram_bot.py`, subagents, and the scheduler are unaffected
   - **Dependency:** `win11toast`, lazily imported and exception-guarded — degrades to silent no-op if missing or non-Windows
+  - **Foreground check (2026-07-14):** `notify()` skips the toast when the TUI's own console window already has OS focus (`_tui_window_is_foreground()` compares `GetForegroundWindow()` to `GetConsoleWindow()` via `ctypes`). If the check itself fails for any reason, it fails open and still sends the notification.
 
 - **Subagent spawning broken after `cli.py` deprecation — `CliConfig` import error** · `done` · `2026-07-13`
   - **Symptom:** every `spawn_*_subagent` tool call failed with `ImportError: cannot import name 'CliConfig' from 'agent.config_loader'`. The 2026-07-12 "deprecate cli" commit (`d6f7f25`) moved `cli.py` → `archives/cli.py` and removed `CliConfig`/`load_cli_config` from `agent/config_loader.py`, but `tools/_subagent_runner.py` still shelled out to `archives/cli.py` to run piped subagents — a live path, not just the deprecated interactive REPL.
