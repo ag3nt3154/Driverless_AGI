@@ -2,6 +2,14 @@
 
 ## Completed
 
+- **Review subagent could stall the main agent loop indefinitely — `bash` tool had no timeout, and Windows timeouts didn't work anyway** · `done` · `2026-07-15`
+  - **Symptom (user report):** "review subagent stops the main agent loop for dagi."
+  - **Root cause 1:** `tools/bash.py`'s `BashTool.run()` passed `timeout=None` to `subprocess.run` whenever the LLM omitted an explicit `timeout` arg. The review subagent's prompt (`.dagi/subagents/review/prompt.md`) says to "run the unit tests" with no instruction to always pass a timeout. A hanging test command (dev server, watch mode, stdin wait) blocked the review subagent's own inner `AgentLoop` forever, so its subprocess never exited/wrote a handoff — which meant `tools/_subagent_runner.py::_poll_until()` (called synchronously from the *main* `AgentLoop.run()` loop via `spawn_review_subagent`) blocked the entire main loop for up to the 30-minute subagent timeout, repeatable per call.
+  - **Root cause 2 (deeper, Windows-specific):** even when an explicit `timeout` *was* passed, `subprocess.run(shell=True, capture_output=True, timeout=X)` on Windows did not reliably enforce it for command trees with grandchild processes (e.g. `npm test` → `node.exe`). Killing the immediate `cmd.exe` shell on timeout doesn't release the grandchild's inherited stdout/stderr pipe handles, so `communicate()`'s pipe-drain blocks until the grandchild naturally exits — timeout raised only after the full runtime, not the configured deadline. Reproduced directly: `subprocess.run(cmd, shell=True, capture_output=True, timeout=0.5)` took 5.1s to raise `TimeoutExpired` for a 5s child.
+  - **Fix:** `tools/bash.py` rewritten to use `subprocess.Popen` + `communicate(timeout=...)` directly (not `subprocess.run`), with a default timeout (`BashTool.DEFAULT_TIMEOUT = 120.0`, still overridable per-call). On `TimeoutExpired`, kills the *whole* process tree — `taskkill /F /T /PID <pid>` on Windows, `os.killpg(..., SIGKILL)` on POSIX (process started with `CREATE_NEW_PROCESS_GROUP` / `start_new_session=True` respectively) — then drains the pipes with a bounded 5s grace period before giving up and returning a clear `[timed out after Xs and was terminated]` message instead of hanging.
+  - **Test:** `tests/test_bash_tools.py::test_hanging_command_is_bounded_by_default_timeout` — spawns a 5s Python sleep with `default_timeout=0.5` and asserts it returns within 4s. Written first, confirmed RED (`TypeError: unexpected keyword argument 'default_timeout'`), then GREEN after the fix. Full suite: 297 passed (7 pre-existing failures in `tests/dagi_eval/` are unrelated — missing `numpy` in this env, not caused by this change).
+  - **Resolves TODO items:** "`BashTool.run()` doesn't handle `subprocess.TimeoutExpired`" and the `os.killpg` half of "Error Handling & Retries" (both below, now removed/updated).
+
 - **DAGI Eval Benchmark — coding speedup + DS scorecard harness** · `done` · `2026-07-13`
   - New `benchmarks/dagi_eval/` package: subprocess entry executor, `scoring.py` (output-match/timing/ROC-AUC), `harness.py` (workspace prep, canned-solver + real-agent invocation), `run.py` CLI (`--model`, `--task`, `--solver agent|gold|naive`, `--label`, `--results`).
   - 6 tasks: `coding_01_logpipe`, `coding_02_querymini`, `coding_03_simgrid`, `coding_04_dedup`, `coding_05_sheetcalc` (coding-speedup, each with a naive baseline + a fast gold solution and a `gold_min_speedup` gate), and `ds_01_tabular` (DS, ROC-AUC vs. a frozen synthetic dataset with a deliberate leaky-feature trap column).
@@ -321,12 +329,6 @@
   - **Fix:** Replace `asyncio.get_event_loop()` with `asyncio.get_running_loop()` at line 153.
   - **Source:** `review/2026-07-04`
 
-- **`BashTool.run()` doesn't handle `subprocess.TimeoutExpired`** · `priority:medium` · `open:26d` · `effort:XS`
-  - **File:** `tools/bash.py:26-37`
-  - **Problem:** `subprocess.run(..., timeout=timeout)` raises `TimeoutExpired` uncaught; propagates to `ToolRegistry.dispatch()` as a terse generic error with no recovery guidance for the LLM.
-  - **Fix:** Catch and return `f"[Command timed out after {timeout}s — command did not finish in time]"`.
-  - **Source:** `_todo/todo_2026-06-18.md` A3
-
 ---
 
 ### 🟡 Token Efficiency & Observability
@@ -411,8 +413,8 @@
   - **Next:** Add `allowed_paths` / `blocked_commands` keys to `config.yaml` and read them in `agent/tools.py`.
 
 - **Error Handling & Retries** · `priority:high` · `impact:high` · `partial`
-  - **Current:** Transient API error retry with exponential backoff. TUI error-pauses on retry exhaustion.
-  - **Next:** Add `os.killpg` to `tools/bash.py`; improve API key validation at startup.
+  - **Current:** Transient API error retry with exponential backoff. TUI error-pauses on retry exhaustion. `tools/bash.py` now kills the full process tree (`os.killpg`/`taskkill /T`) on timeout — done 2026-07-15.
+  - **Next:** Improve API key validation at startup.
 
 - **Per-project config (work in projects)** · `priority:medium` · `impact:medium` · `partial`
   - **Current:** `resolve_model_config(project_path=...)` merges project config over root. Core config merge infra complete.

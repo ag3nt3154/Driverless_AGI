@@ -1,5 +1,7 @@
 """tests/test_bash_tools.py — coexistence of bash and injected bash tools."""
 from __future__ import annotations
+import sys
+import time
 from pathlib import Path
 import pytest
 from agent.base_tool import BaseTool
@@ -44,3 +46,22 @@ class TestBashCoexistence:
         """tools.tmux_bash.TmuxBashTool must be importable and have name 'tmux_bash'."""
         from tools.tmux_bash import TmuxBashTool
         assert TmuxBashTool.name == "tmux_bash"
+
+    def test_hanging_command_is_bounded_by_default_timeout(self):
+        """A command with no explicit timeout must not hang forever.
+
+        Regression test: the review subagent runs bash commands (e.g. test
+        suites) without always specifying a timeout. Without a default,
+        subprocess.run(timeout=None) blocks forever on a hanging command,
+        stalling the parent AgentLoop for up to the 30-minute subagent poll
+        timeout (or longer, since the orphaned process is never killed).
+        """
+        tool = BashTool(cwd=Path("."), default_timeout=0.5)
+        command = f'"{sys.executable}" -c "import time; time.sleep(5)"'
+
+        start = time.monotonic()
+        result = tool.run(command=command)
+        elapsed = time.monotonic() - start
+
+        assert elapsed < 4, f"bash tool did not enforce default timeout, took {elapsed}s"
+        assert "timed out" in result.lower()
