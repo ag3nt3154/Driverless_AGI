@@ -4,6 +4,7 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import MagicMock
 
+from tools import _subagent_runner
 from tools._subagent_runner import _poll_until, _SubagentState
 
 
@@ -79,3 +80,27 @@ class TestEscalationDetection:
 
         assert result["status"] == "error"
         assert "escalation" in result["message"].lower()
+
+
+class TestForceKillActiveSubagents:
+    def test_force_kill_calls_kill_process_tree_on_every_active_proc(self, tmp_path, monkeypatch):
+        killed_procs = []
+        monkeypatch.setattr(
+            "tools._subagent_runner.kill_process_tree",
+            lambda proc: killed_procs.append(proc),
+        )
+        state, proc = _make_state(tmp_path, poll_side_effect=lambda: None)
+        with _subagent_runner._active_lock:
+            _subagent_runner._active[proc.pid] = state
+
+        try:
+            killed_count = _subagent_runner.force_kill_active_subagents()
+        finally:
+            with _subagent_runner._active_lock:
+                _subagent_runner._active.pop(proc.pid, None)
+
+        assert killed_count == 1
+        assert killed_procs == [proc]
+
+    def test_force_kill_returns_zero_when_no_active_subagents(self):
+        assert _subagent_runner.force_kill_active_subagents() == 0

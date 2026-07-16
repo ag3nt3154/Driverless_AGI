@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import Callable
 
 from agent import DAGI_ROOT as _DAGI_ROOT
+from agent._process_kill import kill_process_tree
 _POLL_INTERVAL = 2.0  # seconds between PID-alive checks
 
 
@@ -112,6 +113,22 @@ def _poll_until(
         if time.monotonic() >= deadline:
             return {"status": "timeout", "pid": proc.pid}
         time.sleep(_POLL_INTERVAL)
+
+
+def force_kill_active_subagents() -> int:
+    """Force-kill every currently in-flight subagent's process tree.
+
+    Best-effort and does not mutate _active directly — _poll_until()'s own
+    exit-detection path removes each entry once it observes the process is
+    gone. Returns the number of processes killed.
+    """
+    with _active_lock:
+        states = list(_active.values())
+    killed = 0
+    for state in states:
+        kill_process_tree(state.proc)
+        killed += 1
+    return killed
 
 
 def run_subagent(
