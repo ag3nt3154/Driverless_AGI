@@ -186,10 +186,27 @@ class SpawnSubagentTool(BaseTool):
         if result["status"] == "escalated":
             return f"[{self._type_name} escalated]\n\n{result['escalation']}"
         if result["status"] == "ok":
-            return f"Subagent completed. Handoff written to: {result['handoff']}"
+            return self._format_ok_result(result["handoff"])
         if result["status"] == "timeout":
             return json.dumps({"status": "timeout", "pid": result["pid"]})
         return f"[{self._type_name} error] {result.get('message', 'unknown error')}"
+
+    @staticmethod
+    def _format_ok_result(handoff_path: str) -> str:
+        """Inline the handoff file's content so the main agent always sees it
+        without a separate `read` call — relying on the agent to remember to
+        read the file is exactly what let handoffs go unread in practice."""
+        try:
+            content = Path(handoff_path).read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError) as exc:
+            return (
+                f"Subagent completed. Handoff written to: {handoff_path}\n\n"
+                f"(could not read handoff file: {exc})"
+            )
+        return (
+            f"Subagent completed. Handoff written to: {handoff_path}\n\n"
+            f"--- Handoff content ---\n{content}"
+        )
 
     def _compose_task(self, handoff_path: Path, **kwargs) -> str:
         plan_text = _load_plan_text(self._config)

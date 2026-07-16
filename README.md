@@ -518,7 +518,7 @@ Driverless_AGI/
 │   │   ├── worker/        #   full-tool worker agent
 │   │   ├── review/        #   code review agent (tools: read, grep, find, bash)
 │   │   └── plan/          #   plan-writing agent prompt
-│   ├── handoffs/          # Generated handoff files: <type>_<uuid8>.md
+│   ├── handoffs/          # Generated handoff files: <type>_<uuid8>.md (content is inlined into the spawn_* tool's result automatically — see Tools table)
 │   ├── skills/            # Structured guidance documents (gnhf, memory-*, create-skill, review-session, …)
 │   ├── workflow/          # User-directed workflows (.dagi/workflow/<name>/workflow.md)
 │   ├── memory/wiki/       # Topic-organized persistent wiki (infrastructure built)
@@ -558,6 +558,8 @@ Driverless_AGI/
 | `escalate_issue` | Worker/review subagent only: raise a blocking question to the main agent instead of guessing. Writes a sidecar file next to the subagent's handoff report; the main agent's subprocess poll loop detects it, terminates the subagent, and surfaces `"[worker escalated]"` / `"[review escalated]"` with the question and context — does not consume a plan-work-review retry attempt |
 
 File tools (`read`, `write`, `edit`, `grep`, `find`) are sandboxed to allowed roots via `tools/_path_guard.py`. `bash` is intentionally unsandboxed.
+
+Every `spawn_<type>_subagent` tool (worker, review, explore_files, web_research, or any custom type discovered from `.dagi/subagents/`) reads the subagent's handoff file and inlines its full content directly into the tool's own result on success (`tools/spawn_subagent.py::SpawnSubagentTool._format_ok_result()`) — the main agent never has to make a separate `read` call to see what a subagent produced. `extend_subagent_timeout`'s resume path does the same. Large handoffs are still subject to the normal output-filter truncation like any other tool result.
 
 ### Adding a Custom Tool
 
@@ -785,4 +787,4 @@ Additional (install separately if using the interactive CLI):
 
 ### Windows notifications (TUI, optional)
 
-- `win11toast` — native Windows 10/11 toast notifications, installed by default via `requirements.txt`. `tui.py` fires a toast (`tui/notifications.py::notify()`) when DAGI asks a question, presents a plan for interactive review, or reaches end-of-response. The toast is skipped when the TUI's own console window already has OS focus (`_tui_window_is_foreground()`), so you're only notified when you've alt-tabbed away; if that focus check itself fails, it fails open and still notifies. Lazily imported and exception-guarded — degrades silently to a no-op on non-Windows hosts or if the package is missing, never blocking the TUI. Not used by `cli.py`, `telegram_bot.py`, subagents, or the scheduler.
+- `win11toast` — native Windows 10/11 toast notifications, installed by default via `requirements.txt`. `tui.py` fires a toast (`tui/notifications.py::notify()`) when DAGI asks a question, presents a plan for interactive review, or reaches end-of-response. The toast is skipped when the TUI's own console window already has OS focus (`_tui_window_is_foreground()`), so you're only notified when you've alt-tabbed away; if that focus check itself fails, it fails open and still notifies. Lazily imported and exception-guarded — degrades silently to a no-op on non-Windows hosts or if the package is missing, never blocking the TUI. Not used by `cli.py`, `telegram_bot.py`, subagents, or the scheduler. Independent of the toast, every end-of-response also writes a `— turn complete —` marker directly into the conversation pane (`tui/callbacks.py::on_done`) — this stays visible even when the toast is suppressed (window focused) or the model's final response text was empty, so a normal turn ending is never mistaken for a stalled agent.

@@ -95,6 +95,14 @@ def build_callbacks(app: DagiApp, loop_ref: list) -> AgentCallbacks:
         return build_subagent_relay_callback(app, subagent_type)
 
     def on_done(result: str) -> None:
+        # notify() is silently skipped whenever the console window has OS focus
+        # (see notifications.py), and a turn can legitimately end with empty
+        # text (e.g. right after a subagent handoff). Without this line, that
+        # combination leaves zero visible signal that the turn finished —
+        # indistinguishable from a hang.
+        app.call_from_thread(
+            conv.append_info, "[dim]— turn complete —[/dim]"
+        )
         notify("DAGI is done", result or "Response complete.")
 
     return AgentCallbacks(
