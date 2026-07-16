@@ -9,9 +9,6 @@ from textual.widget import Widget
 
 from .utils import _system_breakdown
 
-_EMOTE_FALLBACK = "(◉ ᴗ ◉)"
-
-
 def _path_tail(path: Path | str, max_chars: int = 36) -> str:
     """Return the rightmost portion of a path string, prefixed with … when truncated."""
     s = str(path)
@@ -47,7 +44,7 @@ class Sidebar(Widget):
         self._memory_root = memory_root
         self._subtasks: list[dict] = []
         self._plan_title: str = ""
-        self._emote: str = "default"
+        self._emote_display: str = self._resolve_emote("default")
 
     def set_status(self, status: str) -> None:
         self._status = status
@@ -74,8 +71,17 @@ class Sidebar(Widget):
         self._plan_title = title
         self.refresh()
 
-    def update_emote(self, emote: str) -> None:
-        self._emote = emote
+    def _resolve_emote(self, text: str) -> str:
+        """If *text* matches a .md emote file, return its content; else return *text* as-is."""
+        path = self._dagi_root / ".dagi" / "emotes" / f"{text}.md"
+        try:
+            return path.read_text(encoding="utf-8")
+        except OSError:
+            return text
+
+    def update_emote(self, display_text: str) -> None:
+        """Set the emote display text (already resolved by EmoteTool)."""
+        self._emote_display = display_text
         self.refresh()
 
     def render(self):
@@ -86,15 +92,8 @@ class Sidebar(Widget):
         t.add_row(self._status_col(), self._tokens_context_col(), self._plan_col())
         return t
 
-    def _load_face(self) -> str:
-        path = self._dagi_root / ".dagi" / "emotes" / f"{self._emote}.md"
-        try:
-            return path.read_text(encoding="utf-8")
-        except OSError:
-            return _EMOTE_FALLBACK
-
     def _status_col(self) -> Group:
-        face = self._load_face()
+        face = self._emote_display
         if self._status == "running":
             dot = "[bold green]●[/bold green]"
             status_mu = "[bold green]running[/bold green]"

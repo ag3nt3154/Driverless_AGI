@@ -120,7 +120,7 @@ conda run --no-capture-output -n dagi python tui.py -m deepseek-v4-pro-openroute
 - `Ctrl-C` — quit the TUI entirely
 
 **Header panels (left → center → right):**
-- **Status** (left) — emote face · `● Running` / `⏸ Paused` / `○ Idle` · active model name
+- **Status** (left) — emote face (named emotes from `.dagi/emotes/` or custom text/kaomoji) · `● Running` / `⏸ Paused` / `○ Idle` · active model name
 - **Tokens + Context** (center) — cumulative `in / think / out / cost`; condensed context breakdown (sys / msgs / reserve / total) with colour warnings at 80%/95% usage
 - **Plan** (right) — subtask list polled every 2 s; shown only when a plan is active. Icons: `[ ]` pending · `[~]` in-progress (amber) · `[x]` complete (green) · `[!]` failed (red)
 

@@ -334,7 +334,7 @@ def create_tool_registry(
         reg.register(ReloadSkillsTool())
         from tools.emote import EmoteTool
         _on_emote = callbacks.on_emote if callbacks else None
-        reg.register(EmoteTool(on_emote=_on_emote))
+        reg.register(EmoteTool(emotes_dir=_DAGI_ROOT / ".dagi" / "emotes", on_emote=_on_emote))
         if config is not None:
             # Auto-discover predefined subagent types from .dagi/subagents/
             # A valid type directory must contain both prompt.md and subagent_config.yaml.

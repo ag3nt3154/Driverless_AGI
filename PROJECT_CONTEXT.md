@@ -414,7 +414,7 @@ tui.py / telegram_bot.py / main.py ← entry points (TUI | Telegram | one-shot)
 - **IPC**: Now pipe-based (stdout JSON events) via `tools/_subagent_runner.py`. Old `agent/ipc.py` deleted.
 - **Terminal-bench 2**: 89 real-world terminal tasks in Docker containers. Top scores ~60–65% as of 2026-06.
 - **Harbor Framework**: Successor to Terminal-bench 2. `async run(instruction, environment, context)` interface. Shell via `await environment.exec(command)`. Adapter in `benchmarks/harbor/`.
-- **emote**: One of five named expressions (`default`, `confused`, `happy`, `serious`, `funny`). Plain-text `.md` files in `.dagi/emotes/`; switched via `EmoteTool`.
+- **emote**: Accepts any text — named emotes (`.md` files in `.dagi/emotes/`) or custom text (unicode faces, kaomoji, ASCII art) displayed directly in the sidebar. 25+ named emotes including `default`, `lenny`, `shrug`, `tableflip`, `bear`, `cool`, `dance`, etc. Custom emoticons can be passed as raw text.
 - **bash_backend**: `AgentConfig` field, kept for config-file backwards compatibility only. No-op since 2026-06-13 — `BashTool` always registered regardless of value.
 - **`dagi/*` branch**: Naming convention `dagi/<slug>_<plan_id>` for branches auto-created on `enter_plan_mode`. The only branch prefix on which `git_add`/`git_commit`/`git_reset` are permitted (`_dagi_branch_guard`).
 - **git toolkit**: `tools/git.py`'s 8 tools — `git_status`, `git_diff`, `git_log`, `git_branch`, `git_checkout` (unrestricted, any branch) and `git_add`, `git_commit`, `git_reset` (restricted to `dagi/*` branches). Replaces the older 3-tool set (`git_status`, `git_commit`, `git_rollback`); `git_rollback` has no replacement tool.

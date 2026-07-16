@@ -1,37 +1,62 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from pathlib import Path
 
 from agent.base_tool import BaseTool
 
-EMOTES = ["default", "confused", "happy", "serious", "funny"]
+
+def _list_emotes(emotes_dir: Path) -> list[str]:
+    """Return sorted names of available .md emote files."""
+    if not emotes_dir.is_dir():
+        return []
+    return sorted(p.stem for p in emotes_dir.glob("*.md"))
 
 
 class EmoteTool(BaseTool):
     name = "emote"
-    description = (
-        "Display an emote on the sidebar to express your current state or mood. "
-        "Use this to react to what is happening — a task result, user feedback, or your own situation."
-        "Available emotes: " + ", ".join(EMOTES)
-    )
+
+    def __init__(
+        self,
+        emotes_dir: Path,
+        on_emote: Callable[[str], None] | None = None,
+    ) -> None:
+        self._emotes_dir = emotes_dir
+        self._on_emote = on_emote
+        available = _list_emotes(emotes_dir)
+        names = ", ".join(available) if available else "(none found)"
+        self.description = (
+            "Display an emote/emoticon on the sidebar. "
+            "Pass a named emote to show its saved ASCII art, "
+            "or pass any custom text (unicode faces, kaomoji, ASCII art) to display directly. "
+            f"Named emotes: {names}"
+        )
+
     _parameters = {
         "type": "object",
         "properties": {
-            "emote": {
+            "text": {
                 "type": "string",
-                "enum": EMOTES,
-                "description": "The emote to display.",
+                "description": (
+                    "A named emote (e.g. 'shrug', 'lenny', 'happy') "
+                    "or any custom text/emoticon to display in the sidebar."
+                ),
             }
         },
-        "required": ["emote"],
+        "required": ["text"],
     }
 
-    def __init__(self, on_emote: Callable[[str], None] | None = None) -> None:
-        self._on_emote = on_emote
+    def _resolve(self, text: str) -> str:
+        """If *text* matches a .md file in the emotes dir, return its content; else return *text* as-is."""
+        path = self._emotes_dir / f"{text}.md"
+        try:
+            return path.read_text(encoding="utf-8")
+        except OSError:
+            return text
 
-    def run(self, emote: str) -> str:
-        if emote not in EMOTES:
-            return f"Unknown emote '{emote}'. Valid: {', '.join(EMOTES)}"
+    def run(self, text: str) -> str:
+        display = self._resolve(text)
         if self._on_emote:
-            self._on_emote(emote)
-        return f"*{emote}*"
+            self._on_emote(display)
+        is_named = (self._emotes_dir / f"{text}.md").is_file()
+        return f"*{text}*" if is_named else f"Displaying: {display}"
