@@ -165,6 +165,12 @@ def run_subagent(
     if extra_argv:
         argv.extend(extra_argv)
 
+    popen_kwargs: dict = {}
+    if sys.platform == "win32":
+        popen_kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
+    else:
+        popen_kwargs["start_new_session"] = True
+
     proc = subprocess.Popen(
         argv,
         cwd=str(_DAGI_ROOT),
@@ -173,6 +179,7 @@ def run_subagent(
         text=True,
         encoding="utf-8",
         bufsize=1,
+        **popen_kwargs,
     )
 
     state = _SubagentState(
