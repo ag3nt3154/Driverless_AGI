@@ -51,13 +51,24 @@ and likely topics relevant to the query before grepping.
 
 ### Step 2 — grep for key terms
 Extract the most specific terms from the query (entity names, technical terms, project
-names). grep the wiki directory for each:
+names).
+
+Grep the likely section first (based on Step 1's candidates):
+
+```
+grep(pattern="<term>", path="<memory_root>/wiki/knowledge/")
+# or
+grep(pattern="<term>", path="<memory_root>/wiki/projects/")
+```
+
+If fewer than 3 hits, widen to the full wiki:
 
 ```
 grep(pattern="<term>", path="<memory_root>/wiki/")
 ```
 
-Rank candidate pages by grep hit density (number of matching lines).
+Rank candidate pages by grep hit density (number of matching lines). Run multiple grep
+passes for different key terms if the first yields sparse results.
 
 ### Step 3 — Read candidates
 For the top 3–5 candidates:
@@ -102,3 +113,8 @@ Write your answer to the handoff file path provided in the task. Use this format
   citing 10
 - If the wiki index (provided in context) is sufficient to answer the query, do so
   without additional file reads — keep it lean
+- If the query matches a project (starts with "Project: <name>" or clearly refers to a
+  tracked project), scan `wiki/projects/<name>/` first, reading `context.md` and
+  `updates.md` before grepping for sub-pages
+- If the wiki is not initialised (`wiki/.index.md` missing), state this in your handoff
+  and stop — do not attempt further searches

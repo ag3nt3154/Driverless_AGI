@@ -1,6 +1,6 @@
 ---
 name: grill-me
-description: Universal adversarial interrogation skill. Gathers context first (repo, PROJECT_CONTEXT.md, memory-wiki, provided paths, web), then stress-tests a plan/idea/task through decision-tree questioning (Mode A), or examines the user's understanding of any topic/document/codebase through Socratic questioning (Mode B). Use when the user says "grill me", "grill my plan", "grill my idea", "stress-test this", "quiz me on", or wants relentless interrogation about any subject.
+description: Universal adversarial interrogation skill. Gathers context first (repo, AGENTS.md, memory-wiki, provided paths, web), then stress-tests a plan/idea/task through decision-tree questioning (Mode A), or examines the user's understanding of any topic/document/codebase through Socratic questioning (Mode B). Use when the user says "grill me", "grill my plan", "grill my idea", "stress-test this", "quiz me on", or wants relentless interrogation about any subject.
 ---
 
 # grill-me
@@ -21,7 +21,7 @@ Before asking the user a single question, gather everything available:
 prior decisions, naming conventions, data flows, configuration, and tests. 
 Resolve every answerable question from the repo before raising it with the user.
 
-2. **PROJECT_CONTEXT.md**: Read it if present at CWD. Absorb objectives, architecture,
+2. **AGENTS.md**: Read it if present at CWD. Absorb objectives, architecture,
    prior errors, and insights.
 
 3. **Memory-wiki** (if present): Detect wiki by checking whether
@@ -219,7 +219,7 @@ Write one paragraph (4–6 sentences) covering:
 
 After the summary, without asking permission:
 
-1. Call `skill("update-project-context")` to update PROJECT_CONTEXT.md with any
+1. Call `skill("update-project-context")` to update AGENTS.md with any
    architectural decisions, open questions, or notable gaps that emerged.
 
 2. If a memory-wiki was detected in Phase 1, call `skill("memory-add")` to record
@@ -228,7 +228,7 @@ After the summary, without asking permission:
    any explicit decisions the user made.
 
 Confirm at the end: "Summary and key insights have been recorded to
-PROJECT_CONTEXT.md[and memory-wiki]."
+AGENTS.md[and memory-wiki]."
 
 ---
 

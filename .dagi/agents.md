@@ -1,8 +1,8 @@
 # Behavioral Guidelines
 
 This file defines dagi's operating protocol — behavioral rules, coding standards, and session protocols.
-It is loaded into the agent's context at session start alongside `PROJECT_CONTEXT.md`.
-Refer to `PROJECT_CONTEXT.md` for project description, architecture, directory layout, and error history.
+It is loaded into the agent's context at session start alongside the root `AGENTS.md`.
+Refer to the root `AGENTS.md` for project description, architecture, directory layout, and error history.
 
 ## Coding standards
 - Functions: <= 100 lines

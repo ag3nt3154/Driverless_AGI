@@ -37,6 +37,15 @@ tags: keyword1, keyword2, keyword3
 
 ## Protocol
 
+### Step 0.4 — Note assumptions on ambiguity
+
+You have no way to ask the calling agent or user a clarifying question — the caller is
+expected to resolve material ambiguities before spawning you. If a material ambiguity
+slips through anyway (unclear routing/topic, conflicting details, an unpinned but
+seemingly-important due date), make the most reasonable inference and **state the
+assumption explicitly in your handoff report** so it can be corrected later. Do not
+silently guess without recording it.
+
 ### Step 0.5 — Detect TODO intent
 
 Before classifying content, check whether the input expresses a **personal intention or plan**
@@ -210,3 +219,5 @@ Write your result to the handoff file path provided in the task:
   generic words like "overview" or "notes"
 - If the project folder doesn't exist yet, create it (and its `.index.md`) before writing pages
 - Never write outside the wiki directory
+- If the wiki is not initialised (`wiki/.index.md` missing), state this in your handoff
+  and stop — do not attempt to create wiki structure yourself
