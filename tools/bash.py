@@ -1,5 +1,6 @@
 import subprocess
 import sys
+import threading
 from pathlib import Path
 
 from agent.base_tool import BaseTool
@@ -28,6 +29,9 @@ class BashTool(BaseTool):
     def __init__(self, cwd: Path = Path("."), default_timeout: float = DEFAULT_TIMEOUT):
         self.cwd = cwd
         self.default_timeout = default_timeout
+        self._lock = threading.Lock()
+        self._proc: subprocess.Popen | None = None
+        self._killed_by_user = False
 
     def run(self, command: str, timeout: int | None = None) -> str:
         effective_timeout = timeout if timeout is not None else self.default_timeout
@@ -47,23 +51,43 @@ class BashTool(BaseTool):
             cwd=str(self.cwd),
             **popen_kwargs,
         )
+        with self._lock:
+            self._proc = proc
+            self._killed_by_user = False
         try:
-            stdout, stderr = proc.communicate(timeout=effective_timeout)
-        except subprocess.TimeoutExpired:
-            kill_process_tree(proc)
-            # A shelled-out command tree (e.g. npm -> node) can leave grandchild
-            # processes holding the stdout/stderr pipes open even after the
-            # immediate shell is killed, so this drain is itself bounded.
             try:
-                proc.communicate(timeout=self._REAP_GRACE)
+                stdout, stderr = proc.communicate(timeout=effective_timeout)
             except subprocess.TimeoutExpired:
-                pass
-            return (
-                f"[timed out after {effective_timeout}s and was terminated — "
-                "pass a longer explicit timeout for long-running commands]"
-            )
+                kill_process_tree(proc)
+                # A shelled-out command tree (e.g. npm -> node) can leave grandchild
+                # processes holding the stdout/stderr pipes open even after the
+                # immediate shell is killed, so this drain is itself bounded.
+                try:
+                    proc.communicate(timeout=self._REAP_GRACE)
+                except subprocess.TimeoutExpired:
+                    pass
+                return (
+                    f"[timed out after {effective_timeout}s and was terminated — "
+                    "pass a longer explicit timeout for long-running commands]"
+                )
+        finally:
+            with self._lock:
+                self._proc = None
 
         output = (stdout or "") + (stderr or "")
+        if self._killed_by_user:
+            return f"{output}\n[killed by user]" if output else "[killed by user]"
         if proc.returncode != 0:
             output += f"\n[exit code {proc.returncode}]"
         return output or "[no output]"
+
+    def force_kill(self) -> bool:
+        """Force-kill the currently running command, if any. Returns whether
+        anything was actually killed."""
+        with self._lock:
+            proc = self._proc
+            if proc is None:
+                return False
+            self._killed_by_user = True
+        kill_process_tree(proc)
+        return True

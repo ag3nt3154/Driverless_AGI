@@ -1,6 +1,7 @@
 """tests/test_bash_tools.py — coexistence of bash and injected bash tools."""
 from __future__ import annotations
 import sys
+import threading
 import time
 from pathlib import Path
 import pytest
@@ -65,3 +66,30 @@ class TestBashCoexistence:
 
         assert elapsed < 4, f"bash tool did not enforce default timeout, took {elapsed}s"
         assert "timed out" in result.lower()
+
+
+class TestForceKill:
+    def test_force_kill_terminates_running_command_immediately(self):
+        """Esc-triggered force_kill() must interrupt a running command without
+        waiting for its timeout."""
+        tool = BashTool(cwd=Path("."), default_timeout=30.0)
+        command = f'"{sys.executable}" -c "import time; time.sleep(10)"'
+        result_holder: dict = {}
+
+        def _run():
+            result_holder["result"] = tool.run(command=command)
+
+        t = threading.Thread(target=_run, daemon=True)
+        t.start()
+        time.sleep(0.5)  # let the subprocess actually start
+
+        killed = tool.force_kill()
+        t.join(timeout=5)
+
+        assert killed is True
+        assert not t.is_alive(), "run() did not return promptly after force_kill()"
+        assert "[killed by user]" in result_holder["result"]
+
+    def test_force_kill_returns_false_when_nothing_running(self):
+        tool = BashTool(cwd=Path("."))
+        assert tool.force_kill() is False
