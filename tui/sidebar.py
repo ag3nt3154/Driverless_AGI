@@ -7,6 +7,8 @@ from rich.table import Table
 from rich.text import Text
 from textual.widget import Widget
 
+from tools.emote import pad_to_lines
+
 from .utils import _system_breakdown
 
 def _path_tail(path: Path | str, max_chars: int = 36) -> str:
@@ -75,9 +77,10 @@ class Sidebar(Widget):
         """If *text* matches a .md emote file, return its content; else return *text* as-is."""
         path = self._dagi_root / ".dagi" / "emotes" / f"{text}.md"
         try:
-            return path.read_text(encoding="utf-8")
+            raw = path.read_text(encoding="utf-8")
         except OSError:
-            return text
+            raw = text
+        return pad_to_lines(raw)
 
     def update_emote(self, display_text: str) -> None:
         """Set the emote display text (already resolved by EmoteTool)."""

@@ -13,6 +13,22 @@ def _list_emotes(emotes_dir: Path) -> list[str]:
     return sorted(p.stem for p in emotes_dir.glob("*.md"))
 
 
+def pad_to_lines(text: str, n: int = 5) -> str:
+    """Vertically center *text* within *n* lines by padding with blank lines.
+
+    Content with fewer than *n* lines is centered (extra padding goes on the
+    bottom when it can't be split evenly). Content with *n* or more lines is
+    left untouched.
+    """
+    lines = text.splitlines()
+    pad = n - len(lines)
+    if pad <= 0:
+        return text
+    top = pad // 2
+    bottom = pad - top
+    return "\n".join([""] * top + lines + [""] * bottom)
+
+
 class EmoteTool(BaseTool):
     name = "emote"
 
@@ -50,9 +66,10 @@ class EmoteTool(BaseTool):
         """If *text* matches a .md file in the emotes dir, return its content; else return *text* as-is."""
         path = self._emotes_dir / f"{text}.md"
         try:
-            return path.read_text(encoding="utf-8")
+            raw = path.read_text(encoding="utf-8")
         except OSError:
-            return text
+            raw = text
+        return pad_to_lines(raw)
 
     def run(self, text: str) -> str:
         display = self._resolve(text)
