@@ -2,10 +2,12 @@
 
 ## Completed
 
-- **Esc force-kill bash — Task 1: shared `kill_process_tree()` helper** · `done` · `2026-07-16`
-  - New `agent/_process_kill.py::kill_process_tree()` extracts the process-tree-killing logic that previously lived only as `tools/bash.py`'s `BashTool._kill_tree` static method (`taskkill /F /T /PID <pid>` on Windows, `os.killpg(..., SIGKILL)` on POSIX, then `proc.kill()`), so it can be reused by both `tools/bash.py` and `tools/_subagent_runner.py` in later tasks of this plan instead of duplicating the logic.
-  - **Test:** `tests/test_process_kill.py::test_kill_process_tree_terminates_a_running_process` — spawns a real 10s-sleep subprocess, calls `kill_process_tree`, and asserts it actually exits within 5s. Written first, confirmed RED (`ModuleNotFoundError: No module named 'agent._process_kill'`), then GREEN after the fix.
-  - **Scope:** this task only adds the new module + test — `tools/bash.py` is not yet updated to call it (that's Task 2 of `docs/superpowers/plans/2026-07-16-esc-force-kill-bash.md`).
+- **`Esc` now force-kills the active bash process (main loop and subagents)** · `done` · `2026-07-16`
+  - **Problem:** `Esc` only set `AgentLoop._pause_event`, checked between iterations — a hung or long-running `bash` command (main loop or inside a worker/review subagent) couldn't be interrupted; you had to wait out its timeout.
+  - **Fix:** Extracted `BashTool._kill_tree` into a shared `agent/_process_kill.py::kill_process_tree()`. `BashTool` gained a lock-protected `force_kill()` that kills its in-flight `Popen` and makes `run()` return `[killed by user]`. `tools/_subagent_runner.py` gained `force_kill_active_subagents()`, which kills every process tree in the existing `_active` dict. `tui/app.py::action_pause()` calls both before `loop.pause()`.
+  - **Scope:** at most one of "main-loop bash" or "an active subagent" is ever running at once (the main loop blocks synchronously on subagent polling), so `Esc` doesn't need to disambiguate — it attempts both kills unconditionally and whichever has nothing active is a no-op.
+  - **Test:** `tests/test_process_kill.py` (shared helper, real subprocess kill), `tests/test_bash_tools.py::TestForceKill` (2 tests — real subprocess interrupted mid-run, no-op when idle), `tests/test_subagent_runner.py::TestForceKillActiveSubagents` (2 tests — kills every tracked process tree, no-op when none active). Full suite `pytest tests/ -q`: 305 passed (7 pre-existing failures in `tests/dagi_eval/` are unrelated — missing `numpy` in this env, not caused by this change).
+  - Spec: `docs/superpowers/specs/2026-07-16-esc-force-kill-bash-design.md`. Plan: `docs/superpowers/plans/2026-07-16-esc-force-kill-bash.md`.
 
 - **Main agent could complete a subagent handoff without ever reading it — now automatic** · `done` · `2026-07-16`
   - **User request:** "when the subagent is done, the main agent should always read the subagent's handoff.md -> this should be default behavior." Previously this relied entirely on prompt-following — `spawn_*_subagent` tools returned only `"Subagent completed. Handoff written to: <path>"`, and `.dagi/skills/plan-work-review/SKILL.md` had to separately instruct "Once the tool returns, read the handoff file it reports." Nothing enforced it in code.

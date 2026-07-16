@@ -116,7 +116,7 @@ conda run --no-capture-output -n dagi python tui.py -m deepseek-v4-pro-openroute
 - `Enter` — submit the input box contents as a task (single or multi-line)
 - `Shift+Enter` / `Ctrl+N` / `Ctrl+Enter` — insert a newline in the input box for multi-line messages (`Ctrl+N` and `Ctrl+Enter` are reliable alternatives on Windows Terminal, which sends identical bytes for `Shift+Enter` and `Enter`)
 - `Ctrl+O` — toggle compose mode: hides the conversation pane and expands the input box to fill the screen, giving a distraction-free writing area for long multi-line messages. Press `Ctrl+O` again to restore normal layout, or just press `Enter` to submit (auto-collapses on submit).
-- `Esc` — pause the running agent at the end of the current iteration (after all tool calls in the current LLM response complete). Status changes to `⏸ Paused`. Type any message and press Enter to inject it into the agent's context and resume. ESC has no effect when idle or during an `ask_user` prompt.
+- `Esc` — pause the running agent. If a `bash` command is currently running (in the main loop or inside an active worker/review subagent), it is force-killed immediately; otherwise the agent pauses at the end of the current iteration (after all tool calls in the current LLM response complete). Status changes to `⏸ Paused`. Type any message and press Enter to inject it into the agent's context and resume. ESC has no effect when idle or during an `ask_user` prompt.
 - `Ctrl-C` — quit the TUI entirely
 
 **Header panels (left → center → right):**
@@ -315,7 +315,7 @@ All slash commands work identically in the TUI and CLI.
 
 ### Pausing and Resuming (TUI only)
 
-Press `Esc` at any time while the agent is running to pause it at the end of the current iteration (after all tool calls in the current LLM response complete). The status indicator switches to `⏸ Paused`.
+Press `Esc` at any time while the agent is running to pause it. If a `bash` command is currently running — in the main loop, or inside an active worker/review subagent — it is force-killed immediately (surfaced as `[killed by user]` in the conversation, or as a tool error for the subagent call). Otherwise, the agent pauses at the end of the current iteration (after all tool calls in the current LLM response complete). The status indicator switches to `⏸ Paused`.
 
 Type any message and press `Enter` to inject it into the agent's context and resume — this is equivalent to the agent asking you a question and you answering it. The agent receives your message and continues from where it stopped, with full context intact.
 
