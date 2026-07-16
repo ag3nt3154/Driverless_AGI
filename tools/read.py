@@ -28,6 +28,8 @@ class ReadTool(BaseTool):
         "attempts UTF-8 decoding. Defaults to first 2000 lines. "
         "Use offset/limit for large files. Accepts both relative paths "
         "(resolved from the project root) and absolute paths. "
+        "Output uses `cat -n` style: each line is prefixed with its 1-indexed "
+        "line number followed by a tab — the number is not part of the file content. "
         "For large-scale codebase exploration, prefer `explore_files`."
     )
     _parameters = {
@@ -70,4 +72,5 @@ class ReadTool(BaseTool):
             )
 
         start = max(0, offset - 1)
-        return "\n".join(lines[start : start + limit])
+        selected = lines[start : start + limit]
+        return "\n".join(f"{i:6d}\t{line}" for i, line in enumerate(selected, start + 1))
