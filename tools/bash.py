@@ -1,10 +1,9 @@
-import os
-import signal
 import subprocess
 import sys
 from pathlib import Path
 
 from agent.base_tool import BaseTool
+from agent._process_kill import kill_process_tree
 
 
 class BashTool(BaseTool):
@@ -51,7 +50,7 @@ class BashTool(BaseTool):
         try:
             stdout, stderr = proc.communicate(timeout=effective_timeout)
         except subprocess.TimeoutExpired:
-            self._kill_tree(proc)
+            kill_process_tree(proc)
             # A shelled-out command tree (e.g. npm -> node) can leave grandchild
             # processes holding the stdout/stderr pipes open even after the
             # immediate shell is killed, so this drain is itself bounded.
@@ -68,21 +67,3 @@ class BashTool(BaseTool):
         if proc.returncode != 0:
             output += f"\n[exit code {proc.returncode}]"
         return output or "[no output]"
-
-    @staticmethod
-    def _kill_tree(proc: subprocess.Popen) -> None:
-        """Kill the whole process tree, not just the shell's direct child."""
-        if sys.platform == "win32":
-            subprocess.run(
-                ["taskkill", "/F", "/T", "/PID", str(proc.pid)],
-                capture_output=True,
-            )
-        else:
-            try:
-                os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
-            except ProcessLookupError:
-                pass
-        try:
-            proc.kill()
-        except ProcessLookupError:
-            pass
