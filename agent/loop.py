@@ -152,6 +152,12 @@ class AgentConfig:
     api_error_retries: int = 3
     # Send cache_prompt: true in extra_body — enables prompt caching on OpenRouter.
     cache_prompt: bool = False
+    # Streaming: consume the API response as a chunk stream, firing per-delta
+    # callbacks. Dataclass default is False so direct AgentConfig() construction
+    # (tests, benchmarks) keeps the blocking path; config_loader defaults the
+    # config-file value to True, so all real entry points stream unless
+    # config.yaml sets `stream: false` (globally or per-model).
+    stream: bool = False
     # bash_backend: previously controlled whether BashTool was replaced by an injected tool.
     # Now a no-op for tool registration — both BashTool and any injected tool are always
     # registered. Kept for config file backwards compatibility.

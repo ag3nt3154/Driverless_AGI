@@ -75,6 +75,11 @@ default_model: gpt-4o-openai        # Primary model used for all regular tasks.
                                     # Omit to use default_model during planning.
 
 # ── Reasoning / thinking ──────────────────────────────────────────────────────
+# Streaming: render assistant text/reasoning incrementally in the TUI as it
+# is generated. true (default) = stream; false = wait for the full response.
+# Can also be set per-model inside a models: entry to override the global value.
+stream: true
+
 thinking: none    # Extended reasoning effort for models that support it (e.g. DeepSeek,
                   # Claude 3+ Opus via OpenRouter's `reasoning` extension).
                   # Values: none | low | medium | high

@@ -122,6 +122,7 @@ def _build_config_from_entry(entry: dict, raw: dict, model_id: str = "") -> Agen
     api_error_retries = int(raw.get("api_error_retries", 3))
     thinking = entry.get("thinking") or raw.get("thinking", "none") or "none"
     cache_prompt = bool(entry.get("cache_prompt", raw.get("cache_prompt", False)))
+    stream = bool(entry.get("stream", raw.get("stream", True)))
 
     raw_memory_root = raw.get("memory_root")
     memory_root = Path(raw_memory_root).expanduser() if raw_memory_root else None
@@ -146,6 +147,7 @@ def _build_config_from_entry(entry: dict, raw: dict, model_id: str = "") -> Agen
         api_error_retries=api_error_retries,
         memory_root=memory_root,
         cache_prompt=cache_prompt,
+        stream=stream,
         bash_backend=bash_backend,
         tools=tools,
         sandbox_mode=sandbox_mode,

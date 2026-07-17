@@ -59,3 +59,60 @@ def test_tools_list_parsed_from_raw():
 #     entry = {"model": "m", "api_url": "http://x", "api_key": "k"}
 #     cfg = _build_config_from_entry(entry, {})
 #     assert cfg.tools is None
+
+
+class TestStreamResolution:
+    def test_stream_defaults_true_when_absent(self, tmp_path, monkeypatch):
+        """No `stream` key anywhere → resolved config streams by default."""
+        cfg_file = tmp_path / "config.yaml"
+        cfg_file.write_text(
+            "default_model: m1\n"
+            "models:\n"
+            "  m1:\n"
+            "    model: test/model\n"
+            "    api_url: https://example.com/v1\n"
+            "    api_key: sk-test\n",
+            encoding="utf-8",
+        )
+        from agent.config_loader import resolve_model_config
+        cfg = resolve_model_config("m1", config_path=cfg_file)
+        assert cfg.stream is True
+
+    def test_stream_global_false(self, tmp_path):
+        cfg_file = tmp_path / "config.yaml"
+        cfg_file.write_text(
+            "default_model: m1\n"
+            "stream: false\n"
+            "models:\n"
+            "  m1:\n"
+            "    model: test/model\n"
+            "    api_url: https://example.com/v1\n"
+            "    api_key: sk-test\n",
+            encoding="utf-8",
+        )
+        from agent.config_loader import resolve_model_config
+        cfg = resolve_model_config("m1", config_path=cfg_file)
+        assert cfg.stream is False
+
+    def test_stream_per_model_overrides_global(self, tmp_path):
+        cfg_file = tmp_path / "config.yaml"
+        cfg_file.write_text(
+            "default_model: m1\n"
+            "stream: true\n"
+            "models:\n"
+            "  m1:\n"
+            "    model: test/model\n"
+            "    api_url: https://example.com/v1\n"
+            "    api_key: sk-test\n"
+            "    stream: false\n",
+            encoding="utf-8",
+        )
+        from agent.config_loader import resolve_model_config
+        cfg = resolve_model_config("m1", config_path=cfg_file)
+        assert cfg.stream is False
+
+    def test_dataclass_default_is_false(self):
+        """Direct AgentConfig() construction (tests, benchmarks) must NOT stream —
+        only configs resolved through config_loader get the streaming default."""
+        from agent.loop import AgentConfig
+        assert AgentConfig().stream is False
