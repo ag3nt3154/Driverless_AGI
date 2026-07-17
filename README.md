@@ -559,7 +559,7 @@ Driverless_AGI/
 
 | Tool | What it does |
 |------|-------------|
-| `read` | Read a text file (paginated) or image (base64). Pass `path`, optional `offset`/`limit` |
+| `read` | Read a text file (paginated), or a `.docx`/`.xlsx`/`.pptx` document (auto-converted to markdown via `markitdown`), or image (base64). Pass `path`, optional `offset`/`limit` |
 | `write` | Overwrite a file. Creates parent dirs. Takes `path` + `content` |
 | `edit` | Replace exact `oldText` with `newText` in a file. Errors if text is absent or non-unique |
 | `bash` | Run a shell command. Returns stdout + stderr + exit code. Pass `command` + optional `timeout` |
