@@ -189,6 +189,46 @@ class TestSelectPages:
         assert "## Chapter 1" not in result
 
 
+def _install_fake_docling(monkeypatch, *, markdown="# Fake\n\nContent."):
+    """Inject a fake docling module that returns predetermined markdown."""
+    class _FakeDocument:
+        def __init__(self, md):
+            self._md = md
+        def export_to_markdown(self):
+            return self._md
+
+    class _FakeResult:
+        def __init__(self, md):
+            self.document = _FakeDocument(md)
+
+    class _FakeConverter:
+        def convert(self, path):
+            return _FakeResult(markdown)
+
+    fake_dc_module = type(sys)("docling.document_converter")
+    fake_dc_module.DocumentConverter = _FakeConverter
+
+    fake_docling = type(sys)("docling")
+    fake_docling.document_converter = fake_dc_module
+
+    monkeypatch.setitem(sys.modules, "docling", fake_docling)
+    monkeypatch.setitem(sys.modules, "docling.document_converter", fake_dc_module)
+
+
+def _install_fake_ocrmypdf(monkeypatch, *, should_fail=False):
+    """Inject a fake ocrmypdf module. Its ocr() copies the input to the output path."""
+    import shutil
+
+    def _fake_ocr(input_path, output_path, **kwargs):
+        if should_fail:
+            raise RuntimeError("tesseract not found")
+        shutil.copy2(input_path, output_path)
+
+    fake_module = type(sys)("ocrmypdf")
+    fake_module.ocr = _fake_ocr
+    monkeypatch.setitem(sys.modules, "ocrmypdf", fake_module)
+
+
 from tools._pdf_convert import is_scanned_pdf
 
 
@@ -220,3 +260,115 @@ class TestIsScannedPdf:
         pdf.write_bytes(b"fake pdf bytes")
 
         assert is_scanned_pdf(pdf) is False
+
+
+from tools._pdf_convert import convert_pdf
+
+
+class TestConvertPdf:
+    def test_digital_pdf_returns_markdown_and_cache_path(
+        self, tmp_path, monkeypatch
+    ):
+        md = "<!-- Page 1 -->\n# Title\n\nBody."
+        _install_fake_fitz(monkeypatch, chars_per_page=500)
+        _install_fake_docling(monkeypatch, markdown=md)
+        pdf = tmp_path / "report.pdf"
+        pdf.write_bytes(b"fake pdf bytes")
+
+        text, cache_path = convert_pdf(pdf, tmp_path)
+
+        assert "# Title" in text
+        assert cache_path.exists()
+        assert cache_path.parent.name == "pdf_cache"
+
+    def test_scanned_pdf_routes_through_ocrmypdf(
+        self, tmp_path, monkeypatch
+    ):
+        md = "<!-- Page 1 -->\n# OCR Title\n\nOCR body."
+        _install_fake_fitz(monkeypatch, chars_per_page=0)
+        _install_fake_docling(monkeypatch, markdown=md)
+        _install_fake_ocrmypdf(monkeypatch)
+        pdf = tmp_path / "scan.pdf"
+        pdf.write_bytes(b"fake scanned pdf bytes")
+
+        text, cache_path = convert_pdf(pdf, tmp_path)
+
+        assert "# OCR Title" in text
+        assert cache_path.exists()
+
+    def test_cache_hit_skips_conversion(self, tmp_path, monkeypatch):
+        md = "<!-- Page 1 -->\n# Cached\n\nContent."
+        _install_fake_fitz(monkeypatch, chars_per_page=500)
+        _install_fake_docling(monkeypatch, markdown=md)
+        pdf = tmp_path / "report.pdf"
+        pdf.write_bytes(b"fake pdf bytes")
+
+        text1, path1 = convert_pdf(pdf, tmp_path)
+        # Nuke the fake docling — if cache works, second call won't need it
+        monkeypatch.setitem(sys.modules, "docling", None)
+        monkeypatch.setitem(sys.modules, "docling.document_converter", None)
+        text2, path2 = convert_pdf(pdf, tmp_path)
+
+        assert text1 == text2
+        assert path1 == path2
+
+    def test_cache_invalidated_when_pdf_changes(self, tmp_path, monkeypatch):
+        md1 = "<!-- Page 1 -->\n# Version 1"
+        _install_fake_fitz(monkeypatch, chars_per_page=500)
+        _install_fake_docling(monkeypatch, markdown=md1)
+        pdf = tmp_path / "report.pdf"
+        pdf.write_bytes(b"version 1 content")
+
+        text1, path1 = convert_pdf(pdf, tmp_path)
+
+        # Change the PDF content (different hash)
+        pdf.write_bytes(b"version 2 content")
+        md2 = "<!-- Page 1 -->\n# Version 2"
+        _install_fake_docling(monkeypatch, markdown=md2)
+
+        text2, path2 = convert_pdf(pdf, tmp_path)
+
+        assert "Version 1" in text1
+        assert "Version 2" in text2
+        assert path1 != path2  # different hash → different cache file
+
+    def test_missing_docling_raises_runtime_error(self, tmp_path, monkeypatch):
+        _install_fake_fitz(monkeypatch, chars_per_page=500)
+        monkeypatch.setitem(sys.modules, "docling", None)
+        monkeypatch.setitem(sys.modules, "docling.document_converter", None)
+        pdf = tmp_path / "report.pdf"
+        pdf.write_bytes(b"fake pdf bytes")
+
+        with pytest.raises(RuntimeError, match="docling is not installed"):
+            convert_pdf(pdf, tmp_path)
+
+    def test_scanned_pdf_without_ocrmypdf_warns_and_tries_docling(
+        self, tmp_path, monkeypatch
+    ):
+        md = "<!-- Page 1 -->\n# Degraded"
+        _install_fake_fitz(monkeypatch, chars_per_page=0)
+        _install_fake_docling(monkeypatch, markdown=md)
+        monkeypatch.setitem(sys.modules, "ocrmypdf", None)
+        pdf = tmp_path / "scan.pdf"
+        pdf.write_bytes(b"fake scanned pdf bytes")
+
+        text, cache_path = convert_pdf(pdf, tmp_path)
+
+        assert "# Degraded" in text
+        assert cache_path.exists()
+
+    def test_intermediate_ocr_pdf_is_cleaned_up(
+        self, tmp_path, monkeypatch
+    ):
+        md = "<!-- Page 1 -->\n# Clean"
+        _install_fake_fitz(monkeypatch, chars_per_page=0)
+        _install_fake_docling(monkeypatch, markdown=md)
+        _install_fake_ocrmypdf(monkeypatch)
+        pdf = tmp_path / "scan.pdf"
+        pdf.write_bytes(b"fake scanned pdf bytes")
+
+        convert_pdf(pdf, tmp_path)
+
+        cache_dir = tmp_path / ".dagi" / "pdf_cache"
+        ocr_files = list(cache_dir.glob("*_ocr.pdf"))
+        assert ocr_files == []
