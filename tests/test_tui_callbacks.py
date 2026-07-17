@@ -83,3 +83,55 @@ class TestNotifyWiring:
             "since notify() may be suppressed (window focused) and the "
             "result text may be empty"
         )
+
+
+class TestStreamingWiring:
+    def test_stream_start_resets_and_deltas_update_preview(self):
+        app = _make_app()
+        callbacks = build_callbacks(app, loop_ref=[])
+        callbacks.on_stream_start()
+        callbacks.on_assistant_text_delta("Hello ")
+        callbacks.on_reasoning_delta("hmm")
+        # show_progress called with ACCUMULATED strings, not raw chunks:
+        calls = app._conv.show_progress.call_args_list
+        assert calls, "deltas must drive StreamPreview.show_progress"
+        last_reasoning, last_text = calls[-1].args
+        assert last_text == "Hello "
+        assert last_reasoning == "hmm"
+
+    def test_deltas_accumulate_across_calls(self):
+        app = _make_app()
+        callbacks = build_callbacks(app, loop_ref=[])
+        callbacks.on_stream_start()
+        callbacks.on_assistant_text_delta("Hel")
+        # Second delta lands inside the 50 ms throttle window → may be skipped,
+        # but the forced flush on stream end must still carry the full text:
+        callbacks.on_assistant_text_delta("lo")
+        # The final flush on stream end always carries the full accumulation:
+        callbacks.on_stream_end()
+        # stream end hides the preview:
+        assert app._conv.finish.called
+        # and the last show_progress before it saw the full text:
+        last_reasoning, last_text = app._conv.show_progress.call_args_list[-1].args
+        assert last_text == "Hello"
+
+    def test_stream_end_always_finishes_preview(self):
+        app = _make_app()
+        callbacks = build_callbacks(app, loop_ref=[])
+        callbacks.on_stream_start()
+        callbacks.on_stream_end()
+        assert app._conv.finish.called
+
+    def test_second_stream_starts_clean(self):
+        """A new stream must not inherit the previous turn's text."""
+        app = _make_app()
+        callbacks = build_callbacks(app, loop_ref=[])
+        callbacks.on_stream_start()
+        callbacks.on_assistant_text_delta("first turn")
+        callbacks.on_stream_end()
+        callbacks.on_stream_start()
+        callbacks.on_assistant_text_delta("second")
+        callbacks.on_stream_end()
+        _, last_text = app._conv.show_progress.call_args_list[-1].args
+        assert last_text == "second"
+        assert "first turn" not in last_text

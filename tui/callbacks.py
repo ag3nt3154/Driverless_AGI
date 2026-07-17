@@ -2,12 +2,14 @@ from __future__ import annotations
 
 import json
 import threading
+import time
 from typing import TYPE_CHECKING, Callable
 
 from agent.loop import AgentCallbacks
 
 from .conversation import ConversationPane
 from .sidebar import Sidebar
+from .streaming import StreamPreview
 from .utils import _breakdown
 from .notifications import notify
 
@@ -19,6 +21,7 @@ def build_callbacks(app: DagiApp, loop_ref: list) -> AgentCallbacks:
     """Build AgentCallbacks wired to the live TUI widgets."""
     sidebar = app.query_one(Sidebar)
     conv = app.query_one(ConversationPane)
+    preview = app.query_one(StreamPreview)
     stats = app._stats
     verbose = app._verbose
 
@@ -42,6 +45,47 @@ def build_callbacks(app: DagiApp, loop_ref: list) -> AgentCallbacks:
     def on_reasoning(text):
         if text.strip():
             app.call_from_thread(conv.append_reasoning, text)
+
+    # ── Streaming preview ────────────────────────────────────────────────
+    # State lives here (agent-thread-only access: start → deltas → end are
+    # all fired from the agent worker thread, never concurrently).
+    # call_from_thread is throttled to ≥50 ms *per delta kind* between UI
+    # refreshes so fast token streams don't stall the agent thread; every
+    # flush passes the FULL accumulated strings, so skipped refreshes lose
+    # nothing. Throttling is tracked separately for "text" and "reasoning"
+    # so that the first delta of a kind (e.g. reasoning starting right after
+    # text) always renders immediately instead of being swallowed by a
+    # throttle window opened by an unrelated kind moments earlier.
+    _stream = {
+        "reasoning": "", "text": "",
+        "last_flush": {"reasoning": 0.0, "text": 0.0},
+    }
+    _FLUSH_INTERVAL = 0.05
+
+    def _flush_stream(kind: str = "text", force: bool = False) -> None:
+        now = time.monotonic()
+        if not force and (now - _stream["last_flush"][kind]) < _FLUSH_INTERVAL:
+            return
+        _stream["last_flush"][kind] = now
+        app.call_from_thread(preview.show_progress, _stream["reasoning"], _stream["text"])
+
+    def on_stream_start() -> None:
+        _stream["reasoning"] = ""
+        _stream["text"] = ""
+        _stream["last_flush"] = {"reasoning": 0.0, "text": 0.0}
+
+    def on_assistant_text_delta(chunk: str) -> None:
+        _stream["text"] += chunk
+        _flush_stream(kind="text")
+
+    def on_reasoning_delta(chunk: str) -> None:
+        _stream["reasoning"] += chunk
+        _flush_stream(kind="reasoning")
+
+    def on_stream_end() -> None:
+        if _stream["reasoning"] or _stream["text"]:
+            _flush_stream(force=True)   # final render with the complete text
+        app.call_from_thread(preview.finish)
 
     def on_compaction(kept, removed):
         app.call_from_thread(conv.append_info,
@@ -116,6 +160,9 @@ def build_callbacks(app: DagiApp, loop_ref: list) -> AgentCallbacks:
         on_pause=on_pause, supports_pause=True,
         on_continue_injected=on_continue_injected,
         on_plan_shown=on_plan_shown,
+        on_stream_start=on_stream_start, on_stream_end=on_stream_end,
+        on_assistant_text_delta=on_assistant_text_delta,
+        on_reasoning_delta=on_reasoning_delta,
     )
 
 
