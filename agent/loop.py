@@ -306,7 +306,6 @@ class AgentLoop:
             )
 
         self.config = config
-        self._filter_temp = Path(config.project_path) / ".dagi" / "temp"
         # ── Build system prompt ───────────────────────────────────────────
         system = self._assemble_system_string(dagi_root)
         self.system_parts: list[dict]  # populated by _assemble_system_string
@@ -665,13 +664,14 @@ class AgentLoop:
                                 result = self._handle_switch_model(_switch_target, args)
                     # ── Output filter ────────────────────────────────────────
                     context_result, full_str = filter_tool_output(
-                        result, self.config.reserve_tokens, self._filter_temp
+                        result, self.config.reserve_tokens, Path(self.config.project_path)
                     )
                     if context_result is not result:
                         # Filtering fired — warn the user via the assistant text stream
                         self.callbacks.on_assistant_text(
                             f"[output filter] Tool result was large and has been truncated. "
-                            f"Full output saved to {self._filter_temp}."
+                            f"Full output saved under "
+                            f"{Path(self.config.project_path) / '.dagi' / 'hash_cache' / 'tool_output'}."
                         )
                     # ─────────────────────────────────────────────────────────
                     result_str = (
