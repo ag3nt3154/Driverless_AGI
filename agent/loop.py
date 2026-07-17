@@ -213,6 +213,14 @@ class AgentCallbacks:
     on_continue_injected: Callable[[int, int], None] = field(default=lambda cur, mx: None)
     # Fired when a plan is rendered for interactive review (ShowPlanTool, interactive mode only).
     on_plan_shown: Callable[[], None] = field(default=lambda: None)
+    # Streaming (config.stream=True only). on_stream_start fires before the first
+    # chunk, on_stream_end always fires when consumption stops (even on error).
+    # Deltas carry the raw incremental string for that chunk. The existing
+    # on_assistant_text / on_reasoning still fire once afterward with full text.
+    on_stream_start:         Callable[[], None]    = field(default=lambda: None)
+    on_stream_end:           Callable[[], None]    = field(default=lambda: None)
+    on_assistant_text_delta: Callable[[str], None] = field(default=lambda t: None)
+    on_reasoning_delta:      Callable[[str], None] = field(default=lambda t: None)
 
 
 def _extract_reasoning(message) -> str:
