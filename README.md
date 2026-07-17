@@ -100,6 +100,8 @@ echo "Add type hints to agent/" | python main.py
 
 Full Textual TUI with a fixed 6-line top header (status/emote, tokens+context, plan) and a full-width conversation area below. Conversation preserves the Rich panel style, wraps long lines, and scrolls freely while the agent is running.
 
+While a response is being generated, assistant text and reasoning stream live into a preview area above the input box (governed by the `stream` config key — see [Configuration](#configuration)); once the turn completes, the preview disappears and the finished message is written into the conversation pane exactly as before.
+
 ```bash
 conda run --no-capture-output -n dagi python tui.py
 conda run --no-capture-output -n dagi python tui.py --project /path/to/project
@@ -449,6 +451,24 @@ When reasoning is active:
 - A **🧠 Thinking** panel appears in the CLI showing the model's chain-of-thought
 - The footer displays reasoning tokens: `in 14,234  think 1,456  out 890`
 - When `thinking: none`, no thinking panel or token count is shown
+
+### Streaming
+
+Controls whether the TUI renders assistant text/reasoning incrementally as it's generated, via the `stream` key. Values: `true` (default), `false`.
+
+```yaml
+stream: true   # global default
+```
+
+Or per-model (overrides the global setting) — useful as an escape hatch for a provider that doesn't handle `stream_options.include_usage` well:
+
+```yaml
+models:
+  some-model:
+    stream: false   # this model waits for the full response, like before streaming existed
+```
+
+Token/cost usage is requested via `stream_options: {"include_usage": true}` on every streaming call; if a provider never sends the trailing usage chunk, that turn's usage is simply unavailable (the same degraded state that already exists today for providers that omit `usage.cost`) rather than an error. `main.py`, `telegram_bot.py`, and the scheduler are unaffected by this setting — streaming only changes how the TUI renders a turn in progress, not the final result.
 
 ---
 
