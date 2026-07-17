@@ -23,7 +23,8 @@ class TestPassThrough:
 
     def test_short_string_no_file_written(self, tmp_path):
         filter_tool_output("short", _RESERVE, tmp_path)
-        assert list(tmp_path.iterdir()) == []
+        cache_dir = tmp_path / ".dagi" / "hash_cache" / "tool_output"
+        assert not cache_dir.exists() or list(cache_dir.iterdir()) == []
 
     def test_short_list_returned_unchanged(self, tmp_path):
         result = [{"type": "text", "text": "hi"}]
@@ -78,15 +79,27 @@ class TestFiltering:
     def test_temp_file_written_with_full_content(self, tmp_path):
         large = self._large()
         filter_tool_output(large, _RESERVE, tmp_path)
-        files = list(tmp_path.iterdir())
+        cache_dir = tmp_path / ".dagi" / "hash_cache" / "tool_output"
+        files = list(cache_dir.iterdir())
         assert len(files) == 1
         assert files[0].read_text(encoding="utf-8") == large
 
-    def test_temp_file_has_correct_prefix_and_suffix(self, tmp_path):
-        filter_tool_output(self._large(), _RESERVE, tmp_path)
-        files = list(tmp_path.iterdir())
-        assert files[0].name.startswith("tool_output_")
-        assert files[0].name.endswith(".txt")
+    def test_cached_file_is_sha256_named(self, tmp_path):
+        import hashlib
+        large = self._large()
+        filter_tool_output(large, _RESERVE, tmp_path)
+        cache_dir = tmp_path / ".dagi" / "hash_cache" / "tool_output"
+        files = list(cache_dir.iterdir())
+        expected_hash = hashlib.sha256(large.encode("utf-8")).hexdigest()
+        assert files[0].name == f"{expected_hash}.txt"
+
+    def test_identical_output_reuses_same_cache_file(self, tmp_path):
+        large = self._large()
+        filter_tool_output(large, _RESERVE, tmp_path)
+        filter_tool_output(large, _RESERVE, tmp_path)
+        cache_dir = tmp_path / ".dagi" / "hash_cache" / "tool_output"
+        files = list(cache_dir.iterdir())
+        assert len(files) == 1  # second call reused the first's cache file
 
     def test_large_list_is_filtered(self, tmp_path):
         # Build a list whose serialised form exceeds the threshold
@@ -106,23 +119,24 @@ class TestErrorHandling:
 
     def test_mkdir_failure_returns_original(self, tmp_path):
         bad_dir = tmp_path / "no_perms"
-        with patch("tools.output_filter.Path.mkdir", side_effect=OSError("permission denied")):
+        with patch("tools._hash_cache.Path.mkdir", side_effect=OSError("permission denied")):
             large = "z" * (_RESERVE * 4 + 1)
             ctx, full = filter_tool_output(large, _RESERVE, bad_dir)
         assert ctx == large   # unfiltered pass-through
         assert full == large
 
     def test_write_failure_returns_original(self, tmp_path):
-        with patch("tools.output_filter.Path.write_text", side_effect=OSError("disk full")):
+        with patch("tools._hash_cache.Path.write_text", side_effect=OSError("disk full")):
             large = "z" * (_RESERVE * 4 + 1)
             ctx, full = filter_tool_output(large, _RESERVE, tmp_path)
         assert ctx == large
 
     def test_zero_reserve_tokens_skips_filtering(self, tmp_path):
         large = "z" * 9999
-        ctx, full = filter_tool_output(large, reserve_tokens=0, temp_dir=tmp_path)
+        ctx, full = filter_tool_output(large, reserve_tokens=0, project_root=tmp_path)
         assert ctx == large
-        assert list(tmp_path.iterdir()) == []
+        cache_dir = tmp_path / ".dagi" / "hash_cache" / "tool_output"
+        assert not cache_dir.exists() or list(cache_dir.iterdir()) == []
 
 
 class TestLoopIntegration:

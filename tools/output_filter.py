@@ -1,21 +1,21 @@
 """
 tools/output_filter.py — Filter large tool outputs before they enter LLM context.
 
-If a tool result exceeds the token threshold, the full output is saved to a temp
-file and a truncated preview + pointer is placed in context instead. This prevents
+If a tool result exceeds the token threshold, the full output is saved to the shared
+hash cache and a truncated preview + pointer is placed in context instead. This prevents
 context-window overflow caused by unexpectedly large tool outputs (grep on a huge
 codebase, bash with verbose output, read on a multi-MB file, etc.).
 
 Public API
 ----------
-filter_tool_output(result, reserve_tokens, temp_dir) -> (context_result, full_str)
+filter_tool_output(result, reserve_tokens, project_root) -> (context_result, full_str)
 """
 from __future__ import annotations
 
 import json
-import os
-import tempfile
 from pathlib import Path
+
+from tools._hash_cache import get_or_compute
 
 # Same heuristic used by compact.py — avoids adding a tokeniser dependency.
 _CHARS_PER_TOKEN = 4
@@ -31,7 +31,7 @@ def _serialise(result: str | list) -> str:
 def filter_tool_output(
     result: str | list,
     reserve_tokens: int,
-    temp_dir: Path,
+    project_root: Path,
 ) -> tuple[str | list, str]:
     """
     Filter a tool result before it enters LLM context.
@@ -41,8 +41,8 @@ def filter_tool_output(
     result        : Raw value returned by registry.dispatch() after sentinel handling.
     reserve_tokens: Token budget threshold from AgentConfig (same field used for
                     compaction). Results >= this many estimated tokens are filtered.
-    temp_dir      : Directory where the full output is saved when filtering fires.
-                    Created automatically if it does not exist.
+    project_root  : Project root directory. The shared hash cache lives at
+                    `<project_root>/.dagi/hash_cache/tool_output/`, created automatically.
 
     Returns
     -------
@@ -61,15 +61,11 @@ def filter_tool_output(
     if estimated_tokens < reserve_tokens:
         return result, full_str  # pass-through — small enough to enter context raw
 
-    # ── Result is large: write to temp file, build truncated context message ──
+    # ── Result is large: cache it, build truncated context message ──
     try:
-        temp_dir = Path(temp_dir)
-        temp_dir.mkdir(parents=True, exist_ok=True)
-        fd, tmp_path = tempfile.mkstemp(
-            dir=temp_dir, prefix="tool_output_", suffix=".txt"
+        _, tmp_path = get_or_compute(
+            full_str.encode("utf-8"), "tool_output", "txt", project_root, lambda: full_str
         )
-        os.close(fd)
-        Path(tmp_path).write_text(full_str, encoding="utf-8")
     except OSError:
         # Fail open: if we can't write the file, return the original result
         # unfiltered. The caller (AgentLoop) will emit a warning separately.
