@@ -229,6 +229,13 @@ def _install_fake_ocrmypdf(monkeypatch, *, should_fail=False):
     monkeypatch.setitem(sys.modules, "ocrmypdf", fake_module)
 
 
+def _install_all_pdf_fakes(monkeypatch, *, markdown, chars_per_page=500):
+    """Install all three fakes (fitz, docling, ocrmypdf) for full-pipeline tests."""
+    _install_fake_fitz(monkeypatch, chars_per_page=chars_per_page)
+    _install_fake_docling(monkeypatch, markdown=markdown)
+    _install_fake_ocrmypdf(monkeypatch)
+
+
 from tools._pdf_convert import is_scanned_pdf
 
 
@@ -372,3 +379,82 @@ class TestConvertPdf:
         cache_dir = tmp_path / ".dagi" / "pdf_cache"
         ocr_files = list(cache_dir.glob("*_ocr.pdf"))
         assert ocr_files == []
+
+
+class TestReadToolPdf:
+    SAMPLE_PDF_MD = (
+        "<!-- Page 1 -->\n# Title\n\nIntro paragraph.\n"
+        "<!-- Page 2 -->\n## Chapter 1\n\nBody text.\n"
+        "<!-- Page 3 -->\n## Chapter 2\n\nMore text.\n"
+    )
+
+    def test_pdf_returns_metadata_header_and_numbered_lines(
+        self, tmp_path, monkeypatch
+    ):
+        _install_all_pdf_fakes(monkeypatch, markdown=self.SAMPLE_PDF_MD)
+        (tmp_path / "report.pdf").write_bytes(b"fake pdf")
+        tool = _make_tool(tmp_path)
+
+        result = tool.run(path="report.pdf")
+
+        assert result.startswith("[PDF: report.pdf |")
+        assert "cached:" in result
+        assert "# Title" in result
+
+    def test_pdf_pages_parameter_filters_output(
+        self, tmp_path, monkeypatch
+    ):
+        _install_all_pdf_fakes(monkeypatch, markdown=self.SAMPLE_PDF_MD)
+        (tmp_path / "report.pdf").write_bytes(b"fake pdf")
+        tool = _make_tool(tmp_path)
+
+        result = tool.run(path="report.pdf", pages="2")
+
+        assert "## Chapter 1" in result
+        assert "# Title" not in result
+        assert "## Chapter 2" not in result
+        assert "showing pages 2" in result
+
+    def test_pdf_offset_limit_applied_after_pages(
+        self, tmp_path, monkeypatch
+    ):
+        _install_all_pdf_fakes(monkeypatch, markdown=self.SAMPLE_PDF_MD)
+        (tmp_path / "report.pdf").write_bytes(b"fake pdf")
+        tool = _make_tool(tmp_path)
+
+        result = tool.run(path="report.pdf", pages="1", offset=2, limit=1)
+
+        lines = result.split("\n")
+        # First line is the metadata header
+        content_lines = [l for l in lines if not l.startswith("[PDF:")]
+        assert len(content_lines) == 1
+
+    def test_pages_parameter_on_non_pdf_returns_error(self, tmp_path):
+        (tmp_path / "notes.txt").write_text("hello", encoding="utf-8")
+        tool = _make_tool(tmp_path)
+
+        result = tool.run(path="notes.txt", pages="1-3")
+
+        assert result == "Error: 'pages' parameter is only supported for PDF files."
+
+    def test_missing_docling_returns_friendly_error(
+        self, tmp_path, monkeypatch
+    ):
+        _install_fake_fitz(monkeypatch, chars_per_page=500)
+        monkeypatch.setitem(sys.modules, "docling", None)
+        monkeypatch.setitem(sys.modules, "docling.document_converter", None)
+        (tmp_path / "report.pdf").write_bytes(b"fake pdf")
+        tool = _make_tool(tmp_path)
+
+        result = tool.run(path="report.pdf")
+
+        assert result.startswith("Error: Could not convert 'report.pdf':")
+        assert "docling" in result.lower()
+
+    def test_text_files_unaffected_by_pdf_branch(self, tmp_path):
+        (tmp_path / "notes.txt").write_text("hello\nworld", encoding="utf-8")
+        tool = _make_tool(tmp_path)
+
+        result = tool.run(path="notes.txt")
+
+        assert result == _numbered(["hello", "world"])
