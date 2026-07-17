@@ -3,6 +3,7 @@ from pathlib import Path
 
 from agent.base_tool import BaseTool
 from tools._path_guard import validate_path
+from tools._pdf_convert import convert_pdf, select_pages
 
 # Image extensions — currently blocked until the endpoint supports image tool results.
 # TODO: remove _IMAGE_EXTS from _BLOCKED_EXTS and re-enable the image path below.
@@ -16,9 +17,24 @@ _MIME = {
 }
 
 # File types that the read tool explicitly cannot handle.
-# Everything else is attempted as UTF-8 text.
-# Add future unsupported formats here (pdf, docx, etc.) until they gain read support.
+# Everything else is attempted as UTF-8 text (or converted via _MARKITDOWN_EXTS below).
+# Add future unsupported formats here (e.g. pdf) until they gain read support.
 _BLOCKED_EXTS = _IMAGE_EXTS.copy()
+
+# Document formats converted to markdown text via markitdown before reading.
+_MARKITDOWN_EXTS = {".docx", ".xlsx", ".pptx"}
+
+
+def _convert_document(p: Path) -> str:
+    """Convert a docx/xlsx/pptx file to markdown text via markitdown."""
+    try:
+        from markitdown import MarkItDown
+    except ImportError:
+        raise RuntimeError(
+            "markitdown is not installed. Install it with: pip install markitdown"
+        )
+    result = MarkItDown().convert(str(p))
+    return result.text_content
 
 
 class ReadTool(BaseTool):
@@ -26,6 +42,10 @@ class ReadTool(BaseTool):
     description = (
         "Read the contents of a file. Supports all text files (any extension) — "
         "attempts UTF-8 decoding. Defaults to first 2000 lines. "
+        ".docx, .xlsx, and .pptx files are automatically converted to markdown "
+        "text before being read. "
+        ".pdf files are converted to markdown via docling (with high-fidelity table "
+        "extraction); use the optional `pages` parameter to select specific pages. "
         "Use offset/limit for large files. Accepts both relative paths "
         "(resolved from the project root) and absolute paths. "
         "Output uses `cat -n` style: each line is prefixed with its 1-indexed "
@@ -38,6 +58,14 @@ class ReadTool(BaseTool):
             "path": {"type": "string", "description": "Path to the file to read (relative to project root, or absolute)"},
             "offset": {"type": "integer", "description": "Line number to start reading from (1-indexed)"},
             "limit": {"type": "integer", "description": "Maximum number of lines to read"},
+            "pages": {
+                "type": "string",
+                "description": (
+                    "Page range for PDF files (e.g. '1-5', '3', '10-12,15'). "
+                    "Only applicable to PDFs. Selects which pages of the converted "
+                    "markdown to return. Omit to return all pages."
+                ),
+            },
         },
         "required": ["path"],
     }
@@ -46,7 +74,13 @@ class ReadTool(BaseTool):
         self.cwd = cwd
         self.allowed_roots = allowed_roots
 
-    def run(self, path: str, offset: int = 1, limit: int = 2000) -> str | list:
+    def run(
+        self,
+        path: str,
+        offset: int = 1,
+        limit: int = 2000,
+        pages: str | None = None,
+    ) -> str | list:
         p = Path(path)
         if not p.is_absolute():
             p = self.cwd / p
@@ -54,23 +88,58 @@ class ReadTool(BaseTool):
 
         ext = p.suffix.lower()
 
+        if pages is not None and ext != ".pdf":
+            return "Error: 'pages' parameter is only supported for PDF files."
+
         # ── Blocked file type gate ────────────────────────────────────────
         if ext in _BLOCKED_EXTS:
             return (
-                f"Error: Cannot read file type '{ext}'. This file type is not currently "
-                f"supported by the read tool. If this file type should be supported, "
-                f"update _BLOCKED_EXTS in tools/read.py."
+                f"Error: Cannot read file type '{ext}'. This file type is not "
+                f"currently supported by the read tool. If this file type "
+                f"should be supported, update _BLOCKED_EXTS in tools/read.py."
             )
         # ──────────────────────────────────────────────────────────────────
 
-        try:
-            lines = p.read_text(encoding="utf-8").splitlines()
-        except UnicodeDecodeError:
-            return (
-                f"Error: Cannot read '{p.name}' as text. The file appears to be binary "
-                f"or uses an encoding other than UTF-8."
-            )
+        header = None
+
+        if ext == ".pdf":
+            try:
+                md_text, cache_path = convert_pdf(p, self.cwd)
+            except Exception as e:
+                return f"Error: Could not convert '{p.name}': {e}"
+
+            total_pages = md_text.count("<!-- Page ")
+            if pages:
+                md_text = select_pages(md_text, pages)
+
+            lines = md_text.splitlines()
+            header = f"[PDF: {p.name} | {total_pages} pages | cached: {cache_path}"
+            if pages:
+                header += f" | showing pages {pages}"
+            header += "]"
+
+        elif ext in _MARKITDOWN_EXTS:
+            try:
+                text = _convert_document(p)
+            except Exception as e:
+                return f"Error: Could not convert '{p.name}': {e}"
+            lines = text.splitlines()
+
+        else:
+            try:
+                lines = p.read_text(encoding="utf-8").splitlines()
+            except UnicodeDecodeError:
+                return (
+                    f"Error: Cannot read '{p.name}' as text. The file appears "
+                    f"to be binary or uses an encoding other than UTF-8."
+                )
 
         start = max(0, offset - 1)
         selected = lines[start : start + limit]
-        return "\n".join(f"{i:6d}\t{line}" for i, line in enumerate(selected, start + 1))
+        numbered = "\n".join(
+            f"{i:6d}\t{line}" for i, line in enumerate(selected, start + 1)
+        )
+
+        if header:
+            return f"{header}\n{numbered}"
+        return numbered
