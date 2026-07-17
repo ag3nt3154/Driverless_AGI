@@ -286,7 +286,7 @@ class TestConvertPdf:
 
         assert "# Title" in text
         assert cache_path.exists()
-        assert cache_path.parent.name == "pdf_cache"
+        assert cache_path.parent == tmp_path / ".dagi" / "hash_cache" / "pdf"
 
     def test_scanned_pdf_routes_through_ocrmypdf(
         self, tmp_path, monkeypatch
@@ -376,7 +376,7 @@ class TestConvertPdf:
 
         convert_pdf(pdf, tmp_path)
 
-        cache_dir = tmp_path / ".dagi" / "pdf_cache"
+        cache_dir = tmp_path / ".dagi" / "hash_cache" / "pdf"
         ocr_files = list(cache_dir.glob("*_ocr.pdf"))
         assert ocr_files == []
 

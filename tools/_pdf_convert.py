@@ -7,9 +7,10 @@ the tool degrades gracefully with friendly error messages.
 """
 from __future__ import annotations
 
-import hashlib
 import re
 from pathlib import Path
+
+from tools._hash_cache import cache_path, get_or_compute
 
 
 def parse_page_spec(spec: str) -> set[int]:
@@ -48,9 +49,6 @@ def is_scanned_pdf(pdf_path: Path, sample_pages: int = 3) -> bool:
     return total_chars < _SCANNED_CHAR_THRESHOLD
 
 
-_PDF_CACHE_DIR = ".dagi/pdf_cache"
-
-
 def _convert_pdf_digital(pdf_path: Path) -> str:
     """Convert a digital-native PDF to markdown via docling."""
     try:
@@ -84,35 +82,20 @@ def _convert_pdf_scanned(pdf_path: Path, cache_dir: Path) -> str:
         searchable_path.unlink(missing_ok=True)
 
 
-def _get_pdf_cache_path(
-    pdf_path: Path, project_root: Path
-) -> tuple[Path, str]:
-    """Return (cache_file_path, hex_hash) for a PDF."""
-    content_hash = hashlib.sha256(pdf_path.read_bytes()).hexdigest()
-    cache_dir = project_root / _PDF_CACHE_DIR
-    cache_dir.mkdir(parents=True, exist_ok=True)
-    return cache_dir / f"{content_hash}.md", content_hash
-
-
-def convert_pdf(
-    pdf_path: Path, project_root: Path
-) -> tuple[str, Path]:
-    """Convert a PDF to markdown, using cache if available.
+def convert_pdf(pdf_path: Path, project_root: Path) -> tuple[str, Path]:
+    """Convert a PDF to markdown, using the shared hash cache.
 
     Returns (markdown_text, cache_file_path).
     """
-    cache_path, _ = _get_pdf_cache_path(pdf_path, project_root)
+    key = pdf_path.read_bytes()
 
-    if cache_path.exists():
-        return cache_path.read_text(encoding="utf-8"), cache_path
+    def compute() -> str:
+        cache_dir = cache_path(key, "pdf", "md", project_root)[0].parent
+        if is_scanned_pdf(pdf_path):
+            return _convert_pdf_scanned(pdf_path, cache_dir)
+        return _convert_pdf_digital(pdf_path)
 
-    if is_scanned_pdf(pdf_path):
-        md_text = _convert_pdf_scanned(pdf_path, cache_path.parent)
-    else:
-        md_text = _convert_pdf_digital(pdf_path)
-
-    cache_path.write_text(md_text, encoding="utf-8", newline="\n")
-    return md_text, cache_path
+    return get_or_compute(key, "pdf", "md", project_root, compute)
 
 
 def select_pages(markdown: str, pages_spec: str) -> str:
