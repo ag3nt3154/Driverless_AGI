@@ -6,8 +6,10 @@ import time
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Callable
 
+import httpx
 import openai
 
 from agent import DAGI_ROOT
@@ -377,6 +379,77 @@ class AgentLoop:
             )
             return _NO_COMPACTION
 
+    def _consume_stream(self, stream) -> "tuple[SimpleNamespace, object | None]":
+        """Accumulate a chat-completions chunk stream into the same
+        (message, usage) shapes the blocking path produces, firing per-delta
+        callbacks as chunks arrive.
+
+        Returned message mimics response.choices[0].message: .content,
+        .tool_calls (list of .id/.function.name/.function.arguments, or None),
+        .reasoning_content (for _extract_reasoning). usage is the provider's
+        trailing usage object, or None if it never arrived — downstream
+        getattr(usage, ..., 0) patterns already tolerate None.
+        """
+        content_parts: list[str] = []
+        reasoning_parts: list[str] = []
+        tool_calls_acc: dict[int, dict] = {}
+        usage = None
+        self.callbacks.on_stream_start()
+        try:
+            for chunk in stream:
+                if getattr(chunk, "usage", None) is not None:
+                    usage = chunk.usage
+                if not getattr(chunk, "choices", None):
+                    continue  # usage-only trailing chunk has choices=[]
+                delta = chunk.choices[0].delta
+                if delta is None:
+                    continue
+
+                piece = getattr(delta, "content", None)
+                if piece:
+                    content_parts.append(piece)
+                    self.callbacks.on_assistant_text_delta(piece)
+
+                # OpenRouter sends `reasoning`; some providers send
+                # `reasoning_content`; SDK may park unknown keys in model_extra.
+                r = getattr(delta, "reasoning", None) or getattr(delta, "reasoning_content", None)
+                if not r:
+                    extras = getattr(delta, "model_extra", None) or {}
+                    r = extras.get("reasoning") or ""
+                if r:
+                    reasoning_parts.append(r)
+                    self.callbacks.on_reasoning_delta(r)
+
+                for tc in getattr(delta, "tool_calls", None) or []:
+                    acc = tool_calls_acc.setdefault(
+                        tc.index, {"id": "", "name": "", "arguments": ""}
+                    )
+                    if getattr(tc, "id", None):
+                        acc["id"] = tc.id
+                    fn = getattr(tc, "function", None)
+                    if fn is not None:
+                        if getattr(fn, "name", None):
+                            acc["name"] = fn.name
+                        if getattr(fn, "arguments", None):
+                            acc["arguments"] += fn.arguments
+        finally:
+            self.callbacks.on_stream_end()
+
+        tool_calls = [
+            SimpleNamespace(
+                id=acc["id"],
+                type="function",
+                function=SimpleNamespace(name=acc["name"], arguments=acc["arguments"]),
+            )
+            for _idx, acc in sorted(tool_calls_acc.items())
+        ] or None
+        message = SimpleNamespace(
+            content="".join(content_parts) or None,
+            tool_calls=tool_calls,
+            reasoning_content="".join(reasoning_parts) or None,
+        )
+        return message, usage
+
     def run(self, task: str) -> str:
         if task.strip().lower() == "/reload":
             added, removed, errors = self._rebuild_for_reload()
@@ -413,14 +486,26 @@ class AgentLoop:
                 while True:
                     self.callbacks.on_api_call(list(self._messages))
                     try:
-                        response = self.client.chat.completions.create(
+                        _create_kwargs = dict(
                             model=self.config.model,
                             messages=self._messages,
                             tools=self.registry.get_openai_tools_list(),
                             parallel_tool_calls=False,
                             **(dict(extra_body=self._extra_body) if self._extra_body else {}),
                         )
-                    except (openai.APIConnectionError, openai.APITimeoutError):
+                        if self.config.stream:
+                            _stream = self.client.chat.completions.create(
+                                stream=True,
+                                stream_options={"include_usage": True},
+                                **_create_kwargs,
+                            )
+                            _msg, _usage = self._consume_stream(_stream)
+                            response = SimpleNamespace(
+                                choices=[SimpleNamespace(message=_msg)], usage=_usage
+                            )
+                        else:
+                            response = self.client.chat.completions.create(**_create_kwargs)
+                    except (openai.APIConnectionError, openai.APITimeoutError, httpx.HTTPError):
                         _error_retries += 1
                         if _error_retries >= self.config.api_error_retries:
                             if self.callbacks.supports_pause:
