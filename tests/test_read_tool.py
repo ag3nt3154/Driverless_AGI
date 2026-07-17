@@ -106,6 +106,39 @@ class TestDocumentFormatConversion:
         assert result == _numbered(["hello", "world"])
 
 
+def _install_fake_fitz(monkeypatch, *, chars_per_page=500, num_pages=3):
+    """Inject a fake `fitz` (pymupdf) module for scanned-vs-digital detection tests.
+
+    `chars_per_page` controls how much text each fake page reports —
+    set to 0 to simulate a scanned (image-only) PDF.
+    """
+    class _FakePage:
+        def __init__(self, text):
+            self._text = text
+        def get_text(self):
+            return self._text
+
+    class _FakeDoc:
+        def __init__(self, pages):
+            self._pages = pages
+        def __len__(self):
+            return len(self._pages)
+        def __getitem__(self, idx):
+            return self._pages[idx]
+        def close(self):
+            pass
+
+    class _FakeFitz:
+        @staticmethod
+        def open(path):
+            pages = [_FakePage("x" * chars_per_page) for _ in range(num_pages)]
+            return _FakeDoc(pages)
+
+    fake_module = type(sys)("fitz")
+    fake_module.open = _FakeFitz.open
+    monkeypatch.setitem(sys.modules, "fitz", fake_module)
+
+
 from tools._pdf_convert import parse_page_spec, select_pages
 
 
@@ -154,3 +187,36 @@ class TestSelectPages:
         assert "# Title" in result
         assert "## Chapter 2" in result
         assert "## Chapter 1" not in result
+
+
+from tools._pdf_convert import is_scanned_pdf
+
+
+class TestIsScannedPdf:
+    def test_digital_native_pdf_detected(self, tmp_path, monkeypatch):
+        _install_fake_fitz(monkeypatch, chars_per_page=500)
+        pdf = tmp_path / "digital.pdf"
+        pdf.write_bytes(b"fake pdf bytes")
+
+        assert is_scanned_pdf(pdf) is False
+
+    def test_scanned_pdf_detected(self, tmp_path, monkeypatch):
+        _install_fake_fitz(monkeypatch, chars_per_page=0)
+        pdf = tmp_path / "scanned.pdf"
+        pdf.write_bytes(b"fake pdf bytes")
+
+        assert is_scanned_pdf(pdf) is True
+
+    def test_borderline_text_under_threshold_is_scanned(self, tmp_path, monkeypatch):
+        _install_fake_fitz(monkeypatch, chars_per_page=10, num_pages=3)
+        pdf = tmp_path / "borderline.pdf"
+        pdf.write_bytes(b"fake pdf bytes")
+
+        assert is_scanned_pdf(pdf) is True  # 30 chars < 50 threshold
+
+    def test_pymupdf_missing_returns_false(self, tmp_path, monkeypatch):
+        monkeypatch.setitem(sys.modules, "fitz", None)
+        pdf = tmp_path / "unknown.pdf"
+        pdf.write_bytes(b"fake pdf bytes")
+
+        assert is_scanned_pdf(pdf) is False
