@@ -559,7 +559,7 @@ Driverless_AGI/
 
 | Tool | What it does |
 |------|-------------|
-| `read` | Read a text file (paginated), or a `.docx`/`.xlsx`/`.pptx` document (auto-converted to markdown via `markitdown`), or image (base64). Pass `path`, optional `offset`/`limit` |
+| `read` | Read a text file (paginated), `.docx`/`.xlsx`/`.pptx` (markdown via `markitdown`), `.pdf` (markdown via `docling` with table detection; scanned PDFs OCR'd via `ocrmypdf`; results cached in `.dagi/pdf_cache/`). Pass `path`, optional `offset`/`limit`, optional `pages` (PDF only, e.g. `'1-5'`) |
 | `write` | Overwrite a file. Creates parent dirs. Takes `path` + `content` |
 | `edit` | Replace exact `oldText` with `newText` in a file. Errors if text is absent or non-unique |
 | `bash` | Run a shell command. Returns stdout + stderr + exit code. Pass `command` + optional `timeout` |

@@ -2,6 +2,12 @@
 
 ## Completed
 
+- **`ReadTool` reads PDF documents (converted to markdown via docling)** · `done` · `2026-07-18`
+  - **Problem:** `ReadTool` had no PDF support — PDFs were attempted as UTF-8 text (garbage) or blocked. The prior DOCX/XLSX/PPTX work (also 2026-07-18) deliberately excluded PDF because `markitdown`'s PDF backend had no OCR and collapsed complex tables.
+  - **Fix:** New `tools/_pdf_convert.py` module implements a dual pipeline: digital-native PDFs go through `docling` (IBM's deep-learning converter with TableFormer for high-fidelity table extraction including merged/split cells); scanned PDFs are first OCR'd via `ocrmypdf` (tesseract-based, injects invisible text layer at x,y coordinates) then passed through the same docling pipeline. Detection uses `pymupdf` to probe first 3 pages for extractable text (< 50 chars = scanned). Results are cached in `.dagi/pdf_cache/` keyed by SHA-256 of PDF content — repeat reads are instant. New `pages` parameter (e.g. `'1-5,10'`) filters output by `<!-- Page N -->` markers. Output includes a metadata header with cache path for LLM reference. All four dependencies (`docling`, `pymupdf`, `ocrmypdf`, `tesseract`) are optional with graceful degradation.
+  - **Test:** `tests/test_read_tool.py` (~33 tests total including prior DOCX/XLSX/PPTX tests) — all via faked modules (`sys.modules` injection), no real PDF fixtures. Covers: page-spec parsing, page selection, scanned-vs-digital detection, digital and scanned conversion pipelines, cache hit/miss/invalidation, dependency degradation, ReadTool integration with pages parameter, error messages. Full suite `pytest tests/ -q --ignore=tests/dagi_eval` — 426 passed, no regressions.
+  - Spec: `docs/superpowers/specs/2026-07-18-read-tool-pdf-support-design.md`. Plan: `docs/superpowers/plans/2026-07-18-read-tool-pdf-support.md`.
+
 - **`ReadTool` reads DOCX, XLSX, and PPTX documents (converted to markdown)** · `done` · `2026-07-18`
   - **Problem:** `tools/read.py::ReadTool.run()` only supported UTF-8 text files. `.docx`, `.xlsx`, and `.pptx` files either fell through to `p.read_text(encoding="utf-8")` (garbage/`UnicodeDecodeError`) or were explicitly blocked — the user had to open them outside DAGI to read their content.
   - **Fix:** New optional dependency `markitdown` (Microsoft, MIT) converts all three formats to a single markdown string in memory. `tools/read.py` gained `_MARKITDOWN_EXTS = {".docx", ".xlsx", ".pptx"}` and a `_convert_document(p: Path) -> str` helper (lazy import, raises `RuntimeError` with an install hint if `markitdown` isn't installed); `run()` branches on `ext in _MARKITDOWN_EXTS` before the existing UTF-8 path, then both branches converge on the same `lines` list feeding the existing offset/limit slicing and `cat -n` numbering — so document reads look identical to text reads from the caller's perspective, no new tool parameters. Conversion failures (corrupt file, missing dependency) are caught and returned as a friendly `"Error: Could not convert '<name>': ..."` string, never a raw traceback. `markitdown` is optional — `dagi` starts and runs without it; affected files just return the friendly error until it's installed (`pip install markitdown`).
@@ -446,10 +452,6 @@
 - **`/stats` slash command for live session diagnostics** · `priority:medium` · `effort:S`
   - Show total tokens (in/out/thinking), cost, tool call histogram, continuation count, compaction count, and session duration. All data already available on `loop.tracker._messages` and `app._stats`.
   - **Source:** `_todo/todo_2026-06-17.md` D1
-
-- **PDF reading support for `ReadTool`** · `priority:medium` · `effort:S`
-  - DOCX/XLSX/PPTX support shipped 2026-07-18 (see Completed) via `markitdown`. PDF was deliberately deferred from that work — `markitdown`'s PDF backend (hybrid `pdfplumber`/`pdfminer.six`) has no OCR for scanned pages and documented table-fidelity gaps on complex tables. Needs its own design pass to decide on an OCR/quality bar (plain `markitdown` vs. a heavier layout-aware tool like `docling`/`marker`) before implementing.
-  - **Source:** `_todo/todo_2026-06-19.md` D1
 
 - **Worker model for compaction (cheaper)** · `priority:medium` · `effort:XS`
   - **File:** `tools/compact.py:222`
