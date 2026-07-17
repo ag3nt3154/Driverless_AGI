@@ -5,9 +5,11 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
+import httpx
+import openai
 import pytest
 
-from agent.loop import AgentCallbacks, AgentConfig, AgentLoop
+from agent.loop import AgentCallbacks, AgentConfig, AgentLoop, TASK_END_FLAG
 
 
 def _make_loop(callbacks=None, **config_kwargs) -> AgentLoop:
@@ -154,12 +156,6 @@ class TestConsumeStream:
         assert usage is None
 
 
-import httpx
-import openai
-
-from agent.loop import TASK_END_FLAG
-
-
 def _stream_client(*chunk_lists):
     """Fake OpenAI client whose create() returns successive chunk iterators.
     Asserts stream kwargs are passed. Each call consumes the next chunk list."""
@@ -283,4 +279,41 @@ class TestStreamingRun:
         )
         result = loop.run("task")
         assert result == "real"
+        assert calls["n"] == 2
+
+    def test_midstream_httpx_error_retries_then_succeeds(self):
+        """A raw httpx.HTTPError (not wrapped by the openai SDK — the failure
+        mode a dropped transport connection mid-iteration actually surfaces
+        as) is caught by the widened except tuple and retried, same as an
+        openai.APIConnectionError."""
+        def _dying():
+            yield _chunk(content="partial ")
+            raise httpx.ReadError("connection reset")
+
+        loop = _make_loop(stream=True, api_error_retries=3)
+        loop.client, calls = _stream_client(
+            _dying,
+            [
+                _chunk(content=f"complete {TASK_END_FLAG}"),
+                _chunk(no_choices=True, usage=_usage()),
+            ],
+        )
+        with patch("agent.loop.time.sleep"):
+            result = loop.run("task")
+        assert result == "complete"
+        assert calls["n"] == 2
+
+    def test_midstream_httpx_error_exhausts_retries_and_raises(self):
+        """A persistent httpx.HTTPError is bounded by api_error_retries, not
+        retried forever — mirrors the existing openai.APIConnectionError
+        exhaustion behavior (see test_continuation.py::test_exhausted_retries_raises)."""
+        def _always_dying():
+            yield _chunk(content="x")
+            raise httpx.ReadError("connection reset")
+
+        loop = _make_loop(stream=True, api_error_retries=2)
+        loop.client, calls = _stream_client(_always_dying, _always_dying, _always_dying)
+        with patch("agent.loop.time.sleep"):
+            with pytest.raises(httpx.ReadError):
+                loop.run("task")
         assert calls["n"] == 2
