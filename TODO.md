@@ -2,6 +2,13 @@
 
 ## Completed
 
+- **`ReadTool` reads DOCX, XLSX, and PPTX documents (converted to markdown)** · `done` · `2026-07-18`
+  - **Problem:** `tools/read.py::ReadTool.run()` only supported UTF-8 text files. `.docx`, `.xlsx`, and `.pptx` files either fell through to `p.read_text(encoding="utf-8")` (garbage/`UnicodeDecodeError`) or were explicitly blocked — the user had to open them outside DAGI to read their content.
+  - **Fix:** New optional dependency `markitdown` (Microsoft, MIT) converts all three formats to a single markdown string in memory. `tools/read.py` gained `_MARKITDOWN_EXTS = {".docx", ".xlsx", ".pptx"}` and a `_convert_document(p: Path) -> str` helper (lazy import, raises `RuntimeError` with an install hint if `markitdown` isn't installed); `run()` branches on `ext in _MARKITDOWN_EXTS` before the existing UTF-8 path, then both branches converge on the same `lines` list feeding the existing offset/limit slicing and `cat -n` numbering — so document reads look identical to text reads from the caller's perspective, no new tool parameters. Conversion failures (corrupt file, missing dependency) are caught and returned as a friendly `"Error: Could not convert '<name>': ..."` string, never a raw traceback. `markitdown` is optional — `dagi` starts and runs without it; affected files just return the friendly error until it's installed (`pip install markitdown`).
+  - **Scope decision:** PDF was evaluated and explicitly deferred (see below) — `markitdown`'s PDF backend uses layout-heuristic text extraction with no OCR and documented table-fidelity gaps, unlike DOCX/XLSX/PPTX which are structured XML formats with reliable native parsers (`mammoth` for DOCX).
+  - **Test:** `tests/test_read_tool.py` (7 tests — per-format conversion success, offset/limit windowing over converted output, missing-dependency friendly error, conversion-exception friendly error, existing text-file behavior unaffected). All via a faked `markitdown` module (`sys.modules` injection) — no real dependency required to run the suite. Full suite `pytest tests/ -q --ignore=tests/dagi_eval` → 400 passed, no regressions (was 393).
+  - Spec: `docs/superpowers/specs/2026-07-18-read-tool-document-formats-design.md`. Plan: `docs/superpowers/plans/2026-07-18-read-tool-document-formats.md`.
+
 - **TUI streaming support — assistant text/reasoning render incrementally as they're generated** · `done` · `2026-07-17`
   - **Problem:** `agent/loop.py`'s `AgentLoop.run()` called `client.chat.completions.create()` without `stream=True` — the full model response only became available after generation finished, so the TUI sat idle for the entire generation time and then showed the whole reply at once.
   - **Config:** new `stream` key in `config.yaml`, global + per-model override (same pattern as `thinking`). `AgentConfig.stream` dataclass default is `False` (so the ~25 existing test files / benchmark harness that construct `AgentConfig(...)` directly and mock a blocking `create()` response keep working unchanged); `agent/config_loader.py::_build_config_from_entry` resolves the config-file default to `True`, so every real entry point (TUI, `main.py`, `telegram_bot.py`, scheduler) streams unless `config.yaml` explicitly sets `stream: false`.
@@ -441,7 +448,7 @@
   - **Source:** `_todo/todo_2026-06-17.md` D1
 
 - **PDF reading support for `ReadTool`** · `priority:medium` · `effort:S`
-  - Add PDF support using `PyMuPDF` (fitz) with page range support. Fall back gracefully if not installed.
+  - DOCX/XLSX/PPTX support shipped 2026-07-18 (see Completed) via `markitdown`. PDF was deliberately deferred from that work — `markitdown`'s PDF backend (hybrid `pdfplumber`/`pdfminer.six`) has no OCR for scanned pages and documented table-fidelity gaps on complex tables. Needs its own design pass to decide on an OCR/quality bar (plain `markitdown` vs. a heavier layout-aware tool like `docling`/`marker`) before implementing.
   - **Source:** `_todo/todo_2026-06-19.md` D1
 
 - **Worker model for compaction (cheaper)** · `priority:medium` · `effort:XS`

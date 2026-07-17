@@ -1,6 +1,6 @@
 # AGENTS.md
 
-> Last updated: 2026-07-16 | [README](README.md) | [TODO](TODO.md)
+> Last updated: 2026-07-18 | [README](README.md) | [TODO](TODO.md)
 
 ---
 
@@ -105,6 +105,7 @@ tui.py / telegram_bot.py / main.py ← entry points (TUI | Telegram | one-shot)
 - **Windows CRLF**: `EditTool`/`WriteTool` always write LF on disk (`newline="\n"`) and normalize `oldText`/`newText` before matching — prevents Windows' default `\n`→`\r\n` translation from corrupting files or doubling to `\r\r\n`.
 - **Harbor dual filesystem**: file tools operate on the Windows host; only `harbor_bash` routes into the Docker container.
 - **`read` tool output format**: `cat -n` style — each line prefixed `{1-indexed lineno:6d}\t{content}`; the line number is not part of the file and must be stripped before use as `oldText` in `edit`.
+- **`read` tool document support**: `.docx`/`.xlsx`/`.pptx` are converted to markdown in memory via the optional `markitdown` dependency (`tools/read.py::_convert_document`), then fed through the same `cat -n` numbering/offset/limit path as text files. `markitdown` is not a hard dependency — missing/failed conversion returns a friendly `"Error: Could not convert '<name>': ..."` string, never a traceback. PDF was deliberately deferred (weaker table fidelity, no OCR in markitdown's PDF backend) — see `TODO.md`.
 
 ---
 
