@@ -20,12 +20,29 @@ _MIME = {
 # Add future unsupported formats here (pdf, docx, etc.) until they gain read support.
 _BLOCKED_EXTS = _IMAGE_EXTS.copy()
 
+# Document formats converted to markdown text via markitdown before reading.
+_MARKITDOWN_EXTS = {".docx", ".xlsx", ".pptx"}
+
+
+def _convert_document(p: Path) -> str:
+    """Convert a docx/xlsx/pptx file to markdown text via markitdown."""
+    try:
+        from markitdown import MarkItDown
+    except ImportError:
+        raise RuntimeError(
+            "markitdown is not installed. Install it with: pip install markitdown"
+        )
+    result = MarkItDown().convert(str(p))
+    return result.text_content
+
 
 class ReadTool(BaseTool):
     name = "read"
     description = (
         "Read the contents of a file. Supports all text files (any extension) — "
         "attempts UTF-8 decoding. Defaults to first 2000 lines. "
+        ".docx, .xlsx, and .pptx files are automatically converted to markdown "
+        "text before being read. "
         "Use offset/limit for large files. Accepts both relative paths "
         "(resolved from the project root) and absolute paths. "
         "Output uses `cat -n` style: each line is prefixed with its 1-indexed "
@@ -63,13 +80,20 @@ class ReadTool(BaseTool):
             )
         # ──────────────────────────────────────────────────────────────────
 
-        try:
-            lines = p.read_text(encoding="utf-8").splitlines()
-        except UnicodeDecodeError:
-            return (
-                f"Error: Cannot read '{p.name}' as text. The file appears to be binary "
-                f"or uses an encoding other than UTF-8."
-            )
+        if ext in _MARKITDOWN_EXTS:
+            try:
+                text = _convert_document(p)
+            except Exception as e:
+                return f"Error: Could not convert '{p.name}': {e}"
+            lines = text.splitlines()
+        else:
+            try:
+                lines = p.read_text(encoding="utf-8").splitlines()
+            except UnicodeDecodeError:
+                return (
+                    f"Error: Cannot read '{p.name}' as text. The file appears to be binary "
+                    f"or uses an encoding other than UTF-8."
+                )
 
         start = max(0, offset - 1)
         selected = lines[start : start + limit]
