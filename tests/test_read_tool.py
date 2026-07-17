@@ -104,3 +104,53 @@ class TestDocumentFormatConversion:
         result = tool.run(path="notes.txt")
 
         assert result == _numbered(["hello", "world"])
+
+
+from tools._pdf_convert import parse_page_spec, select_pages
+
+
+class TestParsePageSpec:
+    def test_single_page(self):
+        assert parse_page_spec("3") == {3}
+
+    def test_page_range(self):
+        assert parse_page_spec("2-5") == {2, 3, 4, 5}
+
+    def test_comma_separated(self):
+        assert parse_page_spec("1,3,7") == {1, 3, 7}
+
+    def test_mixed_ranges_and_singles(self):
+        assert parse_page_spec("1-3,5,8-10") == {1, 2, 3, 5, 8, 9, 10}
+
+    def test_whitespace_is_stripped(self):
+        assert parse_page_spec(" 1 - 3 , 5 ") == {1, 2, 3, 5}
+
+    def test_invalid_spec_raises_value_error(self):
+        with pytest.raises(ValueError, match="Invalid page spec"):
+            parse_page_spec("abc")
+
+
+class TestSelectPages:
+    SAMPLE_MD = (
+        "<!-- Page 1 -->\n# Title\n\nIntro.\n"
+        "<!-- Page 2 -->\n## Chapter 1\n\nBody.\n"
+        "<!-- Page 3 -->\n## Chapter 2\n\nMore body.\n"
+    )
+
+    def test_select_single_page(self):
+        result = select_pages(self.SAMPLE_MD, "2")
+        assert "## Chapter 1" in result
+        assert "# Title" not in result
+        assert "## Chapter 2" not in result
+
+    def test_select_page_range(self):
+        result = select_pages(self.SAMPLE_MD, "1-2")
+        assert "# Title" in result
+        assert "## Chapter 1" in result
+        assert "## Chapter 2" not in result
+
+    def test_select_comma_separated(self):
+        result = select_pages(self.SAMPLE_MD, "1,3")
+        assert "# Title" in result
+        assert "## Chapter 2" in result
+        assert "## Chapter 1" not in result
