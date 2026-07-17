@@ -37,3 +37,11 @@ win11toast>=0.35            # Native Windows 10/11 toast notifications
 # Install to enable DOCX, XLSX, and PPTX reading in the `read` tool.
 # dagi starts and runs without this; affected files return a friendly error message.
 # markitdown>=0.1.0       # Converts DOCX/XLSX/PPTX to markdown text
+
+# ── Optional: PDF reading ────────────────────────────────────────────────────
+# Install to enable PDF reading in the `read` tool.
+# dagi starts and runs without these; PDF files return a friendly error message.
+# docling>=2.0             # IBM deep-learning document converter (TableFormer for tables)
+# pymupdf>=1.24            # Scanned-vs-digital PDF detection (text extraction probe)
+# ocrmypdf>=16.0           # Tesseract-based OCR overlay for scanned PDFs
+# NOTE: ocrmypdf requires the `tesseract` system binary — install via your OS package manager.
