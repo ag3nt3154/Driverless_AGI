@@ -69,6 +69,7 @@ tui.py / telegram_bot.py / main.py ← entry points (TUI | Telegram | one-shot)
 | `tg/bot.py`, `tg/session.py` | Telegram bot + per-chat session state |
 | `scheduler/runner.py` | `python -m scheduler.runner` — runs due scheduled tasks via `AgentLoop` |
 | `benchmarks/dagi_eval/` | Coding-speedup + DS scorecard harness; `--solver` defaults to `"agent"` — **never invoke without an explicit `--solver naive`/`gold` flag unless the user has authorized a real LLM call** |
+| `tools/_pdf_convert.py` | `parse_page_spec`, `select_pages` (pure, no deps) + `is_scanned_pdf` (pymupdf probe; optional dep) |
 | `archives/cli.py` | Archived Rich REPL — dead code since 2026-07-12, not imported anywhere |
 | `.dagi/agents.md` | Behavioral guidelines loaded every session (coding standards, memory protocol) — separate from this file |
 
@@ -106,6 +107,7 @@ tui.py / telegram_bot.py / main.py ← entry points (TUI | Telegram | one-shot)
 - **Harbor dual filesystem**: file tools operate on the Windows host; only `harbor_bash` routes into the Docker container.
 - **`read` tool output format**: `cat -n` style — each line prefixed `{1-indexed lineno:6d}\t{content}`; the line number is not part of the file and must be stripped before use as `oldText` in `edit`.
 - **`read` tool document support**: `.docx`/`.xlsx`/`.pptx` are converted to markdown in memory via the optional `markitdown` dependency (`tools/read.py::_convert_document`), then fed through the same `cat -n` numbering/offset/limit path as text files. `markitdown` is not a hard dependency — missing/failed conversion returns a friendly `"Error: Could not convert '<name>': ..."` string, never a traceback. PDF was deliberately deferred (weaker table fidelity, no OCR in markitdown's PDF backend) — see `TODO.md`.
+- **PDF page-range helpers**: `tools/_pdf_convert.py` provides `parse_page_spec("1-3,5,8-10") → set[int]`, `select_pages(markdown, spec) → str` (filters by `<!-- Page N -->` markers), and `is_scanned_pdf(path, sample_pages=3) → bool` (probes first N pages via pymupdf; returns `False` gracefully if `fitz` absent). Threshold: `_SCANNED_CHAR_THRESHOLD = 50` chars across sampled pages. All TDD-tested (13 tests); pure helpers have no optional deps.
 
 ---
 
