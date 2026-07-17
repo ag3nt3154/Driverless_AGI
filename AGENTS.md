@@ -69,7 +69,8 @@ tui.py / telegram_bot.py / main.py ← entry points (TUI | Telegram | one-shot)
 | `tg/bot.py`, `tg/session.py` | Telegram bot + per-chat session state |
 | `scheduler/runner.py` | `python -m scheduler.runner` — runs due scheduled tasks via `AgentLoop` |
 | `benchmarks/dagi_eval/` | Coding-speedup + DS scorecard harness; `--solver` defaults to `"agent"` — **never invoke without an explicit `--solver naive`/`gold` flag unless the user has authorized a real LLM call** |
-| `tools/_pdf_convert.py` | PDF-to-markdown conversion: `convert_pdf()` orchestrator with SHA-256 cache in `.dagi/pdf_cache/`, dual pipeline (docling for digital-native, ocrmypdf→docling for scanned), page helpers (`parse_page_spec`, `select_pages`), detection (`is_scanned_pdf`) |
+| `tools/_pdf_convert.py` | PDF-to-markdown conversion: `convert_pdf()` orchestrator using the shared hash cache (`.dagi/hash_cache/pdf/`), dual pipeline (docling for digital-native, ocrmypdf→docling for scanned), page helpers (`parse_page_spec`, `select_pages`), detection (`is_scanned_pdf`) |
+| `tools/_hash_cache.py` | Shared content-addressed cache (`cache_path()`, `get_or_compute()`) used by `_pdf_convert.py` and `output_filter.py`; layout `.dagi/hash_cache/{pdf,tool_output}/<sha256>.<ext>`, dedup-only (no eviction) |
 | `archives/cli.py` | Archived Rich REPL — dead code since 2026-07-12, not imported anywhere |
 | `.dagi/agents.md` | Behavioral guidelines loaded every session (coding standards, memory protocol) — separate from this file |
 
@@ -96,7 +97,7 @@ tui.py / telegram_bot.py / main.py ← entry points (TUI | Telegram | one-shot)
 - **memory-query / memory-add subagents**: grep + wiki-index traversal for retrieval; classify+write 5-field frontmatter nodes for writing. Both take a single `task` parameter — any other name produces an empty task string.
 - **`dagi/*` branch**: naming convention for branches auto-created on `enter_plan_mode`; the only prefix on which `git_add`/`git_commit`/`git_reset` are permitted. `_dagi_branch_guard()` only covers the dedicated git tools — raw `git` via `BashTool` bypasses it entirely (a nudge, not a security boundary).
 - **scheduler**: `scheduler/` package; tasks in `.dagi/scheduler/schedule.yaml` (interval in **seconds**, min 60); runner sets `plan_mode_initiated_by="dagi"` and `ask_user_timeout=60`.
-- **tool output filter**: `filter_tool_output()` — LLM sees a truncated preview + file pointer; JSONL logs keep the full result.
+- **tool output filter**: `filter_tool_output()` — LLM sees a truncated preview + file pointer; JSONL logs keep the full result. Full output is deduplicated into the shared hash cache (`.dagi/hash_cache/tool_output/<sha256>.txt`) instead of a randomly-named `tempfile.mkstemp()` file — fixes prior unbounded growth of `.dagi/temp/`.
 - **`api_key` vs `api_key_env`**: direct `api_key` in config.yaml overrides env var; empty string still falls through to env var.
 - **`supports_pause`**: gates error-pause behavior on `AgentCallbacks`, defaults `False`; TUI sets `True` explicitly (checking `on_pause is not lambda` would be fragile).
 - **TUI thread safety**: `AgentLoop` runs on a daemon thread; all widget mutations go through `App.call_from_thread()`. Sidebar uses plain instance attributes + `self.refresh()`, not Textual `reactive` (dict-content equality checks miss updates).
@@ -107,7 +108,8 @@ tui.py / telegram_bot.py / main.py ← entry points (TUI | Telegram | one-shot)
 - **Harbor dual filesystem**: file tools operate on the Windows host; only `harbor_bash` routes into the Docker container.
 - **`read` tool output format**: `cat -n` style — each line prefixed `{1-indexed lineno:6d}\t{content}`; the line number is not part of the file and must be stripped before use as `oldText` in `edit`.
 - **`read` tool document support**: `.docx`/`.xlsx`/`.pptx` via optional `markitdown`; `.pdf` via optional `docling` (digital-native) or `ocrmypdf`+`docling` (scanned). All paths converge on the same `cat -n` numbering/offset/limit logic. PDF output includes a metadata header with cache path. `pages` parameter (PDF only) filters by `<!-- Page N -->` markers. Missing dependencies return friendly install-hint errors, never tracebacks.
-- **PDF conversion cache**: `.dagi/pdf_cache/<sha256>.md` — full document cached on first read, keyed by SHA-256 of PDF content. Cache auto-invalidates when PDF changes. `pages`/`offset`/`limit` slice from the cached markdown. Cache path is exposed in tool output so the LLM can reference it for copy/save operations.
+- **PDF conversion cache**: `.dagi/hash_cache/pdf/<sha256>.md` — full document cached on first read, keyed by SHA-256 of PDF content, via the shared `tools/_hash_cache.py` module. Cache auto-invalidates when PDF changes. `pages`/`offset`/`limit` slice from the cached markdown. Cache path is exposed in tool output so the LLM can reference it for copy/save operations.
+- **Shared hash cache**: `tools/_hash_cache.py` — `cache_path()`/`get_or_compute()`, content-addressed (SHA-256 of input bytes) storage shared by the PDF cache and the tool-output filter cache. Layout: `.dagi/hash_cache/{pdf,tool_output}/<sha256>.<ext>`. Dedup-only by design — no eviction, no cross-project sharing, no migration of the old `.dagi/pdf_cache/`/`.dagi/temp/` directories (they're simply no longer written to).
 - **PDF scanned detection**: `is_scanned_pdf()` in `_pdf_convert.py` probes first 3 pages via `pymupdf` (fitz); < 50 chars total = scanned. Returns `False` gracefully if fitz is absent. Scanned PDFs go through `ocrmypdf` (tesseract overlay) before docling conversion.
 
 ---

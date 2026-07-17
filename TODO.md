@@ -2,6 +2,12 @@
 
 ## Completed
 
+- **Shared content-addressed hash cache replaces `pdf_cache`/`mkstemp` schemes — fixes unbounded `.dagi/temp/` growth** · `done` · `2026-07-18`
+  - **Problem:** Two independent, duplicated content-addressed caching schemes existed: `tools/_pdf_convert.py` wrote to `.dagi/pdf_cache/<sha256>.md`, while `tools/output_filter.py` wrote randomly-named files (`tool_output_*.txt`) into `.dagi/temp/` via `tempfile.mkstemp()`. The latter was never cleaned up by any code path (session finish, loop exit, periodic cleanup) and accumulated unboundedly over heavy tool use (previously tracked as a separate open TODO item).
+  - **Fix:** New shared module `tools/_hash_cache.py` exposes `cache_path()`/`get_or_compute()`, a generic SHA-256-content-addressed cache. Both subsystems now write into one unified layout: `.dagi/hash_cache/{pdf,tool_output}/<sha256>.<ext>`. Because cache filenames are now derived from content hash rather than a random suffix, identical tool output is naturally deduplicated instead of re-written — eliminating the unbounded-growth problem without needing eviction logic. `tools/_pdf_convert.py::convert_pdf()` and `tools/output_filter.py::filter_tool_output()` were rewired onto the shared module; `agent/loop.py`'s call site was updated to pass `project_root` directly (dropping the now-unused `self._filter_temp` attribute). Scope is dedup-only by design — no eviction, no migration of old cache directories (they're simply no longer written to), no cross-project sharing.
+  - **Test:** `tests/test_hash_cache.py` (9 new tests: path derivation, SHA-256 filenames, dedup on cache hit, LF-only writes, fail-open on `OSError`). `tests/test_read_tool.py` and `tests/test_output_filter.py` updated for the new cache layout. Full suite `pytest tests/ -q` — 465 passed, no regressions (was 422 baseline for this branch).
+  - Spec: `docs/superpowers/specs/2026-07-18-shared-hash-cache-design.md`. Plan: `docs/superpowers/plans/2026-07-18-shared-hash-cache.md`.
+
 - **`ReadTool` reads PDF documents (converted to markdown via docling)** · `done` · `2026-07-18`
   - **Problem:** `ReadTool` had no PDF support — PDFs were attempted as UTF-8 text (garbage) or blocked. The prior DOCX/XLSX/PPTX work (also 2026-07-18) deliberately excluded PDF because `markitdown`'s PDF backend had no OCR and collapsed complex tables.
   - **Fix:** New `tools/_pdf_convert.py` module implements a dual pipeline: digital-native PDFs go through `docling` (IBM's deep-learning converter with TableFormer for high-fidelity table extraction including merged/split cells); scanned PDFs are first OCR'd via `ocrmypdf` (tesseract-based, injects invisible text layer at x,y coordinates) then passed through the same docling pipeline. Detection uses `pymupdf` to probe first 3 pages for extractable text (< 50 chars = scanned). Results are cached in `.dagi/pdf_cache/` keyed by SHA-256 of PDF content — repeat reads are instant. New `pages` parameter (e.g. `'1-5,10'`) filters output by `<!-- Page N -->` markers. Output includes a metadata header with cache path for LLM reference. All four dependencies (`docling`, `pymupdf`, `ocrmypdf`, `tesseract`) are optional with graceful degradation.
@@ -378,12 +384,6 @@
   - **Problem:** HTTP→HTTPS upgrade excludes `localhost` and `127.0.0.1` but not `192.168.x.x`, `10.x.x.x`, `172.16-31.x.x`, or `[::1]`. Agent fails to fetch local dev servers with a misleading error.
   - **Fix:** Expand exclusion regex to cover all RFC-1918 and loopback ranges.
   - **Source:** `_todo/todo_2026-06-25_2.md` A4
-
-- **`filter_tool_output` temp files never cleaned up — unbounded accumulation** · `priority:medium` · `open:14d` · `effort:XS`
-  - **File:** `tools/output_filter.py:68-72`, `agent/loop.py:287`
-  - **Problem:** `filter_tool_output()` writes `tool_output_*.txt` files into `.dagi/temp/` via `mkstemp()`. No code path (session finish, loop exit, periodic cleanup) ever removes them. After 2 days of testing, 8 files have accumulated. Over weeks of heavy tool use (grep on large codebases, verbose bash output), this directory will grow unboundedly.
-  - **Fix:** Add cleanup in `AgentLoop.finish()`: `shutil.rmtree(self._filter_temp, ignore_errors=True)` — temp files are session-scoped and serve no purpose after the session ends.
-  - **Source:** `review/2026-07-02`
 
 - **`tg/bot.py:153` uses deprecated `asyncio.get_event_loop()` — Python 3.14 breakage risk** · `priority:medium` · `open:12d` · `effort:XS`
   - **File:** `tg/bot.py:153`
