@@ -31,6 +31,22 @@ def parse_page_spec(spec: str) -> set[int]:
     return pages
 
 
+_SCANNED_CHAR_THRESHOLD = 50
+
+
+def is_scanned_pdf(pdf_path: Path, sample_pages: int = 3) -> bool:
+    """Probe first N pages for extractable text. Returns True if scanned."""
+    try:
+        import fitz
+    except ImportError:
+        return False
+    doc = fitz.open(str(pdf_path))
+    pages_to_check = min(sample_pages, len(doc))
+    total_chars = sum(len(doc[i].get_text()) for i in range(pages_to_check))
+    doc.close()
+    return total_chars < _SCANNED_CHAR_THRESHOLD
+
+
 def select_pages(markdown: str, pages_spec: str) -> str:
     """Filter cached markdown by page markers (<!-- Page N -->)."""
     requested = parse_page_spec(pages_spec)
