@@ -16,8 +16,8 @@ _MIME = {
 }
 
 # File types that the read tool explicitly cannot handle.
-# Everything else is attempted as UTF-8 text.
-# Add future unsupported formats here (pdf, docx, etc.) until they gain read support.
+# Everything else is attempted as UTF-8 text (or converted via _MARKITDOWN_EXTS below).
+# Add future unsupported formats here (e.g. pdf) until they gain read support.
 _BLOCKED_EXTS = _IMAGE_EXTS.copy()
 
 # Document formats converted to markdown text via markitdown before reading.
