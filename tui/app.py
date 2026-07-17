@@ -17,6 +17,7 @@ from .commands import SlashCommandsMixin
 from .conversation import ConversationPane
 from .prompt_input import PromptInput
 from .sidebar import Sidebar
+from .streaming import StreamPreview
 from .utils import _Stats
 
 
@@ -64,6 +65,7 @@ class DagiApp(SlashCommandsMixin, App[None]):
             memory_root=getattr(cfg, "memory_root", None),
         )
         yield ConversationPane(id="conversation", highlight=True, markup=True, wrap=True)
+        yield StreamPreview(id="stream-preview")
         yield Static("", id="running-indicator")
         yield PromptInput(id="prompt")
 
