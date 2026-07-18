@@ -349,7 +349,7 @@ Or as a slash command if the skill is loaded:
 | `memory-lint` | Validate wiki structure and internal links |
 | `create-skill` | Scaffold a new skill document |
 | `review-session` | Analyse sessions described in free text (folder, files, time window) into one running cross-session review report |
-| `grill-me` | Adversarial interrogation of a plan or idea before implementation |
+| `grilling` | Adversarial interrogation of a plan or idea before implementation; chains to `plan` |
 | `update-project-context` | Update `AGENTS.md` with current project state |
 
 Add a project-specific skill by creating `.dagi/skills/<name>/SKILL.md` in your project directory.
