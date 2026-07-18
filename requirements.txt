@@ -16,10 +16,10 @@ win11toast>=0.35            # Native Windows 10/11 toast notifications
 
 # ── Optional: DAGI Eval Benchmark ────────────────────────────────────────────
 # Install to run benchmarks/dagi_eval (coding speedup + DS scorecard tasks).
-# numpy>=1.26              # vectorized gold solutions (coding_03/04/05), ds_01 features
-# pandas>=2.0              # ds_01_tabular data loading and CSV I/O
-# scipy>=1.11              # scientific helpers used by scikit-learn transforms
-# scikit-learn>=1.4        # ds_01_tabular baseline (LogisticRegression) + gold (HistGradientBoostingClassifier)
+numpy>=1.26              # vectorized gold solutions (coding_03/04/05), ds_01 features
+pandas>=2.0              # ds_01_tabular data loading and CSV I/O
+scipy>=1.11              # scientific helpers used by scikit-learn transforms
+scikit-learn>=1.4        # ds_01_tabular baseline (LogisticRegression) + gold (HistGradientBoostingClassifier)
 
 # ── Optional: Telegram bot ───────────────────────────────────────────────────
 # Install to enable the telegram_bot.py entry point.
@@ -30,18 +30,18 @@ win11toast>=0.35            # Native Windows 10/11 toast notifications
 # dagi starts and runs without these; affected tools return a friendly error message.
 # ddgs>=2.0              # DuckDuckGo search (web_search tool)
 # crawl4ai>=0.8.7        # Primary web fetcher — Playwright-based, returns clean Markdown
-# httpx>=0.27            # HTTP client used as the fallback web fetcher
-# beautifulsoup4>=4.12   # HTML parser used alongside httpx when crawl4ai is unavailable
+httpx>=0.27            # HTTP client used as the fallback web fetcher
+beautifulsoup4>=4.12   # HTML parser used alongside httpx when crawl4ai is unavailable
 
 # ── Optional: document reading (DOCX/XLSX/PPTX) ─────────────────────────────
 # Install to enable DOCX, XLSX, and PPTX reading in the `read` tool.
 # dagi starts and runs without this; affected files return a friendly error message.
-# markitdown>=0.1.0       # Converts DOCX/XLSX/PPTX to markdown text
+markitdown>=0.1.0       # Converts DOCX/XLSX/PPTX to markdown text
 
 # ── Optional: PDF reading ────────────────────────────────────────────────────
 # Install to enable PDF reading in the `read` tool.
 # dagi starts and runs without these; PDF files return a friendly error message.
-# docling>=2.0             # IBM deep-learning document converter (TableFormer for tables)
-# pymupdf>=1.24            # Scanned-vs-digital PDF detection (text extraction probe)
-# ocrmypdf>=16.0           # Tesseract-based OCR overlay for scanned PDFs
+docling>=2.0             # IBM deep-learning document converter (TableFormer for tables)
+pymupdf>=1.24            # Scanned-vs-digital PDF detection (text extraction probe)
+ocrmypdf>=16.0           # Tesseract-based OCR overlay for scanned PDFs
 # NOTE: ocrmypdf requires the `tesseract` system binary — install via your OS package manager.
