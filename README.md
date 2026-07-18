@@ -350,6 +350,9 @@ Or as a slash command if the skill is loaded:
 | `create-skill` | Scaffold a new skill document |
 | `review-session` | Analyse sessions described in free text (folder, files, time window) into one running cross-session review report |
 | `grilling` | Adversarial interrogation of a plan or idea before implementation; chains to `plan` |
+| `to-spec` | Synthesize the current conversation into a written spec (`spec.md`); invoked by `plan`, not user-triggered |
+| `plan` | Orchestrate the planning lifecycle: spec synthesis, codebase exploration, plan-file authoring, and user approval; chains to `dagi-execute` |
+| `dagi-execute` | Execute an approved plan subtask by subtask via the worker/review subagent cycle, with retry and escalation handling |
 | `update-project-context` | Update `AGENTS.md` with current project state |
 
 Add a project-specific skill by creating `.dagi/skills/<name>/SKILL.md` in your project directory.
@@ -590,7 +593,7 @@ Driverless_AGI/
 | `switch_model` | Swap to a different model (from `config.yaml`) mid-session |
 | `ask_user` | Pause and ask the user a clarifying question with optional choices |
 | `show_plan` | In plan mode: render the current plan document and ask the user for revisions. Returns "Plan approved" (call `exit_plan_mode`) or "Modifications requested" (revise and call `show_plan` again). In autonomous mode, auto-approves immediately |
-| `escalate_issue` | Worker/review subagent only: raise a blocking question to the main agent instead of guessing. Writes a sidecar file next to the subagent's handoff report; the main agent's subprocess poll loop detects it, terminates the subagent, and surfaces `"[worker escalated]"` / `"[review escalated]"` with the question and context — does not consume a plan-work-review retry attempt |
+| `escalate_issue` | Worker/review subagent only: raise a blocking question to the main agent instead of guessing. Writes a sidecar file next to the subagent's handoff report; the main agent's subprocess poll loop detects it, terminates the subagent, and surfaces `"[worker escalated]"` / `"[review escalated]"` with the question and context — does not consume a `dagi-execute` retry attempt |
 
 File tools (`read`, `write`, `edit`, `grep`, `find`) are sandboxed to allowed roots via `tools/_path_guard.py`. `bash` is intentionally unsandboxed.
 
