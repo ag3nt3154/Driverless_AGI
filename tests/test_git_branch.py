@@ -6,7 +6,13 @@ from pathlib import Path
 
 import pytest
 
-from agent._git_branch import build_branch_name, create_task_branch, is_git_repo, slugify
+from agent._git_branch import (
+    build_branch_name,
+    create_task_branch,
+    get_current_branch,
+    is_git_repo,
+    slugify,
+)
 
 
 class TestSlugify:
@@ -49,6 +55,15 @@ class TestIsGitRepo:
 
     def test_false_for_non_repo_dir(self, tmp_path: Path):
         assert is_git_repo(tmp_path) is False
+
+
+class TestGetCurrentBranch:
+    def test_returns_branch_name_in_repo(self, tmp_path: Path):
+        subprocess.run(["git", "init", "-b", "main"], cwd=tmp_path, check=True, capture_output=True)
+        assert get_current_branch(tmp_path) == "main"
+
+    def test_returns_none_outside_repo(self, tmp_path: Path):
+        assert get_current_branch(tmp_path) is None
 
 
 class TestCreateTaskBranch:

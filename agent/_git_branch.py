@@ -48,6 +48,21 @@ def is_git_repo(cwd: Path) -> bool:
     return result.returncode == 0 and result.stdout.strip() == "true"
 
 
+def get_current_branch(cwd: Path) -> str | None:
+    """Return the current branch name, or None if not in a git repo."""
+    if not is_git_repo(cwd):
+        return None
+    result = subprocess.run(
+        ["git", "branch", "--show-current"],
+        capture_output=True,
+        text=True,
+        cwd=str(cwd),
+    )
+    if result.returncode != 0:
+        return None
+    return result.stdout.strip() or None
+
+
 def create_task_branch(cwd: Path, task_summary: str, plan_id: str) -> str | None:
     """Create and check out a new dagi/<slug>_<plan_id> branch from the current HEAD.
 

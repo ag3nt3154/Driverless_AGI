@@ -139,6 +139,8 @@ class AgentConfig:
     advanced_config: AgentConfig | None = field(default=None)
     # Active plan file persisted in system prompt after plan mode exits
     active_plan_file: str | None = None
+    # Branch the user was on before entering plan mode — used for checkout-back at task end
+    previous_branch: str | None = None
     # Human-readable label from the config catalog (e.g. "GPT-4o (OpenAI)")
     display_name: str = ""
     # Resolved model ID from the catalog (e.g. "gpt-4o-openai"). Set by resolve_model_config.
