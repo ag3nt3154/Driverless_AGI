@@ -5,6 +5,11 @@ from agent.base_tool import BaseTool
 from tools._path_guard import validate_path
 from tools._pdf_convert import convert_pdf, select_pages
 
+try:
+    from tools._document_reader import summarize_document
+except ImportError:
+    summarize_document = None  # type: ignore[assignment]
+
 # Image extensions — currently blocked until the endpoint supports image tool results.
 # TODO: remove _IMAGE_EXTS from _BLOCKED_EXTS and re-enable the image path below.
 _IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
@@ -70,9 +75,17 @@ class ReadTool(BaseTool):
         "required": ["path"],
     }
 
-    def __init__(self, cwd: Path = Path("."), allowed_roots: list[Path] | None = None):
+    def __init__(
+        self,
+        cwd: Path = Path("."),
+        allowed_roots: list[Path] | None = None,
+        reserve_tokens: int = 0,
+        project_path: Path | None = None,
+    ):
         self.cwd = cwd
         self.allowed_roots = allowed_roots
+        self._reserve_tokens = reserve_tokens
+        self._project_path = project_path
 
     def run(
         self,
@@ -140,6 +153,29 @@ class ReadTool(BaseTool):
             f"{i:6d}\t{line}" for i, line in enumerate(selected, start + 1)
         )
 
-        if header:
-            return f"{header}\n{numbered}"
-        return numbered
+        raw_result = f"{header}\n{numbered}" if header else numbered
+
+        # Auto-summarization gate: if the full document is over budget and
+        # we're reading from the start (not a targeted offset/limit drill-in),
+        # spawn the document-reader subagent.
+        if (
+            self._reserve_tokens > 0
+            and self._project_path is not None
+            and summarize_document is not None
+            and offset == 1
+            and limit == 2000
+        ):
+            _CHARS_PER_TOKEN = 4
+            full_text = "\n".join(f"{i:6d}\t{line}" for i, line in enumerate(lines, 1))
+            estimated_tokens = len(full_text) // _CHARS_PER_TOKEN
+            if estimated_tokens >= self._reserve_tokens:
+                summary = summarize_document(
+                    full_text=full_text,
+                    source_path=p,
+                    filename=p.name,
+                    project_path=self._project_path,
+                )
+                if summary is not None:
+                    return summary
+
+        return raw_result

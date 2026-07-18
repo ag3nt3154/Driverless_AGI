@@ -1,5 +1,6 @@
 import sys
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
@@ -458,3 +459,64 @@ class TestReadToolPdf:
         result = tool.run(path="notes.txt")
 
         assert result == _numbered(["hello", "world"])
+
+
+class TestAutoSummarization:
+    def test_large_file_triggers_summarization(self, tmp_path):
+        content = "line\n" * 100_000  # ~500k chars → ~125k tokens
+        f = tmp_path / "huge.txt"
+        f.write_text(content, encoding="utf-8")
+        tool = ReadTool(
+            cwd=tmp_path,
+            allowed_roots=[tmp_path],
+            reserve_tokens=16_384,
+            project_path=tmp_path,
+        )
+
+        fake_summary = "## Section 1 (lines 1-2000, ~2500 tokens)\n**Summary:** lots of lines"
+
+        with patch(
+            "tools.read.summarize_document", return_value=fake_summary
+        ) as mock_summarize:
+            result = tool.run(path="huge.txt")
+
+        assert result == fake_summary
+        mock_summarize.assert_called_once()
+
+    def test_small_file_does_not_trigger_summarization(self, tmp_path):
+        content = "short file\nonly two lines\n"
+        f = tmp_path / "small.txt"
+        f.write_text(content, encoding="utf-8")
+        tool = ReadTool(
+            cwd=tmp_path,
+            allowed_roots=[tmp_path],
+            reserve_tokens=16_384,
+            project_path=tmp_path,
+        )
+
+        with patch(
+            "tools.read.summarize_document"
+        ) as mock_summarize:
+            result = tool.run(path="small.txt")
+
+        mock_summarize.assert_not_called()
+        assert "short file" in result
+
+    def test_summarization_failure_falls_back_to_raw_text(self, tmp_path):
+        content = "line\n" * 100_000
+        f = tmp_path / "huge.txt"
+        f.write_text(content, encoding="utf-8")
+        tool = ReadTool(
+            cwd=tmp_path,
+            allowed_roots=[tmp_path],
+            reserve_tokens=16_384,
+            project_path=tmp_path,
+        )
+
+        with patch(
+            "tools.read.summarize_document", return_value=None
+        ):
+            result = tool.run(path="huge.txt")
+
+        # Falls back to raw text (which output_filter will later truncate)
+        assert "line" in result
