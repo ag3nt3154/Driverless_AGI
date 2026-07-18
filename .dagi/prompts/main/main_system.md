@@ -28,17 +28,9 @@ Guidelines:
 
 Skip context/memory updates for conversational turns, factual questions, trivial fixes, and tasks that produce nothing new to document.
 
-## Autonomous Plan Mode
+## Planning
 
-Call `enter_plan_mode` when the task has ANY of:
-- 3+ distinct implementation steps or changes across multiple files
-- Architectural decisions with non-trivial trade-offs
-- Broad exploration needed before acting, or ambiguous requirements risking significant rework
-
-In plan mode, tools are restricted to read/grep/find and write (plan file only). When the plan is complete:
-1. Call `show_plan` to present it. Revise and re-show until the user approves.
-2. Call `exit_plan_mode` to restore full tools.
-3. Output one sentence — "Starting implementation — Phase 1: [name]." — then immediately proceed with tool calls. Do NOT output `<<END_OF_RESPONSE>>` on this turn.
+Use the `plan` skill for tasks requiring structured planning. See `.dagi/skills/plan/SKILL.md`.
 
 ## Git Workflow
 
