@@ -14,6 +14,8 @@ from pathlib import Path
 from agent.config_loader import load_pdf_config
 from tools._hash_cache import cache_path, get_or_compute
 
+_PAGE_MARKER_RE = re.compile(r"<!-- Page (\d+) -->")
+
 
 def parse_page_spec(spec: str) -> set[int]:
     """Parse a page spec like '1-3,5,8-10' into a set of 1-indexed page numbers."""
@@ -82,6 +84,20 @@ def _estimate_worker_count(page_count: int) -> int:
         caps.append(cfg.max_workers)
 
     return max(1, min(caps))
+
+
+def _renumber_markers(markdown: str, start_offset: int) -> str:
+    """Rewrite a chunk's local <!-- Page N --> markers to global page numbers.
+
+    A chunk's docling output numbers pages from 1 within whatever pages it was
+    given. start_offset is the chunk's first page number in the original
+    document (1-indexed), so local page 1 becomes start_offset.
+    """
+    def _replace(match: re.Match) -> str:
+        local = int(match.group(1))
+        return f"<!-- Page {local + start_offset - 1} -->"
+
+    return _PAGE_MARKER_RE.sub(_replace, markdown)
 
 
 def _convert_pdf_digital(pdf_path: Path) -> str:

@@ -357,6 +357,35 @@ class TestEstimateWorkerCount:
         assert _estimate_worker_count(page_count=50) == 1
 
 
+from tools._pdf_convert import _renumber_markers
+
+
+class TestRenumberMarkers:
+    def test_single_marker_offset(self):
+        md = "<!-- Page 1 -->\n# Chunk content"
+        result = _renumber_markers(md, start_offset=5)
+        assert "<!-- Page 5 -->" in result
+        assert "<!-- Page 1 -->" not in result
+
+    def test_multiple_markers_offset(self):
+        md = "<!-- Page 1 -->\nA\n<!-- Page 2 -->\nB\n<!-- Page 3 -->\nC"
+        result = _renumber_markers(md, start_offset=10)
+        assert "<!-- Page 10 -->" in result
+        assert "<!-- Page 11 -->" in result
+        assert "<!-- Page 12 -->" in result
+
+    def test_start_offset_one_is_identity(self):
+        md = "<!-- Page 1 -->\nA\n<!-- Page 2 -->\nB"
+        result = _renumber_markers(md, start_offset=1)
+        assert result == md
+
+    def test_content_around_markers_preserved(self):
+        md = "<!-- Page 1 -->\n# Title\n\nBody text here.\n"
+        result = _renumber_markers(md, start_offset=3)
+        assert "# Title" in result
+        assert "Body text here." in result
+
+
 from tools._pdf_convert import convert_pdf
 
 
