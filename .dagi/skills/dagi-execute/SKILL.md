@@ -92,9 +92,11 @@ Once every subtask is resolved (all markers `[x]` or `[!]`):
 1. Call `complete_plan()`
 2. Invoke `skill("update-project-context")`
 3. Commit context updates
-4. Run `git checkout <previous_branch>` — the branch the user was on before plan
-   mode (stored in `config.previous_branch`). Do NOT merge, force-push, or delete
-   the task branch.
+4. If `config.previous_branch` is set, run `git checkout <previous_branch>` to
+   return to the branch the user was on before plan mode. If it is `None` (e.g.
+   the task started outside a git repo), skip this step and note in the summary
+   that no checkout was performed. Do NOT merge, force-push, or delete the task
+   branch.
 5. Report summary:
    - Branch name
    - Number of commits and files changed
