@@ -1,6 +1,6 @@
 # AGENTS.md
 
-> Last updated: 2026-07-18 (Task 4) | [README](README.md) | [TODO](TODO.md)
+> Last updated: 2026-07-18 | [README](README.md) | [TODO](TODO.md)
 
 ---
 

@@ -533,6 +533,7 @@ Driverless_AGI/
 │   │   ├── main/          #   main_system.md — primary coding assistant prompt
 │   │   └── compact/       #   compact_system, compact_user (Pi-style summariser)
 │   ├── subagents/         # Per-subagent: <name>/prompt.md + subagent_config.yaml
+│   │   ├── document-reader/ # long-document summarizer (tools: read, grep, write)
 │   │   ├── explore_files/ #   exploration agent (tools: read, grep, find)
 │   │   ├── web_research/  #   web research agent (tools: web_search, web_fetch)
 │   │   ├── worker/        #   full-tool worker agent
@@ -559,7 +560,7 @@ Driverless_AGI/
 
 | Tool | What it does |
 |------|-------------|
-| `read` | Read a text file (paginated), `.docx`/`.xlsx`/`.pptx` (markdown via `markitdown`), `.pdf` (markdown via `docling` with table detection; scanned PDFs OCR'd via `ocrmypdf`; results cached in `.dagi/hash_cache/pdf/`). Pass `path`, optional `offset`/`limit`, optional `pages` (PDF only, e.g. `'1-5'`) |
+| `read` | Read a text file (paginated), `.docx`/`.xlsx`/`.pptx` (markdown via `markitdown`), `.pdf` (markdown via `docling` with table detection; scanned PDFs OCR'd via `ocrmypdf`; results cached in `.dagi/hash_cache/pdf/`). For documents exceeding the model's `reserve_tokens` budget, automatically spawns a `document-reader` subagent that produces a sectioned summary digest (per-section line ranges, token estimates, summaries, key excerpts) cached in `.dagi/hash_cache/document_summary/` — the parent receives the digest instead of truncated output and can drill into sections of interest with targeted `offset`/`limit` reads. Pass `path`, optional `offset`/`limit`, optional `pages` (PDF only, e.g. `'1-5'`) |
 | `write` | Overwrite a file. Creates parent dirs. Takes `path` + `content` |
 | `edit` | Replace exact `oldText` with `newText` in a file. Errors if text is absent or non-unique |
 | `bash` | Run a shell command. Returns stdout + stderr + exit code. Pass `command` + optional `timeout` |
