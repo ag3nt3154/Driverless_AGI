@@ -7,9 +7,11 @@ the tool degrades gracefully with friendly error messages.
 """
 from __future__ import annotations
 
+import os
 import re
 from pathlib import Path
 
+from agent.config_loader import load_pdf_config
 from tools._hash_cache import cache_path, get_or_compute
 
 
@@ -59,6 +61,27 @@ def _get_page_count(pdf_path: Path) -> int:
     count = len(doc)
     doc.close()
     return count
+
+
+def _estimate_worker_count(page_count: int) -> int:
+    """Estimate a safe worker-process count from CPU count, free RAM, and page count.
+
+    page_count caps workers 1:1 -- no point having more workers than pages to split.
+    """
+    cfg = load_pdf_config()
+    caps = [os.cpu_count() or 1, page_count]
+
+    try:
+        import psutil
+        available_bytes = psutil.virtual_memory().available
+        caps.append(int(available_bytes // (cfg.worker_ram_gb * 1024**3)))
+    except ImportError:
+        pass
+
+    if cfg.max_workers is not None:
+        caps.append(cfg.max_workers)
+
+    return max(1, min(caps))
 
 
 def _convert_pdf_digital(pdf_path: Path) -> str:

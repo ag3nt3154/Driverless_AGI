@@ -289,6 +289,74 @@ class TestGetPageCount:
         assert _get_page_count(pdf) == 0
 
 
+def _install_fake_psutil(monkeypatch, *, available_bytes):
+    """Inject a fake psutil module reporting a fixed amount of available RAM."""
+    class _FakeVirtualMemory:
+        def __init__(self, available):
+            self.available = available
+
+    fake_module = type(sys)("psutil")
+    fake_module.virtual_memory = lambda: _FakeVirtualMemory(available_bytes)
+    monkeypatch.setitem(sys.modules, "psutil", fake_module)
+
+
+from tools._pdf_convert import _estimate_worker_count
+
+
+class TestEstimateWorkerCount:
+    def test_capped_by_cpu_count(self, monkeypatch):
+        monkeypatch.setattr("os.cpu_count", lambda: 2)
+        _install_fake_psutil(monkeypatch, available_bytes=100 * 1024**3)  # 100GB free
+        monkeypatch.setattr(
+            "agent.config_loader.load_raw_config", lambda: {}
+        )
+
+        assert _estimate_worker_count(page_count=50) == 2
+
+    def test_capped_by_page_count(self, monkeypatch):
+        monkeypatch.setattr("os.cpu_count", lambda: 16)
+        _install_fake_psutil(monkeypatch, available_bytes=100 * 1024**3)
+        monkeypatch.setattr("agent.config_loader.load_raw_config", lambda: {})
+
+        assert _estimate_worker_count(page_count=3) == 3
+
+    def test_capped_by_available_ram(self, monkeypatch):
+        monkeypatch.setattr("os.cpu_count", lambda: 16)
+        _install_fake_psutil(monkeypatch, available_bytes=5 * 1024**3)  # 5GB free
+        monkeypatch.setattr("agent.config_loader.load_raw_config", lambda: {})
+        # 5GB / 2.0GB per worker (default worker_ram_gb) = 2 workers
+
+        assert _estimate_worker_count(page_count=50) == 2
+
+    def test_custom_worker_ram_gb_from_config(self, monkeypatch):
+        monkeypatch.setattr("os.cpu_count", lambda: 16)
+        _install_fake_psutil(monkeypatch, available_bytes=10 * 1024**3)  # 10GB free
+        monkeypatch.setattr(
+            "agent.config_loader.load_raw_config",
+            lambda: {"pdf": {"worker_ram_gb": 5.0}},
+        )
+        # 10GB / 5.0GB per worker = 2 workers
+
+        assert _estimate_worker_count(page_count=50) == 2
+
+    def test_capped_by_max_workers(self, monkeypatch):
+        monkeypatch.setattr("os.cpu_count", lambda: 16)
+        _install_fake_psutil(monkeypatch, available_bytes=100 * 1024**3)
+        monkeypatch.setattr(
+            "agent.config_loader.load_raw_config",
+            lambda: {"pdf": {"max_workers": 3}},
+        )
+
+        assert _estimate_worker_count(page_count=50) == 3
+
+    def test_never_returns_less_than_one(self, monkeypatch):
+        monkeypatch.setattr("os.cpu_count", lambda: 16)
+        _install_fake_psutil(monkeypatch, available_bytes=0)
+        monkeypatch.setattr("agent.config_loader.load_raw_config", lambda: {})
+
+        assert _estimate_worker_count(page_count=50) == 1
+
+
 from tools._pdf_convert import convert_pdf
 
 
