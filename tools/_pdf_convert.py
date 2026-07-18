@@ -135,6 +135,21 @@ def _split_into_chunks(pdf_path: Path, cache_dir: Path, worker_count: int) -> li
     return chunks
 
 
+def _convert_chunk(
+    chunk_path: Path, is_scanned: bool, start_offset: int, chunk_index: int, cache_dir: Path
+) -> tuple[int, str]:
+    """Convert one page-range chunk and renumber its markers to global page numbers.
+
+    Top-level function (not a closure/method) -- this is the callable dispatched
+    to ProcessPoolExecutor, which requires picklable targets.
+    """
+    if is_scanned:
+        markdown = _convert_pdf_scanned(chunk_path, cache_dir)
+    else:
+        markdown = _convert_pdf_digital(chunk_path)
+    return chunk_index, _renumber_markers(markdown, start_offset)
+
+
 def _convert_pdf_digital(pdf_path: Path) -> str:
     """Convert a digital-native PDF to markdown via docling."""
     try:

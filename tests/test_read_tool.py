@@ -453,6 +453,42 @@ class TestSplitIntoChunks:
         assert all(p.parent == cache_dir for p in paths)
 
 
+from tools._pdf_convert import _convert_chunk
+
+
+class TestConvertChunk:
+    def test_digital_chunk_renumbered(self, tmp_path, monkeypatch):
+        md = "<!-- Page 1 -->\n# Chunk Title\n\nBody."
+        _install_fake_fitz(monkeypatch, chars_per_page=500)
+        _install_fake_docling(monkeypatch, markdown=md)
+        chunk_path = tmp_path / "doc_chunk0.pdf"
+        chunk_path.write_bytes(b"fake chunk bytes")
+        cache_dir = tmp_path / "cache"
+        cache_dir.mkdir()
+
+        idx, result_md = _convert_chunk(chunk_path, False, 5, 2, cache_dir)
+
+        assert idx == 2
+        assert "<!-- Page 5 -->" in result_md
+        assert "# Chunk Title" in result_md
+
+    def test_scanned_chunk_routes_through_ocr_then_renumbered(self, tmp_path, monkeypatch):
+        md = "<!-- Page 1 -->\n# OCR Chunk\n\nBody."
+        _install_fake_fitz(monkeypatch, chars_per_page=0)
+        _install_fake_docling(monkeypatch, markdown=md)
+        _install_fake_ocrmypdf(monkeypatch)
+        chunk_path = tmp_path / "doc_chunk1.pdf"
+        chunk_path.write_bytes(b"fake chunk bytes")
+        cache_dir = tmp_path / "cache"
+        cache_dir.mkdir()
+
+        idx, result_md = _convert_chunk(chunk_path, True, 10, 1, cache_dir)
+
+        assert idx == 1
+        assert "<!-- Page 10 -->" in result_md
+        assert "# OCR Chunk" in result_md
+
+
 from tools._pdf_convert import convert_pdf
 
 
