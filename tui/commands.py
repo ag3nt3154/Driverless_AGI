@@ -58,9 +58,6 @@ class SlashCommandsMixin:
             self._cmd_wd(arg)
         elif cmd == "/compact":
             self._cmd_compact()
-        elif cmd == "/plan":
-            from agent.cli_utils import _skill_invocation_message
-            self._dispatch_agent(_skill_invocation_message("plan-work-review", arg or ""))
         elif cmd == "/help":
             self._cmd_help()
         elif cmd == "/tools":
