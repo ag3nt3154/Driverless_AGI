@@ -270,6 +270,25 @@ class TestIsScannedPdf:
         assert is_scanned_pdf(pdf) is False
 
 
+from tools._pdf_convert import _get_page_count
+
+
+class TestGetPageCount:
+    def test_counts_pages_via_fitz(self, tmp_path, monkeypatch):
+        _install_fake_fitz(monkeypatch, num_pages=7)
+        pdf = tmp_path / "doc.pdf"
+        pdf.write_bytes(b"fake pdf bytes")
+
+        assert _get_page_count(pdf) == 7
+
+    def test_returns_zero_when_fitz_missing(self, tmp_path, monkeypatch):
+        monkeypatch.setitem(sys.modules, "fitz", None)
+        pdf = tmp_path / "doc.pdf"
+        pdf.write_bytes(b"fake pdf bytes")
+
+        assert _get_page_count(pdf) == 0
+
+
 from tools._pdf_convert import convert_pdf
 
 

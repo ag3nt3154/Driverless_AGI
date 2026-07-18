@@ -49,6 +49,18 @@ def is_scanned_pdf(pdf_path: Path, sample_pages: int = 3) -> bool:
     return total_chars < _SCANNED_CHAR_THRESHOLD
 
 
+def _get_page_count(pdf_path: Path) -> int:
+    """Return the page count of a PDF, or 0 if fitz is unavailable."""
+    try:
+        import fitz
+    except ImportError:
+        return 0
+    doc = fitz.open(str(pdf_path))
+    count = len(doc)
+    doc.close()
+    return count
+
+
 def _convert_pdf_digital(pdf_path: Path) -> str:
     """Convert a digital-native PDF to markdown via docling."""
     try:

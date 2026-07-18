@@ -135,3 +135,50 @@ class TestStreamingWiring:
         _, last_text = app._conv.show_progress.call_args_list[-1].args
         assert last_text == "second"
         assert "first turn" not in last_text
+
+    def test_first_delta_expands_stream_preview(self):
+        app = _make_app()
+        callbacks = build_callbacks(app, loop_ref=[])
+        callbacks.on_stream_start()
+        callbacks.on_assistant_text_delta("Hello")
+        assert app._expand_stream_preview.called
+
+    def test_expand_fires_only_once_per_segment(self):
+        app = _make_app()
+        callbacks = build_callbacks(app, loop_ref=[])
+        callbacks.on_stream_start()
+        callbacks.on_assistant_text_delta("Hel")
+        callbacks.on_assistant_text_delta("lo")
+        callbacks.on_reasoning_delta("hmm")
+        assert app._expand_stream_preview.call_count == 1
+
+    def test_stream_end_collapses_when_expanded(self):
+        app = _make_app()
+        callbacks = build_callbacks(app, loop_ref=[])
+        callbacks.on_stream_start()
+        callbacks.on_assistant_text_delta("Hello")
+        callbacks.on_stream_end()
+        assert app._collapse_stream_preview.called
+
+    def test_stream_end_does_not_collapse_when_never_expanded(self):
+        """A stream segment with zero deltas (e.g. straight to a tool call)
+        never expanded ConversationPane's sibling, so it must not toggle it
+        back on either — there's nothing to undo."""
+        app = _make_app()
+        callbacks = build_callbacks(app, loop_ref=[])
+        callbacks.on_stream_start()
+        callbacks.on_stream_end()
+        assert not app._collapse_stream_preview.called
+
+    def test_second_segment_expands_independently(self):
+        """Each stream segment tracks its own expanded state from a clean
+        slate — a segment that didn't expand mustn't suppress expansion on
+        the next one, and vice versa."""
+        app = _make_app()
+        callbacks = build_callbacks(app, loop_ref=[])
+        callbacks.on_stream_start()
+        callbacks.on_stream_end()  # no deltas: never expanded
+        app._expand_stream_preview.reset_mock()
+        callbacks.on_stream_start()
+        callbacks.on_assistant_text_delta("now streaming")
+        assert app._expand_stream_preview.called

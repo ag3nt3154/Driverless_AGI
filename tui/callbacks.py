@@ -59,6 +59,7 @@ def build_callbacks(app: DagiApp, loop_ref: list) -> AgentCallbacks:
     _stream = {
         "reasoning": "", "text": "",
         "last_flush": {"reasoning": 0.0, "text": 0.0},
+        "expanded": False,
     }
     _FLUSH_INTERVAL = 0.05
 
@@ -68,11 +69,15 @@ def build_callbacks(app: DagiApp, loop_ref: list) -> AgentCallbacks:
             return
         _stream["last_flush"][kind] = now
         app.call_from_thread(preview.show_progress, _stream["reasoning"], _stream["text"])
+        if not _stream["expanded"]:
+            _stream["expanded"] = True
+            app.call_from_thread(app._expand_stream_preview)
 
     def on_stream_start() -> None:
         _stream["reasoning"] = ""
         _stream["text"] = ""
         _stream["last_flush"] = {"reasoning": 0.0, "text": 0.0}
+        _stream["expanded"] = False
 
     def on_assistant_text_delta(chunk: str) -> None:
         _stream["text"] += chunk
@@ -86,6 +91,8 @@ def build_callbacks(app: DagiApp, loop_ref: list) -> AgentCallbacks:
         if _stream["reasoning"] or _stream["text"]:
             _flush_stream(force=True)   # final render with the complete text
         app.call_from_thread(preview.finish)
+        if _stream["expanded"]:
+            app.call_from_thread(app._collapse_stream_preview)
 
     def on_compaction(kept, removed):
         app.call_from_thread(conv.append_info,

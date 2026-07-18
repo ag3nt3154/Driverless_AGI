@@ -1,6 +1,6 @@
 # AGENTS.md
 
-> Last updated: 2026-07-18 | [README](README.md) | [TODO](TODO.md)
+> Last updated: 2026-07-18 (StreamPreview full-window expand shipped) | [README](README.md) | [TODO](TODO.md)
 
 ---
 
@@ -63,7 +63,8 @@ tui.py / telegram_bot.py / main.py ← entry points (TUI | Telegram | one-shot)
 | `tools/git.py` | 8 git tools; `_dagi_branch_guard()` restricts add/commit/reset to `dagi/*` branches |
 | `tools/output_filter.py` | `filter_tool_output()` — truncates large tool results before LLM context entry |
 | `tools/compact.py` | Pi-style context compaction |
-| `tui/app.py` | `DagiApp` — lifecycle, dispatch, callbacks wiring |
+| `tui/app.py` | `DagiApp` — lifecycle, dispatch, callbacks wiring, `_expand_stream_preview`/`_collapse_stream_preview` orchestration |
+| `tui/streaming.py` | `StreamPreview` — live-streaming reasoning/text widget; `expand()`/`finish()` toggle full-window vs. capped (14-row/12-line) display |
 | `tui/commands.py` | `SlashCommandsMixin` — all `_cmd_*` slash command handlers |
 | `tui/notifications.py` | Best-effort native Windows toast (`win11toast`, silent no-op elsewhere) |
 | `tg/bot.py`, `tg/session.py` | Telegram bot + per-chat session state |
@@ -115,6 +116,8 @@ tui.py / telegram_bot.py / main.py ← entry points (TUI | Telegram | one-shot)
 - **Shared hash cache**: `tools/_hash_cache.py` — `cache_path()`/`get_or_compute()`, content-addressed (SHA-256 of input bytes) storage shared by the PDF cache and the tool-output filter cache. Layout: `.dagi/hash_cache/{pdf,tool_output}/<sha256>.<ext>`. Dedup-only by design — no eviction, no cross-project sharing, no migration of the old `.dagi/pdf_cache/`/`.dagi/temp/` directories (they're simply no longer written to).
 - **PDF scanned detection**: `is_scanned_pdf()` in `_pdf_convert.py` probes first 3 pages via `pymupdf` (fitz); < 50 chars total = scanned. Returns `False` gracefully if fitz is absent. Scanned PDFs go through `ocrmypdf` (tesseract overlay) before docling conversion.
 - **document_summary cache**: `.dagi/hash_cache/document_summary/<sha256>_summary.md` — sectioned markdown summary written by the `document-reader` subagent, keyed by SHA-256 of the full document text. `summarize_document()` checks for this file before spawning the subagent. Full text spooled to `.dagi/hash_cache/tool_output/<sha256>.txt` so the subagent can read it without re-passing the content.
+- **StreamPreview full-window expand**: `expand()`/`finish()` in `tui/streaming.py` toggle between `height: 1fr` (fills window down to the running-indicator/prompt, `ConversationPane` hidden) and the collapsed `height: auto`/`max-height: 14` default. `tui/callbacks.py` defers the expand trigger to the *first rendered delta* of a stream segment (not `on_stream_start`) to avoid a blank-screen flash on segments with no visible text/reasoning; a per-segment `_stream["expanded"]` flag gates the matching collapse on `on_stream_end`. Tail-line rendering is size-aware only while expanded (`self.size.height`), unchanged (`TAIL_LINES = 12`) while collapsed.
+- **Textual `clear_rule()` vs CSS-declared styles**: clearing an inline style rule (`styles.clear_rule("x")`) falls back to the class-level `DEFAULT_CSS` value if one exists, not `None` — a style must be set as an *inline* rule (e.g. in `__init__`) for `clear_rule()` to genuinely unset it. `StreamPreview.max_height` is set in `__init__` rather than `DEFAULT_CSS` for exactly this reason.
 
 ---
 
