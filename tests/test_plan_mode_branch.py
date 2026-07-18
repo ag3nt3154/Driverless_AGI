@@ -93,3 +93,15 @@ class TestEnterPlanModeAutoBranch:
 
         assert "no git repository detected" not in result.lower()
         assert "branch creation failed" in result.lower()
+
+
+class TestEnterPlanModePreviousBranch:
+    def test_records_previous_branch(self, git_repo: Path):
+        loop = _make_loop(git_repo)
+        loop._handle_enter_plan_mode({"mode": "interactive", "task_summary": "test-task"})
+        assert loop.config.previous_branch == "main"
+
+    def test_previous_branch_none_without_git(self, tmp_path: Path):
+        loop = _make_loop(tmp_path)
+        loop._handle_enter_plan_mode({"mode": "interactive", "task_summary": "test-task"})
+        assert loop.config.previous_branch is None

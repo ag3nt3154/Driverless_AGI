@@ -13,7 +13,7 @@ import httpx
 import openai
 
 from agent import DAGI_ROOT
-from agent._git_branch import create_task_branch
+from agent._git_branch import create_task_branch, get_current_branch
 from agent.prompts import load_prompt, load_main_system_prompt, load_soul
 from agent.registry import ToolRegistry
 from agent.session import SessionTracker, ToolCallRecord
@@ -747,13 +747,13 @@ class AgentLoop:
             "- \n"
             "**Acceptance Criteria:**\n"
             "- \n"
-            "#### Tests\n"
-            "<!-- Filled by main agent before executing this subtask — do NOT write tests here -->\n\n"
+            "#### Tests\n\n"
             "## Notes\n\n"
-            "## Verification\n\n"
-            "## Execution Protocol\n\n",
+            "## Verification\n\n",
             encoding="utf-8",
         )
+
+        self.config.previous_branch = get_current_branch(self.config.project_path)
 
         branch_name: str | None = None
         branch_creation_failed = False
