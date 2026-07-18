@@ -1,6 +1,6 @@
 # AGENTS.md
 
-> Last updated: 2026-07-18 (PDF support shipped) | [README](README.md) | [TODO](TODO.md)
+> Last updated: 2026-07-18 (Task 4) | [README](README.md) | [TODO](TODO.md)
 
 ---
 
@@ -71,6 +71,8 @@ tui.py / telegram_bot.py / main.py ← entry points (TUI | Telegram | one-shot)
 | `benchmarks/dagi_eval/` | Coding-speedup + DS scorecard harness; `--solver` defaults to `"agent"` — **never invoke without an explicit `--solver naive`/`gold` flag unless the user has authorized a real LLM call** |
 | `tools/_pdf_convert.py` | PDF-to-markdown conversion: `convert_pdf()` orchestrator using the shared hash cache (`.dagi/hash_cache/pdf/`), dual pipeline (docling for digital-native, ocrmypdf→docling for scanned), page helpers (`parse_page_spec`, `select_pages`), detection (`is_scanned_pdf`) |
 | `tools/_hash_cache.py` | Shared content-addressed cache (`cache_path()`, `get_or_compute()`) used by `_pdf_convert.py` and `output_filter.py`; layout `.dagi/hash_cache/{pdf,tool_output}/<sha256>.<ext>`, dedup-only (no eviction) |
+| `tools/_document_reader.py` | Orchestrates the `document-reader` subagent for long documents: cache-hit fast path (`.dagi/hash_cache/document_summary/<sha256>_summary.md`), cache-miss spawns subagent via `run_subagent()`, returns `None` on failure for caller to fall back to truncation |
+| `tests/test_document_reader.py` | Unit + integration tests: `TestSummarizeDocumentCacheHit` (cache retrieval), `TestSummarizeDocumentCacheMiss` (subagent spawn), `TestSummarizeDocumentFallback` (graceful failure), `TestEndToEnd` (ReadTool→summarize_document→mock subagent pipeline) |
 | `archives/cli.py` | Archived Rich REPL — dead code since 2026-07-12, not imported anywhere |
 | `.dagi/agents.md` | Behavioral guidelines loaded every session (coding standards, memory protocol) — separate from this file |
 
@@ -108,9 +110,11 @@ tui.py / telegram_bot.py / main.py ← entry points (TUI | Telegram | one-shot)
 - **Harbor dual filesystem**: file tools operate on the Windows host; only `harbor_bash` routes into the Docker container.
 - **`read` tool output format**: `cat -n` style — each line prefixed `{1-indexed lineno:6d}\t{content}`; the line number is not part of the file and must be stripped before use as `oldText` in `edit`.
 - **`read` tool document support**: `.docx`/`.xlsx`/`.pptx` via optional `markitdown`; `.pdf` via optional `docling` (digital-native) or `ocrmypdf`+`docling` (scanned). All paths converge on the same `cat -n` numbering/offset/limit logic. PDF output includes a metadata header with cache path. `pages` parameter (PDF only) filters by `<!-- Page N -->` markers. Missing dependencies return friendly install-hint errors, never tracebacks.
+- **`read` tool auto-summarization gate**: when `ReadTool` is constructed with `reserve_tokens > 0` and `project_path`, a default `run()` call (offset=1, limit=2000) estimates full-doc token count (`len(full_text) // 4`); if it meets or exceeds `reserve_tokens`, `summarize_document()` is invoked and its result returned in place of raw lines. Falls back to raw text if the subagent returns `None`. Subagent `ReadTool` instances are constructed without `reserve_tokens` (stays 0) to prevent recursive summarization.
 - **PDF conversion cache**: `.dagi/hash_cache/pdf/<sha256>.md` — full document cached on first read, keyed by SHA-256 of PDF content, via the shared `tools/_hash_cache.py` module. Cache auto-invalidates when PDF changes. `pages`/`offset`/`limit` slice from the cached markdown. Cache path is exposed in tool output so the LLM can reference it for copy/save operations.
 - **Shared hash cache**: `tools/_hash_cache.py` — `cache_path()`/`get_or_compute()`, content-addressed (SHA-256 of input bytes) storage shared by the PDF cache and the tool-output filter cache. Layout: `.dagi/hash_cache/{pdf,tool_output}/<sha256>.<ext>`. Dedup-only by design — no eviction, no cross-project sharing, no migration of the old `.dagi/pdf_cache/`/`.dagi/temp/` directories (they're simply no longer written to).
 - **PDF scanned detection**: `is_scanned_pdf()` in `_pdf_convert.py` probes first 3 pages via `pymupdf` (fitz); < 50 chars total = scanned. Returns `False` gracefully if fitz is absent. Scanned PDFs go through `ocrmypdf` (tesseract overlay) before docling conversion.
+- **document_summary cache**: `.dagi/hash_cache/document_summary/<sha256>_summary.md` — sectioned markdown summary written by the `document-reader` subagent, keyed by SHA-256 of the full document text. `summarize_document()` checks for this file before spawning the subagent. Full text spooled to `.dagi/hash_cache/tool_output/<sha256>.txt` so the subagent can read it without re-passing the content.
 
 ---
 
@@ -137,7 +141,6 @@ tui.py / telegram_bot.py / main.py ← entry points (TUI | Telegram | one-shot)
 - Base64 image data inflates compaction prompts and `session_end` JSONL records with raw base64 noise.
 - Session cost tracking is almost always blank — most providers don't populate `usage.cost`.
 - `/hist` in TUI is broken — writes to a `rich.Console` behind Textual's canvas instead of `ConversationPane`.
-- No integration tests — all tests use mocked LLM clients.
 - DAGI Eval Benchmark has never been run with `--solver agent` against a real model.
 - `_parse_frontmatter` is duplicated verbatim between `agent/skills.py` and `agent/workflows.py`.
 
