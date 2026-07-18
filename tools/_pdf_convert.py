@@ -156,8 +156,9 @@ def _convert_pdf_parallel(
 ) -> str:
     """Split, convert, and merge a PDF's pages using a worker process pool.
 
-    Any chunk failure cancels remaining work and propagates the error --
-    no partial markdown is ever returned. Temp chunk PDFs are always cleaned up.
+    Any chunk failure cancels not-yet-started chunks and propagates the error
+    -- already-running chunks finish but their output is discarded. No partial
+    markdown is ever returned. Temp chunk PDFs are always cleaned up.
     """
     chunks = _split_into_chunks(pdf_path, cache_dir, worker_count)
     results: dict[int, str] = {}
