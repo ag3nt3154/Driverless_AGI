@@ -107,6 +107,37 @@ def test_finish_without_expand_still_resets_defaults() -> None:
     asyncio.run(run())
 
 
+def test_expand_collapse_cycle_on_real_dagi_app() -> None:
+    """Integration check: on a real running DagiApp (not the mocked one used in
+    test_tui_callbacks.py), _expand_stream_preview() must hide the real
+    ConversationPane AND expand the real StreamPreview simultaneously, and
+    _collapse_stream_preview() + preview.finish() must fully restore both
+    widgets to their collapsed defaults."""
+    async def run() -> None:
+        from tui.app import DagiApp
+        from tui.conversation import ConversationPane
+
+        app = DagiApp(model_id=None, project=None, verbose=False)
+        async with app.run_test(size=(80, 40)) as pilot:
+            conversation_pane = app.query_one(ConversationPane)
+            preview = app.query_one(StreamPreview)
+
+            app._expand_stream_preview()
+            await pilot.pause()
+            assert conversation_pane.display is False
+            assert preview._expanded is True
+            assert preview.styles.height.unit.name == "FRACTION"
+
+            app._collapse_stream_preview()
+            preview.finish()
+            await pilot.pause()
+            assert conversation_pane.display is True
+            assert preview.styles.display == "none"
+            assert preview._expanded is False
+            assert preview.styles.max_height.value == 14
+    asyncio.run(run())
+
+
 def test_render_tail_uses_widget_height_when_expanded() -> None:
     async def run() -> None:
         app = _App()
