@@ -1,6 +1,6 @@
 # AGENTS.md
 
-> Last updated: 2026-07-18 (StreamPreview full-window expand shipped) | [README](README.md) | [TODO](TODO.md)
+> Last updated: 2026-07-18 (plan-work-review decomposed into grilling/plan/to-spec/dagi-execute) | [README](README.md) | [TODO](TODO.md)
 
 ---
 
@@ -79,6 +79,7 @@ tui.py / telegram_bot.py / main.py ← entry points (TUI | Telegram | one-shot)
 
 ## Errors Log
 
+- **2026-07-18**: `plan-work-review` decomposed into `grilling`→`plan`→`to-spec`→`dagi-execute`; `tui/commands.py:63` hardcoded `/plan` to invoke the deleted skill and was missed by all 8 per-task diffs (file untouched by any of them) → caught by a final whole-implementation review, fixed by removing the special case so `/plan` falls through to the generic `self._skill_map` dispatch.
 - **2026-07-16**: `ReadTool` returned bare joined lines with no line numbers, forcing `bash`/`cat -n` fallback to locate lines → `read.py` now emits `cat -n` style `{lineno:6d}\t{line}` output.
 - **2026-07-14**: `/wd` didn't refresh sidebar model on project switch → added `model_id` to `AgentConfig`, `_cmd_wd` now refreshes sidebar and detects model changes.
 - **2026-07-14**: `X[c].dtype == object` misclassified pandas 3.0.3 string columns, crashed `SimpleImputer` → switched to `pd.api.types.is_numeric_dtype(X[c])`.
@@ -88,7 +89,6 @@ tui.py / telegram_bot.py / main.py ← entry points (TUI | Telegram | one-shot)
 - **2026-07-12**: plan-work-review now commits per-subtask instead of once at plan end; DAGI never merges/deletes the `dagi/*` branch.
 - **2026-07-12**: README architecture tree was stale (old 3-tool git set) → updated to all 8 tools + `dagi/*` guard note.
 - **2026-07-12**: `shift+enter` unreliable in Windows Terminal (same bytes as `enter`) → added `ctrl+n`/`ctrl+enter` as newline aliases in `PromptInput`.
-- **2026-07-12**: compose mode (`ctrl+o`) had 5 edge-case bugs (toggle mid-run, spinner state, blank-enter collapse, no visual feedback) → guarded and fixed all 5.
 
 ## Notes & Terms
 
@@ -119,6 +119,8 @@ tui.py / telegram_bot.py / main.py ← entry points (TUI | Telegram | one-shot)
 - **document_summary cache**: `.dagi/hash_cache/document_summary/<sha256>_summary.md` — sectioned markdown summary written by the `document-reader` subagent, keyed by SHA-256 of the full document text. `summarize_document()` checks for this file before spawning the subagent. Full text spooled to `.dagi/hash_cache/tool_output/<sha256>.txt` so the subagent can read it without re-passing the content.
 - **StreamPreview full-window expand**: `expand()`/`finish()` in `tui/streaming.py` toggle between `height: 1fr` (fills window down to the running-indicator/prompt, `ConversationPane` hidden) and the collapsed `height: auto`/`max-height: 14` default. `tui/callbacks.py` defers the expand trigger to the *first rendered delta* of a stream segment (not `on_stream_start`) to avoid a blank-screen flash on segments with no visible text/reasoning; a per-segment `_stream["expanded"]` flag gates the matching collapse on `on_stream_end`. Tail-line rendering is size-aware only while expanded (`self.size.height`), unchanged (`TAIL_LINES = 12`) while collapsed.
 - **Textual `clear_rule()` vs CSS-declared styles**: clearing an inline style rule (`styles.clear_rule("x")`) falls back to the class-level `DEFAULT_CSS` value if one exists, not `None` — a style must be set as an *inline* rule (e.g. in `__init__`) for `clear_rule()` to genuinely unset it. `StreamPreview.max_height` is set in `__init__` rather than `DEFAULT_CSS` for exactly this reason.
+- **Skill chain replacing `plan-work-review`**: the old monolithic skill is now four independent skills chained by prose ("invoke `plan` next", `skill("to-spec")`) — `grilling` (adversarial interrogation) → `plan` (orchestrates spec synthesis, exploration, plan-file authoring, approval) → `to-spec` (`disable-model-invocation: true`, conversation→`spec.md`) → `dagi-execute` (per-subtask write-tests/worker/review cycle, 2-attempt retry budget, escalation handling). Blind-oracle test model unchanged: only the review subagent sees test paths.
+- **`previous_branch`**: `AgentConfig.previous_branch` + `get_current_branch()` in `agent/_git_branch.py` capture the branch active before `enter_plan_mode` creates its `dagi/*` branch; `dagi-execute`'s Completion phase checks back out to it, guarded for `None` (plan mode entered outside a git repo).
 
 ---
 
@@ -147,6 +149,7 @@ tui.py / telegram_bot.py / main.py ← entry points (TUI | Telegram | one-shot)
 - `/hist` in TUI is broken — writes to a `rich.Console` behind Textual's canvas instead of `ConversationPane`.
 - DAGI Eval Benchmark has never been run with `--solver agent` against a real model.
 - `_parse_frontmatter` is duplicated verbatim between `agent/skills.py` and `agent/workflows.py`.
+- `disable-model-invocation` SKILL.md frontmatter flag has zero code-level enforcement in `agent/skills.py` — purely advisory, any phrasing can still trigger a skill meant to be programmatic-only.
 
 ### Potential Areas of Exploration
 
