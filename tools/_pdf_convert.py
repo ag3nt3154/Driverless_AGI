@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import os
 import re
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
 from typing import NamedTuple
 
@@ -148,6 +149,40 @@ def _convert_chunk(
     else:
         markdown = _convert_pdf_digital(chunk_path)
     return chunk_index, _renumber_markers(markdown, start_offset)
+
+
+def _convert_pdf_parallel(
+    pdf_path: Path, cache_dir: Path, scanned: bool, page_count: int, worker_count: int
+) -> str:
+    """Split, convert, and merge a PDF's pages using a worker process pool.
+
+    Any chunk failure cancels remaining work and propagates the error --
+    no partial markdown is ever returned. Temp chunk PDFs are always cleaned up.
+    """
+    chunks = _split_into_chunks(pdf_path, cache_dir, worker_count)
+    results: dict[int, str] = {}
+    try:
+        with ProcessPoolExecutor(max_workers=worker_count) as executor:
+            futures = {
+                executor.submit(
+                    _convert_chunk, chunk.path, scanned, chunk.start_offset,
+                    chunk.chunk_index, cache_dir,
+                ): chunk
+                for chunk in chunks
+            }
+            try:
+                for future in as_completed(futures):
+                    idx, markdown = future.result()
+                    results[idx] = markdown
+            except Exception:
+                for future in futures:
+                    future.cancel()
+                raise
+    finally:
+        for chunk in chunks:
+            chunk.path.unlink(missing_ok=True)
+
+    return "".join(results[i] for i in sorted(results))
 
 
 def _convert_pdf_digital(pdf_path: Path) -> str:

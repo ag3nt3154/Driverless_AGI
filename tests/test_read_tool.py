@@ -492,6 +492,78 @@ class TestConvertChunk:
 from tools._pdf_convert import convert_pdf
 
 
+import concurrent.futures
+
+from tools._pdf_convert import _convert_pdf_parallel
+
+
+class TestConvertPdfParallel:
+    def test_merges_chunks_in_order(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(
+            "tools._pdf_convert.ProcessPoolExecutor",
+            concurrent.futures.ThreadPoolExecutor,
+        )
+        _install_fake_fitz(monkeypatch, num_pages=10)
+        _install_fake_docling(monkeypatch, markdown="<!-- Page 1 -->\nchunk-content")
+        pdf = tmp_path / "doc.pdf"
+        pdf.write_bytes(b"fake pdf bytes")
+        cache_dir = tmp_path / "cache"
+        cache_dir.mkdir()
+
+        result = _convert_pdf_parallel(pdf, cache_dir, False, page_count=10, worker_count=2)
+
+        # 2 workers over 10 pages -> chunks starting at page 1 and page 6
+        assert "<!-- Page 1 -->" in result
+        assert "<!-- Page 6 -->" in result
+        assert result.count("chunk-content") == 2
+
+    def test_chunk_temp_files_cleaned_up(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(
+            "tools._pdf_convert.ProcessPoolExecutor",
+            concurrent.futures.ThreadPoolExecutor,
+        )
+        _install_fake_fitz(monkeypatch, num_pages=10)
+        _install_fake_docling(monkeypatch, markdown="<!-- Page 1 -->\ncontent")
+        pdf = tmp_path / "doc.pdf"
+        pdf.write_bytes(b"fake pdf bytes")
+        cache_dir = tmp_path / "cache"
+        cache_dir.mkdir()
+
+        _convert_pdf_parallel(pdf, cache_dir, False, page_count=10, worker_count=2)
+
+        leftover_chunks = list(cache_dir.glob("*_chunk*.pdf"))
+        assert leftover_chunks == []
+
+    def test_worker_failure_propagates_and_cleans_up(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(
+            "tools._pdf_convert.ProcessPoolExecutor",
+            concurrent.futures.ThreadPoolExecutor,
+        )
+        _install_fake_fitz(monkeypatch, num_pages=10)
+
+        class _FailingConverter:
+            def convert(self, path):
+                raise RuntimeError("docling exploded")
+
+        fake_dc_module = type(sys)("docling.document_converter")
+        fake_dc_module.DocumentConverter = _FailingConverter
+        fake_docling = type(sys)("docling")
+        fake_docling.document_converter = fake_dc_module
+        monkeypatch.setitem(sys.modules, "docling", fake_docling)
+        monkeypatch.setitem(sys.modules, "docling.document_converter", fake_dc_module)
+
+        pdf = tmp_path / "doc.pdf"
+        pdf.write_bytes(b"fake pdf bytes")
+        cache_dir = tmp_path / "cache"
+        cache_dir.mkdir()
+
+        with pytest.raises(RuntimeError, match="docling exploded"):
+            _convert_pdf_parallel(pdf, cache_dir, False, page_count=10, worker_count=2)
+
+        leftover_chunks = list(cache_dir.glob("*_chunk*.pdf"))
+        assert leftover_chunks == []
+
+
 class TestConvertPdf:
     def test_digital_pdf_returns_markdown_and_cache_path(
         self, tmp_path, monkeypatch
