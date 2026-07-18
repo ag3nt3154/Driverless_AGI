@@ -108,7 +108,8 @@ class TestDocumentFormatConversion:
 
 
 def _install_fake_fitz(monkeypatch, *, chars_per_page=500, num_pages=3):
-    """Inject a fake `fitz` (pymupdf) module for scanned-vs-digital detection tests.
+    """Inject a fake `fitz` (pymupdf) module for scanned-vs-digital detection
+    and chunk-splitting tests.
 
     `chars_per_page` controls how much text each fake page reports —
     set to 0 to simulate a scanned (image-only) PDF.
@@ -122,16 +123,25 @@ def _install_fake_fitz(monkeypatch, *, chars_per_page=500, num_pages=3):
     class _FakeDoc:
         def __init__(self, pages):
             self._pages = pages
+            self.inserted_ranges = []  # records (from_page, to_page) insert_pdf calls
+            self.saved_to = None
         def __len__(self):
             return len(self._pages)
         def __getitem__(self, idx):
             return self._pages[idx]
         def close(self):
             pass
+        def insert_pdf(self, src, from_page=0, to_page=None):
+            self.inserted_ranges.append((from_page, to_page))
+        def save(self, path):
+            self.saved_to = path
+            Path(path).write_bytes(b"fake chunk pdf bytes")
 
     class _FakeFitz:
         @staticmethod
-        def open(path):
+        def open(path=None):
+            if path is None:
+                return _FakeDoc([])  # new empty doc, for splitting output
             pages = [_FakePage("x" * chars_per_page) for _ in range(num_pages)]
             return _FakeDoc(pages)
 
@@ -384,6 +394,63 @@ class TestRenumberMarkers:
         result = _renumber_markers(md, start_offset=3)
         assert "# Title" in result
         assert "Body text here." in result
+
+
+from tools._pdf_convert import ChunkSpec, _split_into_chunks
+
+
+class TestSplitIntoChunks:
+    def test_even_split(self, tmp_path, monkeypatch):
+        _install_fake_fitz(monkeypatch, num_pages=20)
+        pdf = tmp_path / "doc.pdf"
+        pdf.write_bytes(b"fake pdf bytes")
+        cache_dir = tmp_path / "cache"
+        cache_dir.mkdir()
+
+        chunks = _split_into_chunks(pdf, cache_dir, worker_count=4)
+
+        assert len(chunks) == 4
+        assert [c.start_offset for c in chunks] == [1, 6, 11, 16]
+        assert [c.chunk_index for c in chunks] == [0, 1, 2, 3]
+        for c in chunks:
+            assert c.path.exists()
+
+    def test_uneven_split_front_loads_remainder(self, tmp_path, monkeypatch):
+        _install_fake_fitz(monkeypatch, num_pages=22)
+        pdf = tmp_path / "doc.pdf"
+        pdf.write_bytes(b"fake pdf bytes")
+        cache_dir = tmp_path / "cache"
+        cache_dir.mkdir()
+
+        chunks = _split_into_chunks(pdf, cache_dir, worker_count=4)
+
+        # 22 pages / 4 workers = 6,6,5,5
+        assert [c.start_offset for c in chunks] == [1, 7, 13, 18]
+
+    def test_single_worker_single_chunk(self, tmp_path, monkeypatch):
+        _install_fake_fitz(monkeypatch, num_pages=5)
+        pdf = tmp_path / "doc.pdf"
+        pdf.write_bytes(b"fake pdf bytes")
+        cache_dir = tmp_path / "cache"
+        cache_dir.mkdir()
+
+        chunks = _split_into_chunks(pdf, cache_dir, worker_count=1)
+
+        assert len(chunks) == 1
+        assert chunks[0].start_offset == 1
+
+    def test_chunk_files_named_uniquely(self, tmp_path, monkeypatch):
+        _install_fake_fitz(monkeypatch, num_pages=10)
+        pdf = tmp_path / "report.pdf"
+        pdf.write_bytes(b"fake pdf bytes")
+        cache_dir = tmp_path / "cache"
+        cache_dir.mkdir()
+
+        chunks = _split_into_chunks(pdf, cache_dir, worker_count=3)
+
+        paths = {c.path for c in chunks}
+        assert len(paths) == 3  # all distinct
+        assert all(p.parent == cache_dir for p in paths)
 
 
 from tools._pdf_convert import convert_pdf

@@ -10,6 +10,7 @@ from __future__ import annotations
 import os
 import re
 from pathlib import Path
+from typing import NamedTuple
 
 from agent.config_loader import load_pdf_config
 from tools._hash_cache import cache_path, get_or_compute
@@ -98,6 +99,40 @@ def _renumber_markers(markdown: str, start_offset: int) -> str:
         return f"<!-- Page {local + start_offset - 1} -->"
 
     return _PAGE_MARKER_RE.sub(_replace, markdown)
+
+
+class ChunkSpec(NamedTuple):
+    """One page-range chunk of a PDF being split for parallel conversion."""
+    path: Path
+    start_offset: int   # this chunk's first page number in the original doc (1-indexed)
+    chunk_index: int    # 0-indexed position among sibling chunks, for reduce-step ordering
+
+
+def _split_into_chunks(pdf_path: Path, cache_dir: Path, worker_count: int) -> list[ChunkSpec]:
+    """Split a PDF into worker_count page-range sub-PDFs, written into cache_dir."""
+    import fitz
+
+    src = fitz.open(str(pdf_path))
+    total_pages = len(src)
+    base, extra = divmod(total_pages, worker_count)
+
+    chunks: list[ChunkSpec] = []
+    start = 0
+    for i in range(worker_count):
+        size = base + (1 if i < extra else 0)
+        if size == 0:
+            continue
+        end = start + size - 1  # inclusive, 0-indexed
+        chunk_doc = fitz.open()
+        chunk_doc.insert_pdf(src, from_page=start, to_page=end)
+        chunk_path = cache_dir / f"{pdf_path.stem}_chunk{i}.pdf"
+        chunk_doc.save(str(chunk_path))
+        chunk_doc.close()
+        chunks.append(ChunkSpec(path=chunk_path, start_offset=start + 1, chunk_index=i))
+        start = end + 1
+
+    src.close()
+    return chunks
 
 
 def _convert_pdf_digital(pdf_path: Path) -> str:
