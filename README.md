@@ -472,6 +472,18 @@ Token/cost usage is requested via `stream_options: {"include_usage": true}` on e
 
 While a response is actively streaming, the live preview automatically expands to fill the full window (down to the running-indicator/prompt), so long in-progress replies aren't capped at a few lines — it collapses back to normal once the turn finishes and the final message lands in the conversation pane.
 
+### PDF Conversion
+
+PDFs longer than 8 pages are converted in parallel (map-reduce: split into chunks, one docling model load per worker process, then merged and renumbered). Worker count is estimated automatically from CPU count, page count, and free RAM, and is optional to tune via a `pdf:` key in `config.yaml`:
+
+```yaml
+pdf:
+  worker_ram_gb: 2.0    # RAM budget assumed per worker process (default 2.0)
+  max_workers: null     # hard cap on worker processes (default null = uncapped)
+```
+
+Both keys are optional — omit the `pdf:` block entirely to use the defaults. Shorter PDFs (8 pages or fewer) always use the original single-process pipeline.
+
 ---
 
 ## Architecture
@@ -562,7 +574,7 @@ Driverless_AGI/
 
 | Tool | What it does |
 |------|-------------|
-| `read` | Read a text file (paginated), `.docx`/`.xlsx`/`.pptx` (markdown via `markitdown`), `.pdf` (markdown via `docling` with table detection; scanned PDFs OCR'd via `ocrmypdf`; results cached in `.dagi/hash_cache/pdf/`). For documents exceeding the model's `reserve_tokens` budget, automatically spawns a `document-reader` subagent that produces a sectioned summary digest (per-section line ranges, token estimates, summaries, key excerpts) cached in `.dagi/hash_cache/document_summary/` — the parent receives the digest instead of truncated output and can drill into sections of interest with targeted `offset`/`limit` reads. Pass `path`, optional `offset`/`limit`, optional `pages` (PDF only, e.g. `'1-5'`) |
+| `read` | Read a text file (paginated), `.docx`/`.xlsx`/`.pptx` (markdown via `markitdown`), `.pdf` (markdown via `docling` with table detection; scanned PDFs OCR'd via `ocrmypdf`; results cached in `.dagi/hash_cache/pdf/`). PDFs longer than 8 pages are converted in parallel across multiple worker processes (map-reduce: split into page-range chunks, one docling load per worker, merge + renumber markers) for speed — worker count is capped by CPU count, page count, free RAM, and the `pdf.worker_ram_gb`/`pdf.max_workers` keys in `config.yaml`; shorter PDFs use the original single-process path unchanged. For documents exceeding the model's `reserve_tokens` budget, automatically spawns a `document-reader` subagent that produces a sectioned summary digest (per-section line ranges, token estimates, summaries, key excerpts) cached in `.dagi/hash_cache/document_summary/` — the parent receives the digest instead of truncated output and can drill into sections of interest with targeted `offset`/`limit` reads. Pass `path`, optional `offset`/`limit`, optional `pages` (PDF only, e.g. `'1-5'`) |
 | `write` | Overwrite a file. Creates parent dirs. Takes `path` + `content` |
 | `edit` | Replace exact `oldText` with `newText` in a file. Errors if text is absent or non-unique |
 | `bash` | Run a shell command. Returns stdout + stderr + exit code. Pass `command` + optional `timeout` |
@@ -802,6 +814,7 @@ Core (from `pyproject.toml`):
 - `markdown` — markdown rendering
 - `matplotlib` — data visualization
 - `nicegui` — retained for archived web UI; not needed for CLI use
+- `psutil` — free-RAM probing for PDF parallel-conversion worker-count estimation (`tools/_pdf_convert.py::_estimate_worker_count`)
 
 Additional (install separately if using the interactive CLI):
 
