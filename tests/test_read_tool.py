@@ -672,6 +672,40 @@ class TestConvertPdf:
         ocr_files = list(cache_dir.glob("*_ocr.pdf"))
         assert ocr_files == []
 
+    def test_large_pdf_uses_parallel_path(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(
+            "tools._pdf_convert.ProcessPoolExecutor",
+            concurrent.futures.ThreadPoolExecutor,
+        )
+        monkeypatch.setattr("os.cpu_count", lambda: 4)
+        _install_fake_psutil(monkeypatch, available_bytes=100 * 1024**3)
+        monkeypatch.setattr("agent.config_loader.load_raw_config", lambda: {})
+        _install_fake_fitz(monkeypatch, chars_per_page=500, num_pages=20)
+        _install_fake_docling(monkeypatch, markdown="<!-- Page 1 -->\ncontent")
+        pdf = tmp_path / "big.pdf"
+        pdf.write_bytes(b"fake big pdf bytes")
+
+        text, cache_path_result = convert_pdf(pdf, tmp_path)
+
+        assert "<!-- Page 1 -->" in text
+        assert "<!-- Page 6 -->" in text  # 20 pages / 4 workers -> chunk 2 starts at page 6
+        assert cache_path_result.exists()
+
+    def test_small_pdf_stays_single_process(self, tmp_path, monkeypatch):
+        # PDF_PARALLEL_MIN_PAGES is 8 -- a 3-page doc must never touch the pool
+        def _fail_if_called(*args, **kwargs):
+            raise AssertionError("ProcessPoolExecutor should not be constructed for small PDFs")
+
+        monkeypatch.setattr("tools._pdf_convert.ProcessPoolExecutor", _fail_if_called)
+        _install_fake_fitz(monkeypatch, chars_per_page=500, num_pages=3)
+        _install_fake_docling(monkeypatch, markdown="<!-- Page 1 -->\nsmall doc content")
+        pdf = tmp_path / "small.pdf"
+        pdf.write_bytes(b"fake small pdf bytes")
+
+        text, _ = convert_pdf(pdf, tmp_path)
+
+        assert "small doc content" in text
+
 
 class TestReadToolPdf:
     SAMPLE_PDF_MD = (

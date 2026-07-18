@@ -40,6 +40,7 @@ def parse_page_spec(spec: str) -> set[int]:
 
 
 _SCANNED_CHAR_THRESHOLD = 50
+PDF_PARALLEL_MIN_PAGES = 8   # below this, single-process path -- not config-exposed
 
 
 def is_scanned_pdf(pdf_path: Path, sample_pages: int = 3) -> bool:
@@ -228,9 +229,20 @@ def convert_pdf(pdf_path: Path, project_root: Path) -> tuple[str, Path]:
 
     def compute() -> str:
         cache_dir = cache_path(key, "pdf", "md", project_root)[0].parent
-        if is_scanned_pdf(pdf_path):
-            return _convert_pdf_scanned(pdf_path, cache_dir)
-        return _convert_pdf_digital(pdf_path)
+        scanned = is_scanned_pdf(pdf_path)
+        page_count = _get_page_count(pdf_path)
+        worker_count = (
+            _estimate_worker_count(page_count)
+            if page_count > PDF_PARALLEL_MIN_PAGES
+            else 1
+        )
+        if worker_count <= 1:
+            return (
+                _convert_pdf_scanned(pdf_path, cache_dir)
+                if scanned
+                else _convert_pdf_digital(pdf_path)
+            )
+        return _convert_pdf_parallel(pdf_path, cache_dir, scanned, page_count, worker_count)
 
     return get_or_compute(key, "pdf", "md", project_root, compute)
 
