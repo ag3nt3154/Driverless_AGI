@@ -241,6 +241,13 @@ class DagiApp(SlashCommandsMixin, App[None]):
     def _hide_running_indicator(self) -> None:
         self.query_one("#running-indicator", Static).display = False
 
+    def _expand_stream_preview(self) -> None:
+        self.query_one(ConversationPane).display = False
+        self.query_one(StreamPreview).expand()
+
+    def _collapse_stream_preview(self) -> None:
+        self.query_one(ConversationPane).display = True
+
     def _enable_input(self) -> None:
         self._hide_running_indicator()
         inp = self.query_one("#prompt", PromptInput)
