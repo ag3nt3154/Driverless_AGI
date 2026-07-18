@@ -34,22 +34,59 @@ chunks never get mixed pipelines.
 ### 2. Decide whether to parallelize
 
 ```python
-PDF_PARALLEL_MIN_PAGES = 8   # below this, single-process path (today's behavior)
-PDF_WORKER_RAM_GB = 2.0      # conservative assumed RAM cost per docling worker
+PDF_PARALLEL_MIN_PAGES = 8   # below this, single-process path (today's behavior) — not configurable
 ```
 
 If `page_count <= PDF_PARALLEL_MIN_PAGES`, conversion stays single-process
 (today's `_convert_pdf_digital`/`_convert_pdf_scanned` path, unchanged) — pool
 startup and per-worker model-load overhead isn't worth it for short documents.
+This threshold stays a hardcoded constant (not config-exposed) — it's an
+internal tuning knob, not something users need to reason about.
 
-### 3. Estimate worker count
+### 3. Estimate worker count — configurable via `config.yaml`
+
+`worker_ram_gb` (assumed RAM cost per docling worker) and `max_workers` (a
+hard ceiling on pool size) are read from a new `pdf:` top-level key in
+`config.yaml`, following the exact pattern `telegram:` already uses via
+`load_telegram_config()` in `agent/config_loader.py`:
+
+```yaml
+# config.yaml — all keys optional, shown with their defaults
+pdf:
+  worker_ram_gb: 2.0     # assumed RAM cost per docling worker process
+  max_workers: null      # hard cap on pool size; null = uncapped (cpu/RAM caps still apply)
+```
 
 ```python
-worker_count = min(
-    os.cpu_count(),
-    psutil.virtual_memory().available // (PDF_WORKER_RAM_GB * 1024**3),
-    num_chunks,
-)
+# agent/config_loader.py
+@dataclass
+class PdfConfig:
+    """PDF parallel-conversion settings loaded from the `pdf:` key in config.yaml."""
+    worker_ram_gb: float = 2.0
+    max_workers: int | None = None
+
+
+def load_pdf_config() -> PdfConfig:
+    raw = load_raw_config()
+    pdf = raw.get("pdf", {}) or {}
+    return PdfConfig(
+        worker_ram_gb=pdf.get("worker_ram_gb", 2.0),
+        max_workers=pdf.get("max_workers"),
+    )
+```
+
+`tools/_pdf_convert.py` calls `load_pdf_config()` inside `_estimate_worker_count()`:
+
+```python
+def _estimate_worker_count(page_count: int) -> int:
+    """page_count caps workers 1:1 — no point having more workers than pages."""
+    cfg = load_pdf_config()
+    caps = [os.cpu_count(), page_count]
+    ram_bytes = psutil.virtual_memory().available
+    caps.append(int(ram_bytes // (cfg.worker_ram_gb * 1024**3)))
+    if cfg.max_workers is not None:
+        caps.append(cfg.max_workers)
+    return max(1, min(caps))
 ```
 
 `psutil.virtual_memory().available` is **free/available memory, not total
@@ -60,8 +97,13 @@ so the estimate doesn't oversubscribe a machine already under memory pressure.
 `tests/conftest.py`'s RAM-guard fixture; this feature makes it a real runtime
 dependency of the PDF path too.
 
-If `worker_count <= 1` (e.g. very low free RAM, or `os.cpu_count() == 1`),
-conversion falls back to the single-process path even for large documents.
+If the resulting `worker_count <= 1` (e.g. very low free RAM, `max_workers: 1`,
+or `os.cpu_count() == 1`), conversion falls back to the single-process path
+even for large documents.
+
+`.dagi/config.yaml` (per-project config) can override `pdf:` the same way it
+overrides any other top-level key, via the existing `_merge_configs()` logic
+in `config_loader.py` — no new merge behavior needed.
 
 ### 4. Map — split into chunks
 
@@ -136,7 +178,7 @@ def convert_pdf(pdf_path: Path, project_root: Path) -> tuple[str, Path]:
 
 New functions in `tools/_pdf_convert.py`:
 - `_get_page_count(pdf_path: Path) -> int`
-- `_estimate_worker_count(page_count: int) -> int`
+- `_estimate_worker_count(page_count: int) -> int` (reads `load_pdf_config()`)
 - `_split_into_chunks(pdf_path: Path, cache_dir: Path, worker_count: int) -> list[ChunkSpec]`
 - `_convert_chunk(chunk_path: Path, is_scanned: bool, start_offset: int, chunk_index: int) -> tuple[int, str]` (top-level, picklable — the executor target)
 - `_renumber_markers(markdown: str, start_offset: int) -> str`
@@ -166,8 +208,11 @@ executor (runs submitted callables immediately, in-process) so the suite stays
 fast and deterministic.
 
 New coverage:
-- `_estimate_worker_count`: each of the three caps (cpu_count, free-RAM/2GB,
-  num_chunks) binding in turn.
+- `load_pdf_config`: defaults when `pdf:` key is absent; overrides when
+  present; `max_workers: null` vs an explicit int.
+- `_estimate_worker_count`: each of the four caps (cpu_count, page_count,
+  free-RAM/`worker_ram_gb`, `max_workers`) binding in turn, including a
+  custom `worker_ram_gb` from config changing the RAM-derived cap.
 - `_split_into_chunks`: even split math, remainder distribution across
   workers.
 - `_renumber_markers`: correctness of local→global page number rewriting.
@@ -181,9 +226,9 @@ New coverage:
 
 ## Scope exclusions
 
-- No `config.yaml` surface for worker count / RAM assumption — both are
-  hardcoded constants in `tools/_pdf_convert.py`, tunable later if real-world
-  numbers prove wrong.
+- `PDF_PARALLEL_MIN_PAGES` (the small-doc threshold) stays a hardcoded
+  constant, not config-exposed — only `worker_ram_gb` and `max_workers` are
+  configurable, per explicit request.
 - No per-chunk mixed pipelines — scan detection remains a single
   whole-document decision, applied uniformly to all chunks.
 - No progress reporting mid-conversion — `convert_pdf()` remains a single
