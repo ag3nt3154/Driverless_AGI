@@ -116,3 +116,35 @@ class TestStreamResolution:
         only configs resolved through config_loader get the streaming default."""
         from agent.loop import AgentConfig
         assert AgentConfig().stream is False
+
+
+from agent.config_loader import PdfConfig, load_pdf_config
+
+
+class TestLoadPdfConfig:
+    def test_defaults_when_pdf_key_absent(self, monkeypatch):
+        monkeypatch.setattr("agent.config_loader.load_raw_config", lambda: {})
+        cfg = load_pdf_config()
+        assert cfg == PdfConfig(worker_ram_gb=2.0, max_workers=None)
+
+    def test_overrides_from_config(self, monkeypatch):
+        monkeypatch.setattr(
+            "agent.config_loader.load_raw_config",
+            lambda: {"pdf": {"worker_ram_gb": 4.0, "max_workers": 3}},
+        )
+        cfg = load_pdf_config()
+        assert cfg == PdfConfig(worker_ram_gb=4.0, max_workers=3)
+
+    def test_partial_override_keeps_other_default(self, monkeypatch):
+        monkeypatch.setattr(
+            "agent.config_loader.load_raw_config",
+            lambda: {"pdf": {"max_workers": 5}},
+        )
+        cfg = load_pdf_config()
+        assert cfg.worker_ram_gb == 2.0
+        assert cfg.max_workers == 5
+
+    def test_null_pdf_key_uses_defaults(self, monkeypatch):
+        monkeypatch.setattr("agent.config_loader.load_raw_config", lambda: {"pdf": None})
+        cfg = load_pdf_config()
+        assert cfg == PdfConfig(worker_ram_gb=2.0, max_workers=None)

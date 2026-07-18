@@ -60,6 +60,23 @@ def load_telegram_config() -> TelegramConfig:
     return TelegramConfig(bot_token=token)
 
 
+@dataclass
+class PdfConfig:
+    """PDF parallel-conversion settings loaded from the `pdf:` key in config.yaml."""
+    worker_ram_gb: float = 2.0
+    max_workers: int | None = None
+
+
+def load_pdf_config() -> PdfConfig:
+    """Return PDF parallel-conversion settings from config.yaml, applying defaults."""
+    raw = load_raw_config()
+    pdf = raw.get("pdf") or {}
+    return PdfConfig(
+        worker_ram_gb=pdf.get("worker_ram_gb", 2.0),
+        max_workers=pdf.get("max_workers"),
+    )
+
+
 def load_raw_config(config_path: Path | None = None) -> dict:
     """Return the full parsed config dict, or {} if the file is absent.
 
