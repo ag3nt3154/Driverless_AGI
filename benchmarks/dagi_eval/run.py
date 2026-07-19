@@ -9,7 +9,7 @@ Usage:
 self-test, no LLM tokens): naive must score ~1.0, gold must show real lift.
 
 Every invocation creates its own timestamped run folder under
-.dagi/benchmarks/dagi_eval/logs/<ts>_log/ (see harness.new_run_dir()):
+benchmarks/dagi_eval/logs/<ts>_log/ (see harness.new_run_dir()):
   result.jsonl        one row per task, plus a final "__aggregate__" row
   code/<task_name>/   copy of that task's final workspace (agent output or
                        canned solution) as actually scored
@@ -45,6 +45,10 @@ def _new_row(task_dir: Path, args: argparse.Namespace, run_dir: Path,
         "dagi_git_commit": sha, "dirty_tree": dirty,
         "model": args.model, "solver": args.solver, "label": args.label,
         "baseline_score": None, "golden_score": None, "recorded_score": None,
+        # raw wall-clock seconds behind recorded_score's speedup ratio for
+        # coding tasks (recorded_score == baseline_time_s / agent_time_s);
+        # None for ds tasks (no timing dimension there).
+        "agent_time_s": None, "baseline_time_s": None,
         "correct": None, "auc": None,
         "normalized_perf": None, "normalized_tokens": None, "unified_score": None,
         # tokens_think is null: SessionTracker does not track reasoning tokens
@@ -107,6 +111,8 @@ def build_task_row(task_dir: Path, args: argparse.Namespace, run_dir: Path,
         if kind == "coding":
             res = scoring.score_coding_task(task_dir, ws)
             row["recorded_score"] = res["speedup"]
+            row["agent_time_s"] = res["agent_time_s"]
+            row["baseline_time_s"] = res["baseline_time_s"]
             row["correct"] = res["correct"]
             if res["error"]:
                 _add_error(row, res["error"])

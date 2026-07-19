@@ -16,13 +16,13 @@ TASKS_DIR = PKG_DIR / "tasks"
 CONFIG_PATH = PKG_DIR / "config_dagi_eval.yaml"
 
 # Every sweep gets its own timestamped folder here (see new_run_dir()):
-#   .dagi/benchmarks/dagi_eval/logs/<ts>_log/
+#   benchmarks/dagi_eval/logs/<ts>_log/
 #     result.jsonl        one row per task + one "__aggregate__" row
 #     code/<task_name>/   copy of that task's final workspace
 #     sessions/<task_name>/session_*.jsonl   SessionTracker transcripts
 # repo_root = .../benchmarks/dagi_eval -> .../benchmarks -> repo root
 REPO_ROOT = PKG_DIR.parent.parent
-RUNS_DIR = REPO_ROOT / ".dagi" / "benchmarks" / "dagi_eval" / "logs"
+RUNS_DIR = PKG_DIR / "logs"  # benchmarks/dagi_eval/logs — already gitignored
 
 
 class BenchmarkTimeout(Exception):
