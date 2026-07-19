@@ -1,6 +1,7 @@
 # Benchmark config for the dagi eval harness (benchmarks/dagi_eval/run.py).
 # Same schema as config.yaml; passed to resolve_model_config(config_path=...).
 default_model: hy3-free-openrouter
+# default_model: nemotron-ultra-free-openrouter
 # No worker_model/advanced_model yet — there is only one tier for now.
 # switch_model is still exposed (see harness.py, which points worker_config/
 # advanced_config back at the resolved default config after loading) so dagi

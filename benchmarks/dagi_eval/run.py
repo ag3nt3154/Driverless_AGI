@@ -79,7 +79,14 @@ def build_task_row(task_dir: Path, args: argparse.Namespace, run_dir: Path,
         meta = scoring.load_task_meta(task_dir)
         kind = row["kind"] = meta["kind"]
 
+        # Reference scoring re-times the baseline/gold solutions fresh (see
+        # scoring.score_reference) — for coding tasks this reruns the
+        # deliberately-slow baseline TIMING_RUNS times per variant, which can
+        # take minutes and has no other progress output, so a bare sweep
+        # looks stuck without these lines.
+        print(f"[{name}] scoring baseline reference...")
         base_ref = scoring.score_reference(task_dir, kind, "naive")
+        print(f"[{name}] scoring gold reference...")
         gold_ref = scoring.score_reference(task_dir, kind, "gold")
         row["baseline_score"] = None if base_ref["error"] else base_ref["score"]
         row["golden_score"] = None if gold_ref["error"] else gold_ref["score"]
@@ -108,6 +115,8 @@ def build_task_row(task_dir: Path, args: argparse.Namespace, run_dir: Path,
 
         harness.save_task_code(ws, run_dir, name)
 
+        print(f"[{name}] scoring solution "
+             + ("(re-times baseline)..." if kind == "coding" else "..."))
         if kind == "coding":
             res = scoring.score_coding_task(task_dir, ws)
             row["recorded_score"] = res["speedup"]
