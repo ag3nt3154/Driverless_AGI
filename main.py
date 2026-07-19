@@ -1,4 +1,5 @@
 import argparse
+import logging
 import sys
 from pathlib import Path
 
@@ -8,6 +9,7 @@ load_dotenv()  # populate os.environ from .env before config_loader reads API ke
 
 from agent.config_loader import resolve_model_config
 from agent.loop import AgentLoop
+from agent.log_callbacks import build_cli_callbacks
 
 
 def main():
@@ -15,8 +17,12 @@ def main():
     parser.add_argument("task", nargs="?", help="Task to run (reads from stdin if omitted)")
     parser.add_argument("--model", help="Model ID from config.yaml (e.g. gpt-4o-openai)")
     parser.add_argument("--project", help="Project directory to work in (default: cwd)")
+    parser.add_argument("--verbose", "-v", action="store_true",
+                        help="Log full tool args/output and reasoning (default: truncated)")
     parser.add_argument("--base-url", dest="base_url", help="[deprecated] URL is now set per-model in config.yaml")
     args = parser.parse_args()
+
+    logging.basicConfig(format="%(asctime)s %(message)s", level=logging.INFO, datefmt="%H:%M:%S")
 
     if args.base_url:
         print("Warning: --base-url is deprecated. Configure the URL in config.yaml under models.", file=sys.stderr)
@@ -36,7 +42,7 @@ def main():
         hist_run(project=config.project_path)
         return
 
-    loop = AgentLoop(config)
+    loop = AgentLoop(config, callbacks=build_cli_callbacks(args.verbose))
     result = loop.run(task)
     loop.finish()
     print(result)

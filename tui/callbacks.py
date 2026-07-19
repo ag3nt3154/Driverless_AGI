@@ -123,7 +123,7 @@ def build_callbacks(app: DagiApp, loop_ref: list) -> AgentCallbacks:
         evt = threading.Event()
         container: list = []
         app.call_from_thread(app._show_ask_user, question, options, timeout, evt, container)
-        safety = (timeout + 60) if timeout is not None else None
+        safety = (timeout + 60) if timeout is not None else 600
         evt.wait(timeout=safety)
         if container:
             return container[0]

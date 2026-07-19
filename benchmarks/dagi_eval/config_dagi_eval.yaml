@@ -1,12 +1,24 @@
 # Benchmark config for the dagi eval harness (benchmarks/dagi_eval/run.py).
 # Same schema as config.yaml; passed to resolve_model_config(config_path=...).
-default_model: claude-sonnet-openrouter
+default_model: hy3-free-openrouter
+# No worker_model/advanced_model yet — there is only one tier for now.
+# switch_model is still exposed (see harness.py, which points worker_config/
+# advanced_config back at the resolved default config after loading) so dagi
+# can call it; switching tiers is currently a same-model no-op.
 max_continuations: 30
 cache_prompt: true
 
 # Only these tools are registered for benchmark runs. No ask_user (runs are
-# unattended — the on_ask_user callback auto-answers anyway), no web tools
-# (the tasks are self-contained), no plan mode.
+# unattended — the on_ask_user callback auto-answers anyway), no web_search/
+# web_fetch (the tasks are self-contained). Plan mode and skills are enabled:
+# dagi may call enter_plan_mode/complete_plan, and skill/run_skill_script to
+# load SKILL.md docs from <repo_root>/.dagi/skills/ (there's no per-task
+# skills dir, so only the repo's builtin skills are visible). Subagents and
+# switch_model are enabled so dagi can delegate sub-tasks and manage its own
+# context budget. "compact" is intentionally NOT listed here: CompactTool is
+# bound directly by AgentLoop (agent/loop.py) and is never added to the
+# ToolRegistry, so it can never be an LLM-callable tool regardless of this
+# list — listing it here was a dead no-op.
 tools:
   - read
   - write
@@ -14,7 +26,20 @@ tools:
   - bash
   - grep
   - find
-  - compact
+  - enter_plan_mode
+  - complete_plan
+  - skill
+  - run_skill_script
+  - switch_model
+  - spawn_document-reader_subagent
+  - spawn_explore_files_subagent
+  - spawn_memory-add_subagent
+  - spawn_memory-query_subagent
+  - spawn_review_subagent
+  - spawn_web_research_subagent
+  - spawn_worker_subagent
+  - spawn_cli_subagent
+  - extend_subagent_timeout
 
 system_prompt_preamble: |
   ## Benchmark Environment
@@ -25,6 +50,23 @@ system_prompt_preamble: |
   artifacts there. Python packages available: numpy, pandas, scipy, scikit-learn.
   Run python via: conda run -n dagi python <script>
 
+  If you use plan mode, call enter_plan_mode with mode="autonomous" — there is
+  no user available to review or approve the plan, so interactive mode will
+  stall waiting for input that will never usefully arrive.
+
+  ## Environment Detection
+  Your first bash command should detect the OS. On Windows, use `cmd` builtins
+  (dir, type, where, echo) — NOT Unix commands (ls, cat, find, head, tail).
+  On Linux/macOS, Unix commands are fine. A quick check: run `echo %OS%` or
+  `uname -s` and adapt all subsequent shell commands accordingly.
+
+  ## Signaling Completion
+  When you have finished the task and produced all required artifacts, output a
+  final assistant message containing the exact marker <<END_OF_RESPONSE>> so
+  the harness knows you are done. Do not continue issuing tool calls after
+  this point. Omitting this marker wastes iterations on auto-injected
+  "continue" prompts.
+
 models:
   claude-sonnet-openrouter:
     name: "Claude Sonnet (OpenRouter)"
@@ -34,5 +76,15 @@ models:
   deepseek-openrouter:
     name: "DeepSeek (OpenRouter)"
     model: "deepseek/deepseek-chat"
+    api_url: "https://openrouter.ai/api/v1"
+    api_key_env: "OPENROUTER_API_KEY"
+  hy3-free-openrouter:
+    name: "Hunyuan 3 Free (OpenRouter)"
+    model: "tencent/hy3:free"
+    api_url: "https://openrouter.ai/api/v1"
+    api_key_env: "OPENROUTER_API_KEY"
+  nemotron-ultra-free-openrouter:
+    name: "Nemotron Ultra Free (OpenRouter)"
+    model: "nvidia/nemotron-3-ultra-550b-a55b:free"
     api_url: "https://openrouter.ai/api/v1"
     api_key_env: "OPENROUTER_API_KEY"

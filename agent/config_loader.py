@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import os
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import yaml
@@ -49,6 +49,7 @@ def get_model_display_name(model_id: str | None = None) -> str:
 class TelegramConfig:
     """Telegram bot settings loaded from the `telegram:` key in config.yaml."""
     bot_token: str = ""
+    allowed_chat_ids: frozenset[int] = field(default_factory=frozenset)
 
 
 def load_telegram_config() -> TelegramConfig:
@@ -57,7 +58,12 @@ def load_telegram_config() -> TelegramConfig:
     tg = raw.get("telegram", {}) or {}
     token_env = tg.get("bot_token_env", "TELEGRAM_BOT_TOKEN")
     token = os.environ.get(token_env, "")
-    return TelegramConfig(bot_token=token)
+    ids_env = tg.get("allowed_chat_ids_env", "TELEGRAM_ALLOWED_CHAT_IDS")
+    ids_raw = os.environ.get(ids_env, "")
+    allowed_chat_ids = frozenset(
+        int(part) for part in ids_raw.split(",") if part.strip()
+    )
+    return TelegramConfig(bot_token=token, allowed_chat_ids=allowed_chat_ids)
 
 
 @dataclass
@@ -186,8 +192,8 @@ def resolve_model_config(
       2. default_model from config.yaml
       3. built-in fallback (gpt-4o-openai)
 
-    config_path overrides the default config.yaml (e.g. pass config_benchmark.yaml
-    for Terminal-bench runs).
+    config_path overrides the default config.yaml (e.g. pass
+    benchmarks/dagi_eval/config_dagi_eval.yaml for benchmark runs).
 
     project_path, when provided, loads {project_path}/.dagi/config.yaml and
     merges it over the root config. Project values win on all scalar fields;

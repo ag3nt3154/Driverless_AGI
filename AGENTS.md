@@ -1,6 +1,6 @@
 # AGENTS.md
 
-> Last updated: 2026-07-18 (plan-work-review decomposed into grilling/plan/to-spec/dagi-execute) | [README](README.md) | [TODO](TODO.md)
+> Last updated: 2026-07-19 (dagi_eval benchmark: per-run log folders under `.dagi/benchmarks/dagi_eval/logs/`, unified scoring vs. baseline/gold references) | [README](README.md) | [TODO](TODO.md)
 
 ---
 
@@ -56,7 +56,8 @@ tui.py / telegram_bot.py / main.py ← entry points (TUI | Telegram | one-shot)
 | Path | Purpose |
 |------|---------|
 | `agent/loop.py` | Core agent loop, `AgentConfig`, `AgentCallbacks`, termination flags, system-prompt assembly (`_assemble_system_string`), live Plan Status board rendering |
-| `agent/config_loader.py` | Reads `config.yaml`, resolves API key, merges per-project `.dagi/config.yaml` over root; `PdfConfig`/`load_pdf_config()` resolves the optional `pdf:` block (`worker_ram_gb`, `max_workers`) consumed by `tools/_pdf_convert.py` — imports flow `tools -> agent.config_loader`, same direction as `tools.read -> agent.base_tool` |
+| `agent/config_loader.py` | Reads `config.yaml`, resolves API key, merges per-project `.dagi/config.yaml` over root; `PdfConfig`/`load_pdf_config()` resolves the optional `pdf:` block (`worker_ram_gb`, `max_workers`) consumed by `tools/_pdf_convert.py`; `TelegramConfig`/`load_telegram_config()` resolves `telegram.allowed_chat_ids_env` into `allowed_chat_ids: frozenset[int]` — imports flow `tools -> agent.config_loader`, same direction as `tools.read -> agent.base_tool` |
+| `tg/bot.py` | `TelegramBot._is_authorized(chat_id)` gates all 4 handlers against `allowed_chat_ids`; empty allowlist = open (back-compat) but logs a startup warning |
 | `agent/tools.py` | Wires all tools into `ToolRegistry`; `build_subagent_registry()` |
 | `agent/__init__.py` | `DAGI_ROOT` — the single canonical root definition |
 | `tools/_subagent_runner.py` | Pipe-based subagent runner (`run_subagent()`/`resume_subagent()`) |
@@ -69,7 +70,7 @@ tui.py / telegram_bot.py / main.py ← entry points (TUI | Telegram | one-shot)
 | `tui/notifications.py` | Best-effort native Windows toast (`win11toast`, silent no-op elsewhere) |
 | `tg/bot.py`, `tg/session.py` | Telegram bot + per-chat session state |
 | `scheduler/runner.py` | `python -m scheduler.runner` — runs due scheduled tasks via `AgentLoop` |
-| `benchmarks/dagi_eval/` | Coding-speedup + DS scorecard harness; `--solver` defaults to `"agent"` — **never invoke without an explicit `--solver naive`/`gold` flag unless the user has authorized a real LLM call** |
+| `benchmarks/dagi_eval/` | Coding-speedup + DS scorecard harness; `--solver` defaults to `"agent"` — **never invoke without an explicit `--solver naive`/`gold` flag unless the user has authorized a real LLM call**. `config_dagi_eval.yaml` runs on `hy3-free-openrouter` (free tier) with a restricted tool list that includes all predefined subagent types, `spawn_cli_subagent`, `extend_subagent_timeout`, and `switch_model`. Every `run.py` invocation creates one `.dagi/benchmarks/dagi_eval/logs/<ts>_log/` folder (`harness.new_run_dir()`) holding `result.jsonl` (one row per task + a final `__aggregate__` row), `code/<task_name>/` (copy of the scored workspace), and `sessions/<task_name>/` (agent transcripts). Each row always carries `baseline_score`/`golden_score` from the canned naive/gold solutions (scored fresh via `scoring.score_reference()`, no LLM) plus `unified_score` — see Notes & Terms. |
 | `tools/_pdf_convert.py` | PDF-to-markdown conversion: `convert_pdf()` orchestrator using the shared hash cache (`.dagi/hash_cache/pdf/`), dual pipeline (docling for digital-native, ocrmypdf→docling for scanned), page helpers (`parse_page_spec`, `select_pages`), detection (`is_scanned_pdf`). PDFs over `PDF_PARALLEL_MIN_PAGES` (8) route through a map-reduce parallel path: `_split_into_chunks` (page-range splitting via `fitz`) → `ProcessPoolExecutor` dispatch to `_convert_chunk` (one docling load per worker, picklable top-level function) → `_renumber_markers` merge/reduce step in `_convert_pdf_parallel`; worker count from `_estimate_worker_count` (caps: CPU count, page count, free RAM via `psutil`, `pdf.max_workers`) |
 | `tools/_hash_cache.py` | Shared content-addressed cache (`cache_path()`, `get_or_compute()`) used by `_pdf_convert.py` and `output_filter.py`; layout `.dagi/hash_cache/{pdf,tool_output}/<sha256>.<ext>`, dedup-only (no eviction) |
 | `tools/_document_reader.py` | Orchestrates the `document-reader` subagent for long documents: cache-hit fast path (`.dagi/hash_cache/document_summary/<sha256>_summary.md`), cache-miss spawns subagent via `run_subagent()`, returns `None` on failure for caller to fall back to truncation |
@@ -79,23 +80,26 @@ tui.py / telegram_bot.py / main.py ← entry points (TUI | Telegram | one-shot)
 
 ## Errors Log
 
+- **2026-07-18**: Telegram bot dispatched any `chat_id` straight into `AgentLoop` with the full tool registry (`bash` = unrestricted shell) — unauthenticated RCE → added `TELEGRAM_ALLOWED_CHAT_IDS` allowlist, `TelegramBot._is_authorized()` gates all handlers, loud startup warning when unset.
+- **2026-07-18**: `tui/callbacks.py`'s `on_ask_user` used `safety = None` when `timeout=None` (plan-mode default) — indefinite agent-thread hang if the TUI closed mid-question; `tg/callbacks.py` already had the `else 600` fix but `tui/callbacks.py` was missed → aligned both to `else 600`.
+- **2026-07-18**: `tg/bot.py:_run_agent_task`'s `finally` block referenced `loop` before it could be assigned if `resolve_model_config()`/`build_callbacks()` raised → `UnboundLocalError` masking the real exception → added `loop = None` before the `try`.
+- **2026-07-18**: `requirements.txt` floors (`pymupdf>=1.24`, `docling>=2.0`) permitted a clean install to resolve versions vulnerable to CVE-2026-3029/CVE-2026-24009/CVE-2026-44023 → bumped to `pymupdf>=1.26.6`, `docling>=2.75` (pulls docling-core>=2.74.1).
 - **2026-07-18**: `plan-work-review` decomposed into `grilling`→`plan`→`to-spec`→`dagi-execute`; `tui/commands.py:63` hardcoded `/plan` to invoke the deleted skill and was missed by all 8 per-task diffs (file untouched by any of them) → caught by a final whole-implementation review, fixed by removing the special case so `/plan` falls through to the generic `self._skill_map` dispatch.
+- **2026-07-18**: Harbor Framework / Terminal-bench 2 (Docker-based 89-task benchmark) removed at user request — full 89-task run was never completed, only smoke-tested → deleted `benchmarks/harbor/`, `benchmarks/jobs/`, `benchmarks/config_benchmark.yaml`, `tools/tmux_bash.py`, `docs/terminal-bench.md`, `tests/test_harbor_harness.py`; `benchmarks/dagi_eval/` (self-referential scorecard) is now the only benchmark suite in the repo.
+- **2026-07-19**: `config_dagi_eval.yaml`'s `tools:` list included `"compact"`, but `CompactTool` is bound directly by `AgentLoop` (`agent/loop.py`) and never registered into `ToolRegistry` — the entry was a dead no-op → removed it; documented in-file that `compact` can never be LLM-callable via the `tools:` filter.
+- **2026-07-19**: dagi_eval benchmark: agent never used `enter_plan_mode` (0 calls across 5 tasks) because tool description emphasized restrictions ("restricts tools") not benefits → rewritten to emphasize quality improvement. Agent also wasted ~13 iterations on Unix commands (`ls`, `find`) on Windows → added OS-detection instruction. Agent hit `continue_injected` on every task → added `<<END_OF_RESPONSE>>` completion signal instruction to system prompt.
 - **2026-07-16**: `ReadTool` returned bare joined lines with no line numbers, forcing `bash`/`cat -n` fallback to locate lines → `read.py` now emits `cat -n` style `{lineno:6d}\t{line}` output.
 - **2026-07-14**: `/wd` didn't refresh sidebar model on project switch → added `model_id` to `AgentConfig`, `_cmd_wd` now refreshes sidebar and detects model changes.
 - **2026-07-14**: `X[c].dtype == object` misclassified pandas 3.0.3 string columns, crashed `SimpleImputer` → switched to `pd.api.types.is_numeric_dtype(X[c])`.
 - **2026-07-14**: dagi_eval generator produced below-target oracle/baseline AUC (signal invisible to non-interacting baseline) → raised `NOISE_SCALE` to 2.0, added `MAIN_COEFS` linear term.
-- **2026-07-14**: git-bash `cd` fails on Windows-backslash paths; bare `conda` not on PATH → use forward-slash paths and full `conda.exe` path in this shell.
-- **2026-07-12**: git toolkit expanded 3→8 tools; `git_rollback` removed with no replacement — use `git_reset`+`git_checkout` on `dagi/*` branches.
-- **2026-07-12**: plan-work-review now commits per-subtask instead of once at plan end; DAGI never merges/deletes the `dagi/*` branch.
-- **2026-07-12**: README architecture tree was stale (old 3-tool git set) → updated to all 8 tools + `dagi/*` guard note.
-- **2026-07-12**: `shift+enter` unreliable in Windows Terminal (same bytes as `enter`) → added `ctrl+n`/`ctrl+enter` as newline aliases in `PromptInput`.
 
 ## Notes & Terms
 
 - **END_OF_RESPONSE / `<<END_OF_RESPONSE>>`**: Primary exit sentinel, checked before the legacy `<<TASK_END>>` alias; can appear anywhere in the response (substring check).
 - **continuation**: Harness injecting a `"continue"` message when the agent stops without a termination flag.
 - **compaction**: Pi-style summarization of the middle of `_messages` when context exceeds budget; preserves system prompt and recent tail. `_compact_context()` catches all exceptions — a failed compaction never crashes the session.
-- **tier**: One of `default`/`worker`/`plan` — three model slots in `config.yaml`, switched via `switch_model`. `provider_order` is per-model, read from the catalog entry.
+- **`unified_score`** (dagi_eval): efficiency-adjusted score per task, `normalize_perf(recorded, baseline, golden) / normalize_tokens(tokens_in+tokens_out)`, clamped to `MAX_UNIFIED_SCORE` (10.0). `normalize_perf` maps `recorded_score` to [0,1] using the canned `baseline_score` as the floor and canned `golden_score` as the ceiling (0 = no better than baseline, 1 = matches the handcrafted gold solution); `normalize_tokens` scales total tokens against `TOKEN_BUDGET_PER_TASK` (200k), floored at 0.05 so token-free canned rows don't divide-by-near-zero. Both reference scores are computed every run via `scoring.score_reference()` (fresh canned-solution timing, no LLM) regardless of which `--solver` produced `recorded_score`. Both constants live in `benchmarks/dagi_eval/scoring.py`, tunable.
+- **tier**: One of `default`/`worker`/`plan` — three model slots in `config.yaml`, switched via `switch_model`. `provider_order` is per-model, read from the catalog entry. `agent/tools.py` only registers the `switch_model` tool if `worker_config` or `advanced_config` is non-`None` on `AgentConfig` — a config with only `default_model` set never exposes the tool. `benchmarks/dagi_eval/harness.py` works around this without adding real tiers: it points `worker_config`/`advanced_config` back at a `dataclasses.replace()` copy of the resolved default config, so `switch_model` is callable but every tier resolves to the same model (a documented no-op) until distinct tiers are configured.
 - **GNHF**: "Good and not horrible feedback" — dagi's self-improvement workflow, notes at `.dagi/gnhf/notes.md`.
 - **memory-query / memory-add subagents**: grep + wiki-index traversal for retrieval; classify+write 5-field frontmatter nodes for writing. Both take a single `task` parameter — any other name produces an empty task string.
 - **`dagi/*` branch**: naming convention for branches auto-created on `enter_plan_mode`; the only prefix on which `git_add`/`git_commit`/`git_reset` are permitted. `_dagi_branch_guard()` only covers the dedicated git tools — raw `git` via `BashTool` bypasses it entirely (a nudge, not a security boundary).
@@ -108,7 +112,6 @@ tui.py / telegram_bot.py / main.py ← entry points (TUI | Telegram | one-shot)
 - **Escalation is a sidecar file, not live IPC**: `EscalateIssueTool` writes `<handoff-stem>_escalation.md`; `_subagent_runner.py`'s existing 2s poll loop picks it up. Resolving an escalation does not consume a retry attempt — only a completed FAIL verdict does.
 - **`__list__:` encoding**: non-string tool results are encoded as `"__list__:" + json.dumps(result)` in JSONL/callbacks — downstream consumers must know this prefix.
 - **Windows CRLF**: `EditTool`/`WriteTool` always write LF on disk (`newline="\n"`) and normalize `oldText`/`newText` before matching — prevents Windows' default `\n`→`\r\n` translation from corrupting files or doubling to `\r\r\n`.
-- **Harbor dual filesystem**: file tools operate on the Windows host; only `harbor_bash` routes into the Docker container.
 - **`read` tool output format**: `cat -n` style — each line prefixed `{1-indexed lineno:6d}\t{content}`; the line number is not part of the file and must be stripped before use as `oldText` in `edit`.
 - **`read` tool document support**: `.docx`/`.xlsx`/`.pptx` via optional `markitdown`; `.pdf` via optional `docling` (digital-native) or `ocrmypdf`+`docling` (scanned). All paths converge on the same `cat -n` numbering/offset/limit logic. PDF output includes a metadata header with cache path. `pages` parameter (PDF only) filters by `<!-- Page N -->` markers. Missing dependencies return friendly install-hint errors, never tracebacks.
 - **`read` tool auto-summarization gate**: when `ReadTool` is constructed with `reserve_tokens > 0` and `project_path`, a default `run()` call (offset=1, limit=2000) estimates full-doc token count (`len(full_text) // 4`); if it meets or exceeds `reserve_tokens`, `summarize_document()` is invoked and its result returned in place of raw lines. Falls back to raw text if the subagent returns `None`. Subagent `ReadTool` instances are constructed without `reserve_tokens` (stays 0) to prevent recursive summarization.
@@ -121,6 +124,7 @@ tui.py / telegram_bot.py / main.py ← entry points (TUI | Telegram | one-shot)
 - **Textual `clear_rule()` vs CSS-declared styles**: clearing an inline style rule (`styles.clear_rule("x")`) falls back to the class-level `DEFAULT_CSS` value if one exists, not `None` — a style must be set as an *inline* rule (e.g. in `__init__`) for `clear_rule()` to genuinely unset it. `StreamPreview.max_height` is set in `__init__` rather than `DEFAULT_CSS` for exactly this reason.
 - **Skill chain replacing `plan-work-review`**: the old monolithic skill is now four independent skills chained by prose ("invoke `plan` next", `skill("to-spec")`) — `grilling` (adversarial interrogation) → `plan` (orchestrates spec synthesis, exploration, plan-file authoring, approval) → `to-spec` (`disable-model-invocation: true`, conversation→`spec.md`) → `dagi-execute` (per-subtask write-tests/worker/review cycle, 2-attempt retry budget, escalation handling). Blind-oracle test model unchanged: only the review subagent sees test paths.
 - **`previous_branch`**: `AgentConfig.previous_branch` + `get_current_branch()` in `agent/_git_branch.py` capture the branch active before `enter_plan_mode` creates its `dagi/*` branch; `dagi-execute`'s Completion phase checks back out to it, guarded for `None` (plan mode entered outside a git repo).
+- **Telegram `allowed_chat_ids`**: defaults to an empty `frozenset` (open to anyone) for backwards compatibility with existing single-user deployments — `TelegramBot.__init__` logs a `warning` on startup whenever it's empty rather than refusing to run. Set `TELEGRAM_ALLOWED_CHAT_IDS` (comma-separated) to actually restrict access.
 
 ---
 
@@ -147,7 +151,7 @@ tui.py / telegram_bot.py / main.py ← entry points (TUI | Telegram | one-shot)
 - Base64 image data inflates compaction prompts and `session_end` JSONL records with raw base64 noise.
 - Session cost tracking is almost always blank — most providers don't populate `usage.cost`.
 - `/hist` in TUI is broken — writes to a `rich.Console` behind Textual's canvas instead of `ConversationPane`.
-- DAGI Eval Benchmark has never been run with `--solver agent` against a real model.
+- DAGI Eval Benchmark first real `--solver agent` run (hy3:free) scored well on speedup (123x, 65x, 359x) but never invoked plan mode despite it being available — tool description and system prompt were the bottleneck, not the model.
 - `_parse_frontmatter` is duplicated verbatim between `agent/skills.py` and `agent/workflows.py`.
 - `disable-model-invocation` SKILL.md frontmatter flag has zero code-level enforcement in `agent/skills.py` — purely advisory, any phrasing can still trigger a skill meant to be programmatic-only.
 
@@ -157,4 +161,3 @@ tui.py / telegram_bot.py / main.py ← entry points (TUI | Telegram | one-shot)
 - Session replay / dry-run mode — JSONL logs already have everything needed for deterministic replay.
 - Parallel subagent dispatch — no architectural change needed, `spawn_*` already supports concurrent calls.
 - Bootstrap a real GNHF self-review run against the 240+ accumulated session logs.
-- Run a full Terminal-bench 2 / Harbor benchmark pass — currently smoke-tested only (1 task).

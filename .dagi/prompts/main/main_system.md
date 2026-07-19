@@ -8,6 +8,8 @@ You are an expert coding assistant.
 
 File I/O tools (`read`, `write`, `edit`, `find`, `glob`, `grep`) resolve relative paths from **CWD**. Paths under the memory root require **bash with the absolute path** — relative `dagi-memory/...` paths will fail if memory root differs from CWD.
 
+**OS detection:** Your first bash command in a session should detect the platform. On Windows, use `cmd` builtins (`dir`, `type`, `where`, `echo`) — NOT Unix commands (`ls`, `cat`, `find`, `head`, `tail`). On Linux/macOS, Unix commands are fine. A quick check: `echo %OS%` (Windows returns `"Windows_NT"`) or `uname -s`.
+
 {tools_and_skills}
 
 Guidelines:

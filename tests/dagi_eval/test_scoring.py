@@ -101,3 +101,33 @@ def test_score_ds_happy_path(tmp_path):
     assert res["error"] is None
     assert res["auc"] == pytest.approx(1.0)
     assert res["ds_score"] == pytest.approx(2.5)
+
+
+# ── unified-score helpers ───────────────────────────────────────────────
+def test_normalize_perf_baseline_and_gold_bounds():
+    assert scoring.normalize_perf(1.0, 1.0, 5.0) == pytest.approx(0.0)
+    assert scoring.normalize_perf(5.0, 1.0, 5.0) == pytest.approx(1.0)
+    assert scoring.normalize_perf(3.0, 1.0, 5.0) == pytest.approx(0.5)
+
+
+def test_normalize_perf_clamps_outside_range():
+    assert scoring.normalize_perf(0.0, 1.0, 5.0) == 0.0    # worse than baseline
+    assert scoring.normalize_perf(10.0, 1.0, 5.0) == 1.0   # beats gold
+
+
+def test_normalize_perf_none_on_missing_or_degenerate():
+    assert scoring.normalize_perf(None, 1.0, 5.0) is None
+    assert scoring.normalize_perf(2.0, None, 5.0) is None
+    assert scoring.normalize_perf(2.0, 1.0, 1.0) is None  # no spread to score against
+
+
+def test_normalize_tokens_floor_and_scale():
+    assert scoring.normalize_tokens(0) == pytest.approx(0.05)
+    assert scoring.normalize_tokens(scoring.TOKEN_BUDGET_PER_TASK) == pytest.approx(1.0)
+
+
+def test_unified_score_combines_and_clamps():
+    assert scoring.unified_score(1.0, 1.0) == pytest.approx(1.0)
+    assert scoring.unified_score(None, 1.0) is None
+    # tiny token spend on a good score would blow past 1.0 — clamped
+    assert scoring.unified_score(1.0, 0.05) == pytest.approx(scoring.MAX_UNIFIED_SCORE)

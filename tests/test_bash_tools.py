@@ -37,17 +37,6 @@ class TestBashCoexistence:
         names = {n for n, _ in reg.list_tools()}
         assert "bash" in names
 
-    def test_harbor_bash_name_is_harbor_bash(self):
-        """HarborBashTool.name must be 'harbor_bash', not 'bash'."""
-        from benchmarks.harbor.bash_tool import HarborBashTool
-        tool = HarborBashTool(exec_fn=lambda c, t: "")
-        assert tool.name == "harbor_bash"
-
-    def test_tmux_bash_importable_from_tools(self):
-        """tools.tmux_bash.TmuxBashTool must be importable and have name 'tmux_bash'."""
-        from tools.tmux_bash import TmuxBashTool
-        assert TmuxBashTool.name == "tmux_bash"
-
     def test_hanging_command_is_bounded_by_default_timeout(self):
         """A command with no explicit timeout must not hang forever.
 

@@ -50,7 +50,12 @@ def main(
         raise typer.Exit(1)
 
     project_path = Path(project).resolve() if project else None
-    bot = TelegramBot(token=token, model_id=model, project_path=project_path)
+    bot = TelegramBot(
+        token=token,
+        model_id=model,
+        project_path=project_path,
+        allowed_chat_ids=tg_config.allowed_chat_ids,
+    )
     bot.run()
 
 

@@ -9,8 +9,11 @@ EXIT_PLAN_MODE_SENTINEL = "__EXIT_PLAN_MODE__"
 class EnterPlanModeTool(BaseTool):
     name = "enter_plan_mode"
     description = (
-        "Enter plan mode. Restricts tools to read-only plus plan-file write. "
-        "Creates a git branch for the task."
+        "Think before you code. Switches to a structured planning phase where "
+        "you outline your approach, identify edge cases, and design your "
+        "solution before writing any implementation. Produces higher-quality "
+        "first attempts and fewer debug iterations. Use this at the start of "
+        "complex tasks — especially when correctness semantics are subtle."
     )
     _parameters = {
         "type": "object",

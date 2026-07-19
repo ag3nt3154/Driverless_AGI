@@ -32,14 +32,26 @@ class TelegramBot:
         token: str,
         model_id: str | None = None,
         project_path: Path | None = None,
+        allowed_chat_ids: frozenset[int] | None = None,
     ) -> None:
         self._token = token
         self._model_id = model_id
         self._project_path = (
             project_path.resolve() if project_path else Path.cwd()
         )
+        self._allowed_chat_ids = allowed_chat_ids or frozenset()
         self._sessions = SessionManager()
         self._event_loop: asyncio.AbstractEventLoop | None = None
+        if not self._allowed_chat_ids:
+            logger.warning(
+                "TELEGRAM_ALLOWED_CHAT_IDS is not set — this bot will respond "
+                "to any Telegram user who finds it, including running shell "
+                "commands. Set TELEGRAM_ALLOWED_CHAT_IDS (comma-separated chat "
+                "IDs) to restrict access."
+            )
+
+    def _is_authorized(self, chat_id: int) -> bool:
+        return not self._allowed_chat_ids or chat_id in self._allowed_chat_ids
 
     def run(self) -> None:
         """Start the bot (blocking). Sets up handlers and begins polling."""
@@ -63,6 +75,8 @@ class TelegramBot:
     async def _cmd_start(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> None:
+        if not self._is_authorized(update.effective_chat.id):
+            return
         await update.message.send_chat_action(ChatAction.TYPING)
         await update.message.reply_text(
             "Bonjour, Admiral! DAGI is at your service.\n\n"
@@ -76,6 +90,8 @@ class TelegramBot:
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> None:
         chat_id = update.effective_chat.id
+        if not self._is_authorized(chat_id):
+            return
         session = self._sessions.get_or_create(chat_id)
         if session.busy:
             await update.message.reply_text(
@@ -88,6 +104,8 @@ class TelegramBot:
     async def _cmd_help(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> None:
+        if not self._is_authorized(update.effective_chat.id):
+            return
         await update.message.reply_text(
             "DAGI Telegram Bot\n\n"
             "Send any message to give DAGI a task.\n"
@@ -104,6 +122,9 @@ class TelegramBot:
     ) -> None:
         """Route incoming text: answer pending ask_user or dispatch new task."""
         chat_id = update.effective_chat.id
+        if not self._is_authorized(chat_id):
+            logger.warning("Rejected message from unauthorized chat_id %s", chat_id)
+            return
         text = update.message.text or ""
         session = self._sessions.get_or_create(chat_id)
 
@@ -130,6 +151,7 @@ class TelegramBot:
 
         await update.message.send_chat_action(ChatAction.TYPING)
 
+        loop = None
         try:
             config = resolve_model_config(
                 self._model_id, project_path=self._project_path

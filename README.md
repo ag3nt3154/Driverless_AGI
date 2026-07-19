@@ -156,10 +156,16 @@ Chat with DAGI from your phone via Telegram. Requires a bot token from [@BotFath
    ```env
    TELEGRAM_BOT_TOKEN=123456:ABC-DEF...
    ```
-3. Optionally add to `config.yaml`:
+3. **Restrict access** — find your numeric Telegram chat ID (message [@userinfobot](https://t.me/userinfobot)) and add it to `.env`:
+   ```env
+   TELEGRAM_ALLOWED_CHAT_IDS=123456789,987654321
+   ```
+   ⚠️ If left unset, the bot accepts commands — including shell access via DAGI's `bash` tool — from *anyone* who finds it on Telegram. The bot logs a warning at startup if this is unset.
+4. Optionally add to `config.yaml`:
    ```yaml
    telegram:
      bot_token_env: TELEGRAM_BOT_TOKEN
+     allowed_chat_ids_env: TELEGRAM_ALLOWED_CHAT_IDS
    ```
 
 **Run:**
@@ -698,9 +704,7 @@ Logs are append-only JSONL — each line is a self-contained JSON record.
 versions/models: 5 coding-speedup tasks (write a faster program than a
 supplied working-but-naive baseline, scored on correctness + wall-clock
 speedup) and 1 data-science task (train the best model you can on a frozen
-tabular dataset, scored on ROC-AUC). There is **no composite score** —
-results are a scorecard row (`coding_score`, `ds_score`, wall time, tokens,
-cost) appended to `benchmarks/dagi_eval/results.jsonl`, not a single number.
+tabular dataset, scored on ROC-AUC).
 
 **Running a real benchmark:**
 
@@ -708,10 +712,30 @@ cost) appended to `benchmarks/dagi_eval/results.jsonl`, not a single number.
 conda run -n dagi python -m benchmarks.dagi_eval.run --model <id> --label "<note>"
 ```
 
-`--model` selects an entry from `benchmarks/config_dagi_eval.yaml`. Omit
-`--task` to run all 6 tasks, or pass `--task <name>` (repeatable) to run a
-subset. Each run appends one row to `benchmarks/dagi_eval/results.jsonl`
-(default path; override with the hidden `--results` flag).
+`--model` selects an entry from `benchmarks/dagi_eval/config_dagi_eval.yaml`.
+Omit `--task` to run all 6 tasks, or pass `--task <name>` (repeatable) to run
+a subset.
+
+**Output — one self-contained folder per run:**
+
+Every invocation creates `.dagi/benchmarks/dagi_eval/logs/<timestamp>_log/`:
+
+```
+result.jsonl        one row per task, plus a final "__aggregate__" row
+code/<task_name>/   copy of that task's final workspace, exactly as scored
+sessions/<task_name>/session_*.jsonl   agent transcripts (--solver agent only)
+```
+
+Each per-task row always carries `baseline_score` and `golden_score` —
+scored fresh from the canned naive/gold solutions regardless of which
+`--solver` produced `recorded_score` (neither canned solution invokes the
+LLM, so this costs no tokens) — plus `unified_score`, an efficiency-adjusted
+score in `[0, MAX_UNIFIED_SCORE]`: `normalized_perf` maps `recorded_score`
+to `[0, 1]` using `baseline_score` as the floor and `golden_score` as the
+ceiling (0 = no better than baseline, 1 = matches the handcrafted gold
+solution), divided by `normalized_tokens` (total tokens scaled against a
+tunable per-task budget). See `benchmarks/dagi_eval/scoring.py` for the exact
+constants/formulas.
 
 **Self-test mode (no LLM calls, no cost):**
 
@@ -721,7 +745,7 @@ conda run -n dagi python -m benchmarks.dagi_eval.run --solver gold  --label "sel
 ```
 
 `--solver naive|gold` runs a canned reference solution instead of the real
-agent — `naive` re-runs each task's own baseline (sanity check: speedups
+agent — `naive` re-runs each task's own baseline (sanity check: `speedup`
 should land near 1.0, `ds_score` near 1.0) and `gold` runs each task's
 reference fast solution (every coding speedup should clear that task's
 `gold_min_speedup` from its `task.yaml`, and `ds_score` should be ≥ 1.3).
@@ -741,66 +765,6 @@ the benchmark's difficulty across runs.
 See `docs/superpowers/specs/2026-07-06-dagi-eval-benchmark-design.md` for
 the full design rationale and `docs/superpowers/plans/2026-07-06-dagi-eval-benchmark.md`
 for the implementation plan.
-
-### Harbor Framework (89-task Terminal Benchmark)
-
-DAGI includes an adapter for the [Harbor Framework](https://harborframework.com) benchmark suite.
-
-**Prerequisites**
-
-- Docker running locally
-- `harbor` CLI installed (`pip install harbor-ai`)
-- `benchmarks/config_benchmark.yaml` (already present; add model entries or override settings as needed)
-
-**Setup**
-
-```yaml
-# config_benchmark.yaml (excerpt)
-default_model: claude-sonnet-openrouter
-max_continuations: 30
-system_prompt_preamble: |
-  ## Harbor Environment
-  You are running inside a Harbor benchmark task. All task files live inside a Docker
-  container. Use harbor_bash for ALL file access (ls, cat, etc.). Your first action
-  MUST be harbor_bash("ls /app"). Never call enter_plan_mode.
-tools:
-  - harbor_bash
-  - read
-  - find
-  - grep
-  - write
-  - edit
-  - ask_user
-models:
-  claude-sonnet-openrouter:
-    name: "Claude Sonnet (OpenRouter)"
-    model: "anthropic/claude-sonnet-4-5"
-    api_url: "https://openrouter.ai/api/v1"
-    api_key_env: "OPENROUTER_API_KEY"
-```
-
-**Running**
-
-```bat
-set DAGI_BENCH_MODEL=claude-sonnet-openrouter
-benchmarks\run_harbor.bat
-```
-
-Or for a single-task smoke test:
-
-```bat
-set DAGI_BENCH_MODEL=claude-sonnet-openrouter
-set HARBOR_DATASET=terminal-bench/terminal-bench-2@latest
-conda run -n dagi harbor run --agent-import-path benchmarks.harbor.agent:DagiAgent --n-tasks 1
-```
-
-**Key implementation notes**
-
-- `HarborBashTool` (`benchmarks/harbor/bash_tool.py`, `name="harbor_bash"`) routes all commands to the Docker container via `environment.exec()`. Only this tool reaches the container — DAGI's built-in `bash` tool runs on the Windows host.
-- The `system_prompt_preamble` field in `benchmarks/config_benchmark.yaml` is injected first in the system prompt (before soul/agents.md), telling the agent to use `harbor_bash` for all file I/O and to start with `ls /app`.
-- `config.project_path` is set to a fresh `tempfile.mkdtemp()` directory so that DAGI's file tools return nothing — nudging the model toward `harbor_bash` rather than host file tools.
-- The dataset is `terminal-bench/terminal-bench-2@latest` (OCI package registry, no auth required).
-- A full 89-task run has not yet been performed; only single-task smoke tests are confirmed working.
 
 ---
 

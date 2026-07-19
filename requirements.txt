@@ -42,7 +42,7 @@ markitdown>=0.1.0       # Converts DOCX/XLSX/PPTX to markdown text
 # ── Optional: PDF reading ────────────────────────────────────────────────────
 # Install to enable PDF reading in the `read` tool.
 # dagi starts and runs without these; PDF files return a friendly error message.
-docling>=2.0             # IBM deep-learning document converter (TableFormer for tables)
-pymupdf>=1.24            # Scanned-vs-digital PDF detection (text extraction probe)
+docling>=2.75             # IBM deep-learning document converter (TableFormer for tables); floor pulls in docling-core>=2.74.1 (fixes CVE-2026-24009, CVE-2026-44023)
+pymupdf>=1.26.6          # Scanned-vs-digital PDF detection (text extraction probe); floor fixes CVE-2026-3029
 ocrmypdf>=16.0           # Tesseract-based OCR overlay for scanned PDFs
 # NOTE: ocrmypdf requires the `tesseract` system binary — install via your OS package manager.

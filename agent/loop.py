@@ -170,8 +170,7 @@ class AgentConfig:
     tools: list[str] | None = None
     # Sandbox mode: when True, file tools have no path restrictions (allowed_roots=None).
     sandbox_mode: bool = False
-    # Harbor / benchmark environment preamble injected at the TOP of the system prompt.
-    # Set in config_benchmark.yaml to tell the agent about the container environment.
+    # Benchmark/sandbox environment preamble injected at the TOP of the system prompt.
     system_prompt_preamble: str = ""
     # OpenRouter provider routing: ordered list of provider slugs to try in sequence
     # (e.g. ["Anthropic", "Together"]). None means use OpenRouter's default load balancing.

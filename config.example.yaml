@@ -108,7 +108,6 @@ sandbox_mode: false  # true  = file tools (read, write, edit, grep, find, copy) 
 #   - copy                    # Copy files or directories
 #   # ── Shell tools ─────────────────────────────────────────────────────────────
 #   - bash                    # Run arbitrary shell commands
-#   - tmux_bash               # Run commands in a persistent tmux session
 #   # ── Git tools ────────────────────────────────────────────────────────────────
 #   - git_status              # Show current git status / diff
 #   - git_commit              # Stage and commit changes
@@ -191,6 +190,19 @@ models:
     name: DeepSeek v4 Pro (OpenRouter)
     thinking: high    # Example of a per-model thinking override
 
+  # ── Free-tier models (OpenRouter) ──────────────────────────────────────
+  hy3-free-openrouter:
+    api_key_env: OPENROUTER_API_KEY
+    api_url: https://openrouter.ai/api/v1
+    model: tencent/hy3:free
+    name: Hunyuan 3 Free (OpenRouter)
+
+  nemotron-ultra-free-openrouter:
+    api_key_env: OPENROUTER_API_KEY
+    api_url: https://openrouter.ai/api/v1
+    model: nvidia/nemotron-3-ultra-550b-a55b:free
+    name: Nemotron Ultra Free (OpenRouter)
+
   # ── Local model example (LM Studio, Ollama, llama.cpp, etc.) ──────────────
   # local_model:
   #   api_key_env: OPENAI_API_KEY   # Most local servers ignore this; set to any non-empty value
@@ -217,3 +229,8 @@ models:
 #
 # telegram:
 #   bot_token_env: TELEGRAM_BOT_TOKEN  # env var holding your bot token (from @BotFather)
+#   allowed_chat_ids_env: TELEGRAM_ALLOWED_CHAT_IDS  # env var: comma-separated chat IDs allowed to use the bot
+#
+# Set TELEGRAM_ALLOWED_CHAT_IDS in your .env (e.g. "123456789,987654321").
+# WARNING: if left unset, the bot accepts commands (including shell access) from
+# anyone who finds it on Telegram — a startup warning is logged when this happens.

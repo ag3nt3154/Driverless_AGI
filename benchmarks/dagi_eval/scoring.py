@@ -23,6 +23,12 @@ TIMING_RUNS = 5
 AGENT_CALL_TIMEOUT_S = 120    # per spec: per-call cap for agent solutions
 BASELINE_CALL_TIMEOUT_S = 300  # baselines are slow by design — generous cap
 
+# Unified-score tunables (see normalize_perf/normalize_tokens/unified_score
+# below). Both are deliberately simple constants rather than per-task config —
+# adjust here if the scale stops being useful.
+TOKEN_BUDGET_PER_TASK = 200_000  # tokens (in+out) that map normalized_tokens -> 1.0
+MAX_UNIFIED_SCORE = 10.0          # clamp so token-free canned rows don't blow up the scale
+
 
 def load_task_meta(task_dir: Path) -> dict:
     return yaml.safe_load((task_dir / "task.yaml").read_text(encoding="utf-8"))
@@ -66,6 +72,25 @@ def run_entry(code_dir: Path, module: str, func: str, input_dir: Path, *,
     return json.loads(out_json.read_text(encoding="utf-8"))
 
 
+def ensure_hidden_data(task_dir: Path) -> str | None:
+    """Generate hidden/data/ on first use if the task has a make_inputs.py.
+
+    make_inputs.py is seeded/deterministic, so re-running it is a no-op in
+    effect; this just makes sure it has run at least once on this machine
+    (hidden/data/ is gitignored, so a fresh clone never has it). Returns an
+    error string on failure, else None.
+    """
+    maker = task_dir / "hidden" / "make_inputs.py"
+    data = task_dir / "hidden" / "data"
+    if not maker.exists() or data.exists():
+        return None
+    proc = subprocess.run([sys.executable, str(maker.resolve())],
+                          capture_output=True, text=True, timeout=600)
+    if proc.returncode != 0:
+        return f"make_inputs.py failed: {(proc.stderr or '')[-1000:]}"
+    return None
+
+
 def score_coding_task(task_dir: Path, workspace: Path) -> dict:
     """Correctness gate on hidden cases, then speedup vs fresh-timed baseline."""
     meta = load_task_meta(task_dir)
@@ -74,6 +99,11 @@ def score_coding_task(task_dir: Path, workspace: Path) -> dict:
     baseline = task_dir / "hidden" / "baseline"
     result = {"speedup": 0.0, "correct": False, "error": None,
               "agent_time_s": None, "baseline_time_s": None}
+
+    gen_error = ensure_hidden_data(task_dir)
+    if gen_error:
+        result["error"] = gen_error
+        return result
 
     if not data.exists():
         result["error"] = (f"hidden data missing — run: conda run -n dagi python "
@@ -184,3 +214,57 @@ def score_ds_task(task_dir: Path, workspace: Path) -> dict:
     result["auc"] = round(auc, 4)
     result["ds_score"] = round((auc - 0.5) / (meta["baseline_auc"] - 0.5), 3)
     return result
+
+
+def score_reference(task_dir: Path, kind: str, variant: str) -> dict:
+    """Score the canned baseline or gold solution fresh, as a reference point
+    for unified_score's normalization floor/ceiling.
+
+    Neither variant invokes the agent/LLM — apply_canned_solver only overlays
+    files (gold) or leaves the pristine copy in place (baseline) — so this is
+    the same cost profile as the baseline re-timing score_coding_task already
+    does on every call, just run once more against a second temp workspace.
+    """
+    from benchmarks.dagi_eval import harness  # local import: harness has no
+    # dependency on scoring, so this can't create an import cycle; kept local
+    # so `import scoring` alone (as in tests) stays lightweight.
+
+    ws = harness.prepare_workspace(task_dir)
+    harness.apply_canned_solver(ws, task_dir, variant, kind)
+    if kind == "coding":
+        res = score_coding_task(task_dir, ws)
+        return {"score": res["speedup"], "error": res["error"]}
+    res = score_ds_task(task_dir, ws)
+    return {"score": res["ds_score"], "error": res["error"]}
+
+
+def normalize_perf(recorded: float | None, baseline: float | None,
+                   golden: float | None) -> float | None:
+    """Map a recorded score to [0, 1] using baseline as the floor and the
+    handcrafted gold solution as the ceiling: 0 = no better than baseline,
+    1 = matches gold. Clamped, so beating gold still reports 1.0. Returns
+    None if any input is missing or gold/baseline have no measurable spread
+    (e.g. a reference run errored)."""
+    if recorded is None or baseline is None or golden is None:
+        return None
+    span = golden - baseline
+    if span == 0:
+        return None
+    return max(0.0, min(1.0, (recorded - baseline) / span))
+
+
+def normalize_tokens(tokens_total: int, budget: int = TOKEN_BUDGET_PER_TASK) -> float:
+    """Tokens (in+out) scaled so `budget` tokens -> 1.0. Floored at 0.05 so
+    token-free canned solver rows (baseline/gold, 0 tokens) don't divide by
+    (near) zero in unified_score."""
+    return max(tokens_total / budget, 0.05)
+
+
+def unified_score(normalized_perf_score: float | None,
+                  normalized_token_score: float) -> float | None:
+    """Efficiency-adjusted score: how much of gold's headroom over baseline
+    was captured, per unit of normalized token spend. None if normalize_perf
+    returned None (no valid reference spread to score against)."""
+    if normalized_perf_score is None:
+        return None
+    return round(min(normalized_perf_score / normalized_token_score, MAX_UNIFIED_SCORE), 4)

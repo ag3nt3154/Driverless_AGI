@@ -109,19 +109,39 @@ def test_ds_task_gold_solver_beats_baseline():
 
 
 def test_cli_end_to_end_naive_on_fixture(tmp_path):
-    results = tmp_path / "results.jsonl"
+    runs_dir = tmp_path / "runs"
     repo_root = Path(__file__).resolve().parents[2]
     proc = subprocess.run(
         [sys.executable, "-m", "benchmarks.dagi_eval.run",
          "--solver", "naive", "--task", "fixture_task",
-         "--tasks-dir", str(FIXTURE.parent), "--results", str(results),
+         "--tasks-dir", str(FIXTURE.parent), "--runs-dir", str(runs_dir),
          "--label", "e2e-test"],
         capture_output=True, text=True, cwd=repo_root, timeout=600)
     assert proc.returncode == 0, proc.stderr
-    rows = [json.loads(l) for l in results.read_text(encoding="utf-8").splitlines()]
-    assert len(rows) == 1
-    row = rows[0]
-    assert row["solver"] == "naive"
-    assert row["label"] == "e2e-test"
-    assert row["coding_tasks"]["fixture_task"]["correct"] is True
-    assert 0.3 <= row["coding_score"] <= 3.0
+
+    run_dirs = list(runs_dir.iterdir())
+    assert len(run_dirs) == 1
+    run_dir = run_dirs[0]
+    assert run_dir.name.endswith("_log")
+
+    rows = [json.loads(l) for l in
+            (run_dir / "result.jsonl").read_text(encoding="utf-8").splitlines()]
+    assert len(rows) == 2  # one per-task row + one __aggregate__ row
+    task_row, agg_row = rows
+
+    assert task_row["task"] == "fixture_task"
+    assert task_row["solver"] == "naive"
+    assert task_row["label"] == "e2e-test"
+    assert task_row["correct"] is True
+    # naive solver == the baseline, so recorded_score should track baseline_score
+    assert task_row["baseline_score"] is not None
+    assert 0.3 <= task_row["recorded_score"] <= 3.0
+    # gold reference is scored fresh too, with no LLM involved
+    assert task_row["golden_score"] is not None and task_row["golden_score"] > 2.0
+    assert task_row["unified_score"] is not None
+
+    assert agg_row["task"] == "__aggregate__"
+    assert 0.3 <= agg_row["coding_score"] <= 3.0
+
+    # code/<task_name>/ is a self-contained copy of what was actually scored
+    assert (run_dir / "code" / "fixture_task" / "pipeline.py").exists()

@@ -199,3 +199,4 @@ jobs/*
 .worktrees/
 
 benchmarks/dagi_eval/tasks/*/hidden/data/
+benchmarks/dagi_eval/logs/
