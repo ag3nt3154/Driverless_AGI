@@ -1,10 +1,0 @@
-Loading weights:   0%|          | 0/770 [00:00<?, ?it/s]Loading weights:  17%|#7        | 132/770 [00:00<00:00, 1316.90it/s]Loading weights:  34%|###4      | 264/770 [00:00<00:00, 1066.24it/s]Loading weights:  49%|####8     | 374/770 [00:00<00:00, 1077.72it/s]Loading weights:  63%|######2   | 484/770 [00:00<00:00, 1047.19it/s]Loading weights:  77%|#######7  | 596/770 [00:00<00:00, 1070.91it/s]Loading weights:  91%|#########1| 704/770 [00:00<00:00, 1064.07it/s]Loading weights: 100%|##########| 770/770 [00:00<00:00, 1080.92it/s]
-HF_HUB_OFFLINE=1 
-artifacts_path exists: True
-expected repo dir exists: True
-expected repo dir: C:\Users\alexr\Driverless_AGI\docling-models\docling-project--docling-layout-heron
-RESOLVED layout artifact_path: C:\Users\alexr\Driverless_AGI\docling-models\docling-project--docling-layout-heron
-config.json present: True
-model.safetensors present: True
-LayoutModel instantiated OFFLINE: True
-layout_predictor type: LayoutPredictor

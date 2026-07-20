@@ -13,10 +13,13 @@ from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
 from typing import NamedTuple
 
+from agent import DAGI_ROOT
 from agent.config_loader import load_pdf_config
 from tools._hash_cache import cache_path, get_or_compute
 
 _PAGE_MARKER_RE = re.compile(r"<!-- Page (\d+) -->")
+_DOCLING_ARTIFACTS_PATH = DAGI_ROOT / "models" / "docling_models"
+_PAGE_BREAK_SENTINEL = "\x00DAGI_PAGE_BREAK\x00"
 
 
 def parse_page_spec(spec: str) -> set[int]:
@@ -212,11 +215,23 @@ def _convert_pdf_digital(pdf_path: Path) -> str:
         )
     pipeline_options = PdfPipelineOptions()
     pipeline_options.do_ocr = False
+    # Layout (heron) and TableFormer weights are vendored under models/docling_models --
+    # setting artifacts_path makes docling load them from disk instead of reaching out to
+    # Hugging Face on every call. Falls back to the default (HF download) if the vendored
+    # directory is missing, e.g. on a fresh checkout that hasn't fetched models yet.
+    if _DOCLING_ARTIFACTS_PATH.is_dir():
+        pipeline_options.artifacts_path = _DOCLING_ARTIFACTS_PATH
     converter = DocumentConverter(
         format_options={InputFormat.PDF: PdfFormatOption(pipeline_options=pipeline_options)}
     )
     result = converter.convert(str(pdf_path))
-    return result.document.export_to_markdown()
+    # docling's page_break_placeholder is a flat separator with no page numbers of its
+    # own -- split on a sentinel unlikely to occur in real content, then number each
+    # page ourselves. Numbering restarts at 1 per call; _renumber_markers() shifts a
+    # chunk's local numbers to global ones under the parallel conversion path.
+    raw = result.document.export_to_markdown(page_break_placeholder=_PAGE_BREAK_SENTINEL)
+    pages = raw.split(_PAGE_BREAK_SENTINEL)
+    return "".join(f"<!-- Page {i} -->\n\n{page.strip()}\n\n" for i, page in enumerate(pages, start=1))
 
 
 def _convert_pdf_scanned(pdf_path: Path, cache_dir: Path, jobs: int | None = None) -> str:
