@@ -4,7 +4,7 @@ scripts/verify_pdf_env.py — Eagerly import every PDF-conversion dependency.
 docling, torch, onnxruntime, and rapidocr are all imported lazily by
 tools/_pdf_convert.py, so a broken install (e.g. a missing Windows DLL) only
 surfaces the first time someone reads a PDF, deep inside a worker process.
-Run this right after `pip install -r requirements.txt` to catch that at
+Run this right after `pip install -e ".[pdf]"` to catch that at
 setup time instead, with a diagnosis attached.
 """
 from __future__ import annotations

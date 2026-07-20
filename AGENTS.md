@@ -1,6 +1,6 @@
 # AGENTS.md
 
-> Last updated: 2026-07-20 (PDF read tool verified end-to-end for digital + scanned PDFs; local docling model wiring + page-marker bug fixed) | [README](README.md) | [TODO](TODO.md)
+> Last updated: 2026-07-20 (dependency install consolidated: `requirements.txt` retired, `pyproject.toml` is now the single source of truth) | [README](README.md) | [TODO](TODO.md)
 
 ---
 
@@ -81,7 +81,6 @@ tui.py / telegram_bot.py / main.py ← entry points (TUI | Telegram | one-shot)
 
 ## Errors Log
 
-- **2026-07-18**: `tui/callbacks.py`'s `on_ask_user` used `safety = None` when `timeout=None` (plan-mode default) — indefinite agent-thread hang if the TUI closed mid-question; `tg/callbacks.py` already had the `else 600` fix but `tui/callbacks.py` was missed → aligned both to `else 600`.
 - **2026-07-18**: `tg/bot.py:_run_agent_task`'s `finally` block referenced `loop` before it could be assigned if `resolve_model_config()`/`build_callbacks()` raised → `UnboundLocalError` masking the real exception → added `loop = None` before the `try`.
 - **2026-07-18**: `requirements.txt` floors (`pymupdf>=1.24`, `docling>=2.0`) permitted a clean install to resolve versions vulnerable to CVE-2026-3029/CVE-2026-24009/CVE-2026-44023 → bumped to `pymupdf>=1.26.6`, `docling>=2.75` (pulls docling-core>=2.74.1).
 - **2026-07-18**: `plan-work-review` decomposed into `grilling`→`plan`→`to-spec`→`dagi-execute`; `tui/commands.py:63` hardcoded `/plan` to invoke the deleted skill and was missed by all 8 per-task diffs (file untouched by any of them) → caught by a final whole-implementation review, fixed by removing the special case so `/plan` falls through to the generic `self._skill_map` dispatch.
@@ -90,6 +89,7 @@ tui.py / telegram_bot.py / main.py ← entry points (TUI | Telegram | one-shot)
 - **2026-07-19**: dagi_eval benchmark: agent never used `enter_plan_mode` (0 calls across 5 tasks) because tool description emphasized restrictions ("restricts tools") not benefits → rewritten to emphasize quality improvement. Agent also wasted ~13 iterations on Unix commands (`ls`, `find`) on Windows → added OS-detection instruction. Agent hit `continue_injected` on every task → added `<<END_OF_RESPONSE>>` completion signal instruction to system prompt.
 - **2026-07-16**: `ReadTool` returned bare joined lines with no line numbers, forcing `bash`/`cat -n` fallback to locate lines → `read.py` now emits `cat -n` style `{lineno:6d}\t{line}` output.
 - **2026-07-20**: `_convert_pdf_digital()` called docling's `export_to_markdown()` with no `page_break_placeholder`, so real output had zero `<!-- Page N -->` markers — broke `select_pages()`, `_renumber_markers()`, and `total_pages` in `read.py`; invisible to unit tests because the fake docling mocks bypassed the real call signature → split on a sentinel `page_break_placeholder` and number pages manually; updated ~14 test fixtures accordingly.
+- **2026-07-20**: `requirements.txt` and `pyproject.toml` had silently diverged for months — `pyproject.toml` was missing `typer`/`rich`/`textual` and still listed dead `nicegui`/`markdown`/`matplotlib` → retired `requirements.txt`, consolidated everything into `pyproject.toml` (core `dependencies` + `pdf`/`docs`/`web`/`benchmark`/`telegram` extras).
 - **2026-07-19**: dagi_eval sweeps looked stuck for minutes with zero console output — `build_task_row()` runs `scoring.score_reference()` twice (naive+gold) *before* the agent step and `score_coding_task()` again *after*, each re-timing the deliberately-slow O(n²) baseline `TIMING_RUNS` (5) times, with no progress logging anywhere in that path; separately, `log_callbacks.py` never wired `on_stream_start`/`on_assistant_text_delta`/`on_reasoning_delta` even though `config.stream` defaults `True`, so a turn's text only ever printed after the *entire* turn finished generating → added `print(f"[{name}] scoring ...")` lines around both reference/final scoring phases in `run.py`, and wired live raw-stdout delta printing into `build_cli_callbacks()`.
 
 ## Notes & Terms
@@ -107,7 +107,7 @@ tui.py / telegram_bot.py / main.py ← entry points (TUI | Telegram | one-shot)
 - **`api_key` vs `api_key_env`**: direct `api_key` in config.yaml overrides env var; empty string still falls through to env var.
 - **`supports_pause`**: gates error-pause behavior on `AgentCallbacks`, defaults `False`; TUI sets `True` explicitly (checking `on_pause is not lambda` would be fragile).
 - **TUI thread safety**: `AgentLoop` runs on a daemon thread; all widget mutations go through `App.call_from_thread()`. Sidebar uses plain instance attributes + `self.refresh()`, not Textual `reactive` (dict-content equality checks miss updates).
-- **`pyproject.toml` is incomplete**: `typer`, `rich`, `textual` are missing from declared deps — `pip install -e .` fails on a clean env for CLI/TUI use.
+- **Dependency install**: `pyproject.toml` is the single source of truth (as of 2026-07-20, replacing the retired `requirements.txt`) — core `dependencies` cover CLI/TUI/Telegram; `[project.optional-dependencies]` extras are `pdf`, `docs`, `web`, `benchmark`, `telegram`. Install via `pip install -e .` (core) or `pip install -e ".[pdf,docs,web,benchmark]"` (everything).
 - **Escalation is a sidecar file, not live IPC**: `EscalateIssueTool` writes `<handoff-stem>_escalation.md`; `_subagent_runner.py`'s existing 2s poll loop picks it up. Resolving an escalation does not consume a retry attempt — only a completed FAIL verdict does.
 - **`__list__:` encoding**: non-string tool results are encoded as `"__list__:" + json.dumps(result)` in JSONL/callbacks — downstream consumers must know this prefix.
 - **Windows CRLF**: `EditTool`/`WriteTool` always write LF on disk (`newline="\n"`) and normalize `oldText`/`newText` before matching — prevents Windows' default `\n`→`\r\n` translation from corrupting files or doubling to `\r\r\n`.

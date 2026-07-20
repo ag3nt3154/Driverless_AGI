@@ -26,8 +26,8 @@ tasks:
 
   - name: "dependency-check"
     prompt: >
-      Check pyproject.toml and requirements.txt for outdated or vulnerable
-      dependencies. Search for recent CVEs affecting installed packages.
+      Check pyproject.toml for outdated or vulnerable dependencies.
+      Search for recent CVEs affecting installed packages.
       If any are found, add them to TODO.md under the CRITICAL section.
     interval: 604800.0
     project_path: "C:/Users/alexr/Driverless_AGI"

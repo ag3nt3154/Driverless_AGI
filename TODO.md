@@ -2,6 +2,7 @@
 
 ## Completed
 
+- **Retired `requirements.txt` in favor of a single-source `pyproject.toml`** · `done` · `2026-07-20` — `pyproject.toml` now declares the full dependency set as core `dependencies` plus `pdf`/`docs`/`web`/`benchmark`/`telegram` optional-dependency groups (mirroring `requirements.txt`'s prior comments/floors); `requirements.txt` deleted. Updated install instructions in `README.md` (`pip install -e .` / `pip install -e ".[extra]"`), the `scripts/verify_pdf_env.py` docstring, and the `dependency-check` scheduled-task prompt in `.dagi/scheduler/schedule.example.yaml`. Also removed README's stale `pip install langchain` troubleshooting advice while touching that section.
 - **PDF read tool verified end-to-end offline (digital + scanned) and a real page-marker bug fixed** · `done` · `2026-07-20` — generated `tests/fixtures/pdf/{sample_digital,sample_scanned}.pdf` fixtures; wired `_convert_pdf_digital` to load TableFormer/heron weights from `models/docling_models` via `PdfPipelineOptions.artifacts_path` (falls back to HF download if absent); fixed `dagi` conda env (missing `libcurl` dependency broke `tesseract.exe`; `TESSDATA_PREFIX` dir was missing `configs`/`tessconfigs` subfolders, breaking ocrmypdf) and downloaded the missing `tableformer_accurate.safetensors` weight file; fixed a real bug where `_convert_pdf_digital` never passed `page_break_placeholder` to `export_to_markdown()`, so real conversions produced zero `<!-- Page N -->` markers (broke `select_pages`, `_renumber_markers`, and the `total_pages` count in `read.py`) — invisible to unit tests since the docling mocks bypassed the real call signature; verified via `HF_HUB_OFFLINE=1` smoke tests through both `convert_pdf()` and `ReadTool.run()`. Known non-blocking limitation: the synthetic hand-drawn table in the digital fixture isn't recognized as table structure by TableFormer (real-world PDF tables are unaffected).
 - **No way to catch a broken PDF-dep install (missing Windows DLL) before first PDF read** · `done` · `2026-07-20` — new `scripts/verify_pdf_env.py` eagerly imports docling/torch/onnxruntime/rapidocr/ocrmypdf and reports a VC++ Redistributable hint on Windows DLL-load failures; wired into `README.md` setup + troubleshooting.
 - **dagi_eval benchmark: per-run output folders with baseline/gold/unified scoring** · `done` · `2026-07-19` — every `run.py` invocation now creates `.dagi/benchmarks/dagi_eval/logs/<ts>_log/` with `result.jsonl` (per-task rows + `__aggregate__` row), `code/<task>/` copies of the actually-scored solution, and `sessions/<task>/` transcripts; every task always scores cheap no-LLM `baseline_score`/`golden_score` references alongside `recorded_score`, combined into `unified_score` via `scoring.normalize_perf`/`normalize_tokens`.
@@ -223,10 +224,10 @@
   - **Fix:** Add `shutil.rmtree(ws, ignore_errors=True)` in a `finally` block in both `build_task_row` (after `save_task_code` copies the workspace) and `score_reference` (after scoring completes). Or switch to `tempfile.TemporaryDirectory` as a context manager.
   - **Source:** `review/2026-07-20`
 
-- **`combine_results.py` uses `openpyxl` engine but it's not in `requirements.txt`** · `priority:low` · `open:0d` · `effort:XS`
+- **`combine_results.py` uses `openpyxl` engine but it's not declared as a dependency** · `priority:low` · `open:0d` · `effort:XS`
   - **File:** `benchmarks/dagi_eval/combine_results.py:88`
-  - **Problem:** `pd.ExcelWriter(out_path, engine="openpyxl")` requires the `openpyxl` package, which is not listed in `requirements.txt` (nor is it a transitive dependency of `pandas`). Running `combine_results.py` on a clean install crashes with `ModuleNotFoundError: No module named 'openpyxl'`.
-  - **Fix:** Add `openpyxl>=3.1` to the "Optional: DAGI Eval Benchmark" section of `requirements.txt`.
+  - **Problem:** `pd.ExcelWriter(out_path, engine="openpyxl")` requires the `openpyxl` package, which isn't listed anywhere (nor is it a transitive dependency of `pandas`). Running `combine_results.py` on a clean install crashes with `ModuleNotFoundError: No module named 'openpyxl'`.
+  - **Fix:** Add `"openpyxl>=3.1"` to the `benchmark` extra in `pyproject.toml`.
   - **Source:** `review/2026-07-20`
 
 - **README architecture tree lists deleted `agent/memory_retriever.py`** · `priority:low` · `open:0d` · `effort:XS`
@@ -235,10 +236,7 @@
   - **Fix:** Remove the line from the architecture tree, or replace it with the current wiki-injection mechanism (`agent/loop.py:_build_wiki_index_context`).
   - **Source:** `review/2026-07-20`
 
-- **README troubleshooting section recommends `pip install langchain` — stale advice** · `priority:low` · `open:0d` · `effort:XS`
-  - **File:** `README.md:63-67`
-  - **Problem:** The troubleshooting section tells users to install `langchain` to fix OpenAI credential errors. `langchain` is not used anywhere in the codebase (see the existing dead-dependency item). This advice is misleading and will become incorrect once `langchain` is removed from `requirements.txt`.
-  - **Fix:** Remove the `langchain` advice; replace with instructions to check `.env` file and `python-dotenv` installation.
+- **README troubleshooting section recommends `pip install langchain` — stale advice** · `done` · `2026-07-20` — removed as part of the `requirements.txt` → `pyproject.toml` consolidation; replaced with a `.env`/`python-dotenv` pointer.
   - **Source:** `review/2026-07-20`
 
 - **`tg/bot.py:153` uses deprecated `asyncio.get_event_loop()` — Python 3.14 breakage risk** · `priority:medium` · `open:16d` · `effort:XS`
@@ -418,16 +416,15 @@
   - Agent makes 6+ tool calls discovering failing `dagi-memory/` paths. Add pre-flight check to SKILL.md.
   - **Source:** Session `2026-04-26` self-review
 
-- **Fix `pyproject.toml` dependencies** · `priority:low`
-  - Add `typer`, `rich`, `textual`; remove `nicegui`, `markdown`, `matplotlib`.
+- **Fix `pyproject.toml` dependencies** · `done` · `2026-07-20` — superseded by retiring `requirements.txt` entirely: `pyproject.toml` now declares the full dependency set (core + `pdf`/`docs`/`web`/`benchmark`/`telegram` extras), dropping the unused `nicegui`/`markdown`/`matplotlib` and picking up `typer`/`rich`/`textual`/`psutil`/`win11toast`.
   - **Source:** `_todo/todo_2026-06-16.md` F3
 
-- **`langchain` + `langchain-openai` are dead dependencies in `requirements.txt`** · `priority:low` · `open:22d` · `effort:XS`
+- **`langchain` + `langchain-openai` are dead dependencies** · `priority:low` · `open:22d` · `effort:XS`
   - **Escalated 2026-07-16:** Open 18 days with no fix commit. CVE-2026-34070 remains an exposure vector.
-  - **Updated 2026-07-20:** CVE-2025-68664 (CVSS 9.3, deserialization "LangGrinch") now also affects the installed `langchain-core`. README.md troubleshooting section (line 63) still recommends `pip install langchain`. Both amplify the case for removal.
-  - **File:** `requirements.txt:8-9`
+  - **Updated 2026-07-20:** CVE-2025-68664 (CVSS 9.3, deserialization "LangGrinch") now also affects the installed `langchain-core`. `requirements.txt` retired in favor of `pyproject.toml` (`0.1.0` consolidation) — dependency now lives at `pyproject.toml`'s core `dependencies` list. README's stale `pip install langchain` advice removed in the same pass.
+  - **File:** `pyproject.toml` (core `dependencies`)
   - **Problem:** `langchain>=1.3.4` and `langchain-openai>=1.2.2` are listed as core required deps, but no Python file in the project imports from either package. They add ~100MB of transitive dependencies (numpy, pydantic, aiohttp, etc.) for zero value. Likely a remnant from an earlier architecture. Additionally, CVE-2026-34070 (CVSS 7.5) is a path traversal in `langchain_core/prompts/loading.py` — having the package installed exposes this vulnerability even though DAGI doesn't call it.
-  - **Fix:** Remove both lines from `requirements.txt`.
+  - **Fix:** Remove both entries from `pyproject.toml`'s core `dependencies`.
   - **Source:** `review/2026-06-28`, CVE note added `review/2026-06-30`
 
 - **Dead `ChatSession.lock` field in `tg/session.py`** · `priority:low` · `open:20d` · `effort:XS`

@@ -42,7 +42,7 @@ Install dependencies. Use whichever environment manager you prefer:
 **conda:**
 ```bash
 conda activate dagi
-pip install -r requirements.txt
+pip install -e .
 ```
 
 **venv:**
@@ -53,18 +53,25 @@ python -m venv .venv
 # macOS / Linux
 source .venv/bin/activate
 
-pip install -r requirements.txt
+pip install -e .
+```
+
+Core install covers the CLI/TUI entry points. Optional feature groups (installed as needed):
+
+```bash
+pip install -e ".[pdf]"        # PDF reading (docling, pymupdf, ocrmypdf — ocrmypdf also needs the `tesseract` system binary)
+pip install -e ".[docs]"       # DOCX/XLSX/PPTX reading (markitdown)
+pip install -e ".[web]"        # primary web_search/web_fetch backends (ddgs, crawl4ai)
+pip install -e ".[telegram]"   # Telegram bot entry point (telegram_bot.py)
+pip install -e ".[benchmark]"  # benchmarks/dagi_eval (numpy, pandas, scipy, scikit-learn)
+pip install -e ".[pdf,docs,web,telegram,benchmark]"  # everything
 ```
 
 ---
 
 ### Troubleshooting
 
-**OpenAI credentials errors** — if you see authentication failures on startup, confirm your `.env` file exists at the repo root and contains the correct key. Also ensure `langchain` is installed:
-
-```bash
-pip install langchain
-```
+**OpenAI credentials errors** — if you see authentication failures on startup, confirm your `.env` file exists at the repo root and contains the correct key, and that `python-dotenv` picked it up (it's a core dependency, installed automatically by `pip install -e .`).
 
 **Authorization / proxy errors** — if API requests are blocked by a corporate proxy or firewall, add the API base URL to the `no_proxy` environment variable so requests bypass the proxy:
 
@@ -157,7 +164,7 @@ conda run --no-capture-output -n dagi python tui.py   # preferred
 
 ### Telegram Bot (`telegram_bot.py`)
 
-Chat with DAGI from your phone via Telegram. Requires a bot token from [@BotFather](https://t.me/BotFather).
+Chat with DAGI from your phone via Telegram. Requires a bot token from [@BotFather](https://t.me/BotFather), and the `telegram` extra: `pip install -e ".[telegram]"`.
 
 **Setup:**
 
@@ -780,24 +787,27 @@ for the implementation plan.
 
 ## Dependencies
 
-Core (from `pyproject.toml`):
+All dependencies are declared in `pyproject.toml` — `pip install -e .` installs the required core set; optional feature groups are extras (see [Setup](#setup)).
+
+Core (required):
 
 - `openai` — API client (any OpenAI-compatible endpoint)
 - `pyyaml` — config parsing
 - `python-dotenv` — `.env` loading
-- `ddgs` — DuckDuckGo web search
-- `httpx` + `beautifulsoup4` — web fetching and HTML parsing
-- `crawl4ai` — web crawling for research tasks
-- `markdown` — markdown rendering
-- `matplotlib` — data visualization
-- `nicegui` — retained for archived web UI; not needed for CLI use
+- `rich` + `typer` + `textual` — CLI/TUI framework
+- `langchain` + `langchain-openai` — LLM orchestration
 - `psutil` — free-RAM probing for PDF parallel-conversion worker-count estimation (`tools/_pdf_convert.py::_estimate_worker_count`)
+- `win11toast` — Windows toast notifications (see below)
+- `httpx` + `beautifulsoup4` — fallback web fetching and HTML parsing (used when the `web` extra's `crawl4ai` isn't installed)
 
-Additional (install separately if using the interactive CLI):
+Optional extras (`pip install -e ".[extra]"`):
 
-- `typer` + `rich` — interactive CLI (`archives/cli.py`)
-- No extra native libraries required — subagents use stdlib `subprocess` with stdout pipe
+- `pdf` — `docling`, `pymupdf`, `ocrmypdf` for PDF reading (`ocrmypdf` also needs the `tesseract` system binary, installed via your OS package manager)
+- `docs` — `markitdown` for DOCX/XLSX/PPTX reading
+- `web` — `ddgs` + `crawl4ai`, the primary (non-fallback) backends for `web_search`/`web_fetch`
+- `telegram` — `python-telegram-bot`, required for the `telegram_bot.py` entry point
+- `benchmark` — `numpy`, `pandas`, `scipy`, `scikit-learn` for `benchmarks/dagi_eval`
 
 ### Windows notifications (TUI, optional)
 
-- `win11toast` — native Windows 10/11 toast notifications, installed by default via `requirements.txt`. `tui.py` fires a toast (`tui/notifications.py::notify()`) when DAGI asks a question, presents a plan for interactive review, or reaches end-of-response. The toast is skipped when the TUI's own console window already has OS focus (`_tui_window_is_foreground()`), so you're only notified when you've alt-tabbed away; if that focus check itself fails, it fails open and still notifies. Lazily imported and exception-guarded — degrades silently to a no-op on non-Windows hosts or if the package is missing, never blocking the TUI. Not used by `cli.py`, `telegram_bot.py`, subagents, or the scheduler. Independent of the toast, every end-of-response also writes a `— turn complete —` marker directly into the conversation pane (`tui/callbacks.py::on_done`) — this stays visible even when the toast is suppressed (window focused) or the model's final response text was empty, so a normal turn ending is never mistaken for a stalled agent.
+- `win11toast` — native Windows 10/11 toast notifications, a core dependency. `tui.py` fires a toast (`tui/notifications.py::notify()`) when DAGI asks a question, presents a plan for interactive review, or reaches end-of-response. The toast is skipped when the TUI's own console window already has OS focus (`_tui_window_is_foreground()`), so you're only notified when you've alt-tabbed away; if that focus check itself fails, it fails open and still notifies. Lazily imported and exception-guarded — degrades silently to a no-op on non-Windows hosts or if the package is missing, never blocking the TUI. Not used by `cli.py`, `telegram_bot.py`, subagents, or the scheduler. Independent of the toast, every end-of-response also writes a `— turn complete —` marker directly into the conversation pane (`tui/callbacks.py::on_done`) — this stays visible even when the toast is suppressed (window focused) or the model's final response text was empty, so a normal turn ending is never mistaken for a stalled agent.
