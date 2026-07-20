@@ -200,8 +200,13 @@ class TestSelectPages:
         assert "## Chapter 1" not in result
 
 
-def _install_fake_docling(monkeypatch, *, markdown="# Fake\n\nContent."):
-    """Inject a fake docling module that returns predetermined markdown."""
+def _install_fake_docling(monkeypatch, *, markdown="# Fake\n\nContent.", captured_calls=None):
+    """Inject a fake docling module that returns predetermined markdown.
+
+    If `captured_calls` is a list, each DocumentConverter(...) construction
+    appends the `format_options` kwarg it received, so callers can assert on
+    the pipeline options (e.g. do_ocr) that _convert_pdf_digital passed in.
+    """
     class _FakeDocument:
         def __init__(self, md):
             self._md = md
@@ -213,17 +218,46 @@ def _install_fake_docling(monkeypatch, *, markdown="# Fake\n\nContent."):
             self.document = _FakeDocument(md)
 
     class _FakeConverter:
+        def __init__(self, format_options=None):
+            if captured_calls is not None:
+                captured_calls.append(format_options)
         def convert(self, path):
             return _FakeResult(markdown)
 
+    class _FakeInputFormat:
+        PDF = "pdf"
+
+    class _FakePdfPipelineOptions:
+        def __init__(self):
+            self.do_ocr = True
+
+    class _FakePdfFormatOption:
+        def __init__(self, pipeline_options=None):
+            self.pipeline_options = pipeline_options
+
     fake_dc_module = type(sys)("docling.document_converter")
     fake_dc_module.DocumentConverter = _FakeConverter
+    fake_dc_module.PdfFormatOption = _FakePdfFormatOption
+
+    fake_base_models_module = type(sys)("docling.datamodel.base_models")
+    fake_base_models_module.InputFormat = _FakeInputFormat
+
+    fake_pipeline_options_module = type(sys)("docling.datamodel.pipeline_options")
+    fake_pipeline_options_module.PdfPipelineOptions = _FakePdfPipelineOptions
+
+    fake_datamodel_module = type(sys)("docling.datamodel")
+    fake_datamodel_module.base_models = fake_base_models_module
+    fake_datamodel_module.pipeline_options = fake_pipeline_options_module
 
     fake_docling = type(sys)("docling")
     fake_docling.document_converter = fake_dc_module
+    fake_docling.datamodel = fake_datamodel_module
 
     monkeypatch.setitem(sys.modules, "docling", fake_docling)
     monkeypatch.setitem(sys.modules, "docling.document_converter", fake_dc_module)
+    monkeypatch.setitem(sys.modules, "docling.datamodel", fake_datamodel_module)
+    monkeypatch.setitem(sys.modules, "docling.datamodel.base_models", fake_base_models_module)
+    monkeypatch.setitem(sys.modules, "docling.datamodel.pipeline_options", fake_pipeline_options_module)
 
 
 def _install_fake_ocrmypdf(monkeypatch, *, should_fail=False):
@@ -332,9 +366,9 @@ class TestEstimateWorkerCount:
 
     def test_capped_by_available_ram(self, monkeypatch):
         monkeypatch.setattr("os.cpu_count", lambda: 16)
-        _install_fake_psutil(monkeypatch, available_bytes=5 * 1024**3)  # 5GB free
+        _install_fake_psutil(monkeypatch, available_bytes=10 * 1024**3)  # 10GB free
         monkeypatch.setattr("agent.config_loader.load_raw_config", lambda: {})
-        # 5GB / 2.0GB per worker (default worker_ram_gb) = 2 workers
+        # 10GB / 4.0GB per worker (default worker_ram_gb) = 2 workers
 
         assert _estimate_worker_count(page_count=50) == 2
 
@@ -579,6 +613,28 @@ class TestConvertPdf:
         assert "# Title" in text
         assert cache_path.exists()
         assert cache_path.parent == tmp_path / ".dagi" / "hash_cache" / "pdf"
+
+    def test_digital_pdf_disables_docling_ocr(self, tmp_path, monkeypatch):
+        # Regression test: docling's default pipeline runs OCR (loading the
+        # full RapidOCR/onnxruntime/torch stack) even for PDFs with an
+        # extractable text layer. For a PDF already classified as
+        # digital-native, that's wasted work -- and under the parallel
+        # conversion path, concurrent OCR-stack loads across worker
+        # processes have exhausted memory and crashed (WinError 1114,
+        # std::bad_alloc). _convert_pdf_digital must explicitly disable it.
+        md = "<!-- Page 1 -->\n# Title\n\nBody."
+        captured_calls = []
+        _install_fake_fitz(monkeypatch, chars_per_page=500)
+        _install_fake_docling(monkeypatch, markdown=md, captured_calls=captured_calls)
+        pdf = tmp_path / "report.pdf"
+        pdf.write_bytes(b"fake pdf bytes")
+
+        convert_pdf(pdf, tmp_path)
+
+        assert len(captured_calls) == 1
+        format_options = captured_calls[0]
+        pipeline_options = format_options["pdf"].pipeline_options
+        assert pipeline_options.do_ocr is False
 
     def test_scanned_pdf_routes_through_ocrmypdf(
         self, tmp_path, monkeypatch

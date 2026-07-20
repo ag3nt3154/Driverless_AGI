@@ -487,7 +487,7 @@ PDFs longer than 8 pages are converted in parallel (map-reduce: split into chunk
 
 ```yaml
 pdf:
-  worker_ram_gb: 2.0    # RAM budget assumed per worker process (default 2.0)
+  worker_ram_gb: 4.0    # RAM budget assumed per worker process (default 4.0)
   max_workers: null     # hard cap on worker processes (default null = uncapped)
 ```
 

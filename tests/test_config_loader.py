@@ -125,15 +125,15 @@ class TestLoadPdfConfig:
     def test_defaults_when_pdf_key_absent(self, monkeypatch):
         monkeypatch.setattr("agent.config_loader.load_raw_config", lambda: {})
         cfg = load_pdf_config()
-        assert cfg == PdfConfig(worker_ram_gb=2.0, max_workers=None)
+        assert cfg == PdfConfig(worker_ram_gb=4.0, max_workers=None)
 
     def test_overrides_from_config(self, monkeypatch):
         monkeypatch.setattr(
             "agent.config_loader.load_raw_config",
-            lambda: {"pdf": {"worker_ram_gb": 4.0, "max_workers": 3}},
+            lambda: {"pdf": {"worker_ram_gb": 6.0, "max_workers": 3}},
         )
         cfg = load_pdf_config()
-        assert cfg == PdfConfig(worker_ram_gb=4.0, max_workers=3)
+        assert cfg == PdfConfig(worker_ram_gb=6.0, max_workers=3)
 
     def test_partial_override_keeps_other_default(self, monkeypatch):
         monkeypatch.setattr(
@@ -141,10 +141,10 @@ class TestLoadPdfConfig:
             lambda: {"pdf": {"max_workers": 5}},
         )
         cfg = load_pdf_config()
-        assert cfg.worker_ram_gb == 2.0
+        assert cfg.worker_ram_gb == 4.0
         assert cfg.max_workers == 5
 
     def test_null_pdf_key_uses_defaults(self, monkeypatch):
         monkeypatch.setattr("agent.config_loader.load_raw_config", lambda: {"pdf": None})
         cfg = load_pdf_config()
-        assert cfg == PdfConfig(worker_ram_gb=2.0, max_workers=None)
+        assert cfg == PdfConfig(worker_ram_gb=4.0, max_workers=None)

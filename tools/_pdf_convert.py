@@ -188,14 +188,29 @@ def _convert_pdf_parallel(
 
 
 def _convert_pdf_digital(pdf_path: Path) -> str:
-    """Convert a digital-native PDF to markdown via docling."""
+    """Convert a digital-native PDF to markdown via docling.
+
+    OCR is explicitly disabled -- the caller has already established (via
+    is_scanned_pdf) that this PDF has an extractable text layer. docling's
+    default pipeline runs OCR unconditionally otherwise, loading the full
+    RapidOCR/onnxruntime/torch stack per call. Under the parallel conversion
+    path that means every worker process pays that cost concurrently, which
+    has caused memory-exhaustion failures (WinError 1114 DLL init errors,
+    std::bad_alloc) on machines with limited RAM.
+    """
     try:
-        from docling.document_converter import DocumentConverter
+        from docling.document_converter import DocumentConverter, PdfFormatOption
+        from docling.datamodel.base_models import InputFormat
+        from docling.datamodel.pipeline_options import PdfPipelineOptions
     except ImportError:
         raise RuntimeError(
             "docling is not installed. Install it with: pip install docling"
         )
-    converter = DocumentConverter()
+    pipeline_options = PdfPipelineOptions()
+    pipeline_options.do_ocr = False
+    converter = DocumentConverter(
+        format_options={InputFormat.PDF: PdfFormatOption(pipeline_options=pipeline_options)}
+    )
     result = converter.convert(str(pdf_path))
     return result.document.export_to_markdown()
 

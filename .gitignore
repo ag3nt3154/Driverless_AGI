@@ -190,6 +190,8 @@ dagi-memory/*
 .dagi/config.yaml
 .dagi/logs/*
 .dagi/plans/*
+.dagi/hash_cache/*
+.dagi/handoffs/*
 snapshots/
 benchmarks/jobs/*
 jobs/*
@@ -200,3 +202,4 @@ jobs/*
 
 benchmarks/dagi_eval/tasks/*/hidden/data/
 benchmarks/dagi_eval/logs/
+config.yaml

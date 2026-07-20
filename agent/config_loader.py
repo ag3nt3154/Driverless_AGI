@@ -69,7 +69,7 @@ def load_telegram_config() -> TelegramConfig:
 @dataclass
 class PdfConfig:
     """PDF parallel-conversion settings loaded from the `pdf:` key in config.yaml."""
-    worker_ram_gb: float = 2.0
+    worker_ram_gb: float = 4.0
     max_workers: int | None = None
 
 
@@ -78,7 +78,7 @@ def load_pdf_config() -> PdfConfig:
     raw = load_raw_config()
     pdf = raw.get("pdf") or {}
     return PdfConfig(
-        worker_ram_gb=pdf.get("worker_ram_gb", 2.0),
+        worker_ram_gb=pdf.get("worker_ram_gb", 4.0),
         max_workers=pdf.get("max_workers"),
     )
 
