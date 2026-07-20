@@ -76,6 +76,14 @@ $env:no_proxy = "openai.com,openrouter.ai,api.openai.com"
 export no_proxy="openai.com,openrouter.ai,api.openai.com"
 ```
 
+**PDF reading / "DLL load failed" errors** — docling's dependencies (torch, onnxruntime, rapidocr) are imported lazily, so a broken install only surfaces the first time you read a PDF. Verify them right after installing:
+
+```bash
+python scripts/verify_pdf_env.py
+```
+
+On Windows, a DLL load failure from torch or onnxruntime almost always means the [Microsoft Visual C++ Redistributable (x64)](https://aka.ms/vs/17/release/vc_redist.x64.exe) is missing — install it and re-run the check.
+
 ---
 
 ## Usage
