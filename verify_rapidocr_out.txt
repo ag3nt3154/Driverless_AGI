@@ -1,0 +1,15 @@
+[32m[INFO] 2026-07-20 18:20:07,216 [RapidOCR] base.py:23: Using engine_name: onnxruntime[0m
+[32m[INFO] 2026-07-20 18:20:07,443 [RapidOCR] main.py:63: Using C:\Users\alexr\Driverless_AGI\models\rapidocr_models\RapidOcr\onnx\PP-OCRv6\det\PP-OCRv6_det_small.onnx[0m
+[32m[INFO] 2026-07-20 18:20:07,931 [RapidOCR] base.py:23: Using engine_name: onnxruntime[0m
+[32m[INFO] 2026-07-20 18:20:07,931 [RapidOCR] main.py:63: Using C:\Users\alexr\Driverless_AGI\models\rapidocr_models\RapidOcr\onnx\PP-OCRv4\cls\ch_ppocr_mobile_v2.0_cls_mobile.onnx[0m
+[32m[INFO] 2026-07-20 18:20:08,240 [RapidOCR] base.py:23: Using engine_name: onnxruntime[0m
+[32m[INFO] 2026-07-20 18:20:08,240 [RapidOCR] main.py:63: Using C:\Users\alexr\Driverless_AGI\models\rapidocr_models\RapidOcr\onnx\PP-OCRv6\rec\PP-OCRv6_rec_small.onnx[0m
+HF_HUB_OFFLINE=1 
+artifacts_path exists: True
+expected repo dir (artifacts_path/RapidOcr): True
+det resolves: None  exists=N/A
+cls resolves: None  exists=N/A
+rec resolves: None  exists=N/A
+rec_keys resolves: None  (None => built-in dict, OK)
+RapidOcrModel instantiated OFFLINE: True
+reader built: True

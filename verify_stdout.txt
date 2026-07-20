@@ -1,0 +1,8 @@
+artifacts_path exists: True
+preferred branch (repo folder) exists: True
+RESOLVED model dir: C:\Users\alexr\Driverless_AGI\docling-models\docling-project--docling-models\model_artifacts\tableformer\accurate
+tm_config.json present: True
+safetensors present: True
+HF_HUB_OFFLINE=1 
+TableStructureModel instantiated OFFLINE: True
+tsm resolved dir (save_dir): C:\Users\alexr\Driverless_AGI\docling-models\docling-project--docling-models\model_artifacts\tableformer\accurate
