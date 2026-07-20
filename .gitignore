@@ -196,6 +196,7 @@ snapshots/
 benchmarks/jobs/*
 jobs/*
 .dagi/temp/
+models/docling_models/*
 
 # git worktrees
 .worktrees/
