@@ -146,7 +146,11 @@ def _convert_chunk(
     to ProcessPoolExecutor, which requires picklable targets.
     """
     if is_scanned:
-        markdown = _convert_pdf_scanned(chunk_path, cache_dir)
+        # jobs=1: this call already runs inside one of worker_count sibling
+        # processes. ocrmypdf otherwise defaults its own internal page-level
+        # parallelism to os.cpu_count(), which would oversubscribe CPU/RAM by
+        # a factor of worker_count on top of the outer pool.
+        markdown = _convert_pdf_scanned(chunk_path, cache_dir, jobs=1)
     else:
         markdown = _convert_pdf_digital(chunk_path)
     return chunk_index, _renumber_markers(markdown, start_offset)
@@ -215,8 +219,15 @@ def _convert_pdf_digital(pdf_path: Path) -> str:
     return result.document.export_to_markdown()
 
 
-def _convert_pdf_scanned(pdf_path: Path, cache_dir: Path) -> str:
-    """OCR a scanned PDF via ocrmypdf, then convert via docling."""
+def _convert_pdf_scanned(pdf_path: Path, cache_dir: Path, jobs: int | None = None) -> str:
+    """OCR a scanned PDF via ocrmypdf, then convert via docling.
+
+    jobs caps ocrmypdf's own internal page-level worker count. Left at None
+    for the single-process path (ocrmypdf defaults to os.cpu_count()). Callers
+    running inside an already-parallel worker (_convert_chunk) must pass
+    jobs=1, or ocrmypdf's default sizing oversubscribes CPU/RAM on top of the
+    outer worker pool.
+    """
     try:
         import ocrmypdf
     except ImportError:
@@ -229,6 +240,7 @@ def _convert_pdf_scanned(pdf_path: Path, cache_dir: Path) -> str:
             str(searchable_path),
             skip_text=True,
             force_ocr=False,
+            jobs=jobs,
         )
         return _convert_pdf_digital(searchable_path)
     finally:

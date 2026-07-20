@@ -200,12 +200,15 @@ class TestSelectPages:
         assert "## Chapter 1" not in result
 
 
-def _install_fake_docling(monkeypatch, *, markdown="# Fake\n\nContent.", captured_calls=None):
+def _install_fake_docling(
+    monkeypatch, *, markdown="# Fake\n\nContent.", captured_calls=None, convert_error=None
+):
     """Inject a fake docling module that returns predetermined markdown.
 
     If `captured_calls` is a list, each DocumentConverter(...) construction
     appends the `format_options` kwarg it received, so callers can assert on
     the pipeline options (e.g. do_ocr) that _convert_pdf_digital passed in.
+    If `convert_error` is set, .convert() raises it instead of succeeding.
     """
     class _FakeDocument:
         def __init__(self, md):
@@ -222,6 +225,8 @@ def _install_fake_docling(monkeypatch, *, markdown="# Fake\n\nContent.", capture
             if captured_calls is not None:
                 captured_calls.append(format_options)
         def convert(self, path):
+            if convert_error is not None:
+                raise convert_error
             return _FakeResult(markdown)
 
     class _FakeInputFormat:
@@ -260,11 +265,17 @@ def _install_fake_docling(monkeypatch, *, markdown="# Fake\n\nContent.", capture
     monkeypatch.setitem(sys.modules, "docling.datamodel.pipeline_options", fake_pipeline_options_module)
 
 
-def _install_fake_ocrmypdf(monkeypatch, *, should_fail=False):
-    """Inject a fake ocrmypdf module. Its ocr() copies the input to the output path."""
+def _install_fake_ocrmypdf(monkeypatch, *, should_fail=False, captured_calls=None):
+    """Inject a fake ocrmypdf module. Its ocr() copies the input to the output path.
+
+    If `captured_calls` is a list, each ocr(...) call appends its kwargs, so
+    callers can assert on e.g. the `jobs` value _convert_pdf_scanned passed in.
+    """
     import shutil
 
     def _fake_ocr(input_path, output_path, **kwargs):
+        if captured_calls is not None:
+            captured_calls.append(kwargs)
         if should_fail:
             raise RuntimeError("tesseract not found")
         shutil.copy2(input_path, output_path)
@@ -522,6 +533,29 @@ class TestConvertChunk:
         assert "<!-- Page 10 -->" in result_md
         assert "# OCR Chunk" in result_md
 
+    def test_scanned_chunk_caps_ocrmypdf_to_one_job(self, tmp_path, monkeypatch):
+        # Regression test: ocrmypdf.ocr() defaults its own internal
+        # page-level parallelism to os.cpu_count() when jobs is unset. A
+        # chunk worker is already one of worker_count sibling processes in
+        # the outer ProcessPoolExecutor, so letting ocrmypdf spin up its own
+        # CPU-count pool inside each of those oversubscribes CPU/RAM by a
+        # factor of worker_count -- the same class of resource exhaustion
+        # (BrokenProcessPool / OOM) fixed for docling's OCR path.
+        md = "<!-- Page 1 -->\n# OCR Chunk\n\nBody."
+        captured_calls = []
+        _install_fake_fitz(monkeypatch, chars_per_page=0)
+        _install_fake_docling(monkeypatch, markdown=md)
+        _install_fake_ocrmypdf(monkeypatch, captured_calls=captured_calls)
+        chunk_path = tmp_path / "doc_chunk1.pdf"
+        chunk_path.write_bytes(b"fake chunk bytes")
+        cache_dir = tmp_path / "cache"
+        cache_dir.mkdir()
+
+        _convert_chunk(chunk_path, True, 10, 1, cache_dir)
+
+        assert len(captured_calls) == 1
+        assert captured_calls[0]["jobs"] == 1
+
 
 from tools._pdf_convert import convert_pdf
 
@@ -574,17 +608,7 @@ class TestConvertPdfParallel:
             concurrent.futures.ThreadPoolExecutor,
         )
         _install_fake_fitz(monkeypatch, num_pages=10)
-
-        class _FailingConverter:
-            def convert(self, path):
-                raise RuntimeError("docling exploded")
-
-        fake_dc_module = type(sys)("docling.document_converter")
-        fake_dc_module.DocumentConverter = _FailingConverter
-        fake_docling = type(sys)("docling")
-        fake_docling.document_converter = fake_dc_module
-        monkeypatch.setitem(sys.modules, "docling", fake_docling)
-        monkeypatch.setitem(sys.modules, "docling.document_converter", fake_dc_module)
+        _install_fake_docling(monkeypatch, convert_error=RuntimeError("docling exploded"))
 
         pdf = tmp_path / "doc.pdf"
         pdf.write_bytes(b"fake pdf bytes")
@@ -650,6 +674,26 @@ class TestConvertPdf:
 
         assert "# OCR Title" in text
         assert cache_path.exists()
+
+    def test_single_process_scanned_pdf_leaves_ocrmypdf_jobs_unset(
+        self, tmp_path, monkeypatch
+    ):
+        # Single-process path: no outer worker pool to oversubscribe, so
+        # ocrmypdf should keep its own default (os.cpu_count()) parallelism
+        # rather than being capped to 1 -- that cap only applies inside
+        # _convert_chunk, one of several sibling processes.
+        md = "<!-- Page 1 -->\n# OCR Title\n\nOCR body."
+        captured_calls = []
+        _install_fake_fitz(monkeypatch, chars_per_page=0)
+        _install_fake_docling(monkeypatch, markdown=md)
+        _install_fake_ocrmypdf(monkeypatch, captured_calls=captured_calls)
+        pdf = tmp_path / "scan.pdf"
+        pdf.write_bytes(b"fake scanned pdf bytes")
+
+        convert_pdf(pdf, tmp_path)
+
+        assert len(captured_calls) == 1
+        assert captured_calls[0]["jobs"] is None
 
     def test_cache_hit_skips_conversion(self, tmp_path, monkeypatch):
         md = "<!-- Page 1 -->\n# Cached\n\nContent."
