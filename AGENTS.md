@@ -1,6 +1,6 @@
 # AGENTS.md
 
-> Last updated: 2026-07-19 (dagi_eval: Claude Code reference run analysis — 6 task solution docs added to logs/claude_code_reference/) | [README](README.md) | [TODO](TODO.md)
+> Last updated: 2026-07-20 (scheduled review: 4 new TODO findings, 3 items escalated, open-day counters refreshed) | [README](README.md) | [TODO](TODO.md)
 
 ---
 
@@ -142,7 +142,7 @@ tui.py / telegram_bot.py / main.py ← entry points (TUI | Telegram | one-shot)
 - Follows strict TDD for infrastructure work and engages deeply in adversarial design grilling before implementation.
 - Comfortable delegating a whole multi-task feature to autonomous subagents without check-ins.
 - Draws a hard, repeated line around real LLM API spend — never run dagi with real LLM calls without explicit permission.
-- Review velocity outpaces fix velocity — GNHF self-review loop dormant 80+ days despite 240+ unanalysed session logs.
+- Review velocity outpaces fix velocity — GNHF self-review loop dormant 85+ days despite 259 unanalysed session logs.
 
 ### Project Shortcomings
 
@@ -161,4 +161,4 @@ tui.py / telegram_bot.py / main.py ← entry points (TUI | Telegram | one-shot)
 - Fix `/hist` and add cache-hit visibility (`usage.prompt_tokens_details.cached_tokens`) in the sidebar.
 - Session replay / dry-run mode — JSONL logs already have everything needed for deterministic replay.
 - Parallel subagent dispatch — no architectural change needed, `spawn_*` already supports concurrent calls.
-- Bootstrap a real GNHF self-review run against the 240+ accumulated session logs.
+- Bootstrap a real GNHF self-review run against the 259 accumulated session logs.
