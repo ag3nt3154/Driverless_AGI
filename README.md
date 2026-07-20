@@ -84,6 +84,8 @@ python scripts/verify_pdf_env.py
 
 On Windows, a DLL load failure from torch or onnxruntime almost always means the [Microsoft Visual C++ Redistributable (x64)](https://aka.ms/vs/17/release/vc_redist.x64.exe) is missing — install it and re-run the check.
 
+**Local docling models** — if `models/docling_models/` (TableFormer + heron layout weights) is present, PDF conversion loads them from disk instead of downloading from Hugging Face on every call. Falls back to the default HF download if the directory is missing.
+
 ---
 
 ## Usage

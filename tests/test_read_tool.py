@@ -150,7 +150,7 @@ def _install_fake_fitz(monkeypatch, *, chars_per_page=500, num_pages=3):
     monkeypatch.setitem(sys.modules, "fitz", fake_module)
 
 
-from tools._pdf_convert import parse_page_spec, select_pages
+from tools._pdf_convert import parse_page_spec, select_pages, _PAGE_BREAK_SENTINEL
 
 
 class TestParsePageSpec:
@@ -213,7 +213,7 @@ def _install_fake_docling(
     class _FakeDocument:
         def __init__(self, md):
             self._md = md
-        def export_to_markdown(self):
+        def export_to_markdown(self, page_break_placeholder=None):
             return self._md
 
     class _FakeResult:
@@ -503,7 +503,7 @@ from tools._pdf_convert import _convert_chunk
 
 class TestConvertChunk:
     def test_digital_chunk_renumbered(self, tmp_path, monkeypatch):
-        md = "<!-- Page 1 -->\n# Chunk Title\n\nBody."
+        md = "# Chunk Title\n\nBody."
         _install_fake_fitz(monkeypatch, chars_per_page=500)
         _install_fake_docling(monkeypatch, markdown=md)
         chunk_path = tmp_path / "doc_chunk0.pdf"
@@ -518,7 +518,7 @@ class TestConvertChunk:
         assert "# Chunk Title" in result_md
 
     def test_scanned_chunk_routes_through_ocr_then_renumbered(self, tmp_path, monkeypatch):
-        md = "<!-- Page 1 -->\n# OCR Chunk\n\nBody."
+        md = "# OCR Chunk\n\nBody."
         _install_fake_fitz(monkeypatch, chars_per_page=0)
         _install_fake_docling(monkeypatch, markdown=md)
         _install_fake_ocrmypdf(monkeypatch)
@@ -541,7 +541,7 @@ class TestConvertChunk:
         # CPU-count pool inside each of those oversubscribes CPU/RAM by a
         # factor of worker_count -- the same class of resource exhaustion
         # (BrokenProcessPool / OOM) fixed for docling's OCR path.
-        md = "<!-- Page 1 -->\n# OCR Chunk\n\nBody."
+        md = "# OCR Chunk\n\nBody."
         captured_calls = []
         _install_fake_fitz(monkeypatch, chars_per_page=0)
         _install_fake_docling(monkeypatch, markdown=md)
@@ -572,7 +572,7 @@ class TestConvertPdfParallel:
             concurrent.futures.ThreadPoolExecutor,
         )
         _install_fake_fitz(monkeypatch, num_pages=10)
-        _install_fake_docling(monkeypatch, markdown="<!-- Page 1 -->\nchunk-content")
+        _install_fake_docling(monkeypatch, markdown="chunk-content")
         pdf = tmp_path / "doc.pdf"
         pdf.write_bytes(b"fake pdf bytes")
         cache_dir = tmp_path / "cache"
@@ -591,7 +591,7 @@ class TestConvertPdfParallel:
             concurrent.futures.ThreadPoolExecutor,
         )
         _install_fake_fitz(monkeypatch, num_pages=10)
-        _install_fake_docling(monkeypatch, markdown="<!-- Page 1 -->\ncontent")
+        _install_fake_docling(monkeypatch, markdown="content")
         pdf = tmp_path / "doc.pdf"
         pdf.write_bytes(b"fake pdf bytes")
         cache_dir = tmp_path / "cache"
@@ -626,7 +626,7 @@ class TestConvertPdf:
     def test_digital_pdf_returns_markdown_and_cache_path(
         self, tmp_path, monkeypatch
     ):
-        md = "<!-- Page 1 -->\n# Title\n\nBody."
+        md = "# Title\n\nBody."
         _install_fake_fitz(monkeypatch, chars_per_page=500)
         _install_fake_docling(monkeypatch, markdown=md)
         pdf = tmp_path / "report.pdf"
@@ -646,7 +646,7 @@ class TestConvertPdf:
         # conversion path, concurrent OCR-stack loads across worker
         # processes have exhausted memory and crashed (WinError 1114,
         # std::bad_alloc). _convert_pdf_digital must explicitly disable it.
-        md = "<!-- Page 1 -->\n# Title\n\nBody."
+        md = "# Title\n\nBody."
         captured_calls = []
         _install_fake_fitz(monkeypatch, chars_per_page=500)
         _install_fake_docling(monkeypatch, markdown=md, captured_calls=captured_calls)
@@ -663,7 +663,7 @@ class TestConvertPdf:
     def test_scanned_pdf_routes_through_ocrmypdf(
         self, tmp_path, monkeypatch
     ):
-        md = "<!-- Page 1 -->\n# OCR Title\n\nOCR body."
+        md = "# OCR Title\n\nOCR body."
         _install_fake_fitz(monkeypatch, chars_per_page=0)
         _install_fake_docling(monkeypatch, markdown=md)
         _install_fake_ocrmypdf(monkeypatch)
@@ -682,7 +682,7 @@ class TestConvertPdf:
         # ocrmypdf should keep its own default (os.cpu_count()) parallelism
         # rather than being capped to 1 -- that cap only applies inside
         # _convert_chunk, one of several sibling processes.
-        md = "<!-- Page 1 -->\n# OCR Title\n\nOCR body."
+        md = "# OCR Title\n\nOCR body."
         captured_calls = []
         _install_fake_fitz(monkeypatch, chars_per_page=0)
         _install_fake_docling(monkeypatch, markdown=md)
@@ -696,7 +696,7 @@ class TestConvertPdf:
         assert captured_calls[0]["jobs"] is None
 
     def test_cache_hit_skips_conversion(self, tmp_path, monkeypatch):
-        md = "<!-- Page 1 -->\n# Cached\n\nContent."
+        md = "# Cached\n\nContent."
         _install_fake_fitz(monkeypatch, chars_per_page=500)
         _install_fake_docling(monkeypatch, markdown=md)
         pdf = tmp_path / "report.pdf"
@@ -712,7 +712,7 @@ class TestConvertPdf:
         assert path1 == path2
 
     def test_cache_invalidated_when_pdf_changes(self, tmp_path, monkeypatch):
-        md1 = "<!-- Page 1 -->\n# Version 1"
+        md1 = "# Version 1"
         _install_fake_fitz(monkeypatch, chars_per_page=500)
         _install_fake_docling(monkeypatch, markdown=md1)
         pdf = tmp_path / "report.pdf"
@@ -722,7 +722,7 @@ class TestConvertPdf:
 
         # Change the PDF content (different hash)
         pdf.write_bytes(b"version 2 content")
-        md2 = "<!-- Page 1 -->\n# Version 2"
+        md2 = "# Version 2"
         _install_fake_docling(monkeypatch, markdown=md2)
 
         text2, path2 = convert_pdf(pdf, tmp_path)
@@ -744,7 +744,7 @@ class TestConvertPdf:
     def test_scanned_pdf_without_ocrmypdf_warns_and_tries_docling(
         self, tmp_path, monkeypatch
     ):
-        md = "<!-- Page 1 -->\n# Degraded"
+        md = "# Degraded"
         _install_fake_fitz(monkeypatch, chars_per_page=0)
         _install_fake_docling(monkeypatch, markdown=md)
         monkeypatch.setitem(sys.modules, "ocrmypdf", None)
@@ -759,7 +759,7 @@ class TestConvertPdf:
     def test_intermediate_ocr_pdf_is_cleaned_up(
         self, tmp_path, monkeypatch
     ):
-        md = "<!-- Page 1 -->\n# Clean"
+        md = "# Clean"
         _install_fake_fitz(monkeypatch, chars_per_page=0)
         _install_fake_docling(monkeypatch, markdown=md)
         _install_fake_ocrmypdf(monkeypatch)
@@ -781,7 +781,7 @@ class TestConvertPdf:
         _install_fake_psutil(monkeypatch, available_bytes=100 * 1024**3)
         monkeypatch.setattr("agent.config_loader.load_raw_config", lambda: {})
         _install_fake_fitz(monkeypatch, chars_per_page=500, num_pages=20)
-        _install_fake_docling(monkeypatch, markdown="<!-- Page 1 -->\ncontent")
+        _install_fake_docling(monkeypatch, markdown="content")
         pdf = tmp_path / "big.pdf"
         pdf.write_bytes(b"fake big pdf bytes")
 
@@ -798,7 +798,7 @@ class TestConvertPdf:
 
         monkeypatch.setattr("tools._pdf_convert.ProcessPoolExecutor", _fail_if_called)
         _install_fake_fitz(monkeypatch, chars_per_page=500, num_pages=3)
-        _install_fake_docling(monkeypatch, markdown="<!-- Page 1 -->\nsmall doc content")
+        _install_fake_docling(monkeypatch, markdown="small doc content")
         pdf = tmp_path / "small.pdf"
         pdf.write_bytes(b"fake small pdf bytes")
 
@@ -808,11 +808,14 @@ class TestConvertPdf:
 
 
 class TestReadToolPdf:
-    SAMPLE_PDF_MD = (
-        "<!-- Page 1 -->\n# Title\n\nIntro paragraph.\n"
-        "<!-- Page 2 -->\n## Chapter 1\n\nBody text.\n"
-        "<!-- Page 3 -->\n## Chapter 2\n\nMore text.\n"
-    )
+    # Raw docling output as it would come back from export_to_markdown(): pages
+    # separated by the sentinel _convert_pdf_digital splits on, with no page
+    # markers of its own -- those are added by _convert_pdf_digital itself.
+    SAMPLE_PDF_MD = _PAGE_BREAK_SENTINEL.join([
+        "# Title\n\nIntro paragraph.\n",
+        "## Chapter 1\n\nBody text.\n",
+        "## Chapter 2\n\nMore text.\n",
+    ])
 
     def test_pdf_returns_metadata_header_and_numbered_lines(
         self, tmp_path, monkeypatch
