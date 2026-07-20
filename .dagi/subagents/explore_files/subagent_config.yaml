@@ -10,6 +10,7 @@ tools:
   - grep
   - find
   - bash
+  - edit
 parameters:
   type: object
   properties:
