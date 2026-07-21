@@ -39,7 +39,14 @@ OPENROUTER_API_KEY=sk-or-...
 
 Install dependencies. Use whichever environment manager you prefer:
 
-**conda:**
+**conda (fresh env, fully pinned):**
+```bash
+conda env create -f environment.yml   # creates the `dagi` env with every dependency pinned to a known-working version
+conda activate dagi
+pip install -e .
+```
+
+**conda (existing env):**
 ```bash
 conda activate dagi
 pip install -e .
@@ -91,7 +98,9 @@ python scripts/verify_pdf_env.py
 
 On Windows, a DLL load failure from torch or onnxruntime almost always means the [Microsoft Visual C++ Redistributable (x64)](https://aka.ms/vs/17/release/vc_redist.x64.exe) is missing — install it and re-run the check.
 
-**Local docling models** — if `models/docling_models/` (TableFormer + heron layout weights) is present, PDF conversion loads them from disk instead of downloading from Hugging Face on every call. Falls back to the default HF download if the directory is missing.
+**Local docling models** — if `models/docling_models/` (TableFormer + heron layout weights) is present, PDF conversion loads them from disk instead of downloading from Hugging Face on every call. Falls back to the default HF download if the directory is missing. This directory is gitignored (machine-local) and each model needs its *full* file set (e.g. the tableformer model needs `tm_config.json` alongside its `.safetensors` weights, not just the weights) — a partial download fails with a `FileNotFoundError` deep inside docling's pipeline init, not at import time.
+
+**Scanned-PDF OCR fails with `TesseractConfigError: ... Can't open hocr`** — on Windows/conda, this means `TESSDATA_PREFIX` points at a `tessdata` directory that has the language `.traineddata` files but not the `configs`/`tessconfigs` subfolders ocrmypdf needs (some conda-forge tesseract builds split these across `envs/<env>/share/tessdata` and `envs/<env>/Library/share/tessdata`). Fix by copying `Library/share/tessdata/{configs,tessconfigs}` into the directory `TESSDATA_PREFIX` points to, so it's self-contained.
 
 ---
 
@@ -788,6 +797,8 @@ for the implementation plan.
 ## Dependencies
 
 All dependencies are declared in `pyproject.toml` — `pip install -e .` installs the required core set; optional feature groups are extras (see [Setup](#setup)).
+
+For a fully reproducible conda environment, `environment.yml` pins every package (core + `pdf`/`docs`/`benchmark` extras currently installed in the `dagi` env, generated via `conda env export -n dagi --no-builds`) to the exact version known to work — `conda env create -f environment.yml`. It doesn't include the `web`/`telegram` extras (`ddgs`, `crawl4ai`, `python-telegram-bot`); install those separately with `pip install -e ".[web,telegram]"` if needed.
 
 Core (required):
 

@@ -196,7 +196,8 @@ snapshots/
 benchmarks/jobs/*
 jobs/*
 .dagi/temp/
-models/docling_models/*
+models/docling_models/docling-project--docling-layout-heron/*
+models/docling_models/docling-project--docling-models/*
 
 # git worktrees
 .worktrees/
