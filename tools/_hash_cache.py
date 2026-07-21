@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import hashlib
+import os
+import threading
 from pathlib import Path
 from typing import Callable
 
@@ -27,10 +29,21 @@ def get_or_compute(
 
     `compute` is only called on a cache miss -- callers with expensive derivations
     (e.g. PDF conversion) can defer that work to this closure.
+
+    Multiple workers (processes/threads) can race to compute the same key --
+    e.g. two `read` calls on the same PDF landing at once. Redundant compute()
+    calls are harmless, but writing straight to the final path is not: a
+    concurrent reader could observe it mid-write (truncated/partial content).
+    To avoid that, each writer writes to its own uniquely-named temp file and
+    then atomically renames it onto the final path, so the final path only
+    ever shows the pre-existing complete file or the new complete file, never
+    a partial one.
     """
     path, _ = cache_path(key, subdir, ext, project_root)
     if path.exists():
         return path.read_text(encoding="utf-8"), path
     text = compute()
-    path.write_text(text, encoding="utf-8", newline="\n")
+    tmp_path = path.with_name(f"{path.name}.{os.getpid()}-{threading.get_ident()}.tmp")
+    tmp_path.write_text(text, encoding="utf-8", newline="\n")
+    os.replace(tmp_path, path)
     return text, path

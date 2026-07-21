@@ -372,8 +372,17 @@ class TestEstimateWorkerCount:
         monkeypatch.setattr("os.cpu_count", lambda: 16)
         _install_fake_psutil(monkeypatch, available_bytes=100 * 1024**3)
         monkeypatch.setattr("agent.config_loader.load_raw_config", lambda: {})
+        # page_count // 4 == 0, floored to the never-below-1 minimum
 
-        assert _estimate_worker_count(page_count=3) == 3
+        assert _estimate_worker_count(page_count=3) == 1
+
+    def test_capped_by_page_count_div_4(self, monkeypatch):
+        monkeypatch.setattr("os.cpu_count", lambda: 16)
+        _install_fake_psutil(monkeypatch, available_bytes=100 * 1024**3)
+        monkeypatch.setattr("agent.config_loader.load_raw_config", lambda: {})
+        # 50 // 4 == 12, well under the CPU/RAM caps
+
+        assert _estimate_worker_count(page_count=50) == 12
 
     def test_capped_by_available_ram(self, monkeypatch):
         monkeypatch.setattr("os.cpu_count", lambda: 16)

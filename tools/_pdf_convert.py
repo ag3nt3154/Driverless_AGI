@@ -74,10 +74,11 @@ def _get_page_count(pdf_path: Path) -> int:
 def _estimate_worker_count(page_count: int) -> int:
     """Estimate a safe worker-process count from CPU count, free RAM, and page count.
 
-    page_count caps workers 1:1 -- no point having more workers than pages to split.
+    page_count // 4 caps workers -- each worker handles at least 4 pages, so
+    conversion overhead (process spawn, per-worker docling load) stays worth it.
     """
     cfg = load_pdf_config()
-    caps = [os.cpu_count() or 1, page_count]
+    caps = [os.cpu_count() or 1, page_count // 4]
 
     try:
         import psutil

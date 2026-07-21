@@ -2,6 +2,9 @@
 from __future__ import annotations
 
 import hashlib
+import threading
+import time
+from pathlib import Path
 
 from tools._hash_cache import cache_path, get_or_compute
 
@@ -67,3 +70,72 @@ class TestGetOrCompute:
         text, path = get_or_compute(b"key4", "pdf", "md", tmp_path, lambda: "line1\nline2")
         raw = path.read_bytes()
         assert b"\r\n" not in raw
+
+
+class TestGetOrComputeAtomicity:
+    def test_final_path_never_observed_partially_written(self, tmp_path, monkeypatch):
+        """Two workers computing the same cache key concurrently must never let a
+        reader see the final cache path mid-write (truncated/partial content).
+
+        Simulates a slow write by splitting whatever write_text() call the
+        implementation performs into two chunks with a pause between them —
+        this widens the race window deterministically regardless of real disk
+        speed. A reader thread polls the *final* cache path throughout; the
+        pre-fix implementation writes directly to that path, so the reader
+        catches it half-written. The fix must write to a differently-named
+        temp file and only expose the final path via an atomic rename.
+        """
+        full_text = "chunk-one-content " * 500 + "chunk-two-content " * 500
+        original_write_text = Path.write_text
+        write_started = threading.Event()
+        resume_write = threading.Event()
+
+        def slow_write_text(self, data, *args, **kwargs):
+            if data != full_text:
+                return original_write_text(self, data, *args, **kwargs)
+            encoding = kwargs.get("encoding", "utf-8")
+            newline = kwargs.get("newline")
+            mid = len(data) // 2
+            with open(self, "w", encoding=encoding, newline=newline) as f:
+                f.write(data[:mid])
+                f.flush()
+                write_started.set()
+                resume_write.wait(timeout=2)
+                time.sleep(0.05)
+                f.write(data[mid:])
+            return len(data)
+
+        monkeypatch.setattr(Path, "write_text", slow_write_text)
+
+        final_path, _ = cache_path(b"race-key", "pdf", "md", tmp_path)
+        observed: list[str] = []
+
+        def writer():
+            get_or_compute(b"race-key", "pdf", "md", tmp_path, lambda: full_text)
+
+        def reader():
+            # Read exactly once, deterministically inside the window where the
+            # writer is blocked mid-write (after flushing the first half, before
+            # writing the second) -- not a timing-dependent poll.
+            write_started.wait(timeout=2)
+            if final_path.exists():
+                try:
+                    observed.append(final_path.read_text(encoding="utf-8"))
+                except OSError:
+                    pass
+            resume_write.set()
+
+        t_writer = threading.Thread(target=writer)
+        t_reader = threading.Thread(target=reader)
+        t_writer.start()
+        t_reader.start()
+        t_writer.join()
+        t_reader.join()
+
+        assert write_started.is_set(), "test setup broken: slow_write_text never ran"
+        for content in observed:
+            assert content == full_text, (
+                "reader observed the final cache path in a partially-written "
+                "state — get_or_compute must write via a temp file + atomic "
+                "rename, not directly to the final path"
+            )
