@@ -240,6 +240,13 @@ def _install_fake_docling(
         def __init__(self, pipeline_options=None):
             self.pipeline_options = pipeline_options
 
+    class _FakeAcceleratorDevice:
+        CPU = "cpu"
+
+    class _FakeAcceleratorOptions:
+        def __init__(self, device=None):
+            self.device = device
+
     fake_dc_module = type(sys)("docling.document_converter")
     fake_dc_module.DocumentConverter = _FakeConverter
     fake_dc_module.PdfFormatOption = _FakePdfFormatOption
@@ -249,6 +256,8 @@ def _install_fake_docling(
 
     fake_pipeline_options_module = type(sys)("docling.datamodel.pipeline_options")
     fake_pipeline_options_module.PdfPipelineOptions = _FakePdfPipelineOptions
+    fake_pipeline_options_module.AcceleratorDevice = _FakeAcceleratorDevice
+    fake_pipeline_options_module.AcceleratorOptions = _FakeAcceleratorOptions
 
     fake_datamodel_module = type(sys)("docling.datamodel")
     fake_datamodel_module.base_models = fake_base_models_module
@@ -749,6 +758,30 @@ class TestConvertPdf:
 
         with pytest.raises(RuntimeError, match="docling is not installed"):
             convert_pdf(pdf, tmp_path)
+
+    def test_docling_dependency_import_failure_is_not_reported_as_missing(
+        self, tmp_path, monkeypatch
+    ):
+        """docling itself present, but a submodule import fails (e.g. a native
+        extension DLL load error from onnxruntime) -- this must NOT be reported
+        as "docling is not installed", since pip installing it again won't help.
+        """
+        _install_fake_fitz(monkeypatch, chars_per_page=500)
+        # A real module, present in sys.modules, but missing the names
+        # _convert_pdf_digital expects -- `from ... import X` then raises a
+        # plain ImportError (not ModuleNotFoundError), same as a broken
+        # transitive dependency (e.g. onnxruntime's DLL load failing).
+        broken_dc_module = type(sys)("docling.document_converter")
+        fake_docling = type(sys)("docling")
+        fake_docling.document_converter = broken_dc_module
+        monkeypatch.setitem(sys.modules, "docling", fake_docling)
+        monkeypatch.setitem(sys.modules, "docling.document_converter", broken_dc_module)
+        pdf = tmp_path / "report.pdf"
+        pdf.write_bytes(b"fake pdf bytes")
+
+        with pytest.raises(RuntimeError, match="dependency failed to import") as exc_info:
+            convert_pdf(pdf, tmp_path)
+        assert "docling is not installed" not in str(exc_info.value)
 
     def test_scanned_pdf_without_ocrmypdf_warns_and_tries_docling(
         self, tmp_path, monkeypatch

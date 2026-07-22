@@ -23,6 +23,16 @@ from tools._hash_cache import cache_path, get_or_compute
 # are imported anywhere in this process or its ProcessPoolExecutor workers.
 os.environ["CUDA_VISIBLE_DEVICES"] = ""
 
+# Pre-load torch on the main thread. On Windows, c10.dll's DllMain can fail
+# with WinError 1114 when first loaded from a daemon thread (the TUI and
+# Telegram bot both run the agent loop in background threads). This module is
+# imported at startup via read.py, which happens on the main thread, so the
+# DLL is already initialised by the time a worker thread needs it.
+try:
+    import torch  # noqa: F401
+except ImportError:
+    pass
+
 _PAGE_MARKER_RE = re.compile(r"<!-- Page (\d+) -->")
 _DOCLING_ARTIFACTS_PATH = DAGI_ROOT / "models" / "docling_models"
 _PAGE_BREAK_SENTINEL = "\x00DAGI_PAGE_BREAK\x00"
@@ -220,10 +230,28 @@ def _convert_pdf_digital(pdf_path: Path) -> str:
             AcceleratorOptions,
             PdfPipelineOptions,
         )
-    except ImportError:
+    except ModuleNotFoundError as e:
+        # e.name is the dotted module that was actually missing. A name
+        # rooted at "docling" means the package itself isn't installed; any
+        # other name (torch, onnxruntime, rapidocr, ...) means docling *is*
+        # installed but one of its transitive dependencies isn't -- a
+        # different problem with a different fix, so don't conflate the two.
+        if e.name == "docling" or (e.name or "").startswith("docling."):
+            raise RuntimeError(
+                "docling is not installed. Install it with: pip install docling"
+            ) from e
         raise RuntimeError(
-            "docling is not installed. Install it with: pip install docling"
-        )
+            f"docling is installed but a dependency failed to import ({e.name}): {e}"
+        ) from e
+    except ImportError as e:
+        # Distinct from ModuleNotFoundError: the module exists on disk but
+        # failed to load, e.g. "DLL load failed while importing
+        # onnxruntime_pybind11_state" from a broken native extension. This is
+        # an environment problem, not a missing package -- surface the real
+        # error instead of telling the user to (redundantly) pip install docling.
+        raise RuntimeError(
+            f"docling is installed but a dependency failed to import: {e}"
+        ) from e
     pipeline_options = PdfPipelineOptions()
     pipeline_options.do_ocr = False
     # Force CPU inference explicitly -- belt-and-braces alongside the
