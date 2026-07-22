@@ -102,6 +102,8 @@ On Windows, a DLL load failure from torch or onnxruntime almost always means the
 
 **Scanned-PDF OCR fails with `TesseractConfigError: ... Can't open hocr`** — on Windows/conda, this means `TESSDATA_PREFIX` points at a `tessdata` directory that has the language `.traineddata` files but not the `configs`/`tessconfigs` subfolders ocrmypdf needs (some conda-forge tesseract builds split these across `envs/<env>/share/tessdata` and `envs/<env>/Library/share/tessdata`). Fix by copying `Library/share/tessdata/{configs,tessconfigs}` into the directory `TESSDATA_PREFIX` points to, so it's self-contained.
 
+**GPU/CUDA** — PDF conversion always runs on CPU. `tools/_pdf_convert.py` sets `CUDA_VISIBLE_DEVICES=""` and passes `AcceleratorOptions(device=AcceleratorDevice.CPU)` to docling explicitly, so no CUDA device is ever touched by docling or tesseract/ocrmypdf, regardless of what's installed on the host.
+
 ---
 
 ## Usage

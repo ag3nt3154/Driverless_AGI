@@ -17,6 +17,12 @@ from agent import DAGI_ROOT
 from agent.config_loader import load_pdf_config
 from tools._hash_cache import cache_path, get_or_compute
 
+# Force CPU mode for docling (torch/onnxruntime) and tesseract (via ocrmypdf) --
+# hiding all CUDA devices avoids GPU init attempts/failures on machines where
+# a GPU stack isn't set up for this environment. Set before those libraries
+# are imported anywhere in this process or its ProcessPoolExecutor workers.
+os.environ["CUDA_VISIBLE_DEVICES"] = ""
+
 _PAGE_MARKER_RE = re.compile(r"<!-- Page (\d+) -->")
 _DOCLING_ARTIFACTS_PATH = DAGI_ROOT / "models" / "docling_models"
 _PAGE_BREAK_SENTINEL = "\x00DAGI_PAGE_BREAK\x00"
@@ -209,13 +215,20 @@ def _convert_pdf_digital(pdf_path: Path) -> str:
     try:
         from docling.document_converter import DocumentConverter, PdfFormatOption
         from docling.datamodel.base_models import InputFormat
-        from docling.datamodel.pipeline_options import PdfPipelineOptions
+        from docling.datamodel.pipeline_options import (
+            AcceleratorDevice,
+            AcceleratorOptions,
+            PdfPipelineOptions,
+        )
     except ImportError:
         raise RuntimeError(
             "docling is not installed. Install it with: pip install docling"
         )
     pipeline_options = PdfPipelineOptions()
     pipeline_options.do_ocr = False
+    # Force CPU inference explicitly -- belt-and-braces alongside the
+    # CUDA_VISIBLE_DEVICES="" set at module import time above.
+    pipeline_options.accelerator_options = AcceleratorOptions(device=AcceleratorDevice.CPU)
     # Layout (heron) and TableFormer weights are vendored under models/docling_models --
     # setting artifacts_path makes docling load them from disk instead of reaching out to
     # Hugging Face on every call. Falls back to the default (HF download) if the vendored
