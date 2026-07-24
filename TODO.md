@@ -2,6 +2,7 @@
 
 ## Completed
 
+- **Restructured all 28 DAGI tools into `tools/{name}/` subfolders; extracted document conversion into a standalone `services/doc_converter/` FastAPI microservice** · `done` · `2026-07-25` — two-phase, 12-task branch (`feature/doc-converter-service`). Phase 1: every `tools/{name}.py` file became `tools/{name}/__init__.py` (re-export) + `tools/{name}/_{name}.py` (implementation), zero behavior change, shared helpers (`_path_guard.py`, `_hash_cache.py`, `_subagent_runner.py`, `_plan_parser.py`, `output_filter.py`, `subagent_main.py`) stayed flat. Phase 2: PDF/docx/xlsx/pptx conversion (`tools/_pdf_convert.py`, docling/ocrmypdf/markitdown pipelines) moved out of dagi entirely into `services/doc_converter/` — a standalone FastAPI service with its own conda env (`environment.yml`), own server-side content-addressed cache (`.cache/<sha256>.md`), started via `python -m services.doc_converter` on port 8100. `tools/read/_doc_service.py` is the new HTTP client anti-corruption layer, with its own client-side hash cache (`.dagi/hash_cache/doc_convert/`) to avoid re-uploading unchanged files. `read` tool hard-fails with a clear "start the service" error if it's unreachable — no inline fallback. `tools/_pdf_convert.py` deleted; `PdfConfig`/`load_pdf_config()` removed from `agent/config_loader.py`; `pdf`/`docs` `pyproject.toml` extras removed. New `services:` block in `config.yaml`/`config.example.yaml` maps service name → base URL, read into `AgentConfig.services: dict[str, str]`. Also resolved the long-standing `tests/test_read_tool.py` 500-line-limit TODO item as a side effect of the rewrite (541 → 201 lines). Full suite: 463/463 passing. Resolves the "MCP-analog service extraction" item noted under Potential Areas of Exploration in `AGENTS.md`. Known deferred follow-up: `dev/_verify_local_models.py` still imports the deleted `tools._pdf_convert` module (see Work Queue below).
 - **Consolidated `.dagi/agents.md` behavioral guidelines into `AGENTS.md`** · `done` · `2026-07-24` — the two separate per-project files (`AGENTS.md` for human orientation, `.dagi/agents.md` for force-injected behavioral guidelines) are now one. `AGENTS.md` gained a `## Behavioral Guidelines` section (preserved verbatim across routine `update-project-context` runs); `.dagi/agents.md` deleted. Every load path repointed: `agent/loop.py` (`_build_preamble`, `_assemble_system_string`), `tui/utils.py` (`_system_breakdown` token accounting), `tools/subagent_main.py` (`_build_subagent_system_prompt`). `agent/cli_utils.py::_cmd_init` now scaffolds `AGENTS.md` (was `.dagi/agents.md`) with a stub matching the current template — the old stub template had drifted stale (Description/Objectives/Known Issues headers no longer matched what `update-project-context` actually writes). `.dagi/skills/update-project-context/SKILL.md` and `.dagi/prompts/main/main_system.md` updated to match. `README.md` updated (`/init` output list, Tips section). 49 affected tests pass unchanged.
 - **Double-click launcher for the portable (conda-packed) distribution** · `done` · `2026-07-24` — new `dagi_run.bat` opens Windows Terminal (falls back to `cmd` if `wt.exe` isn't on `PATH`), activates a sibling `dagi_env` conda-packed environment (`{parent_folder}\dagi_env` next to `{parent_folder}\driverless_agi`), and runs `dagi_launch.py`, which prompts interactively for a model (numbered list read from `config.yaml`'s `models` catalog) and a verbose on/off toggle, then launches `tui.py --model <id> [--verbose]`. Verified `dagi_launch.py`'s config-loading/menu logic directly against `config.yaml` under the `dagi` conda env (Python 3.14) — 7 models listed correctly with the current default marked.
 - **`_convert_pdf_digital`'s docling import error mislabeled every dependency failure as "docling is not installed"** · `done` · `2026-07-22` — `tools/_pdf_convert.py`'s `except ImportError` around the docling import caught everything — including transitive dependency failures (e.g. `ImportError: DLL load failed while importing onnxruntime_pybind11_state`, or `torch`/`rapidocr` missing) — and reported them all as "docling is not installed. Install it with: pip install docling", which is both wrong and unhelpful for a broken-DLL case (reinstalling docling doesn't fix a native dependency's DLL). Split into `except ModuleNotFoundError` (checked against `e.name` — only a name rooted at `docling` gets the "not installed" message) and a fallback `except ImportError` that surfaces the real underlying error instead. Also fixed the `_install_fake_docling` test fixture in `tests/test_read_tool.py`, which was silently missing `AcceleratorDevice`/`AcceleratorOptions` since the 2026-07-22 "force cpu mode" change added them — this had been failing 17 of `tests/test_read_tool.py`'s tests on `main` (masked because nobody had re-run the full suite since that commit); new `test_docling_dependency_import_failure_is_not_reported_as_missing` covers the fixed branch. Full suite: 514/514 passing.
@@ -72,10 +73,10 @@
 
 ### 🔴 HIGH — Bugs
 
-- **Scanned-PDF OCR/conversion silently regresses on any fresh `dagi` env or checkout — nothing verifies tessdata layout or `models/docling_models` completeness** · `priority:medium` · `open:2026-07-21` · `effort:S`
-  - **Files:** `scripts/verify_pdf_env.py`; conda env `dagi` (`share/tessdata` vs `Library/share/tessdata`); `models/docling_models/` (gitignored, machine-local)
-  - **Problem:** Fixed for the second time on 2026-07-21 (first fixed 2026-07-20, see Completed) — a broken `TESSDATA_PREFIX` (missing `configs`/`tessconfigs`) and an incomplete `models/docling_models/` (missing layout model, missing tableformer `tm_config.json`) both went undetected until an actual scanned-PDF read failed. `scripts/verify_pdf_env.py` only import-checks the PDF dependency packages — it never runs a real tesseract OCR call or checks that `models/docling_models/` has every file each vendored model needs.
-  - **Fix:** Extend `scripts/verify_pdf_env.py` (or add a companion check) to (1) run `tesseract --version`/a trivial hocr conversion to catch `TESSDATA_PREFIX` misconfiguration, and (2) validate `models/docling_models/` has the full expected file set for the layout and tableformer models before `_convert_pdf_digital`/`_convert_pdf_scanned` are ever called from a real read.
+- **Scanned-PDF OCR/conversion silently regresses on any fresh `doc_converter` env or checkout — nothing verifies tessdata layout or `models/docling_models` completeness** · `priority:medium` · `open:2026-07-21` · `effort:S`
+  - **Files:** `scripts/verify_pdf_env.py` (stale — predates the 2026-07-25 service split, needs updating to target the `doc_converter` conda env, see below); `services/doc_converter/environment.yml`'s `doc_converter` conda env (`share/tessdata` vs `Library/share/tessdata`); `models/docling_models/` (gitignored, machine-local)
+  - **Problem:** Fixed for the second time on 2026-07-21 (first fixed 2026-07-20, see Completed) — a broken `TESSDATA_PREFIX` (missing `configs`/`tessconfigs`) and an incomplete `models/docling_models/` (missing layout model, missing tableformer `tm_config.json`) both went undetected until an actual scanned-PDF read failed. `scripts/verify_pdf_env.py` only import-checks the PDF dependency packages — it never runs a real tesseract OCR call or checks that `models/docling_models/` has every file each vendored model needs. As of 2026-07-25, PDF conversion moved from `tools/_pdf_convert.py` (dagi env) to `services/doc_converter/converter/pdf.py` (its own `doc_converter` env) — this check still applies but now targets the service's env instead.
+  - **Fix:** Extend `scripts/verify_pdf_env.py` (or add a companion check, run inside the `doc_converter` env) to (1) run `tesseract --version`/a trivial hocr conversion to catch `TESSDATA_PREFIX` misconfiguration, and (2) validate `models/docling_models/` has the full expected file set for the layout and tableformer models before `_convert_pdf_digital`/`_convert_pdf_scanned` (now in `services/doc_converter/converter/pdf.py`) are ever called from a real read.
   - **Source:** recurrence found 2026-07-21 while investigating a user-reported tesseract error.
 
 - **Reading any image file crashes the agent loop (`AttributeError` on list result)** · `priority:medium` · `open:9d` · `effort:XS` · `needs-verification`
@@ -91,20 +92,20 @@
   - **Source:** `docs/fable/code_review_2026-07-11.md` (#2) · Downgraded 2026-07-14: cli.py archived, bug unreachable.
 
 - **`is_scanned_pdf` / `_get_page_count` leak fitz document handle on exception** · `priority:medium` · `open:2d` · `effort:XS`
-  - **File:** `tools/_pdf_convert.py:43-53,56-63`
+  - **File:** `services/doc_converter/converter/pdf.py` (moved verbatim from `tools/_pdf_convert.py` on 2026-07-25 — bug still present, line numbers may have shifted)
   - **Problem:** Both functions call `fitz.open(str(pdf_path))` and `doc.close()` with no `try/finally` or context manager. If `doc[i].get_text()` raises (corrupt page, `MemoryError`), or `len(doc)` fails on a malformed PDF, the file handle is leaked. pymupdf's `fitz.Document` supports the context manager protocol.
   - **Fix:** Replace `doc = fitz.open(...); ...; doc.close()` with `with fitz.open(...) as doc:` in both functions.
   - **Source:** `review/2026-07-18`
 
 - **`_estimate_worker_count` ZeroDivisionError when `worker_ram_gb` is 0** · `priority:medium` · `open:2d` · `effort:XS`
-  - **File:** `tools/_pdf_convert.py:77`
-  - **Problem:** `available_bytes // (cfg.worker_ram_gb * 1024**3)` raises `ZeroDivisionError` if the user sets `pdf.worker_ram_gb: 0` in `config.yaml`. `PdfConfig` has no validation — `load_pdf_config()` passes through any value from the config file. The function is not yet called from production code (only tests), but it was written for the upcoming parallel PDF conversion feature.
-  - **Fix:** Validate in `load_pdf_config()`: `max(cfg.worker_ram_gb, 0.1)`, or guard in `_estimate_worker_count` with `if cfg.worker_ram_gb > 0`.
+  - **File:** `services/doc_converter/converter/pdf.py` (moved verbatim from `tools/_pdf_convert.py` on 2026-07-25 — bug still present, line numbers may have shifted; the config source is now the service's own request/config handling rather than dagi's deleted `PdfConfig`)
+  - **Problem:** `available_bytes // (cfg.worker_ram_gb * 1024**3)` raises `ZeroDivisionError` if `worker_ram_gb` is set to 0. No validation guards this. The function is not yet called from production code (only tests), but it was written for the parallel PDF conversion feature.
+  - **Fix:** Validate at the config-loading boundary: `max(worker_ram_gb, 0.1)`, or guard in `_estimate_worker_count` with `if worker_ram_gb > 0`.
   - **Source:** `review/2026-07-18`
 
 - **`_convert_pdf_scanned` OCR temp file path collides across same-stem PDFs** · `priority:low` · `open:2d` · `effort:XS`
-  - **File:** `tools/_pdf_convert.py:107`
-  - **Problem:** `searchable_path = cache_dir / f"{pdf_path.stem}_ocr.pdf"` uses the source filename's stem, not the content hash. `cache_dir` is the flat `.dagi/hash_cache/pdf/` directory. Two different scanned PDFs with the same filename stem (e.g., `A/report.pdf` and `B/report.pdf`) produce the same OCR temp path. The `finally` block cleans up the temp file, so sequential calls are safe, but concurrent calls (relevant when parallel conversion is wired up) would corrupt each other's OCR output.
+  - **File:** `services/doc_converter/converter/pdf.py` (moved verbatim from `tools/_pdf_convert.py` on 2026-07-25 — bug still present, line numbers may have shifted)
+  - **Problem:** `searchable_path = cache_dir / f"{pdf_path.stem}_ocr.pdf"` uses the source filename's stem, not the content hash. Two different scanned PDFs with the same filename stem (e.g., `A/report.pdf` and `B/report.pdf`) produce the same OCR temp path. The `finally` block cleans up the temp file, so sequential calls are safe, but concurrent calls (relevant since parallel conversion is wired up) would corrupt each other's OCR output.
   - **Fix:** Use the content hash for the temp file name: `searchable_path = cache_dir / f"{content_hash}_ocr.pdf"` (pass `content_hash` from the caller).
   - **Source:** `review/2026-07-18`
 
@@ -366,15 +367,15 @@
   - Hardcoded 70%/90% thresholds cause test failures on high-baseline machines. Read from `DAGI_RAM_WARN_PCT` / `DAGI_RAM_KILL_PCT` env vars.
   - **Source:** `_todo/todo_2026-06-16.md` E1
 
-- **`tests/test_read_tool.py` exceeds 500-line coding standard** · `priority:low` · `open:2d` · `effort:S`
-  - **File:** `tests/test_read_tool.py` (473 lines committed + 68 uncommitted = 541 lines)
-  - **Problem:** File has grown with each ReadTool feature (DOCX/XLSX/PPTX, PDF, auto-summarization, `_estimate_worker_count` tests). Exceeds the project's 500-line maximum.
-  - **Fix:** Split into `tests/test_read_tool.py` (core read + document conversion) and `tests/test_pdf_convert.py` (PDF-specific: page parsing, scanned detection, conversion pipelines, worker estimation).
-  - **Source:** `review/2026-07-18`
-
 ---
 
 ### ⚪ LOW — Housekeeping & Dead Code
+
+- **`dev/_verify_local_models.py` broken — still imports the deleted `tools._pdf_convert` module** · `priority:low` · `open:2026-07-25` · `effort:S`
+  - **File:** `dev/_verify_local_models.py`
+  - **Problem:** Standalone dev script (not part of the test suite) imports from `tools._pdf_convert`, which was deleted 2026-07-25 when PDF conversion moved to `services/doc_converter/converter/pdf.py`. Currently broken; deliberately deferred during the doc-converter-service migration (Task 12 explicitly out of scope).
+  - **Fix:** Rewrite to call the doc-converter service's conversion API (either via `tools/read/_doc_service.py`'s HTTP client or `services/doc_converter/converter/pdf.py` directly, depending on whether the script needs to run against a live service or in-process).
+  - **Source:** doc-converter-service migration, `feature/doc-converter-service` Task 12 final verification.
 
 - **Validate project root in system prompt against actual filesystem** · `priority:high` · `review-item`
   - System prompt can contain an incorrect project root (e.g., inside `raw/`), causing all tool paths to resolve incorrectly. Add startup validation in `cli.py`/`main.py`.

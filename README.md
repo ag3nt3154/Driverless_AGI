@@ -66,13 +66,13 @@ pip install -e .
 Core install covers the CLI/TUI entry points. Optional feature groups (installed as needed):
 
 ```bash
-pip install -e ".[pdf]"        # PDF reading (docling, pymupdf, ocrmypdf — ocrmypdf also needs the `tesseract` system binary)
-pip install -e ".[docs]"       # DOCX/XLSX/PPTX reading (markitdown)
 pip install -e ".[web]"        # primary web_search/web_fetch backends (ddgs, crawl4ai)
 pip install -e ".[telegram]"   # Telegram bot entry point (telegram_bot.py)
 pip install -e ".[benchmark]"  # benchmarks/dagi_eval (numpy, pandas, scipy, scikit-learn)
-pip install -e ".[pdf,docs,web,telegram,benchmark]"  # everything
+pip install -e ".[web,telegram,benchmark]"  # everything
 ```
+
+PDF/DOCX/XLSX/PPTX reading no longer requires any dagi-side extras — it's handled entirely by the standalone doc-converter service, set up separately. See [Document Conversion Service](#document-conversion-service).
 
 ---
 
@@ -90,19 +90,15 @@ $env:no_proxy = "openai.com,openrouter.ai,api.openai.com"
 export no_proxy="openai.com,openrouter.ai,api.openai.com"
 ```
 
-**PDF reading / "DLL load failed" errors** — docling's dependencies (torch, onnxruntime, rapidocr) are imported lazily, so a broken install only surfaces the first time you read a PDF. Verify them right after installing:
+**PDF/document reading errors** — the sections below apply to the **doc-converter service's own `doc_converter` conda env** (`services/doc_converter/environment.yml`), not the main `dagi` env — see [Document Conversion Service](#document-conversion-service) for setup/start commands. `scripts/verify_pdf_env.py` predates the service split and is not currently wired to the service's env; treat it as a reference for what to check manually (`python -c "import fitz, torch, onnxruntime, docling"` inside the `doc_converter` env) until it's updated.
 
-```bash
-python scripts/verify_pdf_env.py
-```
+**PDF reading / "DLL load failed" errors** — docling's dependencies (torch, onnxruntime, rapidocr) are imported lazily inside the service, so a broken install only surfaces the first time you read a PDF. On Windows, a DLL load failure from torch or onnxruntime almost always means the [Microsoft Visual C++ Redistributable (x64)](https://aka.ms/vs/17/release/vc_redist.x64.exe) is missing — install it and retry.
 
-On Windows, a DLL load failure from torch or onnxruntime almost always means the [Microsoft Visual C++ Redistributable (x64)](https://aka.ms/vs/17/release/vc_redist.x64.exe) is missing — install it and re-run the check.
-
-**Local docling models** — if `models/docling_models/` (TableFormer + heron layout weights) is present, PDF conversion loads them from disk instead of downloading from Hugging Face on every call. Falls back to the default HF download if the directory is missing. This directory is gitignored (machine-local) and each model needs its *full* file set (e.g. the tableformer model needs `tm_config.json` alongside its `.safetensors` weights, not just the weights) — a partial download fails with a `FileNotFoundError` deep inside docling's pipeline init, not at import time.
+**Local docling models** — if `models/docling_models/` (TableFormer + heron layout weights) is present, the service's PDF conversion loads them from disk instead of downloading from Hugging Face on every call. Falls back to the default HF download if the directory is missing. This directory is gitignored (machine-local) and each model needs its *full* file set (e.g. the tableformer model needs `tm_config.json` alongside its `.safetensors` weights, not just the weights) — a partial download fails with a `FileNotFoundError` deep inside docling's pipeline init, not at import time.
 
 **Scanned-PDF OCR fails with `TesseractConfigError: ... Can't open hocr`** — on Windows/conda, this means `TESSDATA_PREFIX` points at a `tessdata` directory that has the language `.traineddata` files but not the `configs`/`tessconfigs` subfolders ocrmypdf needs (some conda-forge tesseract builds split these across `envs/<env>/share/tessdata` and `envs/<env>/Library/share/tessdata`). Fix by copying `Library/share/tessdata/{configs,tessconfigs}` into the directory `TESSDATA_PREFIX` points to, so it's self-contained.
 
-**GPU/CUDA** — PDF conversion always runs on CPU. `tools/_pdf_convert.py` sets `CUDA_VISIBLE_DEVICES=""` and passes `AcceleratorOptions(device=AcceleratorDevice.CPU)` to docling explicitly, so no CUDA device is ever touched by docling or tesseract/ocrmypdf, regardless of what's installed on the host.
+**GPU/CUDA** — PDF conversion always runs on CPU. `services/doc_converter/converter/pdf.py` sets `CUDA_VISIBLE_DEVICES=""` and passes `AcceleratorOptions(device=AcceleratorDevice.CPU)` to docling explicitly, so no CUDA device is ever touched by docling or tesseract/ocrmypdf, regardless of what's installed on the host.
 
 ---
 
@@ -463,6 +459,9 @@ models:
     model: "anthropic/claude-opus-4-6"
     api_url: "https://openrouter.ai/api/v1"
     api_key_env: "OPENROUTER_API_KEY"
+
+services:
+  doc_converter: "http://localhost:8100"   # required for reading .pdf/.docx/.xlsx/.pptx — see below
 ```
 
 ### Per-Model Overrides
@@ -525,17 +524,34 @@ Token/cost usage is requested via `stream_options: {"include_usage": true}` on e
 
 While a response is actively streaming, the live preview automatically expands to fill the full window (down to the running-indicator/prompt), so long in-progress replies aren't capped at a few lines — it collapses back to normal once the turn finishes and the final message lands in the conversation pane.
 
-### PDF Conversion
+### Document Conversion Service
 
-PDFs longer than 8 pages are converted in parallel (map-reduce: split into chunks, one docling model load per worker process, then merged and renumbered). Worker count is estimated automatically from CPU count, page count, and free RAM, and is optional to tune via a `pdf:` key in `config.yaml`:
+Reading `.pdf`, `.docx`, `.xlsx`, or `.pptx` files requires the standalone **doc-converter** microservice at `services/doc_converter/`. Plain text files need no extra setup — only document conversion depends on this service.
 
-```yaml
-pdf:
-  worker_ram_gb: 4.0    # RAM budget assumed per worker process (default 4.0)
-  max_workers: null     # hard cap on worker processes (default null = uncapped)
+**One-time setup:**
+
+```bash
+conda env create -f services/doc_converter/environment.yml
 ```
 
-Both keys are optional — omit the `pdf:` block entirely to use the defaults. Shorter PDFs (8 pages or fewer) always use the original single-process pipeline.
+**Start the service** (in its own terminal, before reading any documents):
+
+```bash
+conda run -n doc_converter python -m services.doc_converter
+```
+
+By default it listens on `http://localhost:8100`. Point dagi at it via the `services:` block in `config.yaml` (see [Configuration](#configuration)):
+
+```yaml
+services:
+  doc_converter: "http://localhost:8100"
+```
+
+If the service isn't reachable, the `read` tool returns a clear error asking you to start it — there is no inline/fallback conversion path.
+
+**Conversion details:** PDFs use `docling` (digital-native) or `ocrmypdf`+`docling` (scanned, OCR'd first); `.docx`/`.xlsx`/`.pptx` use `markitdown`. PDFs longer than 8 pages are converted in parallel (map-reduce: split into chunks, one docling model load per worker process, then merged and renumbered) — worker count is estimated automatically from CPU count, page count, and free RAM.
+
+**Two-layer caching:** the service maintains a server-side content-addressed cache (`services/doc_converter/.cache/<sha256>.md`, keyed by SHA-256 of the uploaded file's bytes) so repeated conversions of the same file across any client are free. dagi additionally keeps a client-side cache under `.dagi/hash_cache/doc_convert/`, keyed by the same hash, so unchanged files aren't even re-uploaded.
 
 ---
 
@@ -567,33 +583,50 @@ Driverless_AGI/
 │   ├── cli_utils.py       # Shared TUI helpers (_cmd_init, _skill_invocation_message) — extracted from archives/cli.py
 │   └── _git_branch.py     # Plan-mode auto-branching — creates/checks out dagi/<slug>_<plan_id> from HEAD
 │
-├── tools/
-│   ├── read.py            # Read files (text + image)
-│   ├── write.py           # Write / overwrite files
-│   ├── edit.py            # Exact-text replacement
-│   ├── bash.py            # Run shell commands
-│   ├── git.py             # git_status, git_diff, git_log, git_branch, git_checkout, git_add, git_commit, git_reset
+├── tools/                  # Every tool is a subfolder: tools/<name>/__init__.py re-exports
+│   │                       #   from tools/<name>/_<name>.py (the underscore-prefixed module is
+│   │                       #   the private implementation). Follow this pattern for new tools.
+│   ├── read/               # read.py's replacement — text inline; .pdf/.docx/.xlsx/.pptx via
+│   │   │                   #   the doc-converter service (see services/doc_converter/ below)
+│   │   ├── _read.py        #   ReadTool
+│   │   ├── _doc_service.py #   HTTP client (anti-corruption layer) to the doc-converter service
+│   │   └── _document_reader.py # long-document summarizer orchestration
+│   ├── write/               # Overwrite a file
+│   ├── edit/                 # Exact-text replacement
+│   ├── bash/                # Run shell commands
+│   ├── git/                # git_status, git_diff, git_log, git_branch, git_checkout, git_add, git_commit, git_reset
 │   │                       #   (git_add/git_commit/git_reset are whitelist-guarded to dagi/* branches only;
 │   │                       #   git_commit requires explicit git_add staging first — no implicit add -A;
 │   │                       #   entering plan mode auto-creates/checks out a dagi/<slug>_<plan_id> branch)
-│   ├── grep.py            # Regex search across files (ripgrep)
-│   ├── find.py            # Glob-pattern file finder
-│   ├── skill.py           # Load a .dagi/skills/ guidance document
-│   ├── workflow.py        # Workflow content loader and lister (CLI helpers)
-│   ├── web_search.py      # DuckDuckGo web search
-│   ├── web_fetch.py       # Fetch and parse a URL
-│   ├── web_research.py    # Multi-page web research (spawns pipe subagent)
-│   ├── explore_files.py   # Large-scale codebase scanning (spawns pipe subagent)
-│   ├── _subagent_runner.py # Core runner — Popen(stdout=PIPE), JSON event relay, PID polling
+│   ├── grep/               # Regex search across files (ripgrep)
+│   ├── find/                # Glob-pattern file finder
+│   ├── skill/               # Load a .dagi/skills/ guidance document
+│   ├── workflow/            # Workflow content loader and lister (CLI helpers)
+│   ├── web_search/          # DuckDuckGo web search
+│   ├── web_fetch/           # Fetch and parse a URL
+│   ├── web_research/        # Multi-page web research (spawns pipe subagent)
+│   ├── explore_files/       # Large-scale codebase scanning (spawns pipe subagent)
+│   ├── _subagent_runner.py # Core runner — Popen(stdout=PIPE), JSON event relay, PID polling (shared helper, not a tool folder)
 │   ├── subagent_main.py   # Piped subagent entry point (spawned via `python -m tools.subagent_main`)
-│   ├── extend_timeout.py  # ExtendSubagentTimeoutTool — resume in-flight subagent deadline
-│   ├── cli_subagent.py    # Custom subagent with caller-supplied system prompt
-│   ├── compact.py         # Trigger context compaction
-│   ├── plan_mode.py       # Enter / exit read-only plan mode
-│   ├── switch_model.py    # Swap models mid-session
-│   ├── ask_user.py        # Prompt user for clarification
-│   ├── escalate_issue.py  # Worker/review subagents: sidecar-file escalation to the main agent
-│   └── _path_guard.py     # Path sandboxing utilities
+│   ├── extend_timeout/      # ExtendSubagentTimeoutTool — resume in-flight subagent deadline
+│   ├── cli_subagent/        # Custom subagent with caller-supplied system prompt
+│   ├── compact/             # Trigger context compaction
+│   ├── plan_mode/           # Enter / exit read-only plan mode
+│   ├── switch_model/        # Swap models mid-session
+│   ├── ask_user/            # Prompt user for clarification
+│   ├── escalate_issue/      # Worker/review subagents: sidecar-file escalation to the main agent
+│   └── _path_guard.py     # Path sandboxing utilities (shared helper, not a tool folder)
+│
+├── services/
+│   └── doc_converter/      # Standalone FastAPI microservice: PDF/docx/xlsx/pptx → markdown.
+│       │                   #   Own conda env (environment.yml) — heavy deps (docling, torch,
+│       │                   #   pymupdf, ocrmypdf, markitdown) live only here, not in dagi core.
+│       │                   #   Start with: python -m services.doc_converter (port 8100)
+│       ├── main.py         #   FastAPI app, POST /convert endpoint
+│       └── converter/
+│           ├── pdf.py      #   PDF→markdown (docling digital / ocrmypdf+docling scanned, parallel path)
+│           ├── office.py   #   docx/xlsx/pptx→markdown via markitdown
+│           └── cache.py    #   Server-side content-addressed cache (.cache/<sha256>.md)
 │
 ├── .dagi/
 │   ├── prompts/           # Prompt markdown files, organized by role
@@ -627,7 +660,7 @@ Driverless_AGI/
 
 | Tool | What it does |
 |------|-------------|
-| `read` | Read a text file (paginated), `.docx`/`.xlsx`/`.pptx` (markdown via `markitdown`), `.pdf` (markdown via `docling` with table detection; scanned PDFs OCR'd via `ocrmypdf`; results cached in `.dagi/hash_cache/pdf/`). PDFs longer than 8 pages are converted in parallel across multiple worker processes (map-reduce: split into page-range chunks, one docling load per worker, merge + renumber markers) for speed — worker count is capped by CPU count, page count // 4 (at least 4 pages per worker), free RAM, and the `pdf.worker_ram_gb`/`pdf.max_workers` keys in `config.yaml`; shorter PDFs use the original single-process path unchanged. For documents exceeding the model's `reserve_tokens` budget, automatically spawns a `document-reader` subagent that produces a sectioned summary digest (per-section line ranges, token estimates, summaries, key excerpts) cached in `.dagi/hash_cache/document_summary/` — the parent receives the digest instead of truncated output and can drill into sections of interest with targeted `offset`/`limit` reads. Pass `path`, optional `offset`/`limit`, optional `pages` (PDF only, e.g. `'1-5'`) |
+| `read` | Read a text file (paginated) inline. `.pdf`/`.docx`/`.xlsx`/`.pptx` are delegated to the standalone **doc-converter service** over HTTP (see [Document Conversion Service](#document-conversion-service) below) — the service must be running or `read` returns a clear error telling you to start it, no inline fallback. PDF output includes a `[PDF: name \| N pages]` header; `pages` (PDF only, e.g. `'1-5'`) filters by `<!-- Page N -->` markers. For documents exceeding the model's `reserve_tokens` budget, automatically spawns a `document-reader` subagent that produces a sectioned summary digest (per-section line ranges, token estimates, summaries, key excerpts) cached in `.dagi/hash_cache/document_summary/` — the parent receives the digest instead of truncated output and can drill into sections of interest with targeted `offset`/`limit` reads. Pass `path`, optional `offset`/`limit`, optional `pages` |
 | `write` | Overwrite a file. Creates parent dirs. Takes `path` + `content` |
 | `edit` | Replace exact `oldText` with `newText` in a file. Errors if text is absent or non-unique |
 | `bash` | Run a shell command. Returns stdout + stderr + exit code. Pass `command` + optional `timeout` |
@@ -651,10 +684,10 @@ Every `spawn_<type>_subagent` tool (worker, review, explore_files, web_research,
 
 ### Adding a Custom Tool
 
-**Option A — core tool:** Add a file in `tools/` and register it in `agent/tools.py`:
+**Option A — core tool:** Create a subfolder in `tools/` following the standard layout — implementation in a leading-underscore private module, re-exported by `__init__.py` — then register it in `agent/tools.py`:
 
 ```python
-# tools/my_tool.py
+# tools/my_tool/_my_tool.py
 from agent.base_tool import BaseTool
 
 class MyTool(BaseTool):
@@ -672,7 +705,14 @@ class MyTool(BaseTool):
         return f"processed: {input}"
 ```
 
-Then import and register in `agent/tools.py`.
+```python
+# tools/my_tool/__init__.py
+from ._my_tool import MyTool
+
+__all__ = ["MyTool"]
+```
+
+Then import and register in `agent/tools.py`. A bare `tools/my_tool.py` file is the old (pre-2026-07-25) convention and no longer used anywhere in the tree.
 
 **Option B — project-local tool:** Drop a `.py` file into `.dagi/tools/`. It will be auto-discovered and registered at startup — no changes to core files needed.
 
@@ -816,7 +856,7 @@ for the implementation plan.
 
 All dependencies are declared in `pyproject.toml` — `pip install -e .` installs the required core set; optional feature groups are extras (see [Setup](#setup)).
 
-For a fully reproducible conda environment, `environment.yml` pins every package (core + `pdf`/`docs`/`benchmark` extras currently installed in the `dagi` env, generated via `conda env export -n dagi --no-builds`) to the exact version known to work — `conda env create -f environment.yml`. It doesn't include the `web`/`telegram` extras (`ddgs`, `crawl4ai`, `python-telegram-bot`); install those separately with `pip install -e ".[web,telegram]"` if needed.
+For a fully reproducible conda environment, `environment.yml` pins every package in dagi's core `dagi` env (generated via `conda env export -n dagi --no-builds`) to the exact version known to work — `conda env create -f environment.yml`. It doesn't include the `web`/`telegram`/`benchmark` extras; install those separately with `pip install -e ".[web,telegram,benchmark]"` if needed. Document conversion (PDF/docx/xlsx/pptx) has its own **separate** conda env — see `services/doc_converter/environment.yml` and [Document Conversion Service](#document-conversion-service); its dependencies (docling, torch, pymupdf, ocrmypdf, markitdown) are not part of `dagi`'s `pyproject.toml` or `environment.yml` at all.
 
 Core (required):
 
@@ -825,17 +865,21 @@ Core (required):
 - `python-dotenv` — `.env` loading
 - `rich` + `typer` + `textual` — CLI/TUI framework
 - `langchain` + `langchain-openai` — LLM orchestration
-- `psutil` — free-RAM probing for PDF parallel-conversion worker-count estimation (`tools/_pdf_convert.py::_estimate_worker_count`)
+- `httpx` — HTTP client, also used by `tools/read/_doc_service.py` to call the doc-converter service
 - `win11toast` — Windows toast notifications (see below)
-- `httpx` + `beautifulsoup4` — fallback web fetching and HTML parsing (used when the `web` extra's `crawl4ai` isn't installed)
+- `beautifulsoup4` — fallback HTML parsing (used when the `web` extra's `crawl4ai` isn't installed)
 
 Optional extras (`pip install -e ".[extra]"`):
 
-- `pdf` — `docling`, `pymupdf`, `ocrmypdf` for PDF reading (`ocrmypdf` also needs the `tesseract` system binary, installed via your OS package manager)
-- `docs` — `markitdown` for DOCX/XLSX/PPTX reading
 - `web` — `ddgs` + `crawl4ai`, the primary (non-fallback) backends for `web_search`/`web_fetch`
 - `telegram` — `python-telegram-bot`, required for the `telegram_bot.py` entry point
 - `benchmark` — `numpy`, `pandas`, `scipy`, `scikit-learn` for `benchmarks/dagi_eval`
+
+Document conversion service (separate env, `services/doc_converter/environment.yml`):
+
+- `fastapi` + `uvicorn` — HTTP service framework
+- `docling`, `pymupdf`, `ocrmypdf` — PDF reading (`ocrmypdf` also needs the `tesseract` system binary, installed via your OS package manager); `psutil` — free-RAM probing for PDF parallel-conversion worker-count estimation
+- `markitdown` — DOCX/XLSX/PPTX reading
 
 ### Windows notifications (TUI, optional)
 
