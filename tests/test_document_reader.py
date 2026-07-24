@@ -2,7 +2,7 @@
 from pathlib import Path
 from unittest.mock import patch
 
-from tools._document_reader import summarize_document
+from tools.read._document_reader import summarize_document
 from tools.read import ReadTool
 
 _CHARS_PER_TOKEN = 4
@@ -55,7 +55,7 @@ class TestSummarizeDocumentCacheMiss:
             return {"status": "ok", "handoff": str(handoff_path)}
 
         with patch(
-            "tools._document_reader.run_subagent", side_effect=fake_run_subagent
+            "tools.read._document_reader.run_subagent", side_effect=fake_run_subagent
         ):
             result = summarize_document(
                 full_text=full_text,
@@ -75,7 +75,7 @@ class TestSummarizeDocumentFallback:
             return {"status": "error", "message": "subagent crashed"}
 
         with patch(
-            "tools._document_reader.run_subagent", side_effect=fake_run_subagent
+            "tools.read._document_reader.run_subagent", side_effect=fake_run_subagent
         ):
             result = summarize_document(
                 full_text=full_text,
@@ -133,7 +133,7 @@ class TestEndToEnd:
         )
 
         with patch(
-            "tools._document_reader.run_subagent", side_effect=fake_run_subagent
+            "tools.read._document_reader.run_subagent", side_effect=fake_run_subagent
         ):
             result = tool.run(path="large_doc.txt")
 
@@ -169,7 +169,7 @@ class TestEndToEnd:
         )
 
         with patch(
-            "tools._document_reader.run_subagent"
+            "tools.read._document_reader.run_subagent"
         ) as mock_run:
             result = tool.run(path="large_doc.txt")
 

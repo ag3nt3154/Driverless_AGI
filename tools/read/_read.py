@@ -6,7 +6,7 @@ from tools._path_guard import validate_path
 from tools._pdf_convert import convert_pdf, select_pages
 
 try:
-    from tools._document_reader import summarize_document
+    from tools.read._document_reader import summarize_document
 except ImportError:
     summarize_document = None  # type: ignore[assignment]
 
@@ -109,7 +109,7 @@ class ReadTool(BaseTool):
             return (
                 f"Error: Cannot read file type '{ext}'. This file type is not "
                 f"currently supported by the read tool. If this file type "
-                f"should be supported, update _BLOCKED_EXTS in tools/read.py."
+                f"should be supported, update _BLOCKED_EXTS in tools/read/_read.py."
             )
         # ──────────────────────────────────────────────────────────────────
 

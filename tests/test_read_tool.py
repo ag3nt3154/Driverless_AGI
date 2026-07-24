@@ -946,7 +946,7 @@ class TestAutoSummarization:
         fake_summary = "## Section 1 (lines 1-2000, ~2500 tokens)\n**Summary:** lots of lines"
 
         with patch(
-            "tools.read.summarize_document", return_value=fake_summary
+            "tools.read._read.summarize_document", return_value=fake_summary
         ) as mock_summarize:
             result = tool.run(path="huge.txt")
 
@@ -965,7 +965,7 @@ class TestAutoSummarization:
         )
 
         with patch(
-            "tools.read.summarize_document"
+            "tools.read._read.summarize_document"
         ) as mock_summarize:
             result = tool.run(path="small.txt")
 
@@ -984,7 +984,7 @@ class TestAutoSummarization:
         )
 
         with patch(
-            "tools.read.summarize_document", return_value=None
+            "tools.read._read.summarize_document", return_value=None
         ):
             result = tool.run(path="huge.txt")
 
