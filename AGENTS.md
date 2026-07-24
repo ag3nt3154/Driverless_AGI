@@ -1,6 +1,6 @@
 # AGENTS.md
 
-> Last updated: 2026-07-24 (merged `.dagi/agents.md` behavioral guidelines into this file) | [README](README.md) | [TODO](TODO.md)
+> Last updated: 2026-07-24 | [README](README.md) | [TODO](TODO.md)
 
 ---
 
@@ -201,6 +201,7 @@ tui.py / telegram_bot.py / main.py ← entry points (TUI | Telegram | one-shot)
 - **`dagi` conda env quirks (PDF/OCR)**: must invoke via `conda run -n dagi python ...`, not a bare `python.exe` path from the env — conda's `etc/conda/activate.d/*` scripts set `PATH` (`Library/bin`) and `TESSDATA_PREFIX`, which a bare interpreter invocation skips, breaking tesseract DLL loading and OCR config lookup. The env's `share/tessdata/` was also missing `configs/`/`tessconfigs/` subfolders present under the sibling `Library/share/tessdata/` — ocrmypdf needs both copied in to run.
 - **`git-filter-repo`**: not on PATH by default; install via `conda run -n dagi pip install git-filter-repo`, then prepend `<dagi-env>/Scripts` to `PATH` so `git filter-repo` resolves as a git subcommand. Removes the `origin` remote as a safety measure — re-add it after rewriting. Only rewrite/force-push branches confirmed to have `origin/<branch>` as an ancestor of local `<branch>` (checked via `git merge-base --is-ancestor`).
 - **CLI streaming (`agent/log_callbacks.py`)**: `build_cli_callbacks()` wires `on_stream_start`/`on_assistant_text_delta`/`on_reasoning_delta` to print raw, unbuffered deltas straight to `sys.stdout` (not through `logging`, since partial lines don't fit its per-call-newline model). `on_assistant_text`/`on_reasoning` still log the same content again afterward as one timestamped, complete line — intentional duplication (live preview + finalized record), mirroring `tui/callbacks.py`'s `StreamPreview` pattern.
+- **MCP-analog service extraction (planned)**: document conversion (PDF/docx/xlsx/pptx → markdown) to be extracted from `tools/read.py`/`_pdf_convert.py`/`_document_reader.py` into a standalone FastAPI service at `services/doc_converter/`. Design decisions (2026-07-24 grilling): single `POST /convert` endpoint (multipart file upload, auto-detect format, returns markdown); server-side cache (saves compute) + dagi-side hash-cache (saves network, client SHA-256 hashes before upload to gate requests); `read` tool stays text-only, new `read_document` tool calls service; service is always-on/manual-start, hard fail if unreachable (no inline fallback); service URL in `config.yaml` `services:` block; document-reader subagent stays in dagi (context management, not conversion); all heavy deps (docling, torch, pymupdf, ocrmypdf, markitdown) move entirely to service. Open question: exact response schema (plain text vs JSON with metadata like page count).
 
 ---
 
@@ -234,6 +235,7 @@ tui.py / telegram_bot.py / main.py ← entry points (TUI | Telegram | one-shot)
 
 ### Potential Areas of Exploration
 
+- **MCP-analog services**: doc_converter is the first extraction; web_fetch, web_search are candidates for the same pattern — slim dagi core, reusable services in `services/`.
 - Fix `/hist` and add cache-hit visibility (`usage.prompt_tokens_details.cached_tokens`) in the sidebar.
 - Session replay / dry-run mode — JSONL logs already have everything needed for deterministic replay.
 - Parallel subagent dispatch — no architectural change needed, `spawn_*` already supports concurrent calls.
