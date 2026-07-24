@@ -1,0 +1,17 @@
+name: doc_converter
+channels:
+  - defaults
+  - conda-forge
+dependencies:
+  - python=3.14
+  - pip
+  - pip:
+    - fastapi>=0.115
+    - uvicorn[standard]>=0.30
+    - python-multipart>=0.0.9
+    - docling>=2.75
+    - pymupdf>=1.26.6
+    - ocrmypdf>=16.0
+    - markitdown>=0.1.0
+    - torch
+    - psutil>=5.9.0
