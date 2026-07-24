@@ -179,6 +179,9 @@ class AgentConfig:
     # Scheduler: override the ask_user timeout (seconds). None = use default (300s).
     # Set to 60 by the scheduler runner for fully autonomous execution.
     ask_user_timeout: int | None = None
+    # External service URLs (e.g. {"doc_converter": "http://localhost:8100"}).
+    # Loaded from the `services` block in config.yaml.
+    services: dict[str, str] = field(default_factory=dict)
 
 
 @dataclass

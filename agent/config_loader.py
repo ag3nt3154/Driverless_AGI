@@ -66,23 +66,6 @@ def load_telegram_config() -> TelegramConfig:
     return TelegramConfig(bot_token=token, allowed_chat_ids=allowed_chat_ids)
 
 
-@dataclass
-class PdfConfig:
-    """PDF parallel-conversion settings loaded from the `pdf:` key in config.yaml."""
-    worker_ram_gb: float = 4.0
-    max_workers: int | None = None
-
-
-def load_pdf_config() -> PdfConfig:
-    """Return PDF parallel-conversion settings from config.yaml, applying defaults."""
-    raw = load_raw_config()
-    pdf = raw.get("pdf") or {}
-    return PdfConfig(
-        worker_ram_gb=pdf.get("worker_ram_gb", 4.0),
-        max_workers=pdf.get("max_workers"),
-    )
-
-
 def load_raw_config(config_path: Path | None = None) -> dict:
     """Return the full parsed config dict, or {} if the file is absent.
 
@@ -155,6 +138,7 @@ def _build_config_from_entry(entry: dict, raw: dict, model_id: str = "") -> Agen
     sandbox_mode = bool(raw.get("sandbox_mode", False))
     system_prompt_preamble = str(raw.get("system_prompt_preamble", "") or "")
     provider_order: list[str] | None = entry.get("provider_order") or None
+    services = raw.get("services") or {}
 
     return AgentConfig(
         model=entry["model"],
@@ -176,6 +160,7 @@ def _build_config_from_entry(entry: dict, raw: dict, model_id: str = "") -> Agen
         sandbox_mode=sandbox_mode,
         system_prompt_preamble=system_prompt_preamble,
         provider_order=provider_order,
+        services=services,
     )
 
 

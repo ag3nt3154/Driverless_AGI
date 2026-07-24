@@ -1,45 +1,56 @@
-import base64
+"""Read tool — text files inline, documents via converter service."""
+import re
 from pathlib import Path
 
 from agent.base_tool import BaseTool
 from tools._path_guard import validate_path
-from tools._pdf_convert import convert_pdf, select_pages
+from tools.read._doc_service import convert_document, DocServiceError
 
 try:
     from tools.read._document_reader import summarize_document
 except ImportError:
     summarize_document = None  # type: ignore[assignment]
 
-# Image extensions — currently blocked until the endpoint supports image tool results.
-# TODO: remove _IMAGE_EXTS from _BLOCKED_EXTS and re-enable the image path below.
 _IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
-_MIME = {
-    ".jpg": "image/jpeg",
-    ".jpeg": "image/jpeg",
-    ".png": "image/png",
-    ".gif": "image/gif",
-    ".webp": "image/webp",
-}
-
-# File types that the read tool explicitly cannot handle.
-# Everything else is attempted as UTF-8 text (or converted via _MARKITDOWN_EXTS below).
-# Add future unsupported formats here (e.g. pdf) until they gain read support.
 _BLOCKED_EXTS = _IMAGE_EXTS.copy()
+_DOC_EXTS = {".pdf", ".docx", ".xlsx", ".pptx"}
+_PAGE_MARKER_RE = re.compile(r"<!-- Page (\d+) -->")
 
-# Document formats converted to markdown text via markitdown before reading.
-_MARKITDOWN_EXTS = {".docx", ".xlsx", ".pptx"}
+
+def _parse_page_spec(spec: str) -> set[int]:
+    """Parse a page spec like '1-3,5,8-10' into a set of page numbers."""
+    pages: set[int] = set()
+    for part in spec.split(","):
+        part = part.strip()
+        if "-" in part:
+            bounds = part.split("-", 1)
+            try:
+                start, end = int(bounds[0].strip()), int(bounds[1].strip())
+            except ValueError:
+                raise ValueError(f"Invalid page spec: {spec!r}")
+            pages.update(range(start, end + 1))
+        else:
+            try:
+                pages.add(int(part))
+            except ValueError:
+                raise ValueError(f"Invalid page spec: {spec!r}")
+    return pages
 
 
-def _convert_document(p: Path) -> str:
-    """Convert a docx/xlsx/pptx file to markdown text via markitdown."""
-    try:
-        from markitdown import MarkItDown
-    except ImportError:
-        raise RuntimeError(
-            "markitdown is not installed. Install it with: pip install markitdown"
-        )
-    result = MarkItDown().convert(str(p))
-    return result.text_content
+def _select_pages(md_text: str, page_spec: str) -> str:
+    """Filter markdown to only include the specified pages."""
+    wanted = _parse_page_spec(page_spec)
+    sections = _PAGE_MARKER_RE.split(md_text)
+    result_parts: list[str] = []
+    # sections[0] is text before first marker (if any)
+    i = 1
+    while i < len(sections):
+        page_num = int(sections[i])
+        content = sections[i + 1] if i + 1 < len(sections) else ""
+        if page_num in wanted:
+            result_parts.append(f"<!-- Page {page_num} -->{content}")
+        i += 2
+    return "".join(result_parts)
 
 
 class ReadTool(BaseTool):
@@ -47,10 +58,9 @@ class ReadTool(BaseTool):
     description = (
         "Read the contents of a file. Supports all text files (any extension) — "
         "attempts UTF-8 decoding. Defaults to first 2000 lines. "
-        ".docx, .xlsx, and .pptx files are automatically converted to markdown "
-        "text before being read. "
-        ".pdf files are converted to markdown via docling (with high-fidelity table "
-        "extraction); use the optional `pages` parameter to select specific pages. "
+        ".docx, .xlsx, .pptx, and .pdf files are converted to markdown via the "
+        "document converter service (must be running). "
+        "Use the optional `pages` parameter to select specific PDF pages. "
         "Use offset/limit for large files. Accepts both relative paths "
         "(resolved from the project root) and absolute paths. "
         "Output uses `cat -n` style: each line is prefixed with its 1-indexed "
@@ -60,9 +70,18 @@ class ReadTool(BaseTool):
     _parameters = {
         "type": "object",
         "properties": {
-            "path": {"type": "string", "description": "Path to the file to read (relative to project root, or absolute)"},
-            "offset": {"type": "integer", "description": "Line number to start reading from (1-indexed)"},
-            "limit": {"type": "integer", "description": "Maximum number of lines to read"},
+            "path": {
+                "type": "string",
+                "description": "Path to the file to read (relative to project root, or absolute)",
+            },
+            "offset": {
+                "type": "integer",
+                "description": "Line number to start reading from (1-indexed)",
+            },
+            "limit": {
+                "type": "integer",
+                "description": "Maximum number of lines to read",
+            },
             "pages": {
                 "type": "string",
                 "description": (
@@ -81,11 +100,13 @@ class ReadTool(BaseTool):
         allowed_roots: list[Path] | None = None,
         reserve_tokens: int = 0,
         project_path: Path | None = None,
+        service_url: str | None = None,
     ):
         self.cwd = cwd
         self.allowed_roots = allowed_roots
         self._reserve_tokens = reserve_tokens
         self._project_path = project_path
+        self._service_url = service_url
 
     def run(
         self,
@@ -104,39 +125,35 @@ class ReadTool(BaseTool):
         if pages is not None and ext != ".pdf":
             return "Error: 'pages' parameter is only supported for PDF files."
 
-        # ── Blocked file type gate ────────────────────────────────────────
         if ext in _BLOCKED_EXTS:
             return (
                 f"Error: Cannot read file type '{ext}'. This file type is not "
-                f"currently supported by the read tool. If this file type "
-                f"should be supported, update _BLOCKED_EXTS in tools/read/_read.py."
+                f"currently supported by the read tool."
             )
-        # ──────────────────────────────────────────────────────────────────
 
         header = None
 
-        if ext == ".pdf":
+        if ext in _DOC_EXTS:
+            if not self._service_url or not self._project_path:
+                return (
+                    "Error: Document reading requires the converter service. "
+                    "Ensure services.doc_converter is configured in config.yaml."
+                )
             try:
-                md_text, cache_path = convert_pdf(p, self.cwd)
-            except Exception as e:
-                return f"Error: Could not convert '{p.name}': {e}"
+                md_text = convert_document(p, self._service_url, self._project_path)
+            except DocServiceError as exc:
+                return f"Error from document service ({exc.code}): {exc.message}"
 
-            total_pages = md_text.count("<!-- Page ")
-            if pages:
-                md_text = select_pages(md_text, pages)
+            if ext == ".pdf":
+                total_pages = md_text.count("<!-- Page ")
+                if pages:
+                    md_text = _select_pages(md_text, pages)
+                header = f"[PDF: {p.name} | {total_pages} pages"
+                if pages:
+                    header += f" | showing pages {pages}"
+                header += "]"
 
             lines = md_text.splitlines()
-            header = f"[PDF: {p.name} | {total_pages} pages | cached: {cache_path}"
-            if pages:
-                header += f" | showing pages {pages}"
-            header += "]"
-
-        elif ext in _MARKITDOWN_EXTS:
-            try:
-                text = _convert_document(p)
-            except Exception as e:
-                return f"Error: Could not convert '{p.name}': {e}"
-            lines = text.splitlines()
 
         else:
             try:
@@ -155,9 +172,7 @@ class ReadTool(BaseTool):
 
         raw_result = f"{header}\n{numbered}" if header else numbered
 
-        # Auto-summarization gate: if the full document is over budget and
-        # we're reading from the start (not a targeted offset/limit drill-in),
-        # spawn the document-reader subagent.
+        # Auto-summarization gate
         if (
             self._reserve_tokens > 0
             and self._project_path is not None
@@ -166,7 +181,9 @@ class ReadTool(BaseTool):
             and limit == 2000
         ):
             _CHARS_PER_TOKEN = 4
-            full_text = "\n".join(f"{i:6d}\t{line}" for i, line in enumerate(lines, 1))
+            full_text = "\n".join(
+                f"{i:6d}\t{line}" for i, line in enumerate(lines, 1)
+            )
             estimated_tokens = len(full_text) // _CHARS_PER_TOKEN
             if estimated_tokens >= self._reserve_tokens:
                 summary = summarize_document(
