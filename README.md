@@ -158,6 +158,22 @@ conda run --no-capture-output -n dagi python tui.py -m deepseek-v4-pro-openroute
 
 Exit with `/exit`, `exit`, `quit`, or `Ctrl-C`. Conversation history carries across turns.
 
+### Double-Click Launcher (`dagi_run.bat`) — portable/conda-packed distribution
+
+For a distribution that doesn't require a full conda install, unpack a [conda-pack](https://conda.github.io/conda-pack/)'d environment named `dagi_env` as a sibling folder next to this repo:
+
+```
+{parent_folder}/
+├── driverless_agi/   # this repo
+└── dagi_env/         # conda-packed env (conda-pack -n dagi -o dagi_env.tar.gz, then unpacked here)
+```
+
+Double-click `dagi_run.bat` in the repo root. It opens a Windows Terminal window (falls back to `cmd` if `wt.exe` isn't on `PATH`), activates `dagi_env`, and runs `dagi_launch.py`, which prompts for:
+1. **Model** — numbered list read live from `config.yaml`'s `models:` catalog
+2. **Verbose** — `y`/`n`
+
+...then launches `tui.py --model <id> [--verbose]` with your selections.
+
 ### Interactive CLI (`archives/cli.py`) [DEPRECATED]
 
 The legacy CLI REPL has been **archived** in favour of the TUI (`python tui.py`).
