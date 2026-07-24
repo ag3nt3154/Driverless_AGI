@@ -267,7 +267,7 @@ On first use, run `/init` inside the interface. It creates the standard director
 ```
 
 This creates:
-- `.dagi/agents.md` — behavioral guidelines injected into every session
+- `AGENTS.md` — project orientation + behavioral guidelines, injected into every session
 - `.dagi/skills/` — directory for project-specific skills
 - `.dagi/workflow/` — directory for project-specific workflows
 - `dagi-memory/raw/` — drop source material here for the wiki
@@ -436,7 +436,7 @@ The context carries over — no need to restart.
 - **Build the memory wiki over time.** The more domain knowledge in `dagi-memory/wiki/`, the less you need to re-explain project context each session.
 - **Pause instead of cancelling.** `Esc` in the TUI preserves the agent's full context; you can inject corrections and resume rather than restarting from scratch.
 - **Review sessions with `/hist`.** Session summaries in `.dagi/logs/` capture token counts, cost, and what the agent did. The `review-session` skill accepts a free-text description of which sessions to look at and accumulates findings from all of them into one report, so patterns that recur across sessions surface as a single insight.
-- **Add a `.dagi/agents.md` to your project.** This file is injected into every session for that project. Use it to encode coding standards, architecture invariants, and anything you would otherwise repeat in every task prompt.
+- **Fill in `AGENTS.md`'s Behavioral Guidelines section for your project.** This whole file is injected into every session for that project. Use the Behavioral Guidelines section for coding standards, architecture invariants, and anything you would otherwise repeat in every task prompt.
 
 ---
 

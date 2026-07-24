@@ -65,8 +65,8 @@ def _system_breakdown(dagi_root: Path, project_path: Path) -> dict[str, int]:
             _toks(dagi_root / ".dagi" / "prompts" / "main" / "main_system.md")
             + _toks(dagi_root / "soul.md")
         ),
-        "dagi/ag": _toks(dagi_root / ".dagi" / "agents.md"),
-        "proj/ag": _toks(project_path / ".dagi" / "agents.md"),
+        "dagi/ag": _toks(dagi_root / "AGENTS.md"),
+        "proj/ag": _toks(project_path / "AGENTS.md"),
     }
 
 

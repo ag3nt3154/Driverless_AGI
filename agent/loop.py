@@ -897,8 +897,8 @@ class AgentLoop:
         if soul_text:
             parts.append(soul_text.strip())
         for agents_path in [
-            dagi_root / ".dagi" / "agents.md",
-            self.config.project_path / ".dagi" / "agents.md",
+            dagi_root / "AGENTS.md",
+            self.config.project_path / "AGENTS.md",
         ]:
             if agents_path.exists():
                 text = agents_path.read_text(encoding="utf-8").strip()
@@ -928,19 +928,19 @@ class AgentLoop:
         ))
 
         soul_text = load_soul(dagi_root, self.config.project_path)
-        dagi_agents = dagi_root / ".dagi" / "agents.md"
-        project_agents = self.config.project_path / ".dagi" / "agents.md"
+        dagi_agents = dagi_root / "AGENTS.md"
+        project_agents = self.config.project_path / "AGENTS.md"
         self.system_parts = []
         if soul_text:
             self.system_parts.append({"label": "SOUL.md", "content": soul_text.strip()})
         if dagi_agents.exists():
             self.system_parts.append({
-                "label": ".dagi/agents.md (dagi)",
+                "label": "AGENTS.md (dagi)",
                 "content": dagi_agents.read_text(encoding="utf-8").strip(),
             })
         if project_agents.exists():
             self.system_parts.append({
-                "label": ".dagi/agents.md (project)",
+                "label": "AGENTS.md (project)",
                 "content": project_agents.read_text(encoding="utf-8").strip(),
             })
         self.system_parts.append({"label": "System Prompt", "content": prompt})

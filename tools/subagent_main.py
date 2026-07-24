@@ -128,11 +128,11 @@ def _build_subagent_system_prompt(subagent_type: str, project_path: Path) -> str
     which = _AGENTS_MD_TYPES.get(subagent_type, [])
     parts = [base]
     if "dagi" in which:
-        md = _load_optional_md(DAGI_ROOT / ".dagi" / "agents.md")
+        md = _load_optional_md(DAGI_ROOT / "AGENTS.md")
         if md:
             parts.append(md)
     if "cwd" in which:
-        md = _load_optional_md(project_path / ".dagi" / "agents.md")
+        md = _load_optional_md(project_path / "AGENTS.md")
         if md:
             parts.append(md)
     return "\n\n---\n\n".join(parts)

@@ -1,6 +1,6 @@
 # AGENTS.md
 
-> Last updated: 2026-07-20 (purged `models/docling_models/` from git history — a 203MB blob had blocked pushes) | [README](README.md) | [TODO](TODO.md)
+> Last updated: 2026-07-24 (merged `.dagi/agents.md` behavioral guidelines into this file) | [README](README.md) | [TODO](TODO.md)
 
 ---
 
@@ -15,6 +15,79 @@ Driverless AGI (dagi) is a self-hosted, OpenAI-compatible agentic coding assista
 - DAGI never merges, switches off, or deletes its own `dagi/*` task branch — that step is always left to the user.
 - `git_add`/`git_commit`/`git_reset` tools only operate on `dagi/*` branches (`_dagi_branch_guard`); raw `git` via `BashTool` is not restricted by this guard.
 - Always update `README.md`, `TODO.md`, and this file (`AGENTS.md`) after completing a task.
+
+## Behavioral Guidelines
+
+> This section is stable protocol/standards content — preserve verbatim across
+> routine `update-project-context` runs; only edit it when the user gives an
+> explicit standing behavioral instruction.
+
+### Coding standards
+- Functions: <= 100 lines
+- Cyclomatic complexity: <= 8
+- Positional parameters: <= 5
+- Line length: 100 characters
+- Files: <= 500 lines
+
+### Calibrate to Ambiguity
+- **High ambiguity** (vague or conceptual): ask clarifying questions before acting
+- **Medium ambiguity**: ask targeted questions on gaps, then proceed
+- **Low ambiguity**: verify quickly and proceed
+- **Trivial changes**: trust user intent — don't over-process obvious requests (e.g. "fix typo", "add tooltip")
+
+### Before Acting
+- **State assumptions.** Don't smuggle them. If the request has more than one interpretation, name the one you're using. If it could materially change the answer, ask first.
+- **Read before write.** Before adding code to a file, read its exports, the immediate caller, and obvious shared utilities. "Looks orthogonal" is the warning sign.
+- **Project consequences.** Before any recommendation or change with downstream effect: assess the plausible downside and reversibility. If material, escalate care.
+
+### During Execution
+- **Simplicity first.** Minimum code that solves the problem. Nothing speculative. No abstractions for single-use code. No features beyond what was asked.
+- **Surgical scope.** Touch only what the task requires. Don't refactor adjacent code, reformat, or improve comments you didn't add.
+- **Match conventions.** Follow existing patterns for naming, formatting, error handling, and tests. If two patterns conflict, pick the more recent or more tested one, use it, and flag the other. Conformance over taste.
+- **Model for judgment; code for determinism.** Use the model for classification, drafting, summarization, extraction. Use code for routing, retries, status-code handling, deterministic transforms.
+- NEVER create files unless absolutely necessary
+- NEVER commit secrets, credentials, or .env files
+
+### Verify Invariants Before Shipping
+For non-trivial changes, confirm before shipping:
+- [ ] State ownership and consistency clear?
+- [ ] Feedback / observability in place?
+- [ ] Blast radius understood?
+- [ ] Timing and ordering safe?
+- [ ] Follows existing patterns (or intentionally breaks them)?
+- [ ] Security / obvious risks addressed?
+
+If any are unclear → flag explicitly, ask, or defer.
+
+### After Acting
+- **Ground claims.** Numbers, percentages, rankings, named sources — mark unsupported ones or remove. Bounded language over invented specificity.
+- **Fail loud.** "Done" is wrong if anything was skipped silently. "Tests pass" is wrong if any were skipped or if tests don't fail when intent is violated. Surface uncertainty — don't hide it.
+- **Checkpoint.** After each significant step, name what was done, what's verified, what's left. Don't continue from a state you can't describe back.
+
+### Tests
+- Tests must encode **why** behavior matters, not just what it does.
+- A test that can't fail when business logic changes is wrong.
+
+### Hard Stops
+Stop and flag when:
+- State ownership is unclear
+- Blast radius is unknown
+- Timing or race condition hazards are present
+- Security issues are identified
+- Complexity debt would be significant
+
+### Token Budgets
+- Per-task: 4,000 tokens. Per-session: 30,000 tokens.
+- If approaching budget: summarize and start fresh. Surface the breach — do not silently overrun.
+
+### Memory
+- **Memory query:** After receiving a substantive task (anything beyond a greeting or quick factual question), invoke `skill("memory-query")` before taking any action. Skip if the request is clearly conversational or there is obviously no relevant prior knowledge to retrieve.
+- **Memory add:** When you notice something substantial worth preserving across sessions (errors, future tasks, improvement ideas, open questions, reflections), invoke `skill("memory-add")` to record it.
+
+### Error handling
+- Fail fast with clear, actionable messages
+- Never swallow exceptions silently
+- Include context (what operation, what input, suggested fix)
 
 ## Process Flow
 
@@ -77,7 +150,6 @@ tui.py / telegram_bot.py / main.py ← entry points (TUI | Telegram | one-shot)
 | `tools/_document_reader.py` | Orchestrates the `document-reader` subagent for long documents: cache-hit fast path (`.dagi/hash_cache/document_summary/<sha256>_summary.md`), cache-miss spawns subagent via `run_subagent()`, returns `None` on failure for caller to fall back to truncation |
 | `tests/test_document_reader.py` | Unit + integration tests: `TestSummarizeDocumentCacheHit` (cache retrieval), `TestSummarizeDocumentCacheMiss` (subagent spawn), `TestSummarizeDocumentFallback` (graceful failure), `TestEndToEnd` (ReadTool→summarize_document→mock subagent pipeline) |
 | `archives/cli.py` | Archived Rich REPL — dead code since 2026-07-12, not imported anywhere |
-| `.dagi/agents.md` | Behavioral guidelines loaded every session (coding standards, memory protocol) — separate from this file |
 
 ## Errors Log
 
@@ -94,6 +166,7 @@ tui.py / telegram_bot.py / main.py ← entry points (TUI | Telegram | one-shot)
 
 ## Notes & Terms
 
+- **AGENTS.md is force-injected, not just tool-read**: as of 2026-07-24, `_build_preamble()`/`_assemble_system_string()` (`agent/loop.py`) load `AGENTS.md` (dagi-root and project-path copies) directly into every session's system prompt — the old separate `.dagi/agents.md` behavioral-guidelines file is gone, merged into this file's `## Behavioral Guidelines` section. `update-project-context` must preserve that section verbatim on routine updates.
 - **END_OF_RESPONSE / `<<END_OF_RESPONSE>>`**: Primary exit sentinel, checked before the legacy `<<TASK_END>>` alias; can appear anywhere in the response (substring check).
 - **continuation**: Harness injecting a `"continue"` message when the agent stops without a termination flag.
 - **compaction**: Pi-style summarization of the middle of `_messages` when context exceeds budget; preserves system prompt and recent tail. `_compact_context()` catches all exceptions — a failed compaction never crashes the session.

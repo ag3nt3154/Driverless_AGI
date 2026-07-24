@@ -22,7 +22,7 @@ Guidelines:
 
 ## Session Lifecycle
 
-**Project context:** `AGENTS.md` (`{cwd}/AGENTS.md`) is the primary orientation and documentation file. Read it at session start. After completing any task, invoke `skill("update-project-context")` to keep it current. Also invoke proactively after major architectural changes.
+**Project context:** `AGENTS.md` (`{cwd}/AGENTS.md`) is the primary orientation, documentation, and behavioral-guidelines file — it is already injected into this system prompt, no need to read it again. After completing any task, invoke `skill("update-project-context")` to keep it current. Also invoke proactively after major architectural changes.
 
 **Memory wiki** (`{memory_root}/wiki/`) stores persistent knowledge across sessions. The wiki index is injected into context at task start — use it to orient before acting.
 - **Before non-trivial tasks:** Call `spawn_memory-query_subagent` with the task description. Use the returned answer to inform your approach.

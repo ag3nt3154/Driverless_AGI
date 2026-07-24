@@ -1,6 +1,6 @@
 ---
 name: update-project-context
-description: Create or update AGENTS.md at the project root — a living, continuously-updated technical overview that gives any future session a fast picture of the project without re-reading the whole repo. Sections are deliberately lean: Overview, Rules, Process Flow, Architecture, Key Files & Directories, a capped Errors log, Notes & Terms, and a trimmed User Insights (subsections capped at 10 one-liners each). Use whenever the user says "update project context", "update agents.md", "refresh the context doc", "create project context", or "update the docs". Also invoke automatically at the end of every task, and proactively mid-session after a major architectural change.
+description: Create or update AGENTS.md at the project root — a living, continuously-updated technical overview that gives any future session a fast picture of the project without re-reading the whole repo. Sections are deliberately lean: Overview, Rules, Behavioral Guidelines, Process Flow, Architecture, Key Files & Directories, a capped Errors log, Notes & Terms, and a trimmed User Insights (subsections capped at 10 one-liners each). Use whenever the user says "update project context", "update agents.md", "refresh the context doc", "create project context", or "update the docs". Also invoke automatically at the end of every task, and proactively mid-session after a major architectural change.
 ---
 
 # Update Project Context
@@ -16,13 +16,14 @@ You are creating or updating `AGENTS.md` at the project root. This document is a
 
 Only on first creation, when there is no prior document and no task context to lean on:
 
-- Read `README.md`, `TODO.md`, `.dagi/agents.md` (behavioral guidelines — do not duplicate its content here)
+- Read `README.md`, `TODO.md`
 - Run `git log --oneline -20` and `git status`
 - List top-level directories (1 level deep)
+- Note: a freshly-scaffolded `AGENTS.md` (from `/init`) already ships a `## Behavioral Guidelines` placeholder — fill it in with the project's coding standards and session protocol rather than leaving it blank.
 
 ## Step 1b: Gather Context (updates — the common case)
 
-Do **not** re-read README, TODO, or `.dagi/agents.md` — the session that just finished the task already has that context fresh; re-reading them is wasted work and the main source of bloat.
+Do **not** re-read README or TODO — the session that just finished the task already has that context fresh; re-reading them is wasted work and the main source of bloat.
 
 Instead:
 - Read the existing `AGENTS.md` first
@@ -50,13 +51,19 @@ Description/Objective sections.}
 
 ## Rules
 
-{Behavioral rules relevant to this specific project. Same substance as
-`.dagi/agents.md` for this project's rules — this section is written for
-quick human/session orientation; `.dagi/agents.md` remains the mechanism
-actually auto-loaded into the system prompt at runtime. Short, imperative
+{Behavioral rules relevant to this specific project. Short, imperative
 bullets.}
 
 - {rule}
+
+## Behavioral Guidelines
+
+{Stable protocol/standards content — coding standards, session protocol,
+ambiguity calibration, hard stops, etc. This section is force-injected into
+every session's system prompt alongside the rest of this document (same
+mechanism `.dagi/agents.md` used to serve). PRESERVE VERBATIM across routine
+updates — do not regenerate or rephrase it from session diffs. Only edit it
+when the user gives an explicit standing behavioral instruction.}
 
 ## Process Flow
 
@@ -120,7 +127,8 @@ bullets.}
 ## Step 3: Updating Rules
 
 - **Overview**: touch only if this session changed it structurally. Otherwise leave as-is.
-- **Rules**: add a rule when the user gives a project-specific standing instruction; keep in sync with `.dagi/agents.md` for this project. Remove rules no longer accurate.
+- **Rules**: add a rule when the user gives a project-specific standing instruction. Remove rules no longer accurate.
+- **Behavioral Guidelines**: leave untouched on routine updates. Only edit when the user explicitly changes a standing behavioral rule.
 - **Architecture / Process Flow**: touch only if this session changed them structurally. Otherwise leave as-is.
 - **Key Files & Directories**: add entries this session's work made load-bearing; remove entries no longer accurate or load-bearing. This table should not grow monotonically.
 - **Errors Log**: append one line for a new error this session actually hit (never speculate). Compress to `**{date}**: {error} → {fix}`. Enforce the cap of 10 — when adding the 11th, drop the oldest.
@@ -150,4 +158,4 @@ Write `AGENTS.md` to the project root. Then briefly report:
 
 **On description vs README**: Overview and Architecture complement `README.md`, not duplicate it. Link to README for setup/usage instead of repeating it.
 
-**On behavioral guidelines:** `.dagi/agents.md` (per-project) is the mechanism actually loaded into the system prompt at runtime — it holds rules for operating as a coding agent generally (dagi-root copy) or rules specific to whatever project dagi is pointed at (project-path copy). `AGENTS.md`'s Rules section is the same substance as the project-path `.dagi/agents.md`, written for quick orientation — keep the two in sync rather than avoiding overlap. Do not, however, duplicate `.dagi/agents.md`'s content into other `AGENTS.md` sections (Architecture, Notes & Terms, etc.) — Rules is the one section where overlap is expected.
+**On behavioral guidelines:** `AGENTS.md` itself (per-project) is the mechanism loaded into the system prompt at runtime — the `## Behavioral Guidelines` section holds rules for operating as a coding agent generally (dagi-root copy) or rules specific to whatever project dagi is pointed at (project-path copy). Do not duplicate its content into other sections (Architecture, Notes & Terms, etc.) — Rules and Behavioral Guidelines are the two sections where standing-instruction content belongs; everything else stays purely descriptive.
