@@ -11,7 +11,7 @@ dependencies = [
     "textual>=0.80.0",     # TUI framework for the full-canvas terminal UI (tui.py)
     "langchain>=1.3.4",    # Core LLM orchestration and agent framework
     "langchain-openai>=1.2.2", # OpenAI provider for LangChain
-    "psutil>=5.9.0",       # RAM/CPU introspection — PDF parallel-conversion worker sizing
+    "psutil>=5.9.0",       # RAM/CPU introspection — used by tests/conftest.py RAM watchdog
     "win11toast>=0.35",    # Native Windows 10/11 toast notifications; degrades to a silent no-op on non-Windows hosts or if missing
     "httpx>=0.27",         # HTTP client used as the fallback web fetcher
     "beautifulsoup4>=4.12", # HTML parser used alongside httpx when crawl4ai is unavailable
@@ -25,16 +25,6 @@ telegram = ["python-telegram-bot>=21.0"]
 # Install to enable the web_search and web_fetch tools' primary (non-fallback) path.
 # dagi starts and runs without these; affected tools return a friendly error message.
 web = ["ddgs>=2.0", "crawl4ai>=0.8.7"]
-# Install to enable DOCX, XLSX, and PPTX reading in the `read` tool.
-docs = ["markitdown>=0.1.0"]
-# Install to enable PDF reading in the `read` tool.
-# dagi starts and runs without these; PDF files return a friendly error message.
-# NOTE: ocrmypdf also requires the `tesseract` system binary — install via your OS package manager.
-pdf = [
-    "docling>=2.75",       # IBM deep-learning document converter (TableFormer for tables); floor pulls in docling-core>=2.74.1 (fixes CVE-2026-24009, CVE-2026-44023)
-    "pymupdf>=1.26.6",     # Scanned-vs-digital PDF detection (text extraction probe); floor fixes CVE-2026-3029
-    "ocrmypdf>=16.0",      # Tesseract-based OCR overlay for scanned PDFs
-]
 
 [project.scripts]
 dagi = "main:main"

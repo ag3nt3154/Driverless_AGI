@@ -223,6 +223,11 @@ models:
   #   reserve_tokens: 32768
   #   keep_recent_tokens: 50000
 
+# ── Services ──────────────────────────────────────────────────────────────────
+# URLs for standalone dagi microservices. Omit a service to use its built-in default.
+services:
+  doc_converter: "http://localhost:8100"  # Document converter service URL (start with: python -m services.doc_converter)
+
 # ── Telegram bot ──────────────────────────────────────────────────────────────
 # Configure the Telegram bot interface (telegram_bot.py entry point).
 # Set the bot token in your .env file, NOT here.
