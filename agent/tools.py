@@ -20,8 +20,6 @@ import sys
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-import yaml
-
 from agent.base_tool import BaseTool
 from agent.registry import ToolRegistry
 from tools.bash import BashTool
