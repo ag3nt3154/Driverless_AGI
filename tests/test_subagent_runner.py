@@ -82,6 +82,39 @@ class TestEscalationDetection:
         assert "escalation" in result["message"].lower()
 
 
+class TestUnverifiedHandoffDetection:
+    def test_handoff_with_unverified_flag_returns_ok_unverified(self, tmp_path):
+        state, proc = _make_state(tmp_path, poll_side_effect=[None, 0])
+        state.handoff_path.write_text("# Handoff\n\nscraped\n", encoding="utf-8")
+        flag_path = tmp_path / "worker_ab12cd34_unverified.flag"
+        flag_path.write_text("", encoding="utf-8")
+
+        result = _poll_until(state, extra_seconds=10)
+
+        assert result["status"] == "ok_unverified"
+        assert result["handoff"] == str(state.handoff_path)
+
+    def test_handoff_without_unverified_flag_returns_ok(self, tmp_path):
+        state, proc = _make_state(tmp_path, poll_side_effect=[None, 0])
+        state.handoff_path.write_text("# Handoff\n\ndone\n", encoding="utf-8")
+
+        result = _poll_until(state, extra_seconds=10)
+
+        assert result["status"] == "ok"
+        assert result["handoff"] == str(state.handoff_path)
+
+    def test_escalation_branch_unaffected_by_unverified_flag_logic(self, tmp_path):
+        escalation_path = tmp_path / "worker_ab12cd34_escalation.md"
+        escalation_path.write_text("# Escalation\n\n## Question\nQ\n\n## Context\nC\n", encoding="utf-8")
+        state, proc = _make_state(tmp_path, poll_side_effect=lambda: None)
+        # A stray unverified flag should not influence the escalation path at all.
+        (tmp_path / "worker_ab12cd34_unverified.flag").write_text("", encoding="utf-8")
+
+        result = _poll_until(state, extra_seconds=10)
+
+        assert result["status"] == "escalated"
+
+
 class TestForceKillActiveSubagents:
     def test_force_kill_calls_kill_process_tree_on_every_active_proc(self, tmp_path, monkeypatch):
         killed_procs = []
