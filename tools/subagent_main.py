@@ -30,6 +30,10 @@ _AGENTS_MD_TYPES = {
     "review": ["dagi", "cwd"],
 }
 
+_HANDOFF_RETRY_PROMPT = (
+    "You ended without calling `write_handoff`. Call it now with your complete report."
+)
+
 
 def _apply_worker_config(config: AgentConfig) -> AgentConfig:
     """Return a flattened config that uses worker_model (falls back to default)."""
@@ -86,6 +90,35 @@ def _extract_final_assistant_text(messages: list) -> str:
             if text:
                 return text
     return ""
+
+
+def _ensure_handoff(loop: AgentLoop, handoff_path: Path) -> None:
+    """Ensure a handoff report exists, retrying once, then scraping with an unverified flag.
+
+    If `handoff_path` is missing after the initial `loop.run()` call, gives the subagent
+    one corrective retry naming `write_handoff` explicitly. If it's still missing after
+    that, scrapes the final assistant text into a minimal handoff and writes a sidecar
+    `_unverified.flag` file so the caller can report degraded status.
+    """
+    if handoff_path.exists():
+        return
+
+    try:
+        loop.run(_HANDOFF_RETRY_PROMPT)
+    except Exception as exc:
+        print(json.dumps({"type": "error", "message": str(exc)}), flush=True)
+
+    if handoff_path.exists():
+        return
+
+    final_text = _extract_final_assistant_text(loop._messages)
+    handoff_path.parent.mkdir(parents=True, exist_ok=True)
+    handoff_path.write_text(
+        f"# Handoff\n\n{final_text or '(subagent produced no output)'}",
+        encoding="utf-8",
+    )
+    flag_path = handoff_path.with_name(f"{handoff_path.stem}_unverified.flag")
+    flag_path.write_text("1", encoding="utf-8")
 
 
 def _build_pipe_callbacks() -> AgentCallbacks:
@@ -199,14 +232,7 @@ def run_subagent_pipe_mode(
     finally:
         loop.finish()
 
-    # Enforce handoff — write minimal report if agent forgot
-    if not handoff_path.exists():
-        final_text = _extract_final_assistant_text(loop._messages)
-        handoff_path.parent.mkdir(parents=True, exist_ok=True)
-        handoff_path.write_text(
-            f"# Handoff\n\n{final_text or '(subagent produced no output)'}",
-            encoding="utf-8",
-        )
+    _ensure_handoff(loop, handoff_path)
 
     print(json.dumps({"type": "done"}), flush=True)
 
