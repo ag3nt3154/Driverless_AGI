@@ -27,6 +27,7 @@ from tools.switch_model import parse_switch_sentinel
 
 TASK_END_FLAG = "<<TASK_END>>"           # legacy alias — still recognised
 AWAIT_USER_FLAG = "<<END_OF_RESPONSE>>"
+WRITE_HANDOFF_SENTINEL = "<<HANDOFF_WRITTEN>>"
 
 
 def _is_plan_empty(path: Path) -> bool:
@@ -648,6 +649,8 @@ class AgentLoop:
 
                     args = json.loads(tc.function.arguments)
                     result = self.registry.dispatch(tc.function.name, args)
+                    if isinstance(result, str) and WRITE_HANDOFF_SENTINEL in result:
+                        return self._handle_write_handoff(tc, result, description, tool_records)
                     if isinstance(result, str) and result.startswith(ENTER_PLAN_MODE_SENTINEL):
                         result = self._handle_enter_plan_mode(args)
                     elif result == EXIT_PLAN_MODE_SENTINEL:
@@ -722,6 +725,30 @@ class AgentLoop:
             raise
 
     # ── Plan mode transitions ─────────────────────────────────────────────────
+
+    def _handle_write_handoff(
+        self, tc, result: str, description: str, tool_records: list[ToolCallRecord]
+    ) -> str:
+        """Terminate the subagent's turn immediately on WRITE_HANDOFF_SENTINEL.
+
+        Mirrors the tool-message bookkeeping the normal dispatch path performs,
+        then short-circuits the run() call — no further tool calls or API
+        turns happen after this.
+        """
+        clean = result.replace(WRITE_HANDOFF_SENTINEL, "").strip()
+        self.callbacks.on_tool_end(tc.function.name, clean)
+        self.tracker.record_tool_end(tc.function.name, clean)
+        tool_records.append(ToolCallRecord(
+            name=tc.function.name,
+            description=description,
+            input=tc.function.arguments,
+            result=clean,
+        ))
+        self._messages.append(
+            {"role": "tool", "tool_call_id": tc.id, "content": clean}
+        )
+        self.callbacks.on_done(clean)
+        return clean
 
     def _handle_enter_plan_mode(self, args: dict) -> str:
         mode = args.get("mode", "interactive")
