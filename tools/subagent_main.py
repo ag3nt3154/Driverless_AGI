@@ -106,7 +106,10 @@ def _ensure_handoff(loop: AgentLoop, handoff_path: Path) -> None:
     try:
         loop.run(_HANDOFF_RETRY_PROMPT)
     except Exception as exc:
-        print(json.dumps({"type": "error", "message": str(exc)}), flush=True)
+        print(
+            json.dumps({"type": "error", "phase": "handoff_retry", "message": str(exc)}),
+            flush=True,
+        )
 
     if handoff_path.exists():
         return
@@ -226,13 +229,13 @@ def run_subagent_pipe_mode(
     )
 
     try:
-        loop.run(task)
-    except Exception as exc:
-        print(json.dumps({"type": "error", "message": str(exc)}), flush=True)
+        try:
+            loop.run(task)
+        except Exception as exc:
+            print(json.dumps({"type": "error", "message": str(exc)}), flush=True)
+        _ensure_handoff(loop, handoff_path)
     finally:
         loop.finish()
-
-    _ensure_handoff(loop, handoff_path)
 
     print(json.dumps({"type": "done"}), flush=True)
 
