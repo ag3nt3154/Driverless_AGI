@@ -72,6 +72,7 @@ def _tools_from_list(
     from tools.web_fetch import WebFetchTool
     from tools.web_search import WebSearchTool
     from tools.escalate_issue import EscalateIssueTool
+    from tools.write_handoff import WriteHandoffTool
 
     registry_map: dict[str, BaseTool] = {
         "read":       ReadTool(cwd=cwd, allowed_roots=allowed_roots),
@@ -105,6 +106,12 @@ def _tools_from_list(
                 f"[tools] Warning: unknown tool name {name!r} in subagent_config.yaml",
                 file=sys.stderr,
             )
+    # write_handoff is always available when a handoff_path is supplied, regardless
+    # of whether the subagent's declared `tools:` list names it. It exposes exactly
+    # one narrow capability (write this one file) so subagents that lack a general
+    # `write` tool can still submit their final report.
+    if handoff_path is not None:
+        result.append(WriteHandoffTool(handoff_path=handoff_path))
     return result
 
 
