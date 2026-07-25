@@ -1,9 +1,9 @@
-"""tests/test_scope_tools.py — Unit tests for _tools_from_list() in agent/tools.py."""
+"""tests/test_scope_tools.py — Unit tests for _tools_from_list() in agent/subagent_tools.py."""
 from __future__ import annotations
 
 from pathlib import Path
 
-from agent.tools import _tools_from_list
+from agent.subagent_tools import _tools_from_list
 from tools.bash import BashTool
 from tools.edit import EditTool
 from tools.find import FindTool
