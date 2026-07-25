@@ -249,6 +249,63 @@ class TestWriteHandoffSentinel:
 
         assert done_calls == ["Handoff written."]
 
+    def test_bookkeeping_fires_on_handoff_path(self):
+        """record_assistant and on_token_update must fire on the handoff
+        termination path, same as every other early-exit path."""
+        tool = FakeTool(name="write_handoff", result=f"Handoff written. {WRITE_HANDOFF_SENTINEL}")
+        registry = ToolRegistry()
+        registry.register(tool)
+
+        token_updates = []
+        callbacks = AgentCallbacks(
+            on_token_update=lambda p, c, cost, t: token_updates.append((p, c, cost, t))
+        )
+
+        loop = _make_loop(registry=registry)
+        loop.callbacks = callbacks
+        loop.client = MagicMock()
+        loop.client.chat.completions.create.side_effect = [
+            _make_response(
+                None,
+                tool_calls=[_make_tool_call("tc1", "write_handoff", "{}")],
+                prompt_tokens=10,
+                completion_tokens=5,
+            ),
+        ]
+
+        loop.run("do something")
+
+        loop.tracker.record_assistant.assert_called_once()
+        assert token_updates == [(10, 5, None, 0)]
+
+    def test_large_handoff_result_gets_filtered(self, tmp_path):
+        """A large handoff report must be routed through filter_tool_output,
+        same as the normal per-tool-call path."""
+        large_report = "x" * 100_000
+        tool = FakeTool(
+            name="write_handoff", result=f"{large_report}{WRITE_HANDOFF_SENTINEL}"
+        )
+        registry = ToolRegistry()
+        registry.register(tool)
+
+        warnings = []
+        callbacks = AgentCallbacks(on_assistant_text=lambda t: warnings.append(t))
+
+        loop = _make_loop(registry=registry, reserve_tokens=10, project_path=tmp_path)
+        loop.callbacks = callbacks
+        loop.client = MagicMock()
+        loop.client.chat.completions.create.side_effect = [
+            _make_response(None, tool_calls=[_make_tool_call("tc1", "write_handoff", "{}")]),
+        ]
+
+        result = loop.run("do something")
+
+        tool_msgs = [m for m in loop._messages if m.get("role") == "tool"]
+        assert "OUTPUT TRUNCATED" in tool_msgs[0]["content"]
+        assert any("[output filter]" in w for w in warnings)
+        # Final returned/on_done value is the full, unfiltered report (JSONL/caller-facing).
+        assert result == large_report
+
     def test_non_sentinel_tool_result_behaves_as_before(self):
         """Regression guard: a normal tool result without the sentinel proceeds
         to the next iteration rather than returning early."""

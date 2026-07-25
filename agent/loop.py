@@ -11,6 +11,9 @@ from typing import Callable
 
 import httpx
 import openai
+from openai.types.chat.chat_completion_message_function_tool_call import (
+    ChatCompletionMessageFunctionToolCall,
+)
 
 from agent import DAGI_ROOT
 from agent._git_branch import create_task_branch, get_current_branch
@@ -650,7 +653,9 @@ class AgentLoop:
                     args = json.loads(tc.function.arguments)
                     result = self.registry.dispatch(tc.function.name, args)
                     if isinstance(result, str) and WRITE_HANDOFF_SENTINEL in result:
-                        return self._handle_write_handoff(tc, result, description, tool_records)
+                        return self._handle_write_handoff(
+                            tc, result, description, tool_records, message, response
+                        )
                     if isinstance(result, str) and result.startswith(ENTER_PLAN_MODE_SENTINEL):
                         result = self._handle_enter_plan_mode(args)
                     elif result == EXIT_PLAN_MODE_SENTINEL:
@@ -724,10 +729,14 @@ class AgentLoop:
             self.callbacks.on_error(e)
             raise
 
-    # ── Plan mode transitions ─────────────────────────────────────────────────
-
     def _handle_write_handoff(
-        self, tc, result: str, description: str, tool_records: list[ToolCallRecord]
+        self,
+        tc: ChatCompletionMessageFunctionToolCall,
+        result: str,
+        description: str,
+        tool_records: list[ToolCallRecord],
+        message,
+        response,
     ) -> str:
         """Terminate the subagent's turn immediately on WRITE_HANDOFF_SENTINEL.
 
@@ -736,19 +745,48 @@ class AgentLoop:
         turns happen after this.
         """
         clean = result.replace(WRITE_HANDOFF_SENTINEL, "").strip()
-        self.callbacks.on_tool_end(tc.function.name, clean)
-        self.tracker.record_tool_end(tc.function.name, clean)
+
+        # ── Output filter ────────────────────────────────────────
+        context_result, full_str = filter_tool_output(
+            clean, self.config.reserve_tokens, Path(self.config.project_path)
+        )
+        if context_result is not clean:
+            # Filtering fired — warn the user via the assistant text stream
+            self.callbacks.on_assistant_text(
+                f"[output filter] Tool result was large and has been truncated. "
+                f"Full output saved under "
+                f"{Path(self.config.project_path) / '.dagi' / 'hash_cache' / 'tool_output'}."
+            )
+        # ─────────────────────────────────────────────────────────
+
+        self.callbacks.on_tool_end(tc.function.name, context_result)   # filtered
+        self.tracker.record_tool_end(tc.function.name, full_str)        # full (JSONL)
         tool_records.append(ToolCallRecord(
             name=tc.function.name,
             description=description,
             input=tc.function.arguments,
-            result=clean,
+            result=full_str,                                            # full (JSONL)
         ))
         self._messages.append(
-            {"role": "tool", "tool_call_id": tc.id, "content": clean}
+            {"role": "tool", "tool_call_id": tc.id, "content": context_result}
         )
-        self.callbacks.on_done(clean)
-        return clean
+
+        self.tracker.record_assistant(message.content, response.usage, tool_records)
+        _thinking_tok = (
+            getattr(getattr(response.usage, "completion_tokens_details", None), "reasoning_tokens", None)
+            or 0
+        )
+        self.callbacks.on_token_update(
+            getattr(response.usage, "prompt_tokens", 0) or 0,
+            getattr(response.usage, "completion_tokens", 0) or 0,
+            getattr(response.usage, "cost", None),
+            _thinking_tok,
+        )
+
+        self.callbacks.on_done(full_str)
+        return full_str
+
+    # ── Plan mode transitions ─────────────────────────────────────────────────
 
     def _handle_enter_plan_mode(self, args: dict) -> str:
         mode = args.get("mode", "interactive")
