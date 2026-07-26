@@ -15,10 +15,14 @@ _DOC_CACHE_SUBDIR = "doc_convert"
 _TIMEOUT = 300.0  # 5 minutes — large PDFs with OCR can be slow
 
 
+def _cache_path_from_hash(content_hash: str, project_path: Path) -> Path:
+    return project_path / ".dagi" / "hash_cache" / _DOC_CACHE_SUBDIR / f"{content_hash}.md"
+
+
 def cache_path_for(path: Path, project_path: Path) -> Path:
     """Path of the converted-markdown cache entry for a source document."""
     content_hash = hashlib.sha256(path.read_bytes()).hexdigest()
-    return project_path / ".dagi" / "hash_cache" / _DOC_CACHE_SUBDIR / f"{content_hash}.md"
+    return _cache_path_from_hash(content_hash, project_path)
 
 
 class DocServiceError(Exception):
@@ -51,12 +55,12 @@ def convert_document(
     Raises:
         DocServiceError: on service errors (with code and message).
     """
-    cache_file = cache_path_for(path, project_path)
+    file_bytes = path.read_bytes()
+    content_hash = hashlib.sha256(file_bytes).hexdigest()
+    cache_file = _cache_path_from_hash(content_hash, project_path)
     cache_dir = cache_file.parent
     if cache_file.exists():
         return cache_file.read_text(encoding="utf-8")
-
-    file_bytes = path.read_bytes()
 
     # Cache miss — call service
     url = f"{service_url.rstrip('/')}/convert"
