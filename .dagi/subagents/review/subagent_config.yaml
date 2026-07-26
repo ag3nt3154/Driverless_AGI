@@ -34,7 +34,15 @@ parameters:
       type: string
       description: >-
         Additional guidance from the main agent. Optional.
+    handoff_spec:
+      type: string
+      description: >-
+        Free-text description of what the parent wants in the handoff report.
+        Optional — falls back to the default handoff spec for this role.
   required:
     - subtask_name
     - worker_handoff_path
     - unit_test_paths
+default_handoff_spec: >-
+  State pass/fail per acceptance criterion, test results, and any issues found
+  (critical/important/minor) with a clear verdict.

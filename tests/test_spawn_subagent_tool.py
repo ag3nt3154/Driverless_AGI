@@ -116,17 +116,18 @@ class TestSchemaLoading:
         )
 
         config = _make_config(tmp_path)
-        tool = SpawnSubagentTool(
-            type_name="web_research",
-            description="Web Research",
-            config=config,
-        )
+        with patch("tools.spawn_subagent._spawn_subagent._DAGI_ROOT", tmp_path):
+            tool = SpawnSubagentTool(
+                type_name="web_research",
+                description="Web Research",
+                config=config,
+            )
         assert tool._parameters == _FALLBACK_PARAMETERS
 
     def test_fallback_when_config_yaml_missing(self, tmp_path):
         """Should fall back to task:string schema when subagent_config.yaml doesn't exist."""
         config = _make_config(tmp_path)
-        with patch("tools.spawn_subagent._DAGI_ROOT", tmp_path):
+        with patch("tools.spawn_subagent._spawn_subagent._DAGI_ROOT", tmp_path):
             tool = SpawnSubagentTool(
                 type_name="nonexistent_type",
                 description="Nonexistent",
@@ -143,8 +144,9 @@ class TestSchemaLoading:
         )
 
         config = _make_config(tmp_path)
-        worker_tool = SpawnSubagentTool(type_name="worker", description="W", config=config)
-        fallback_tool = SpawnSubagentTool(type_name="web_research", description="WR", config=config)
+        with patch("tools.spawn_subagent._spawn_subagent._DAGI_ROOT", tmp_path):
+            worker_tool = SpawnSubagentTool(type_name="worker", description="W", config=config)
+            fallback_tool = SpawnSubagentTool(type_name="web_research", description="WR", config=config)
 
         assert worker_tool._parameters == WORKER_SCHEMA
         assert fallback_tool._parameters == _FALLBACK_PARAMETERS

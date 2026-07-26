@@ -18,5 +18,18 @@ parameters:
         Description of the knowledge to save. Prefix with "Project: <name>" for
         project-specific knowledge (e.g. "Project: trading — The risk engine uses
         Kelly criterion for position sizing."). Omit the prefix for general knowledge.
+    briefing:
+      type: string
+      description: >-
+        Additional guidance from the main agent: traps to avoid, prior failed
+        attempt context, or extra constraints. Optional.
+    handoff_spec:
+      type: string
+      description: >-
+        Free-text description of what the parent wants in the handoff report.
+        Optional — falls back to the default handoff spec for this role.
   required:
     - task
+default_handoff_spec: >-
+  Confirmation of what was filed, where (path), and what index files were
+  updated.

@@ -29,6 +29,20 @@ _FALLBACK_PARAMETERS: dict = {
             "type": "string",
             "description": "The task or query to send to the subagent.",
         },
+        "briefing": {
+            "type": "string",
+            "description": (
+                "Additional guidance from the main agent: traps to avoid, prior "
+                "failed attempt context, or extra constraints. Optional."
+            ),
+        },
+        "handoff_spec": {
+            "type": "string",
+            "description": (
+                "Free-text description of what the parent wants in the handoff "
+                "report. Optional."
+            ),
+        },
     },
     "required": ["task"],
 }

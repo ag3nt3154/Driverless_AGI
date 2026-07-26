@@ -52,6 +52,20 @@ class SpawnCliSubagentTool(BaseTool):
                 "type": "integer",
                 "description": "Max seconds to wait for a response. Default: 300.",
             },
+            "briefing": {
+                "type": "string",
+                "description": (
+                    "Additional guidance from the main agent: traps to avoid, prior "
+                    "failed attempt context, or extra constraints. Optional."
+                ),
+            },
+            "handoff_spec": {
+                "type": "string",
+                "description": (
+                    "Free-text description of what the parent wants in the handoff "
+                    "report. Optional."
+                ),
+            },
         },
         "required": ["system_prompt", "task"],
     }
