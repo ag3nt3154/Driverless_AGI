@@ -91,3 +91,45 @@ class TestStaleAnchor:
         ])
 
         assert b"\r\n" not in f.read_bytes()
+
+
+class TestAppendPrepend:
+    def test_append_after_position(self, tmp_path):
+        lines = ["a", "b", "c"]
+        f = _write(tmp_path, "f.txt", lines)
+        tool = _make_tool(tmp_path)
+
+        tool.run(path="f.txt", edits=[
+            {"op": "append", "pos": _anchor_for(lines, 1), "lines": ["NEW"]},
+        ])
+
+        assert f.read_text(encoding="utf-8").splitlines() == ["a", "NEW", "b", "c"]
+
+    def test_append_without_pos_goes_to_eof(self, tmp_path):
+        lines = ["a", "b"]
+        f = _write(tmp_path, "f.txt", lines)
+        tool = _make_tool(tmp_path)
+
+        tool.run(path="f.txt", edits=[{"op": "append", "lines": ["END"]}])
+
+        assert f.read_text(encoding="utf-8").splitlines() == ["a", "b", "END"]
+
+    def test_prepend_before_position(self, tmp_path):
+        lines = ["a", "b", "c"]
+        f = _write(tmp_path, "f.txt", lines)
+        tool = _make_tool(tmp_path)
+
+        tool.run(path="f.txt", edits=[
+            {"op": "prepend", "pos": _anchor_for(lines, 3), "lines": ["NEW"]},
+        ])
+
+        assert f.read_text(encoding="utf-8").splitlines() == ["a", "b", "NEW", "c"]
+
+    def test_prepend_without_pos_goes_to_bof(self, tmp_path):
+        lines = ["a", "b"]
+        f = _write(tmp_path, "f.txt", lines)
+        tool = _make_tool(tmp_path)
+
+        tool.run(path="f.txt", edits=[{"op": "prepend", "lines": ["TOP"]}])
+
+        assert f.read_text(encoding="utf-8").splitlines() == ["TOP", "a", "b"]

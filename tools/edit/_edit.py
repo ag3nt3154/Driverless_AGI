@@ -41,7 +41,23 @@ def _resolve_replace(edit: dict, i: int, lines: list[str], anchors: list[str]) -
     return _Resolved(start, end + 1, list(edit.get("lines", [])), i)
 
 
-_RESOLVERS = {"replace": _resolve_replace}
+def _resolve_append(edit: dict, i: int, lines: list[str], anchors: list[str]) -> _Resolved:
+    pos = edit.get("pos")
+    at = len(lines) if not pos else H.resolve_anchor(pos, anchors) + 1
+    return _Resolved(at, at, list(edit.get("lines", [])), i)
+
+
+def _resolve_prepend(edit: dict, i: int, lines: list[str], anchors: list[str]) -> _Resolved:
+    pos = edit.get("pos")
+    at = 0 if not pos else H.resolve_anchor(pos, anchors)
+    return _Resolved(at, at, list(edit.get("lines", [])), i)
+
+
+_RESOLVERS = {
+    "replace": _resolve_replace,
+    "append": _resolve_append,
+    "prepend": _resolve_prepend,
+}
 
 
 class EditTool(BaseTool):
@@ -69,12 +85,16 @@ class EditTool(BaseTool):
                     "properties": {
                         "op": {
                             "type": "string",
-                            "enum": ["replace"],
+                            "enum": ["replace", "append", "prepend"],
                             "description": "Operation kind",
                         },
                         "pos": {
                             "type": "string",
-                            "description": "Anchor of the target line, e.g. '18#aB3'",
+                            "description": (
+                                "Anchor of the target line, e.g. '18#aB3'. For append, "
+                                "omit to insert at end of file; for prepend, omit to "
+                                "insert at start of file."
+                            ),
                         },
                         "end": {
                             "type": "string",
