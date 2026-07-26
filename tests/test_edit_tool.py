@@ -133,3 +133,59 @@ class TestAppendPrepend:
         tool.run(path="f.txt", edits=[{"op": "prepend", "lines": ["TOP"]}])
 
         assert f.read_text(encoding="utf-8").splitlines() == ["TOP", "a", "b"]
+
+
+class TestReplaceText:
+    def test_replaces_unique_substring(self, tmp_path):
+        lines = ["alpha", "beta", "gamma"]
+        f = _write(tmp_path, "f.txt", lines)
+        tool = _make_tool(tmp_path)
+
+        tool.run(path="f.txt", edits=[
+            {"op": "replace_text", "oldText": "beta", "newText": "BETA"},
+        ])
+
+        assert f.read_text(encoding="utf-8").splitlines() == ["alpha", "BETA", "gamma"]
+
+    def test_replaces_across_multiple_lines(self, tmp_path):
+        lines = ["a", "b", "c", "d"]
+        f = _write(tmp_path, "f.txt", lines)
+        tool = _make_tool(tmp_path)
+
+        tool.run(path="f.txt", edits=[
+            {"op": "replace_text", "oldText": "b\nc", "newText": "X"},
+        ])
+
+        assert f.read_text(encoding="utf-8").splitlines() == ["a", "X", "d"]
+
+    def test_missing_text_reports_not_found(self, tmp_path):
+        f = _write(tmp_path, "f.txt", ["a", "b"])
+        tool = _make_tool(tmp_path)
+
+        result = tool.run(path="f.txt", edits=[
+            {"op": "replace_text", "oldText": "zzz", "newText": "X"},
+        ])
+
+        assert "E_TEXT_NOT_FOUND" in result
+        assert f.read_text(encoding="utf-8").splitlines() == ["a", "b"]
+
+    def test_ambiguous_text_reports_ambiguous(self, tmp_path):
+        f = _write(tmp_path, "f.txt", ["dup", "dup"])
+        tool = _make_tool(tmp_path)
+
+        result = tool.run(path="f.txt", edits=[
+            {"op": "replace_text", "oldText": "dup", "newText": "X"},
+        ])
+
+        assert "E_TEXT_AMBIGUOUS" in result
+        assert f.read_text(encoding="utf-8").splitlines() == ["dup", "dup"]
+
+    def test_normalises_crlf_in_supplied_text(self, tmp_path):
+        f = _write(tmp_path, "f.txt", ["a", "b", "c"])
+        tool = _make_tool(tmp_path)
+
+        tool.run(path="f.txt", edits=[
+            {"op": "replace_text", "oldText": "a\r\nb", "newText": "X"},
+        ])
+
+        assert f.read_text(encoding="utf-8").splitlines() == ["X", "c"]

@@ -53,10 +53,39 @@ def _resolve_prepend(edit: dict, i: int, lines: list[str], anchors: list[str]) -
     return _Resolved(at, at, list(edit.get("lines", [])), i)
 
 
+def _resolve_replace_text(edit: dict, i: int, lines: list[str], anchors: list[str]) -> _Resolved:
+    """Desugar a substring replacement into an ordinary line-range splice.
+
+    Resolving here means the positional path is the only execution path, so
+    ordering and conflict rules apply uniformly to every op.
+    """
+    old = _norm(edit.get("oldText", ""))
+    new = _norm(edit.get("newText", ""))
+    if not old:
+        raise H.AnchorError("E_INVALID_PATCH", f"edit {i}: replace_text requires 'oldText'")
+
+    content = "\n".join(lines)
+    count = content.count(old)
+    if count == 0:
+        raise H.AnchorError("E_TEXT_NOT_FOUND", f"edit {i}: oldText not found in file")
+    if count > 1:
+        raise H.AnchorError(
+            "E_TEXT_AMBIGUOUS",
+            f"edit {i}: oldText found {count} times; use a hash anchor instead",
+        )
+
+    offset = content.index(old)
+    start = content.count("\n", 0, offset)
+    end = content.count("\n", 0, offset + len(old))
+    span = "\n".join(lines[start:end + 1])
+    return _Resolved(start, end + 1, span.replace(old, new, 1).split("\n"), i)
+
+
 _RESOLVERS = {
     "replace": _resolve_replace,
     "append": _resolve_append,
     "prepend": _resolve_prepend,
+    "replace_text": _resolve_replace_text,
 }
 
 
@@ -85,7 +114,7 @@ class EditTool(BaseTool):
                     "properties": {
                         "op": {
                             "type": "string",
-                            "enum": ["replace", "append", "prepend"],
+                            "enum": ["replace", "append", "prepend", "replace_text"],
                             "description": "Operation kind",
                         },
                         "pos": {
@@ -104,6 +133,18 @@ class EditTool(BaseTool):
                             "type": "array",
                             "items": {"type": "string"},
                             "description": "Replacement lines, without any LINE#HASH prefix",
+                        },
+                        "oldText": {
+                            "type": "string",
+                            "description": (
+                                "replace_text only: exact unique substring to replace. "
+                                "Fallback for when an anchor has gone stale — prefer "
+                                "`replace` with a fresh anchor."
+                            ),
+                        },
+                        "newText": {
+                            "type": "string",
+                            "description": "replace_text only: replacement substring",
                         },
                     },
                     "required": ["op"],
