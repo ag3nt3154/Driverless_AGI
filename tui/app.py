@@ -9,7 +9,7 @@ from textual.app import App, ComposeResult
 from textual.widgets import Static
 
 from agent import DAGI_ROOT
-from agent.config_loader import get_model_display_name, resolve_model_config
+from agent.config_loader import resolve_model_config
 from agent.loop import AgentCallbacks, AgentConfig, AgentLoop
 
 from .callbacks import build_callbacks
@@ -42,11 +42,14 @@ class DagiApp(SlashCommandsMixin, App[None]):
     def __init__(self, model_id: str | None, project: str | None, verbose: bool) -> None:
         super().__init__()
         self._project_path = Path(project).resolve() if project else Path.cwd()
-        self._model_id = model_id
         self._verbose = verbose
-        self._model_name = get_model_display_name(model_id)
         self._stats = _Stats()
         self._config: AgentConfig | None = None
+        # Resolve with project-merge FIRST so _model_name matches the actual model used.
+        # (get_model_display_name only reads root config.yaml — it misses project overrides.)
+        self._config = resolve_model_config(model_id, project_path=self._project_path)
+        self._model_id = self._config.model_id
+        self._model_name = self._config.display_name
         self._active_loop: AgentLoop | None = None
         self._worker: threading.Thread | None = None
         self._pending_ask: tuple | None = None
@@ -57,12 +60,11 @@ class DagiApp(SlashCommandsMixin, App[None]):
         self._input_expanded: bool = False
 
     def compose(self) -> ComposeResult:
-        cfg = resolve_model_config(self._model_id, project_path=self._project_path)
         dagi_root = DAGI_ROOT
         yield Sidebar(
-            self._model_name, cfg.context_window, cfg.reserve_tokens,
+            self._model_name, self._config.context_window, self._config.reserve_tokens,
             dagi_root=dagi_root, project_path=self._project_path,
-            memory_root=getattr(cfg, "memory_root", None),
+            memory_root=getattr(self._config, "memory_root", None),
         )
         yield ConversationPane(id="conversation", highlight=True, markup=True, wrap=True)
         yield StreamPreview(id="stream-preview")
@@ -70,7 +72,6 @@ class DagiApp(SlashCommandsMixin, App[None]):
         yield PromptInput(id="prompt")
 
     def on_mount(self) -> None:
-        self._config = resolve_model_config(self._model_id, project_path=self._project_path)
         self._load_maps()
         conv = self.query_one(ConversationPane)
         conv.write(Text(

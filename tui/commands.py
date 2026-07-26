@@ -94,7 +94,7 @@ class SlashCommandsMixin:
         conv.write(tbl)
 
     def _cmd_model(self, arg: str | None) -> None:
-        from agent.config_loader import get_model_display_name, list_model_ids, resolve_model_config
+        from agent.config_loader import list_model_ids, resolve_model_config
         conv = self.query_one(ConversationPane)
         sidebar = self.query_one(Sidebar)
         if not arg:
@@ -110,8 +110,8 @@ class SlashCommandsMixin:
             conv.append_info(f"[red]Unknown model:[/red] {arg}")
             return
         self._model_id = arg
-        self._model_name = get_model_display_name(arg)
         self._config = resolve_model_config(arg, project_path=self._project_path)
+        self._model_name = self._config.display_name
         sidebar.update_model(self._model_name)
         sidebar._context_window = self._config.context_window
         sidebar._reserve_tokens = self._config.reserve_tokens
@@ -131,13 +131,11 @@ class SlashCommandsMixin:
             conv.append_info(f"[red]Not a directory:[/red] {new}")
             return
         self._project_path = new
-        from agent.config_loader import get_model_display_name, resolve_model_config
+        from agent.config_loader import resolve_model_config
         self._config = resolve_model_config(self._model_id, project_path=new)
-        # If no explicit model was chosen, pick up the new project's default_model.
-        resolved_id = getattr(self._config, 'model_id', '') or self._model_id or ''
-        if resolved_id and resolved_id != self._model_id:
-            self._model_id = resolved_id
-            self._model_name = get_model_display_name(resolved_id)
+        # The resolved config reflects the new project's merged config (root + .dagi/config.yaml).
+        self._model_id = self._config.model_id
+        self._model_name = self._config.display_name
         sidebar = self.query_one(Sidebar)
         sidebar.update_model(self._model_name)
         sidebar._context_window = self._config.context_window
