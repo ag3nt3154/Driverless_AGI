@@ -316,3 +316,57 @@ class TestEditResponse:
 
         assert "noop" in result.lower()
         assert f.read_text(encoding="utf-8").splitlines() == lines
+
+
+class TestGuards:
+    def test_editing_a_pdf_points_at_the_cache_path(self, tmp_path):
+        f = tmp_path / "report.pdf"
+        f.write_bytes(b"%PDF-1.4 fake")
+        tool = _make_tool(tmp_path)
+
+        result = tool.run(path="report.pdf", edits=[
+            {"op": "append", "lines": ["x"]},
+        ])
+
+        assert "cannot edit .pdf directly" in result
+        assert "doc_convert" in result
+
+    def test_docx_is_also_guarded(self, tmp_path):
+        f = tmp_path / "notes.docx"
+        f.write_bytes(b"PK fake")
+        tool = _make_tool(tmp_path)
+
+        result = tool.run(path="notes.docx", edits=[
+            {"op": "append", "lines": ["x"]},
+        ])
+
+        assert "cannot edit .docx directly" in result
+
+    def test_anchor_prefix_in_content_is_rejected(self, tmp_path):
+        lines = ["a", "b"]
+        f = _write(tmp_path, "f.txt", lines)
+        tool = _make_tool(tmp_path)
+
+        result = tool.run(path="f.txt", edits=[
+            {"op": "replace", "pos": _anchor_for(lines, 1), "lines": ["1#aB3:a"]},
+        ])
+
+        assert "E_INVALID_PATCH" in result
+        assert f.read_text(encoding="utf-8").splitlines() == lines
+
+    def test_yaml_frontmatter_is_allowed_as_content(self, tmp_path):
+        lines = ["a", "b"]
+        f = _write(tmp_path, "f.txt", lines)
+        tool = _make_tool(tmp_path)
+
+        tool.run(path="f.txt", edits=[
+            {"op": "prepend", "lines": ["---", "name: x", "---"]},
+        ])
+
+        assert f.read_text(encoding="utf-8").splitlines()[0] == "---"
+
+    def test_empty_edits_list_is_rejected(self, tmp_path):
+        _write(tmp_path, "f.txt", ["a"])
+        tool = _make_tool(tmp_path)
+
+        assert "E_INVALID_PATCH" in tool.run(path="f.txt", edits=[])

@@ -10,6 +10,7 @@ from pathlib import Path
 from agent.base_tool import BaseTool
 from tools import _hashline as H
 from tools._path_guard import validate_path
+from tools.read._doc_service import cache_path_for
 
 _DOC_EXTS = {".pdf", ".docx", ".xlsx", ".pptx"}
 
@@ -27,6 +28,22 @@ class _Resolved:
 def _norm(text: str) -> str:
     """Normalise line endings — used by replace_text (added in a later task)."""
     return text.replace("\r\n", "\n").replace("\r", "\n")
+
+
+def _doc_guard(p: Path) -> str | None:
+    """Redirect document edits to the converted-markdown cache entry."""
+    ext = p.suffix.lower()
+    if ext not in _DOC_EXTS:
+        return None
+    try:
+        target = cache_path_for(p, p.parent)
+        hint = f".dagi/hash_cache/doc_convert/{target.name}"
+    except OSError:
+        hint = ".dagi/hash_cache/doc_convert/<sha256>.md"
+    return (
+        f"Error: cannot edit {ext} directly — edit the converted markdown at "
+        f"{hint} (read the document first to have it converted)."
+    )
 
 
 def _resolve_replace(edit: dict, i: int, lines: list[str], anchors: list[str]) -> _Resolved:
@@ -204,6 +221,10 @@ class EditTool(BaseTool):
             p = self.cwd / p
         p = validate_path(p, self.allowed_roots)
 
+        doc_error = _doc_guard(p)
+        if doc_error:
+            return doc_error
+
         if not edits:
             return "Error: [E_INVALID_PATCH] 'edits' must contain at least one operation."
 
@@ -234,6 +255,13 @@ class EditTool(BaseTool):
     ) -> list[_Resolved]:
         resolved: list[_Resolved] = []
         for i, edit in enumerate(edits):
+            offending = H.contains_display_prefix(edit.get("lines") or [])
+            if offending:
+                raise H.AnchorError(
+                    "E_INVALID_PATCH",
+                    f"edit {i}: content line looks like tool display output "
+                    f"({offending!r}); supply file content without LINE#HASH prefixes",
+                )
             op = edit.get("op")
             resolver = _RESOLVERS.get(op)
             if resolver is None:
