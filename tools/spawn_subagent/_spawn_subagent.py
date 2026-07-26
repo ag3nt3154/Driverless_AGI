@@ -227,6 +227,10 @@ class SpawnSubagentTool(BaseTool):
         if self._tracker:
             self._tracker.record_subagent_end(subagent_id, str(result), depth)
 
+        return self._dispatch_result(result)
+
+    def _dispatch_result(self, result: dict) -> str:
+        """Translate a `run_subagent` result dict into the tool's return string."""
         if result["status"] == "escalated":
             return f"[{self._type_name} escalated]\n\n{result['escalation']}"
         if result["status"] == "ok":
