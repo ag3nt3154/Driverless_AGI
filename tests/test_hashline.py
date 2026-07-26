@@ -85,3 +85,57 @@ class TestComputeAffectedRange:
 
     def test_returns_none_on_degenerate_range(self):
         assert H.compute_affected_range(5, 0, 10) is None
+
+
+import pytest
+
+
+class TestParseAnchor:
+    def test_parses_line_and_hash(self):
+        assert H.parse_anchor("18#aB3") == (18, "aB3")
+
+    def test_tolerates_surrounding_whitespace(self):
+        assert H.parse_anchor("  7#xY-  ") == (7, "xY-")
+
+    def test_rejects_missing_hash(self):
+        with pytest.raises(H.AnchorError) as exc:
+            H.parse_anchor("18")
+        assert exc.value.code == "E_INVALID_ANCHOR"
+
+    def test_rejects_wrong_hash_length(self):
+        with pytest.raises(H.AnchorError) as exc:
+            H.parse_anchor("18#aB")
+        assert exc.value.code == "E_INVALID_ANCHOR"
+
+
+class TestResolveAnchor:
+    def test_returns_zero_based_index(self):
+        anchors = H.build_anchors(["a", "b", "c"])
+        assert H.resolve_anchor(f"2#{anchors[1]}", anchors) == 1
+
+    def test_stale_hash_raises_stale_anchor(self):
+        anchors = H.build_anchors(["a", "b", "c"])
+        with pytest.raises(H.AnchorError) as exc:
+            H.resolve_anchor(f"2#{anchors[0]}", anchors)
+        assert exc.value.code == "E_STALE_ANCHOR"
+        assert "re-read" in exc.value.message
+
+    def test_out_of_range_line_raises_invalid_anchor(self):
+        anchors = H.build_anchors(["a"])
+        with pytest.raises(H.AnchorError) as exc:
+            H.resolve_anchor(f"9#{anchors[0]}", anchors)
+        assert exc.value.code == "E_INVALID_ANCHOR"
+
+
+class TestContainsDisplayPrefix:
+    def test_detects_anchor_prefix_in_content(self):
+        assert H.contains_display_prefix(["12#aB3:x = 1"]) is not None
+
+    def test_detects_diff_hunk_header(self):
+        assert H.contains_display_prefix(["@@ -1,2 +1,3 @@"]) is not None
+
+    def test_allows_yaml_frontmatter_delimiter(self):
+        assert H.contains_display_prefix(["---"]) is None
+
+    def test_allows_ordinary_content(self):
+        assert H.contains_display_prefix(["def f():", "    return 1"]) is None
