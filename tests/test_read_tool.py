@@ -216,3 +216,31 @@ class TestAutoSummarization:
 
         # Falls back to raw text (which output_filter will later truncate)
         assert "line" in result
+
+
+class TestDocumentCacheDisclosure:
+    def test_pdf_header_discloses_editable_cache_path(self, tmp_path):
+        f = tmp_path / "report.pdf"
+        f.write_bytes(b"%PDF-1.4 fake")
+        tool = _make_tool(tmp_path)
+
+        with patch(
+            "tools.read._read.convert_document",
+            return_value="<!-- Page 1 -->\nhello",
+        ):
+            result = tool.run(path="report.pdf")
+
+        assert "editable:" in result
+        assert ".dagi" in result
+        assert result.splitlines()[0].endswith("]")
+
+    def test_docx_header_discloses_editable_cache_path(self, tmp_path):
+        f = tmp_path / "notes.docx"
+        f.write_bytes(b"PK fake docx")
+        tool = _make_tool(tmp_path)
+
+        with patch("tools.read._read.convert_document", return_value="hello"):
+            result = tool.run(path="notes.docx")
+
+        assert result.startswith("[notes.docx | editable: ")
+

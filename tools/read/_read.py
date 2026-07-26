@@ -4,7 +4,7 @@ from pathlib import Path
 
 from agent.base_tool import BaseTool
 from tools._path_guard import validate_path
-from tools.read._doc_service import convert_document, DocServiceError
+from tools.read._doc_service import cache_path_for, convert_document, DocServiceError
 from tools import _hashline as H
 
 try:
@@ -147,6 +147,12 @@ class ReadTool(BaseTool):
             except DocServiceError as exc:
                 return f"Error from document service ({exc.code}): {exc.message}"
 
+            editable = cache_path_for(p, self._project_path)
+            try:
+                editable_str = str(editable.relative_to(self._project_path))
+            except ValueError:
+                editable_str = str(editable)
+
             if ext == ".pdf":
                 total_pages = md_text.count("<!-- Page ")
                 if pages:
@@ -154,7 +160,9 @@ class ReadTool(BaseTool):
                 header = f"[PDF: {p.name} | {total_pages} pages"
                 if pages:
                     header += f" | showing pages {pages}"
-                header += "]"
+                header += f" | editable: {editable_str}]"
+            else:
+                header = f"[{p.name} | editable: {editable_str}]"
 
             lines = md_text.splitlines()
 
