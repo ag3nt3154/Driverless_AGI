@@ -5,6 +5,7 @@ from pathlib import Path
 from agent.base_tool import BaseTool
 from tools._path_guard import validate_path
 from tools.read._doc_service import convert_document, DocServiceError
+from tools import _hashline as H
 
 try:
     from tools.read._document_reader import summarize_document
@@ -63,8 +64,10 @@ class ReadTool(BaseTool):
         "Use the optional `pages` parameter to select specific PDF pages. "
         "Use offset/limit for large files. Accepts both relative paths "
         "(resolved from the project root) and absolute paths. "
-        "Output uses `cat -n` style: each line is prefixed with its 1-indexed "
-        "line number followed by a tab — the number is not part of the file content. "
+        "Output is anchored: each line is prefixed with `LINE#HASH:` where LINE "
+        "is the 1-indexed line number and HASH verifies the line's content. "
+        "Pass the whole `LINE#HASH` token (e.g. `18#aB3`) as an anchor to `edit`. "
+        "The prefix is not part of the file content. "
         "For large-scale codebase exploration, prefer `explore_files`."
     )
     _parameters = {
@@ -164,11 +167,10 @@ class ReadTool(BaseTool):
                     f"to be binary or uses an encoding other than UTF-8."
                 )
 
-        start = max(0, offset - 1)
-        selected = lines[start : start + limit]
-        numbered = "\n".join(
-            f"{i:6d}\t{line}" for i, line in enumerate(selected, start + 1)
-        )
+        anchors = H.build_anchors(lines)
+        start = max(1, offset)
+        end = min(len(lines), start + limit - 1)
+        numbered = H.format_region(lines, anchors, start, end) if lines else ""
 
         raw_result = f"{header}\n{numbered}" if header else numbered
 
@@ -181,9 +183,7 @@ class ReadTool(BaseTool):
             and limit == 2000
         ):
             _CHARS_PER_TOKEN = 4
-            full_text = "\n".join(
-                f"{i:6d}\t{line}" for i, line in enumerate(lines, 1)
-            )
+            full_text = H.format_region(lines, anchors, 1, len(lines)) if lines else ""
             estimated_tokens = len(full_text) // _CHARS_PER_TOKEN
             if estimated_tokens >= self._reserve_tokens:
                 summary = summarize_document(

@@ -1,11 +1,16 @@
+import pytest
 from unittest.mock import patch
 
 from tools.read import ReadTool
 from tools.read._doc_service import DocServiceError
+from tools import _hashline as H
 
 
-def _numbered(lines, start=1):
-    return "\n".join(f"{i:6d}\t{line}" for i, line in enumerate(lines, start))
+def _anchored(all_lines, start=1, end=None):
+    """Render the expected read output for lines start..end of all_lines."""
+    end = len(all_lines) if end is None else end
+    anchors = H.build_anchors(all_lines)
+    return H.format_region(all_lines, anchors, start, end)
 
 
 def _make_tool(tmp_path, service_url="http://localhost:8100"):
@@ -27,17 +32,29 @@ class TestTextFileReading:
 
         result = tool.run(path="notes.txt")
 
-        assert result == _numbered(["hello", "world"])
+        assert result == _anchored(["hello", "world"])
 
     def test_offset_and_limit(self, tmp_path):
-        text = "\n".join(f"line{i}" for i in range(1, 11))
+        all_lines = [f"line{i}" for i in range(1, 11)]
+        text = "\n".join(all_lines)
         f = tmp_path / "notes.txt"
         f.write_text(text, encoding="utf-8")
         tool = _make_tool(tmp_path)
 
         result = tool.run(path="notes.txt", offset=3, limit=2)
 
-        assert result == _numbered(["line3", "line4"], start=3)
+        assert result == _anchored(all_lines, start=3, end=4)
+
+    def test_windowed_read_anchors_match_whole_file_anchors(self, tmp_path):
+        all_lines = [f"line{i}" for i in range(1, 21)]
+        f = tmp_path / "notes.txt"
+        f.write_text("\n".join(all_lines), encoding="utf-8")
+        tool = _make_tool(tmp_path)
+
+        windowed = tool.run(path="notes.txt", offset=15, limit=3)
+        anchors = H.build_anchors(all_lines)
+
+        assert f"#{anchors[14]}:line15" in windowed
 
     def test_binary_file_returns_error(self, tmp_path):
         f = tmp_path / "data.bin"
