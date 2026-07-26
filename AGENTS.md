@@ -13,8 +13,16 @@ Driverless AGI (dagi) is a self-hosted Python agentic coding assistant: Plan→A
 - Use `conda run -n dagi ...` for all Python scripts and package installs.
 - Never invoke `benchmarks/dagi_eval` against a real model without explicit authorization — `--solver` defaults to `"agent"`, always pass `naive`/`gold` unless authorized.
 - DAGI never merges, switches off, or deletes its own `dagi/*` task branch — the user handles that.
-- `git_add`/`git_commit`/`git_reset` only operate on `dagi/*` branches; raw `git` via `BashTool` is unrestricted.
 - Always update `README.md`, `TODO.md`, and `AGENTS.md` after completing a task.
+
+## Git Workflow
+
+All git operations use `bash`. Follow this workflow at the start of every task:
+
+1. **Check state** — run `git status` and `git branch --show-current`. If there are uncommitted or unstaged changes, or you are not on the intended base branch, **ask the user**: stash, commit, or checkout a different base?
+2. **Create branch** — `git checkout -b dagi/<task-name>` from the confirmed base.
+3. **Commit discipline** — 1 commit per subtask completion + 1 commit after updating project context. Use [Conventional Commits](https://www.conventionalcommits.org/) format: `feat:`, `fix:`, `chore:`, `docs:`, `refactor:`, `test:`, `perf:`.
+4. **On task end** — stay on `dagi/*` branch. Ask the user if they want to merge back to the previous branch. **Never merge unilaterally.**
 
 ## Behavioral Guidelines
 
@@ -164,7 +172,7 @@ tui.py / telegram_bot.py / main.py
 - **`unified_score`**: `normalize_perf(recorded, baseline, golden) / normalize_tokens(tokens_in+tokens_out)`, clamped to 10.0. Reference scores computed fresh each run.
 - **Memory wiki**: `G:\My Drive\black_grimoire\dagi-memory\wiki\` (Claude Code skills) vs. repo-local `dagi-memory/wiki/` (DAGI's own subagents). Two separate systems.
 - **`tools:` allowlist** (`config.yaml`): post-registration filter via `reg.filter_to(config.tools)`. Any tool not named here is silently stripped — including auto-discovered spawn tools. When adding a new subagent type, also add its `spawn_{type}_subagent` name to the list.
-- **`dagi/*` branch**: only prefix where `git_add`/`git_commit`/`git_reset` work (dedicated tools only; `BashTool` bypasses).
+- **`dagi/*` branch**: all plan-mode work lands here. Auto-created by `agent/_git_branch.py` on `enter_plan_mode`. DAGI commits here and asks the user before merging back. See **Git Workflow** section in Rules.
 - **Windows**: `EditTool`/`WriteTool` always write LF, normalize `oldText`/`newText` for CRLF safety. Use `conda run -n dagi python` not bare `python.exe`.
 - **Dependencies**: `pyproject.toml` is single source of truth. Doc-converter has own `services/doc_converter/environment.yml`.
 - **Compaction**: Pi-style context summarization mid-loop; preserves system prompt and tail. Never crashes session.
