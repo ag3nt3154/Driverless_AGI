@@ -153,8 +153,9 @@ class SpawnSubagentTool(BaseTool):
         self._tracker = tracker
         self._on_event_factory = on_event_factory
         self._timeout = timeout
-        self._parameters = self._load_parameters(type_name, config)
-        self._default_handoff_spec = self._load_default_handoff_spec(type_name, config)
+        type_data = self._load_type_data(type_name, config)
+        self._parameters = type_data.get("parameters", _FALLBACK_PARAMETERS)
+        self._default_handoff_spec = type_data.get("default_handoff_spec", "")
 
     @staticmethod
     def _load_type_data(type_name: str, config: "AgentConfig") -> dict:
@@ -185,11 +186,16 @@ class SpawnSubagentTool(BaseTool):
 
     @staticmethod
     def _load_parameters(type_name: str, config: "AgentConfig") -> dict:
+        """Kept as a separately-patchable staticmethod for test compatibility;
+        `__init__` no longer calls this (it reads `_load_type_data` once and
+        derives both `_parameters` and `_default_handoff_spec` from it)."""
         data = SpawnSubagentTool._load_type_data(type_name, config)
         return data.get("parameters", _FALLBACK_PARAMETERS)
 
     @staticmethod
     def _load_default_handoff_spec(type_name: str, config: "AgentConfig") -> str:
+        """Kept as a separately-patchable staticmethod for test compatibility;
+        see `_load_parameters` docstring."""
         data = SpawnSubagentTool._load_type_data(type_name, config)
         return data.get("default_handoff_spec", "")
 
@@ -231,15 +237,9 @@ class SpawnSubagentTool(BaseTool):
 
     def _dispatch_result(self, result: dict) -> str:
         """Translate a `run_subagent` result dict into the tool's return string."""
-        if result["status"] == "escalated":
-            return f"[{self._type_name} escalated]\n\n{result['escalation']}"
-        if result["status"] == "ok":
-            return self._format_ok_result(result["handoff"])
-        if result["status"] == "ok_unverified":
-            return self._format_ok_result(result["handoff"], unverified=True)
-        if result["status"] == "timeout":
-            return json.dumps({"status": "timeout", "pid": result["pid"]})
-        return f"[{self._type_name} error] {result.get('message', 'unknown error')}"
+        from tools._handoff_format import dispatch_status_result
+
+        return dispatch_status_result(result, self._type_name, include_escalation=True)
 
     @staticmethod
     def _format_ok_result(handoff_path: str, unverified: bool = False) -> str:

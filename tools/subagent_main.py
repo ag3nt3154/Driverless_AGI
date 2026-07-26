@@ -114,14 +114,15 @@ def _ensure_handoff(loop: AgentLoop, handoff_path: Path) -> None:
     if handoff_path.exists():
         return
 
+    from tools._handoff_format import unverified_flag_path
+
     final_text = _extract_final_assistant_text(loop._messages)
     handoff_path.parent.mkdir(parents=True, exist_ok=True)
     handoff_path.write_text(
         f"# Handoff\n\n{final_text or '(subagent produced no output)'}",
         encoding="utf-8",
     )
-    flag_path = handoff_path.with_name(f"{handoff_path.stem}_unverified.flag")
-    flag_path.write_text("1", encoding="utf-8")
+    unverified_flag_path(handoff_path).write_text("1", encoding="utf-8")
 
 
 def _build_pipe_callbacks() -> AgentCallbacks:

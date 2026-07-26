@@ -1,8 +1,6 @@
 """tools/extend_timeout.py — Resume waiting for a timed-out subagent."""
 from __future__ import annotations
 
-import json
-
 from agent.base_tool import BaseTool
 
 
@@ -32,16 +30,8 @@ class ExtendSubagentTimeoutTool(BaseTool):
     }
 
     def run(self, pid: int, extra_seconds: int = 120) -> str:
+        from tools._handoff_format import dispatch_status_result
         from tools._subagent_runner import resume_subagent
-        from tools.spawn_subagent import SpawnSubagentTool
 
         result = resume_subagent(pid, float(extra_seconds))
-        status = result["status"]
-
-        if status == "ok":
-            return SpawnSubagentTool._format_ok_result(result["handoff"])
-        if status == "ok_unverified":
-            return SpawnSubagentTool._format_ok_result(result["handoff"], unverified=True)
-        if status == "timeout":
-            return json.dumps({"status": "timeout", "pid": result["pid"]})
-        return f"[subagent error] {result.get('message', 'unknown error')}"
+        return dispatch_status_result(result, "subagent")

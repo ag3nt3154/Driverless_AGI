@@ -45,7 +45,7 @@ class ExploreFilesTool(BaseTool):
         self._tracker = tracker
 
     def run(self, task: str, paths: str | None = None) -> str:
-        from tools._handoff_format import format_handoff_result
+        from tools._handoff_format import dispatch_status_result
         from tools._subagent_runner import run_subagent
         from uuid import uuid4 as _uuid4
 
@@ -62,8 +62,4 @@ class ExploreFilesTool(BaseTool):
         if self._tracker:
             self._tracker.record_subagent_end(subagent_id, str(result), depth)
 
-        if result["status"] == "ok":
-            return format_handoff_result(result["handoff"])
-        if result["status"] == "ok_unverified":
-            return format_handoff_result(result["handoff"], unverified=True)
-        return f"[explore_files error] {result.get('message', result['status'])}"
+        return dispatch_status_result(result, "explore_files", include_timeout=False)

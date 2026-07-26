@@ -10,10 +10,14 @@ last message was scraped into the handoff file instead of a deliberate
 structured report).
 
 Centralizing this here means the banner wording/emoji and the graceful
-degrade-on-unreadable-file behaviour only need to be correct once.
+degrade-on-unreadable-file behaviour only need to be correct once. The same
+five call sites also duplicated the branch that maps a `run_subagent`/
+`resume_subagent` result dict's "status" to a tool's return string —
+`dispatch_status_result` centralizes that too.
 """
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 _UNVERIFIED_BANNER = (
@@ -21,6 +25,18 @@ _UNVERIFIED_BANNER = (
     "`write_handoff`. The\ncontent below was scraped from its last message "
     "and may be incomplete or informal.\n\n"
 )
+
+
+def unverified_flag_path(handoff_path: Path) -> Path:
+    """Return the sidecar '_unverified.flag' path for a given handoff path.
+
+    Written by `tools/subagent_main.py` when a handoff was scraped from the
+    subagent's last assistant message (retry+degrade path) rather than
+    deliberately reported via `write_handoff`; read by
+    `tools/_subagent_runner.py` to decide between "ok" and "ok_unverified".
+    Centralized so the writer and reader can't drift on the naming scheme.
+    """
+    return handoff_path.with_name(f"{handoff_path.stem}_unverified.flag")
 
 
 def format_handoff_result(handoff_path: str, unverified: bool = False) -> str:
@@ -43,3 +59,30 @@ def format_handoff_result(handoff_path: str, unverified: bool = False) -> str:
         f"{banner}Subagent completed. Handoff written to: {handoff_path}\n\n"
         f"--- Handoff content ---\n{content}"
     )
+
+
+def dispatch_status_result(
+    result: dict,
+    error_prefix: str,
+    include_escalation: bool = False,
+    include_timeout: bool = True,
+) -> str:
+    """Translate a `run_subagent`/`resume_subagent` result dict into a tool's
+    return string. Shared by every subagent-spawning tool's dispatch branch.
+
+    `include_escalation` opts in to the "escalated" status (only `spawn_subagent`
+    types support escalation). `include_timeout` opts out of the "timeout" status
+    for callers that never resume (e.g. `explore_files`, `web_research`), which
+    preserves their pre-existing behaviour of falling through to the generic
+    error branch instead of exposing a resumable pid.
+    """
+    status = result["status"]
+    if include_escalation and status == "escalated":
+        return f"[{error_prefix} escalated]\n\n{result['escalation']}"
+    if status == "ok":
+        return format_handoff_result(result["handoff"])
+    if status == "ok_unverified":
+        return format_handoff_result(result["handoff"], unverified=True)
+    if include_timeout and status == "timeout":
+        return json.dumps({"status": "timeout", "pid": result["pid"]})
+    return f"[{error_prefix} error] {result.get('message', 'unknown error')}"

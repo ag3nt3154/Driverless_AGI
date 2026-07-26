@@ -654,7 +654,7 @@ class AgentLoop:
                     result = self.registry.dispatch(tc.function.name, args)
                     if isinstance(result, str) and WRITE_HANDOFF_SENTINEL in result:
                         return self._handle_write_handoff(
-                            tc, result, description, tool_records, message, response
+                            tc, result, description, tool_records, (message, response)
                         )
                     if isinstance(result, str) and result.startswith(ENTER_PLAN_MODE_SENTINEL):
                         result = self._handle_enter_plan_mode(args)
@@ -674,46 +674,9 @@ class AgentLoop:
                             _switch_target = parse_switch_sentinel(result)
                             if _switch_target is not None:
                                 result = self._handle_switch_model(_switch_target, args)
-                    # ── Output filter ────────────────────────────────────────
-                    context_result, full_str = filter_tool_output(
-                        result, self.config.reserve_tokens, Path(self.config.project_path)
-                    )
-                    if context_result is not result:
-                        # Filtering fired — warn the user via the assistant text stream
-                        self.callbacks.on_assistant_text(
-                            f"[output filter] Tool result was large and has been truncated. "
-                            f"Full output saved under "
-                            f"{Path(self.config.project_path) / '.dagi' / 'hash_cache' / 'tool_output'}."
-                        )
-                    # ─────────────────────────────────────────────────────────
-                    result_str = (
-                        context_result if isinstance(context_result, str)
-                        else "__list__:" + json.dumps(context_result)
-                    )
-                    self.callbacks.on_tool_end(tc.function.name, result_str)   # filtered
-                    self.tracker.record_tool_end(tc.function.name, full_str)    # full (JSONL)
+                    self._bookkeep_tool_call(tc, result, description, tool_records)
 
-                    tool_records.append(ToolCallRecord(
-                        name=tc.function.name,
-                        description=description,
-                        input=tc.function.arguments,
-                        result=full_str,                                        # full (JSONL)
-                    ))
-                    self._messages.append(
-                        {"role": "tool", "tool_call_id": tc.id, "content": context_result}
-                    )
-
-                self.tracker.record_assistant(message.content, response.usage, tool_records)
-                _thinking_tok = (
-                    getattr(getattr(response.usage, "completion_tokens_details", None), "reasoning_tokens", None)
-                    or 0
-                )
-                self.callbacks.on_token_update(
-                    getattr(response.usage, "prompt_tokens", 0) or 0,
-                    getattr(response.usage, "completion_tokens", 0) or 0,
-                    getattr(response.usage, "cost", None),
-                    _thinking_tok,
-                )
+                self._finalize_turn(message, response, tool_records)
 
                 # ── Compaction trigger ────────────────────────────────────────
                 _prompt_tok = getattr(response.usage, "prompt_tokens", 0) or 0
@@ -729,28 +692,24 @@ class AgentLoop:
             self.callbacks.on_error(e)
             raise
 
-    def _handle_write_handoff(
+    def _bookkeep_tool_call(
         self,
         tc: ChatCompletionMessageFunctionToolCall,
-        result: str,
+        result,
         description: str,
         tool_records: list[ToolCallRecord],
-        message,
-        response,
     ) -> str:
-        """Terminate the subagent's turn immediately on WRITE_HANDOFF_SENTINEL.
-
-        Mirrors the tool-message bookkeeping the normal dispatch path performs,
-        then short-circuits the run() call — no further tool calls or API
-        turns happen after this.
+        """Filter, log, and record a single tool call's result, appending its
+        tool message to self._messages. Shared by the normal per-tool-call
+        dispatch loop and the `_handle_write_handoff` short-circuit path so
+        the two can't drift (e.g. the list-safety conversion below must
+        apply to both). Returns the full (unfiltered) result string.
         """
-        clean = result.replace(WRITE_HANDOFF_SENTINEL, "").strip()
-
         # ── Output filter ────────────────────────────────────────
         context_result, full_str = filter_tool_output(
-            clean, self.config.reserve_tokens, Path(self.config.project_path)
+            result, self.config.reserve_tokens, Path(self.config.project_path)
         )
-        if context_result is not clean:
+        if context_result is not result:
             # Filtering fired — warn the user via the assistant text stream
             self.callbacks.on_assistant_text(
                 f"[output filter] Tool result was large and has been truncated. "
@@ -758,19 +717,30 @@ class AgentLoop:
                 f"{Path(self.config.project_path) / '.dagi' / 'hash_cache' / 'tool_output'}."
             )
         # ─────────────────────────────────────────────────────────
+        result_str = (
+            context_result if isinstance(context_result, str)
+            else "__list__:" + json.dumps(context_result)
+        )
+        self.callbacks.on_tool_end(tc.function.name, result_str)   # filtered
+        self.tracker.record_tool_end(tc.function.name, full_str)    # full (JSONL)
 
-        self.callbacks.on_tool_end(tc.function.name, context_result)   # filtered
-        self.tracker.record_tool_end(tc.function.name, full_str)        # full (JSONL)
         tool_records.append(ToolCallRecord(
             name=tc.function.name,
             description=description,
             input=tc.function.arguments,
-            result=full_str,                                            # full (JSONL)
+            result=full_str,                                        # full (JSONL)
         ))
         self._messages.append(
             {"role": "tool", "tool_call_id": tc.id, "content": context_result}
         )
+        return full_str
 
+    def _finalize_turn(self, message, response, tool_records: list[ToolCallRecord]) -> None:
+        """Record the assistant turn and emit the token-usage callback.
+
+        Shared by the end of the normal per-tool-call loop and the
+        `_handle_write_handoff` short-circuit path.
+        """
         self.tracker.record_assistant(message.content, response.usage, tool_records)
         _thinking_tok = (
             getattr(getattr(response.usage, "completion_tokens_details", None), "reasoning_tokens", None)
@@ -782,6 +752,26 @@ class AgentLoop:
             getattr(response.usage, "cost", None),
             _thinking_tok,
         )
+
+    def _handle_write_handoff(
+        self,
+        tc: ChatCompletionMessageFunctionToolCall,
+        result: str,
+        description: str,
+        tool_records: list[ToolCallRecord],
+        message_response: tuple,
+    ) -> str:
+        """Terminate the subagent's turn immediately on WRITE_HANDOFF_SENTINEL.
+
+        Mirrors the tool-message bookkeeping the normal dispatch path performs
+        (via `_bookkeep_tool_call`/`_finalize_turn`), then short-circuits the
+        run() call — no further tool calls or API turns happen after this.
+        """
+        message, response = message_response
+        clean = result.replace(WRITE_HANDOFF_SENTINEL, "").strip()
+
+        full_str = self._bookkeep_tool_call(tc, clean, description, tool_records)
+        self._finalize_turn(message, response, tool_records)
 
         self.callbacks.on_done(full_str)
         return full_str

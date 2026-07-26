@@ -62,8 +62,9 @@ def _check_unverified(handoff_path: Path) -> bool:
     Written by tools/subagent_main.py when a handoff was scraped from the last
     assistant message (retry+degrade path) rather than deliberately reported.
     """
-    unverified_flag_path = handoff_path.with_name(f"{handoff_path.stem}_unverified.flag")
-    return unverified_flag_path.exists()
+    from tools._handoff_format import unverified_flag_path
+
+    return unverified_flag_path(handoff_path).exists()
 
 
 def _handoff_result(handoff_path: Path) -> dict | None:

@@ -94,15 +94,9 @@ class SpawnCliSubagentTool(BaseTool):
     @staticmethod
     def _dispatch_result(result: dict) -> str:
         """Translate a `run_subagent` result dict into the tool's return string."""
-        from tools._handoff_format import format_handoff_result
+        from tools._handoff_format import dispatch_status_result
 
-        if result["status"] == "ok":
-            return format_handoff_result(result["handoff"])
-        if result["status"] == "ok_unverified":
-            return format_handoff_result(result["handoff"], unverified=True)
-        if result["status"] == "timeout":
-            return json.dumps({"status": "timeout", "pid": result["pid"]})
-        return f"[spawn_cli_subagent error] {result.get('message', 'unknown error')}"
+        return dispatch_status_result(result, "spawn_cli_subagent")
 
     def run(
         self,

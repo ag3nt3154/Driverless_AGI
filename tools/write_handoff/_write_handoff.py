@@ -2,9 +2,9 @@
 
 Writes `content` verbatim to the handoff path baked in at construction. The model
 never sees or chooses the path — the tool's schema exposes only a `content`
-parameter. A planned change to agent/loop.py will scan tool results for the
-`<<HANDOFF_WRITTEN>>` sentinel returned here and terminate the subagent's turn
-the moment it appears.
+parameter. `agent/loop.py` scans tool results for the `<<HANDOFF_WRITTEN>>`
+sentinel returned here and terminates the subagent's turn the moment it appears
+(see `AgentLoop._handle_write_handoff`).
 """
 from __future__ import annotations
 
