@@ -25,6 +25,7 @@ class _Resolved:
 
 
 def _norm(text: str) -> str:
+    """Normalise line endings — used by replace_text (added in a later task)."""
     return text.replace("\r\n", "\n").replace("\r", "\n")
 
 
