@@ -22,7 +22,7 @@ WORKER_SCHEMA = {
     "type": "object",
     "properties": {
         "subtask_name": {"type": "string", "description": "Name of the subtask."},
-        "custom_instructions": {"type": "string", "description": "Extra instructions."},
+        "briefing": {"type": "string", "description": "Extra instructions."},
     },
     "required": ["subtask_name"],
 }

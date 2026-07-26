@@ -49,7 +49,7 @@ def _load_plan_text(config: "AgentConfig") -> str:
 def _compose_worker_context(
     plan_text: str,
     subtask_name: str,
-    custom_instructions: str,
+    briefing: str,
     handoff_file: str,
 ) -> str:
     from tools._plan_parser import extract_subtask
@@ -59,8 +59,8 @@ def _compose_worker_context(
     sections: list[str] = []
     if subtask_ctx:
         sections.append(f"## Subtask\n{subtask_ctx}")
-    if custom_instructions:
-        sections.append(f"## Instructions\n{custom_instructions}")
+    if briefing:
+        sections.append(f"## Instructions\n{briefing}")
     sections.append(f"## Output\nWrite your handoff report to: {handoff_file}")
 
     return "\n\n---\n\n".join(sections)
@@ -80,7 +80,7 @@ def _compose_review_context(
     worker_handoff_path: str,
     unit_test_paths: list[str],
     review_file: str,
-    custom_instructions: str,
+    briefing: str,
 ) -> str:
     from tools._plan_parser import extract_subtask
 
@@ -95,8 +95,8 @@ def _compose_review_context(
             f"The worker's implementation report is at: {worker_handoff_path}\n"
             f"Read it before evaluating the subtask."
         )
-    if custom_instructions:
-        sections.append(f"## Instructions\n{custom_instructions}")
+    if briefing:
+        sections.append(f"## Instructions\n{briefing}")
 
     unit_test_list = "\n".join(unit_test_paths) if unit_test_paths else ""
     output_lines = []
@@ -218,7 +218,7 @@ class SpawnSubagentTool(BaseTool):
             return _compose_worker_context(
                 plan_text=plan_text,
                 subtask_name=kwargs.get("subtask_name", ""),
-                custom_instructions=kwargs.get("custom_instructions", ""),
+                briefing=kwargs.get("briefing", ""),
                 handoff_file=str(handoff_path),
             )
         if self._type_name == "review":
@@ -231,7 +231,7 @@ class SpawnSubagentTool(BaseTool):
                 worker_handoff_path=kwargs.get("worker_handoff_path", ""),
                 unit_test_paths=unit_test_paths,
                 review_file=str(handoff_path),
-                custom_instructions=kwargs.get("custom_instructions", ""),
+                briefing=kwargs.get("briefing", ""),
             )
         if self._type_name == "explore_files":
             return _compose_explore_context(

@@ -30,7 +30,7 @@ parameters:
       description: >-
         Paths to unit/integration test files to run. Run all of them and record
         each result.
-    custom_instructions:
+    briefing:
       type: string
       description: >-
         Additional guidance from the main agent. Optional.

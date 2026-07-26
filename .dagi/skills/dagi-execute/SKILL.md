@@ -35,7 +35,7 @@ Before spawning the worker, write the test file(s) for this subtask:
 Edit `plan.md` to change the subtask heading marker from `[ ]` to `[~]`
 (in-progress).
 
-Call `spawn_worker_subagent(subtask_name, custom_instructions)`. The tool
+Call `spawn_worker_subagent(subtask_name, briefing)`. The tool
 automatically injects plan context and subtask details. Keep the returned handoff
 path for Step 3.
 
@@ -55,7 +55,7 @@ Pass/fail is determined by the review subagent's verdict — not your own judgme
 - Decide the answer yourself if you can — you have full repo access and
   conversation context the subagent doesn't
 - Only call `ask_user` for genuine product decisions
-- Re-spawn the same subagent type with the answer via `custom_instructions`
+- Re-spawn the same subagent type with the answer via `briefing`
 - This does NOT consume a retry attempt — go back to Step 2 or 3
 
 **If PASS:**
@@ -72,7 +72,7 @@ Pass/fail is determined by the review subagent's verdict — not your own judgme
 - Update `## Notes` in `plan.md` with salient findings
 - Decide retry strategy:
   - **Worker fell into a trap** (plan is sound): retry with augmented
-    custom_instructions
+    briefing
   - **Plan is flawed** (subtask requirements wrong): edit the subtask in plan.md,
     then retry
 

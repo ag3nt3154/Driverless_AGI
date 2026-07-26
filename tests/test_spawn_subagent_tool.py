@@ -42,7 +42,7 @@ WORKER_SCHEMA = {
     "type": "object",
     "properties": {
         "subtask_name": {"type": "string", "description": "Name of the subtask."},
-        "custom_instructions": {"type": "string", "description": "Extra instructions."},
+        "briefing": {"type": "string", "description": "Extra instructions."},
     },
     "required": ["subtask_name"],
 }
@@ -57,7 +57,7 @@ REVIEW_SCHEMA = {
             "items": {"type": "string"},
             "description": "Paths to unit test files.",
         },
-        "custom_instructions": {"type": "string", "description": "Extra instructions."},
+        "briefing": {"type": "string", "description": "Extra instructions."},
     },
     "required": ["subtask_name", "worker_handoff_path", "unit_test_paths"],
 }
@@ -231,7 +231,7 @@ class TestWorkerContext:
         assert "handoff_report.md" in composed
 
     def test_worker_context_includes_instructions_when_provided(self, tmp_path):
-        """Worker context must include Instructions section when custom_instructions provided."""
+        """Worker context must include Instructions section when briefing provided."""
         plan_file = tmp_path / "plan.md"
         plan_file.write_text(SAMPLE_PLAN, encoding="utf-8")
         config = _make_config(tmp_path, plan_file=plan_file)
@@ -240,7 +240,7 @@ class TestWorkerContext:
         composed = tool._compose_task(
             handoff_path=Path("/tmp/handoff.md"),
             subtask_name="Do the thing",
-            custom_instructions="Be extra careful with edge cases.",
+            briefing="Be extra careful with edge cases.",
         )
 
         assert "## Instructions" in composed
@@ -319,7 +319,7 @@ class TestReviewContext:
 
         assert "## Project Description" not in composed
 
-    def test_review_context_custom_instructions(self, tmp_path):
+    def test_review_context_briefing(self, tmp_path):
         """Review context includes Instructions section when provided."""
         plan_file = tmp_path / "plan.md"
         plan_file.write_text(SAMPLE_PLAN, encoding="utf-8")
@@ -331,7 +331,7 @@ class TestReviewContext:
             subtask_name="Do the thing",
             worker_handoff_path="/tmp/handoff.md",
             unit_test_paths=[],
-            custom_instructions="Focus on security.",
+            briefing="Focus on security.",
         )
 
         assert "## Instructions" in composed
