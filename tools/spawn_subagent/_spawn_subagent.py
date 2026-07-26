@@ -187,24 +187,38 @@ class SpawnSubagentTool(BaseTool):
             return f"[{self._type_name} escalated]\n\n{result['escalation']}"
         if result["status"] == "ok":
             return self._format_ok_result(result["handoff"])
+        if result["status"] == "ok_unverified":
+            return self._format_ok_result(result["handoff"], unverified=True)
         if result["status"] == "timeout":
             return json.dumps({"status": "timeout", "pid": result["pid"]})
         return f"[{self._type_name} error] {result.get('message', 'unknown error')}"
 
     @staticmethod
-    def _format_ok_result(handoff_path: str) -> str:
+    def _format_ok_result(handoff_path: str, unverified: bool = False) -> str:
         """Inline the handoff file's content so the main agent always sees it
         without a separate `read` call — relying on the agent to remember to
-        read the file is exactly what let handoffs go unread in practice."""
+        read the file is exactly what let handoffs go unread in practice.
+
+        When `unverified` is True, the subagent never called `write_handoff` and
+        the parent process scraped its last message into the handoff file instead.
+        A warning banner is prepended so the caller doesn't mistake scraped,
+        informal text for a deliberate structured report."""
+        banner = (
+            "⚠️ UNVERIFIED HANDOFF — the subagent exited without calling "
+            "`write_handoff`. The\ncontent below was scraped from its last message "
+            "and may be incomplete or informal.\n\n"
+            if unverified
+            else ""
+        )
         try:
             content = Path(handoff_path).read_text(encoding="utf-8")
         except (OSError, UnicodeDecodeError) as exc:
             return (
-                f"Subagent completed. Handoff written to: {handoff_path}\n\n"
+                f"{banner}Subagent completed. Handoff written to: {handoff_path}\n\n"
                 f"(could not read handoff file: {exc})"
             )
         return (
-            f"Subagent completed. Handoff written to: {handoff_path}\n\n"
+            f"{banner}Subagent completed. Handoff written to: {handoff_path}\n\n"
             f"--- Handoff content ---\n{content}"
         )
 

@@ -40,6 +40,8 @@ class ExtendSubagentTimeoutTool(BaseTool):
 
         if status == "ok":
             return SpawnSubagentTool._format_ok_result(result["handoff"])
+        if status == "ok_unverified":
+            return SpawnSubagentTool._format_ok_result(result["handoff"], unverified=True)
         if status == "timeout":
             return json.dumps({"status": "timeout", "pid": result["pid"]})
         return f"[subagent error] {result.get('message', 'unknown error')}"

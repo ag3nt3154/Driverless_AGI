@@ -52,4 +52,11 @@ class WebResearchTool(BaseTool):
 
         if result["status"] == "ok":
             return Path(result["handoff"]).read_text(encoding="utf-8")
+        if result["status"] == "ok_unverified":
+            banner = (
+                "⚠️ UNVERIFIED HANDOFF — the subagent exited without calling "
+                "`write_handoff`. The\ncontent below was scraped from its last "
+                "message and may be incomplete or informal.\n\n"
+            )
+            return banner + Path(result["handoff"]).read_text(encoding="utf-8")
         return f"[web_research error] {result.get('message', result['status'])}"

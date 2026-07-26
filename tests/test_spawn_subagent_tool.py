@@ -417,6 +417,55 @@ class TestRunMethod:
         assert str(missing_path) in result
         assert "could not read handoff" in result.lower()
 
+    def test_run_ok_unverified_includes_handoff_content_and_warning(self, tmp_path):
+        """run() must inline the handoff content AND prepend an unmistakable
+        warning banner when the subagent never called write_handoff."""
+        handoff_file = tmp_path / "worker_abc123.md"
+        handoff_file.write_text(
+            "# Closing message\n\nI finished the login endpoint.",
+            encoding="utf-8",
+        )
+        config = _make_config(tmp_path)
+        tool = _make_tool("worker", config, WORKER_SCHEMA)
+        unverified_result = {"status": "ok_unverified", "handoff": str(handoff_file)}
+
+        with patch("tools._subagent_runner.run_subagent", return_value=unverified_result):
+            result = tool.run(subtask_name="Do the thing")
+
+        assert "I finished the login endpoint." in result
+        assert "write_handoff" in result.lower()
+        assert "unverified" in result.lower()
+
+    def test_run_ok_status_has_no_warning_banner(self, tmp_path):
+        """Regression: the 'ok' path must remain unchanged — no warning banner."""
+        handoff_file = tmp_path / "worker_def456.md"
+        handoff_file.write_text("# Handoff\n\nDone.", encoding="utf-8")
+        config = _make_config(tmp_path)
+        tool = _make_tool("worker", config, WORKER_SCHEMA)
+        ok_result = {"status": "ok", "handoff": str(handoff_file)}
+
+        with patch("tools._subagent_runner.run_subagent", return_value=ok_result):
+            result = tool.run(subtask_name="Do the thing")
+
+        assert "unverified" not in result.lower()
+        assert "write_handoff" not in result.lower()
+
+    def test_run_ok_unverified_reports_unreadable_handoff_without_raising(self, tmp_path):
+        """If the handoff file can't be read for an ok_unverified result, run()
+        must still degrade gracefully, keeping the warning banner present."""
+        missing_path = tmp_path / "does_not_exist.md"
+        config = _make_config(tmp_path)
+        tool = _make_tool("worker", config, WORKER_SCHEMA)
+        unverified_result = {"status": "ok_unverified", "handoff": str(missing_path)}
+
+        with patch("tools._subagent_runner.run_subagent", return_value=unverified_result):
+            result = tool.run(subtask_name="Do the thing")
+
+        assert str(missing_path) in result
+        assert "could not read handoff" in result.lower()
+        assert "unverified" in result.lower()
+        assert "write_handoff" in result.lower()
+
     def test_run_returns_timeout_json_on_timeout(self, tmp_path):
         """run() returns a JSON timeout dict when the subagent times out."""
         import json

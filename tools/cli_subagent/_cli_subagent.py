@@ -111,6 +111,13 @@ class SpawnCliSubagentTool(BaseTool):
 
         if result["status"] == "ok":
             return f"Subagent completed. Handoff written to: {result['handoff']}"
+        if result["status"] == "ok_unverified":
+            return (
+                "⚠️ UNVERIFIED HANDOFF — the subagent exited without calling "
+                "`write_handoff`. The\ncontent below was scraped from its last "
+                "message and may be incomplete or informal.\n\n"
+                f"Subagent completed. Handoff written to: {result['handoff']}"
+            )
         if result["status"] == "timeout":
             return json.dumps({"status": "timeout", "pid": result["pid"]})
         return f"[spawn_cli_subagent error] {result.get('message', 'unknown error')}"
