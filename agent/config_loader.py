@@ -1,6 +1,10 @@
 """
 agent/config_loader.py — single source of truth for dagi configuration.
 
+Two-layer config stack:
+  1. {DAGI_ROOT}/.dagi/config.yaml          — base config (models catalog, defaults)
+  2. {project_path}/.dagi/config.yaml        — project override (merged over base)
+
 config.yaml schema:
     default_model: <model_id>
     models:
@@ -23,9 +27,10 @@ import yaml
 # Imported here to avoid a circular import — config_loader must not import AgentLoop.
 # AgentConfig is a plain dataclass with no side effects.
 from agent.loop import AgentConfig
+from agent import DAGI_ROOT
 
 
-_CONFIG_PATH = Path("config.yaml")
+_CONFIG_PATH = DAGI_ROOT / ".dagi" / "config.yaml"
 
 _FALLBACK_MODEL_ID = "gpt-4o-openai"
 _FALLBACK_ENTRY: dict = {
@@ -47,7 +52,7 @@ def get_model_display_name(model_id: str | None = None) -> str:
 
 @dataclass
 class TelegramConfig:
-    """Telegram bot settings loaded from the `telegram:` key in config.yaml."""
+    """Telegram bot settings loaded from the `telegram:` key in .dagi/config.yaml."""
     bot_token: str = ""
     allowed_chat_ids: frozenset[int] = field(default_factory=frozenset)
 
@@ -67,9 +72,10 @@ def load_telegram_config() -> TelegramConfig:
 
 
 def load_raw_config(config_path: Path | None = None) -> dict:
-    """Return the full parsed config dict, or {} if the file is absent.
+    """Return the full parsed config dict from {DAGI_ROOT}/.dagi/config.yaml,
+    or {} if the file is absent.
 
-    config_path overrides the default config.yaml path (used by benchmark runners
+    config_path overrides the default path (used by benchmark runners
     that need a separate config file).
     """
     path = config_path or _CONFIG_PATH
@@ -174,18 +180,18 @@ def resolve_model_config(
 
     Resolution order:
       1. model_id argument (CLI --model or UI selectbox)
-      2. default_model from config.yaml
+      2. default_model from {DAGI_ROOT}/.dagi/config.yaml
       3. built-in fallback (gpt-4o-openai)
 
-    config_path overrides the default config.yaml (e.g. pass
-    benchmarks/dagi_eval/config_dagi_eval.yaml for benchmark runs).
-
-    project_path, when provided, loads {project_path}/.dagi/config.yaml and
-    merges it over the root config. Project values win on all scalar fields;
+    If project_path is given, {project_path}/.dagi/config.yaml is loaded and
+    merged *over* the DAGI-root config. Project values win on all scalar fields;
     model catalog entries are shallow-merged (project entries add or fully
     replace root entries).
 
-    If worker_model is set in config.yaml and resolves to a known catalog entry,
+    config_path overrides the default config path (e.g. pass
+    benchmarks/dagi_eval/config_dagi_eval.yaml for benchmark runs).
+
+    If worker_model is set in the config and resolves to a known catalog entry,
     the returned config carries a worker_config field that sub-agents use instead
     of the primary model. Unrecognised worker_model values are silently ignored.
 
@@ -207,7 +213,7 @@ def resolve_model_config(
     if catalog and chosen_id not in catalog:
         available = ", ".join(catalog.keys())
         raise KeyError(
-            f"Model '{chosen_id}' not found in config.yaml.\n"
+            f"Model '{chosen_id}' not found in .dagi/config.yaml.\n"
             f"Available model IDs: {available}"
         )
 
@@ -247,10 +253,12 @@ def resolve_model_config(
 
 
 def save_config(default_model: str) -> None:
-    """Persist default_model back to config.yaml. The models catalog is preserved exactly."""
+    """Persist default_model back to {DAGI_ROOT}/.dagi/config.yaml.
+    The models catalog is preserved exactly."""
     raw = load_raw_config()
     raw["default_model"] = default_model
     raw.pop("max_iterations", None)  # clean up legacy key if present
+    _CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
     _CONFIG_PATH.write_text(
         yaml.dump(raw, default_flow_style=False, allow_unicode=True),
         encoding="utf-8",

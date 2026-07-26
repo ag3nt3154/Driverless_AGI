@@ -14,7 +14,7 @@ from pathlib import Path
 import yaml
 
 ROOT = Path(__file__).resolve().parent
-CONFIG_PATH = ROOT / "config.yaml"
+CONFIG_PATH = ROOT / ".dagi" / "config.yaml"
 
 
 def load_models() -> tuple[dict, str | None]:

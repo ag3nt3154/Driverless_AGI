@@ -67,7 +67,7 @@ SNAPSHOT_PATHS = [
     "AGENTS.md",
     "CLAUDE.local.md",
     "pyproject.toml",
-    "config.yaml",
+    ".dagi/config.yaml",
     ".env",
 ]
 
@@ -306,7 +306,7 @@ class SnapshotManager:
         _info(f"Files: {len(files)}  Size: {_format_size(total_size)}")
         if missing:
             _warn(f"Not found (skipped): {', '.join(missing)}")
-        if any(r["path"] == "config.yaml" for r in file_records):
+        if any(r["path"] in ("config.yaml", ".dagi/config.yaml") for r in file_records):
             _warn("config.yaml captured - it may contain API key env var names.")
         if any(r["path"] == ".env" for r in file_records):
             _warn(".env captured - contains API keys. Snapshots are gitignored; keep them local.")

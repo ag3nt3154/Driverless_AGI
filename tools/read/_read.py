@@ -137,7 +137,7 @@ class ReadTool(BaseTool):
             if not self._service_url or not self._project_path:
                 return (
                     "Error: Document reading requires the converter service. "
-                    "Ensure services.doc_converter is configured in config.yaml."
+                    "Ensure services.doc_converter is configured in .dagi/config.yaml."
                 )
             try:
                 md_text = convert_document(p, self._service_url, self._project_path)

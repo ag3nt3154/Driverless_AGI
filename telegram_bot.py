@@ -30,7 +30,7 @@ _cli = typer.Typer(name="dagi-telegram", add_completion=False)
 @_cli.command()
 def main(
     model: Optional[str] = typer.Option(
-        None, "--model", "-m", help="Model ID from config.yaml"
+        None, "--model", "-m", help="Model ID from .dagi/config.yaml"
     ),
     project: Optional[str] = typer.Option(
         None, "--project", "-p", help="Project directory"
@@ -44,7 +44,7 @@ def main(
         typer.echo(
             "Error: Telegram bot token not found.\n"
             "Set TELEGRAM_BOT_TOKEN in .env or configure "
-            "telegram.bot_token_env in config.yaml.",
+            "telegram.bot_token_env in .dagi/config.yaml.",
             err=True,
         )
         raise typer.Exit(1)

@@ -164,7 +164,7 @@ class AgentConfig:
     # callbacks. Dataclass default is False so direct AgentConfig() construction
     # (tests, benchmarks) keeps the blocking path; config_loader defaults the
     # config-file value to True, so all real entry points stream unless
-    # config.yaml sets `stream: false` (globally or per-model).
+    # .dagi/config.yaml sets `stream: false` (globally or per-model).
     stream: bool = False
     # bash_backend: previously controlled whether BashTool was replaced by an injected tool.
     # Now a no-op for tool registration — both BashTool and any injected tool are always
@@ -184,7 +184,7 @@ class AgentConfig:
     # Set to 60 by the scheduler runner for fully autonomous execution.
     ask_user_timeout: int | None = None
     # External service URLs (e.g. {"doc_converter": "http://localhost:8100"}).
-    # Loaded from the `services` block in config.yaml.
+    # Loaded from the `services` block in .dagi/config.yaml.
     services: dict[str, str] = field(default_factory=dict)
 
 
@@ -905,14 +905,14 @@ class AgentLoop:
             tier_cfg = self.config.advanced_config
             if tier_cfg is None:
                 return (
-                    "Cannot switch to 'advanced' tier: no advanced_model is configured in config.yaml. "
+                    "Cannot switch to 'advanced' tier: no advanced_model is configured in .dagi/config.yaml. "
                     "Continuing with the current model."
                 )
         elif target == "worker":
             tier_cfg = self.config.worker_config
             if tier_cfg is None:
                 return (
-                    "Cannot switch to 'worker' tier: no worker_model is configured in config.yaml. "
+                    "Cannot switch to 'worker' tier: no worker_model is configured in .dagi/config.yaml. "
                     "Continuing with the current model."
                 )
         elif target == "default":

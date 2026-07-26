@@ -15,17 +15,17 @@ from agent.log_callbacks import build_cli_callbacks
 def main():
     parser = argparse.ArgumentParser(description="Driverless AGI coding agent")
     parser.add_argument("task", nargs="?", help="Task to run (reads from stdin if omitted)")
-    parser.add_argument("--model", help="Model ID from config.yaml (e.g. gpt-4o-openai)")
+    parser.add_argument("--model", help="Model ID from .dagi/config.yaml (e.g. gpt-4o-openai)")
     parser.add_argument("--project", help="Project directory to work in (default: cwd)")
     parser.add_argument("--verbose", "-v", action="store_true",
                         help="Log full tool args/output and reasoning (default: truncated)")
-    parser.add_argument("--base-url", dest="base_url", help="[deprecated] URL is now set per-model in config.yaml")
+    parser.add_argument("--base-url", dest="base_url", help="[deprecated] URL is now set per-model in .dagi/config.yaml")
     args = parser.parse_args()
 
     logging.basicConfig(format="%(asctime)s %(message)s", level=logging.INFO, datefmt="%H:%M:%S")
 
     if args.base_url:
-        print("Warning: --base-url is deprecated. Configure the URL in config.yaml under models.", file=sys.stderr)
+        print("Warning: --base-url is deprecated. Configure the URL in .dagi/config.yaml under models.", file=sys.stderr)
 
     config = resolve_model_config(model_id=args.model)
     config.project_path = Path(args.project).resolve() if args.project else Path.cwd()

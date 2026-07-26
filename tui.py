@@ -22,7 +22,7 @@ _cli = typer.Typer(name="dagi-tui", add_completion=False)
 
 @_cli.command()
 def main(
-    model: Optional[str] = typer.Option(None, "--model", "-m", help="Model ID from config.yaml"),
+    model: Optional[str] = typer.Option(None, "--model", "-m", help="Model ID from .dagi/config.yaml"),
     verbose: bool = typer.Option(False, "--verbose", "-v", help="Show full tool output"),
     project: Optional[str] = typer.Option(None, "--project", "-p", help="Project directory"),
 ) -> None:
