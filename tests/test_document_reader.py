@@ -1,9 +1,18 @@
 # tests/test_document_reader.py
+import hashlib
 from pathlib import Path
 from unittest.mock import patch
 
+from tools import _hashline as H
 from tools.read._document_reader import summarize_document
 from tools.read import ReadTool
+
+
+def _anchored_hash(lines: list[str]) -> str:
+    """Compute the cache key hash the ReadTool passes to summarize_document."""
+    anchors = H.build_anchors(lines)
+    full_text = H.format_region(lines, anchors, 1, len(lines))
+    return hashlib.sha256(full_text.encode("utf-8")).hexdigest()
 
 _CHARS_PER_TOKEN = 4
 
@@ -12,7 +21,6 @@ class TestSummarizeDocumentCacheHit:
     def test_returns_cached_summary_when_exists(self, tmp_path):
         full_text = "x" * 200_000  # ~50k tokens, well over any budget
         # Pre-populate the cache
-        import hashlib
         content_hash = hashlib.sha256(full_text.encode()).hexdigest()
         cache_dir = tmp_path / ".dagi" / "hash_cache" / "document_summary"
         cache_dir.mkdir(parents=True)
@@ -34,7 +42,6 @@ class TestSummarizeDocumentCacheHit:
 class TestSummarizeDocumentCacheMiss:
     def test_spawns_subagent_and_returns_written_summary(self, tmp_path):
         full_text = "x" * 200_000
-        import hashlib
         content_hash = hashlib.sha256(full_text.encode()).hexdigest()
         expected_summary_path = (
             tmp_path / ".dagi" / "hash_cache" / "document_summary"
@@ -111,11 +118,7 @@ class TestEndToEnd:
             assert subagent_type == "document-reader"
             assert "large_doc.txt" in task
             # Simulate subagent writing the summary
-            import hashlib
-            full_text_numbered = "\n".join(
-                f"{i:6d}\t{line}" for i, line in enumerate(lines, 1)
-            )
-            h = hashlib.sha256(full_text_numbered.encode("utf-8")).hexdigest()
+            h = _anchored_hash(lines)
             summary_dir = project_path / ".dagi" / "hash_cache" / "document_summary"
             summary_dir.mkdir(parents=True, exist_ok=True)
             (summary_dir / f"{h}_summary.md").write_text(
@@ -149,12 +152,8 @@ class TestEndToEnd:
 
         fake_summary = "## Cached summary"
 
-        # Pre-populate cache
-        import hashlib
-        full_text_numbered = "\n".join(
-            f"{i:6d}\t{line}" for i, line in enumerate(lines, 1)
-        )
-        h = hashlib.sha256(full_text_numbered.encode("utf-8")).hexdigest()
+        # Pre-populate cache using the same hash the ReadTool computes
+        h = _anchored_hash(lines)
         summary_dir = tmp_path / ".dagi" / "hash_cache" / "document_summary"
         summary_dir.mkdir(parents=True, exist_ok=True)
         (summary_dir / f"{h}_summary.md").write_text(
