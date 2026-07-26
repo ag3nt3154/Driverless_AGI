@@ -1,47 +1,147 @@
+"""Hash-anchored edit tool.
+
+Edits target LINE#HASH anchors from `read` or `grep`. Validation is stateless:
+the anchor table is rebuilt from disk on every call, so a changed file produces
+a loud E_STALE_ANCHOR rather than a silent wrong-line edit.
+"""
+from dataclasses import dataclass
 from pathlib import Path
 
 from agent.base_tool import BaseTool
+from tools import _hashline as H
 from tools._path_guard import validate_path
+
+_DOC_EXTS = {".pdf", ".docx", ".xlsx", ".pptx"}
+
+
+@dataclass
+class _Resolved:
+    """An edit reduced to a splice against the pre-edit line list."""
+
+    start: int          # 0-based, inclusive
+    end: int            # 0-based, exclusive
+    lines: list[str]
+    index: int          # position in the caller's edits list, for messages
+
+
+def _norm(text: str) -> str:
+    return text.replace("\r\n", "\n").replace("\r", "\n")
+
+
+def _resolve_replace(edit: dict, i: int, lines: list[str], anchors: list[str]) -> _Resolved:
+    pos = edit.get("pos")
+    if not pos:
+        raise H.AnchorError("E_INVALID_ANCHOR", f"edit {i}: replace requires 'pos'")
+    start = H.resolve_anchor(pos, anchors)
+    end_anchor = edit.get("end")
+    end = H.resolve_anchor(end_anchor, anchors) if end_anchor else start
+    if end < start:
+        raise H.AnchorError("E_INVALID_ANCHOR", f"edit {i}: 'end' precedes 'pos'")
+    return _Resolved(start, end + 1, list(edit.get("lines", [])), i)
+
+
+_RESOLVERS = {"replace": _resolve_replace}
 
 
 class EditTool(BaseTool):
     name = "edit"
     description = (
-        "Edit a file by replacing exact text. The oldText must match exactly "
-        "(including whitespace). Use this for precise, surgical edits. "
+        "Edit a file using hash anchors from `read` or `grep`. Each anchor is a "
+        "`LINE#HASH` token (e.g. `18#aB3`) that is re-verified against the file "
+        "before the edit is applied, so an edit can never land on the wrong line. "
+        "Pass a list of edits; they are applied together against a single "
+        "pre-edit snapshot. Returns fresh anchors for the changed region. "
         "Paths are relative to the project root."
     )
     _parameters = {
         "type": "object",
         "properties": {
-            "path": {"type": "string", "description": "Path to the file to edit (relative to project root, or absolute)"},
-            "oldText": {"type": "string", "description": "Exact text to find and replace (must match exactly)"},
-            "newText": {"type": "string", "description": "New text to replace the old text with"},
+            "path": {
+                "type": "string",
+                "description": "Path to the file to edit (relative to project root, or absolute)",
+            },
+            "edits": {
+                "type": "array",
+                "description": "Edit operations applied against one pre-edit snapshot",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "op": {
+                            "type": "string",
+                            "enum": ["replace"],
+                            "description": "Operation kind",
+                        },
+                        "pos": {
+                            "type": "string",
+                            "description": "Anchor of the target line, e.g. '18#aB3'",
+                        },
+                        "end": {
+                            "type": "string",
+                            "description": "Optional end anchor for an inclusive range replace",
+                        },
+                        "lines": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": "Replacement lines, without any LINE#HASH prefix",
+                        },
+                    },
+                    "required": ["op"],
+                },
+            },
         },
-        "required": ["path", "oldText", "newText"],
+        "required": ["path", "edits"],
     }
 
     def __init__(self, cwd: Path = Path("."), allowed_roots: list[Path] | None = None):
         self.cwd = cwd
         self.allowed_roots = allowed_roots
 
-    def run(self, path: str, oldText: str, newText: str) -> str:
+    def run(self, path: str, edits: list[dict]) -> str:
         p = Path(path)
         if not p.is_absolute():
             p = self.cwd / p
         p = validate_path(p, self.allowed_roots)
-        content = p.read_text(encoding="utf-8")
-        # read_text() uses universal newlines (CRLF/CR → LF).  Normalise
-        # oldText/newText the same way so that LLM-generated CRLF (e.g. copied
-        # from bash/grep output on Windows) doesn't silently fail to match.
-        old_norm = oldText.replace("\r\n", "\n").replace("\r", "\n")
-        new_norm = newText.replace("\r\n", "\n").replace("\r", "\n")
-        count = content.count(old_norm)
-        if count == 0:
-            return f"Error: oldText not found in {p}"
-        if count > 1:
-            return f"Error: oldText found {count} times in {p} — must be unique"
-        # newline="\n" prevents Windows text-mode from converting \n → \r\n,
-        # which would double any \r already present and corrupt the file.
-        p.write_text(content.replace(old_norm, new_norm, 1), encoding="utf-8", newline="\n")
-        return f"Edited {p}"
+
+        if not edits:
+            return "Error: [E_INVALID_PATCH] 'edits' must contain at least one operation."
+
+        try:
+            lines = p.read_text(encoding="utf-8").splitlines()
+        except UnicodeDecodeError:
+            return f"Error: cannot read {p.name} as UTF-8 text."
+
+        anchors = H.build_anchors(lines)
+        try:
+            resolved = self._resolve_all(edits, lines, anchors)
+        except H.AnchorError as exc:
+            return f"Error: [{exc.code}] {exc.message}"
+
+        new_lines = self._apply(lines, resolved)
+        p.write_text("\n".join(new_lines), encoding="utf-8", newline="\n")
+        return f"Edited {p.name}"
+
+    def _resolve_all(
+        self,
+        edits: list[dict],
+        lines: list[str],
+        anchors: list[str],
+    ) -> list[_Resolved]:
+        resolved: list[_Resolved] = []
+        for i, edit in enumerate(edits):
+            op = edit.get("op")
+            resolver = _RESOLVERS.get(op)
+            if resolver is None:
+                raise H.AnchorError(
+                    "E_INVALID_PATCH",
+                    f"edit {i}: unknown op {op!r}; expected one of {sorted(_RESOLVERS)}",
+                )
+            resolved.append(resolver(edit, i, lines, anchors))
+        return resolved
+
+    @staticmethod
+    def _apply(lines: list[str], resolved: list[_Resolved]) -> list[str]:
+        """Splice bottom-up so unapplied indices stay valid."""
+        out = list(lines)
+        for e in sorted(resolved, key=lambda r: (r.start, r.index), reverse=True):
+            out[e.start:e.end] = e.lines
+        return out
