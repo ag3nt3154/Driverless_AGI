@@ -146,7 +146,9 @@ class TestSchemaLoading:
         config = _make_config(tmp_path)
         with patch("tools.spawn_subagent._spawn_subagent._DAGI_ROOT", tmp_path):
             worker_tool = SpawnSubagentTool(type_name="worker", description="W", config=config)
-            fallback_tool = SpawnSubagentTool(type_name="web_research", description="WR", config=config)
+            fallback_tool = SpawnSubagentTool(
+                type_name="web_research", description="WR", config=config
+            )
 
         assert worker_tool._parameters == WORKER_SCHEMA
         assert fallback_tool._parameters == _FALLBACK_PARAMETERS
