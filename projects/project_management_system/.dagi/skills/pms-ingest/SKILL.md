@@ -251,9 +251,7 @@ After all files are processed, report to the user:
   Update all links to use the renamed filename.
 - **Already-ingested file:** If the filename appears in `wiki/index.md`, warn the user
   and skip it entirely.
-- **`edit` oldText not unique:** Use a larger surrounding context to make it unique.
-  If still not possible, append to the end of the section. Use `write` for a full
-  rewrite only as a last resort, after re-reading the current file content first.
+- **`edit` reports `E_STALE_ANCHOR`:** The file changed since you read it. Re-read the file to get fresh `LINE#HASH` anchors, then retry. Do not guess an anchor.
 - **Missing deadline:** Always add `Due: TBD` to schedule.md AND a question to
   open_questions.md. Never omit either entry.
 - **Empty source file:** Move to `wiki/sources/misc/`. Add index row with

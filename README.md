@@ -669,7 +669,7 @@ Driverless_AGI/
 |------|-------------|
 | `read` | Read a text file (paginated) inline. `.pdf`/`.docx`/`.xlsx`/`.pptx` are delegated to the standalone **doc-converter service** over HTTP (see [Document Conversion Service](#document-conversion-service) below) — the service must be running or `read` returns a clear error telling you to start it, no inline fallback. PDF output includes a `[PDF: name \| N pages]` header; `pages` (PDF only, e.g. `'1-5'`) filters by `<!-- Page N -->` markers. For documents exceeding the model's `reserve_tokens` budget, automatically spawns a `document-reader` subagent that produces a sectioned summary digest (per-section line ranges, token estimates, summaries, key excerpts) cached in `.dagi/hash_cache/document_summary/` — the parent receives the digest instead of truncated output and can drill into sections of interest with targeted `offset`/`limit` reads. Pass `path`, optional `offset`/`limit`, optional `pages` |
 | `write` | Overwrite a file. Creates parent dirs. Takes `path` + `content` |
-| `edit` | Replace exact `oldText` with `newText` in a file. Errors if text is absent or non-unique |
+| `edit` | Hash-anchored editing: targets `LINE#HASH` anchors from `read`/`grep`, batched, with stale anchors rejected rather than silently relocated |
 | `bash` | Run a shell command. Returns stdout + stderr + exit code. Pass `command` + optional `timeout` |
 | `grep` | Regex search across files. Returns `file:line:match` format. Uses ripgrep when available |
 | `find` | Find files by glob pattern (e.g. `**/*.py`). Searches all allowed roots when no path given |
