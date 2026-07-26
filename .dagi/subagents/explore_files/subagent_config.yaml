@@ -9,8 +9,9 @@ tools:
   - read
   - grep
   - find
-  - bash
+  - write
   - edit
+  - bash
 parameters:
   type: object
   properties:

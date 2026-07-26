@@ -4,8 +4,12 @@ description: >-
   up-to-date information, documentation, or external URLs.
   Prefer this over spawn_cli_subagent for web tasks.
 tools:
-  - web_search
-  - web_fetch
+  - read
+  - grep
+  - find
+  - write
+  - edit
+  - bash
 parameters:
   type: object
   properties:

@@ -6,8 +6,10 @@ root: memory_root
 tools:
   - read
   - grep
+  - find
   - write
   - edit
+  - bash
 parameters:
   type: object
   properties:

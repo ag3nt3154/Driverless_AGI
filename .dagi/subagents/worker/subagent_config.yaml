@@ -9,10 +9,7 @@ tools:
   - find
   - write
   - edit
-  - copy
   - bash
-  - web_search
-  - web_fetch
   - escalate_issue
 parameters:
   type: object
