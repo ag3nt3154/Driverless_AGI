@@ -1,3 +1,5 @@
+import pytest
+
 from tools import _hashline as H
 
 
@@ -86,8 +88,6 @@ class TestComputeAffectedRange:
     def test_returns_none_on_degenerate_range(self):
         assert H.compute_affected_range(5, 0, 10) is None
 
-
-import pytest
 
 
 class TestParseAnchor:
