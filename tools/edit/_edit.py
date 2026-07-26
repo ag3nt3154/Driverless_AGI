@@ -81,6 +81,16 @@ def _resolve_replace_text(edit: dict, i: int, lines: list[str], anchors: list[st
     return _Resolved(start, end + 1, span.replace(old, new, 1).split("\n"), i)
 
 
+def _check_conflicts(resolved: list[_Resolved]) -> None:
+    ordered = sorted(resolved, key=lambda r: (r.start, r.end))
+    for prev, nxt in zip(ordered, ordered[1:]):
+        if nxt.start < prev.end:
+            raise H.AnchorError(
+                "E_CONFLICT",
+                f"edits {prev.index} and {nxt.index} target overlapping line ranges",
+            )
+
+
 _RESOLVERS = {
     "replace": _resolve_replace,
     "append": _resolve_append,
@@ -175,6 +185,7 @@ class EditTool(BaseTool):
         anchors = H.build_anchors(lines)
         try:
             resolved = self._resolve_all(edits, lines, anchors)
+            _check_conflicts(resolved)
         except H.AnchorError as exc:
             return f"Error: [{exc.code}] {exc.message}"
 

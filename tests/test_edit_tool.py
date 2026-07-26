@@ -189,3 +189,72 @@ class TestReplaceText:
         ])
 
         assert f.read_text(encoding="utf-8").splitlines() == ["X", "c"]
+
+
+class TestBatching:
+    def test_two_replaces_in_one_call(self, tmp_path):
+        lines = ["a", "b", "c", "d"]
+        f = _write(tmp_path, "f.txt", lines)
+        tool = _make_tool(tmp_path)
+
+        tool.run(path="f.txt", edits=[
+            {"op": "replace", "pos": _anchor_for(lines, 1), "lines": ["A"]},
+            {"op": "replace", "pos": _anchor_for(lines, 4), "lines": ["D"]},
+        ])
+
+        assert f.read_text(encoding="utf-8").splitlines() == ["A", "b", "c", "D"]
+
+    def test_earlier_insert_does_not_shift_later_edit(self, tmp_path):
+        lines = ["a", "b", "c"]
+        f = _write(tmp_path, "f.txt", lines)
+        tool = _make_tool(tmp_path)
+
+        tool.run(path="f.txt", edits=[
+            {"op": "append", "pos": _anchor_for(lines, 1), "lines": ["X", "Y"]},
+            {"op": "replace", "pos": _anchor_for(lines, 3), "lines": ["C"]},
+        ])
+
+        assert f.read_text(encoding="utf-8").splitlines() == ["a", "X", "Y", "b", "C"]
+
+    def test_two_inserts_at_same_position_keep_caller_order(self, tmp_path):
+        lines = ["a", "b"]
+        f = _write(tmp_path, "f.txt", lines)
+        tool = _make_tool(tmp_path)
+
+        tool.run(path="f.txt", edits=[
+            {"op": "append", "pos": _anchor_for(lines, 1), "lines": ["FIRST"]},
+            {"op": "append", "pos": _anchor_for(lines, 1), "lines": ["SECOND"]},
+        ])
+
+        assert f.read_text(encoding="utf-8").splitlines() == ["a", "FIRST", "SECOND", "b"]
+
+    def test_overlapping_edits_report_conflict(self, tmp_path):
+        lines = ["a", "b", "c"]
+        f = _write(tmp_path, "f.txt", lines)
+        tool = _make_tool(tmp_path)
+
+        result = tool.run(path="f.txt", edits=[
+            {
+                "op": "replace",
+                "pos": _anchor_for(lines, 1),
+                "end": _anchor_for(lines, 2),
+                "lines": ["X"],
+            },
+            {"op": "replace", "pos": _anchor_for(lines, 2), "lines": ["Y"]},
+        ])
+
+        assert "E_CONFLICT" in result
+        assert f.read_text(encoding="utf-8").splitlines() == lines
+
+    def test_one_bad_anchor_aborts_the_whole_batch(self, tmp_path):
+        lines = ["a", "b", "c"]
+        f = _write(tmp_path, "f.txt", lines)
+        tool = _make_tool(tmp_path)
+
+        result = tool.run(path="f.txt", edits=[
+            {"op": "replace", "pos": _anchor_for(lines, 1), "lines": ["A"]},
+            {"op": "replace", "pos": "2#zzz", "lines": ["B"]},
+        ])
+
+        assert "E_STALE_ANCHOR" in result
+        assert f.read_text(encoding="utf-8").splitlines() == lines
