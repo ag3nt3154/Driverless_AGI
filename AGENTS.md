@@ -134,8 +134,7 @@ tui.py / telegram_bot.py / main.py
 | `tools/read/` | `ReadTool` — text inline, docs delegated to doc-converter service over HTTP; hashline anchors |
 | `tools/edit.py`, `tools/write.py` | File editing (hash-anchored, CRLF-safe) and writing |
 | `tools/grep.py`, `tools/find.py` | Search with hashline anchors, glob file finding |
-| `tools/bash.py` | Unsandboxed shell execution |
-| `tools/git.py` | 8 git tools; `_dagi_branch_guard()` restricts add/commit/reset to `dagi/*` branches |
+| `tools/bash.py` | Unsandboxed shell execution — all git operations run through here |
 | `tools/_subagent_runner.py` | Pipe-based `run_subagent()`/`resume_subagent()` with unverified-flag detection |
 | `tools/_handoff_format.py` | Shared handoff rendering and status dispatch for all 5 subagent-spawning tools |
 | `tools/_task_envelope.py` | Universal `briefing`/`handoff_spec` envelope for subagent tasks |
@@ -197,7 +196,6 @@ tui.py / telegram_bot.py / main.py
 - GNHF self-review dormant 85+ days despite 259 unanalysed sessions.
 
 ### Project Shortcomings
-- `BashTool` unsandboxed — raw `git` bypasses `dagi/*` branch guard.
 - ESC pauses parent loop but child subprocesses continue.
 - Session cost tracking mostly blank (providers don't populate `usage.cost`).
 - `/hist` in TUI broken — writes to `rich.Console` behind Textual's canvas.
