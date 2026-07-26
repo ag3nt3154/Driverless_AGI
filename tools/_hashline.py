@@ -31,18 +31,26 @@ def build_anchors(lines: list[str]) -> list[str]:
 
     Collisions are resolved by incrementing a retry counter until the hash is
     unique within the file, so every line is independently addressable.
+
+    ``_ctx_next`` tracks the next retry index to try per (prev, curr, nxt)
+    triple, so lines sharing an identical context (e.g. runs of the same
+    content) jump directly to their retry rather than rescanning all prior
+    retries, keeping the algorithm O(n) instead of O(n²).
     """
     seen: set[str] = set()
     out: list[str] = []
+    _ctx_next: dict[tuple[str, str, str], int] = {}
     for i, curr in enumerate(lines):
         prev = lines[i - 1] if i > 0 else ""
         nxt = lines[i + 1] if i + 1 < len(lines) else ""
-        retry = 0
-        h = line_hash(prev, curr, nxt)
+        ctx = (prev, curr, nxt)
+        retry = _ctx_next.get(ctx, 0)
+        h = line_hash(prev, curr, nxt, retry)
         while h in seen:
             retry += 1
             h = line_hash(prev, curr, nxt, retry)
         seen.add(h)
+        _ctx_next[ctx] = retry + 1
         out.append(h)
     return out
 
