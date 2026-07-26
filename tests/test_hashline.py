@@ -38,3 +38,50 @@ class TestBuildAnchors:
     def test_all_anchors_unique_on_repetitive_file(self):
         anchors = H.build_anchors([""] * 200)
         assert len(set(anchors)) == 200
+
+
+class TestFormatRegion:
+    def test_renders_anchor_prefixed_lines(self):
+        lines = ["alpha", "beta", "gamma"]
+        anchors = H.build_anchors(lines)
+        out = H.format_region(lines, anchors, 1, 3)
+        assert out.splitlines() == [
+            f"1#{anchors[0]}:alpha",
+            f"2#{anchors[1]}:beta",
+            f"3#{anchors[2]}:gamma",
+        ]
+
+    def test_line_numbers_right_aligned_to_end_width(self):
+        lines = [f"L{i}" for i in range(1, 11)]
+        anchors = H.build_anchors(lines)
+        out = H.format_region(lines, anchors, 9, 10).splitlines()
+        assert out[0].startswith(" 9#")
+        assert out[1].startswith("10#")
+
+    def test_renders_a_subrange_only(self):
+        lines = ["a", "b", "c", "d"]
+        anchors = H.build_anchors(lines)
+        assert len(H.format_region(lines, anchors, 2, 3).splitlines()) == 2
+
+    def test_preserves_content_containing_colons(self):
+        lines = ["key: value"]
+        anchors = H.build_anchors(lines)
+        assert H.format_region(lines, anchors, 1, 1).endswith(":key: value")
+
+
+class TestComputeAffectedRange:
+    def test_pads_by_context_lines(self):
+        assert H.compute_affected_range(5, 5, 20) == (3, 7)
+
+    def test_clamps_to_file_bounds(self):
+        assert H.compute_affected_range(1, 1, 3) == (1, 3)
+
+    def test_returns_none_when_span_exceeds_budget(self):
+        assert H.compute_affected_range(1, 40, 100) is None
+
+    def test_returns_none_when_bounds_missing(self):
+        assert H.compute_affected_range(None, 5, 10) is None
+        assert H.compute_affected_range(5, None, 10) is None
+
+    def test_returns_none_on_degenerate_range(self):
+        assert H.compute_affected_range(5, 0, 10) is None
