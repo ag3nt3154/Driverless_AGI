@@ -220,7 +220,8 @@ class TestWorkerContext:
         assert "## Project Description" not in composed
 
     def test_worker_context_includes_handoff_output(self, tmp_path):
-        """Worker context must include the handoff file path in the Output section."""
+        """Worker context must include an Output section (always last), using
+        the default_handoff_spec fallback when none is configured/supplied."""
         plan_file = tmp_path / "plan.md"
         plan_file.write_text(SAMPLE_PLAN, encoding="utf-8")
         config = _make_config(tmp_path, plan_file=plan_file)
@@ -232,7 +233,7 @@ class TestWorkerContext:
         )
 
         assert "## Output" in composed
-        assert "handoff_report.md" in composed
+        assert composed.split("---")[-1].strip().startswith("## Output")
 
     def test_worker_context_includes_instructions_when_provided(self, tmp_path):
         """Worker context must include Instructions section when briefing provided."""
@@ -305,7 +306,7 @@ class TestReviewContext:
         assert "/tmp/handoff.md" in composed
         assert "tests/test_a.py" in composed
         assert "tests/test_b.py" in composed
-        assert "review.md" in composed
+        assert "## Output" in composed
 
     def test_review_context_excludes_project_description(self, tmp_path):
         """Review task body must NOT contain agents.md (now in subagent system prompt)."""
@@ -348,7 +349,8 @@ class TestReviewContext:
 
 class TestGenericSubagent:
     def test_generic_uses_task_kwarg_directly(self, tmp_path):
-        """Generic subagent types pass the task string through without context injection."""
+        """Generic subagent types wrap the task string in a `## Task` section
+        plus the universal envelope (no per-type context injection)."""
         config = _make_config(tmp_path)
         tool = _make_tool("web_research", config, _FALLBACK_PARAMETERS)
 
@@ -357,16 +359,19 @@ class TestGenericSubagent:
             task="Search for Python best practices",
         )
 
-        assert composed == "Search for Python best practices"
+        assert "## Task\nSearch for Python best practices" in composed
+        assert "## Output" in composed
 
-    def test_generic_returns_empty_string_when_no_task(self, tmp_path):
-        """Generic subagent returns empty string when task kwarg is absent."""
+    def test_generic_returns_envelope_only_when_no_task(self, tmp_path):
+        """Generic subagent still emits the mandatory `## Output` envelope
+        even when the task kwarg is absent (no body section in that case)."""
         config = _make_config(tmp_path)
         tool = _make_tool("web_research", config, _FALLBACK_PARAMETERS)
 
         composed = tool._compose_task(handoff_path=Path("/tmp/handoff.md"))
 
-        assert composed == ""
+        assert "## Task" not in composed
+        assert "## Output" in composed
 
 
 # ---------------------------------------------------------------------------

@@ -85,9 +85,12 @@ class SpawnCliSubagentTool(BaseTool):
         system_prompt: str,
         task: str,
         timeout: int = 300,
+        briefing: str = "",
+        handoff_spec: str = "",
     ) -> str:
         from tools._handoff_format import format_handoff_result
         from tools._subagent_runner import run_subagent
+        from tools._task_envelope import wrap_envelope
 
         subagent_id = uuid4().hex[:8]
 
@@ -104,14 +107,20 @@ class SpawnCliSubagentTool(BaseTool):
         if on_event:
             on_event(json.dumps({"type": "start", "subagent_type": "custom"}))
 
+        # No config.yaml exists for the dynamic `custom` path, so there is no
+        # `default_handoff_spec` source; `wrap_envelope` falls back to a
+        # hardcoded default when `handoff_spec` is omitted.
+        body = f"## Task\n{task}" if task else ""
+        enveloped_task = wrap_envelope(body, briefing, handoff_spec)
+
         depth = self._tracker._depth if self._tracker else 0
         if self._tracker:
-            self._tracker.record_subagent_start(subagent_id, "custom", task, depth)
+            self._tracker.record_subagent_start(subagent_id, "custom", enveloped_task, depth)
 
         try:
             result = run_subagent(
                 subagent_type="custom",
-                task=task,
+                task=enveloped_task,
                 project_path=self._project_path,
                 handoff_path=handoff_path,
                 timeout=float(timeout),

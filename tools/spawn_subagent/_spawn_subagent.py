@@ -21,6 +21,7 @@ if TYPE_CHECKING:
     from agent.session import SessionTracker
 
 from agent import DAGI_ROOT as _DAGI_ROOT
+from tools._task_envelope import wrap_envelope
 
 _FALLBACK_PARAMETERS: dict = {
     "type": "object",
@@ -60,42 +61,28 @@ def _load_plan_text(config: "AgentConfig") -> str:
     return ""
 
 
-def _compose_worker_context(
-    plan_text: str,
-    subtask_name: str,
-    briefing: str,
-    handoff_file: str,
-) -> str:
+def _compose_worker_body(plan_text: str, subtask_name: str) -> str:
+    """Build the worker's task body: just the `## Subtask` section, if any.
+
+    Envelope sections (Instructions/Output) are added later by `wrap_envelope`.
+    """
     from tools._plan_parser import extract_subtask
 
     subtask_ctx = extract_subtask(plan_text, subtask_name, include_tests=False) if plan_text else ""
-
-    sections: list[str] = []
-    if subtask_ctx:
-        sections.append(f"## Subtask\n{subtask_ctx}")
-    if briefing:
-        sections.append(f"## Instructions\n{briefing}")
-    sections.append(f"## Output\nWrite your handoff report to: {handoff_file}")
-
-    return "\n\n---\n\n".join(sections)
+    return f"## Subtask\n{subtask_ctx}" if subtask_ctx else ""
 
 
-def _compose_explore_context(task: str, handoff_file: str) -> str:
-    sections: list[str] = [
-        f"## Task\n{task}",
-        f"## Output\nWrite your exploration report to: {handoff_file}",
-    ]
-    return "\n\n---\n\n".join(sections)
-
-
-def _compose_review_context(
+def _compose_review_body(
     plan_text: str,
     subtask_name: str,
     worker_handoff_path: str,
     unit_test_paths: list[str],
-    review_file: str,
-    briefing: str,
 ) -> str:
+    """Build the review's task body: `## Subtask Being Reviewed` and
+    `## Worker Handoff` (which folds in the unit test paths, real content the
+    reviewer needs, not path-delivery prose). Envelope sections are added
+    later by `wrap_envelope`.
+    """
     from tools._plan_parser import extract_subtask
 
     subtask_ctx = extract_subtask(plan_text, subtask_name, include_tests=True) if plan_text else ""
@@ -104,22 +91,47 @@ def _compose_review_context(
     if subtask_ctx:
         sections.append(f"## Subtask Being Reviewed\n{subtask_ctx}")
     if worker_handoff_path:
-        sections.append(
-            f"## Worker Handoff\n"
-            f"The worker's implementation report is at: {worker_handoff_path}\n"
-            f"Read it before evaluating the subtask."
-        )
-    if briefing:
-        sections.append(f"## Instructions\n{briefing}")
-
-    unit_test_list = "\n".join(unit_test_paths) if unit_test_paths else ""
-    output_lines = []
-    if unit_test_list:
-        output_lines.append(f"Unit test paths:\n{unit_test_list}")
-    output_lines.append(f"Write your review report to: {review_file}")
-    sections.append("## Output\n" + "\n".join(output_lines))
+        lines = [
+            f"The worker's implementation report is at: {worker_handoff_path}",
+            "Read it before evaluating the subtask.",
+        ]
+        unit_test_list = "\n".join(unit_test_paths) if unit_test_paths else ""
+        if unit_test_list:
+            lines.append(f"Unit test paths:\n{unit_test_list}")
+        sections.append("## Worker Handoff\n" + "\n".join(lines))
 
     return "\n\n---\n\n".join(sections)
+
+
+def _compose_generic_body(task: str) -> str:
+    """Build the task body for types with no dedicated composer (explore_files,
+    web_research, memory-query, memory-add, document-reader)."""
+    return f"## Task\n{task}" if task else ""
+
+
+def _normalize_unit_test_paths(unit_test_paths) -> list[str]:
+    if isinstance(unit_test_paths, str):
+        return [unit_test_paths]
+    return unit_test_paths or []
+
+
+def _worker_body_builder(plan_text: str, kwargs: dict) -> str:
+    return _compose_worker_body(plan_text, kwargs.get("subtask_name", ""))
+
+
+def _review_body_builder(plan_text: str, kwargs: dict) -> str:
+    return _compose_review_body(
+        plan_text=plan_text,
+        subtask_name=kwargs.get("subtask_name", ""),
+        worker_handoff_path=kwargs.get("worker_handoff_path", ""),
+        unit_test_paths=_normalize_unit_test_paths(kwargs.get("unit_test_paths", [])),
+    )
+
+
+_BODY_BUILDERS: dict = {
+    "worker": _worker_body_builder,
+    "review": _review_body_builder,
+}
 
 
 class SpawnSubagentTool(BaseTool):
@@ -142,9 +154,17 @@ class SpawnSubagentTool(BaseTool):
         self._on_event_factory = on_event_factory
         self._timeout = timeout
         self._parameters = self._load_parameters(type_name, config)
+        self._default_handoff_spec = self._load_default_handoff_spec(type_name, config)
 
     @staticmethod
-    def _load_parameters(type_name: str, config: "AgentConfig") -> dict:
+    def _load_type_data(type_name: str, config: "AgentConfig") -> dict:
+        """Return the full parsed subagent_config.yaml for a type.
+
+        Tries the project-local override first, then the `_DAGI_ROOT`-relative
+        default. Returns the first candidate that defines a `parameters`
+        block (matching the original `_load_parameters` search semantics), or
+        `{}` if neither is usable.
+        """
         search_paths: list[Path] = [
             _DAGI_ROOT / ".dagi" / "subagents" / type_name / "subagent_config.yaml",
         ]
@@ -158,10 +178,20 @@ class SpawnSubagentTool(BaseTool):
             try:
                 data = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
                 if "parameters" in data:
-                    return data["parameters"]
+                    return data
             except (FileNotFoundError, OSError, yaml.YAMLError):
                 pass
-        return _FALLBACK_PARAMETERS
+        return {}
+
+    @staticmethod
+    def _load_parameters(type_name: str, config: "AgentConfig") -> dict:
+        data = SpawnSubagentTool._load_type_data(type_name, config)
+        return data.get("parameters", _FALLBACK_PARAMETERS)
+
+    @staticmethod
+    def _load_default_handoff_spec(type_name: str, config: "AgentConfig") -> str:
+        data = SpawnSubagentTool._load_type_data(type_name, config)
+        return data.get("default_handoff_spec", "")
 
     def run(self, **kwargs) -> str:
         from tools._subagent_runner import run_subagent
@@ -226,30 +256,18 @@ class SpawnSubagentTool(BaseTool):
         return format_handoff_result(handoff_path, unverified=unverified)
 
     def _compose_task(self, handoff_path: Path, **kwargs) -> str:
+        """Build the full task text: a type-specific body plus the universal
+        `## Instructions` / `## Output` envelope. `handoff_path` is no longer
+        embedded in the body — the subagent process learns its handoff path
+        via `--handoff`, independent of the task text (see `_subagent_runner`).
+        """
+        del handoff_path  # kept for call-site/test compatibility; unused in body
         plan_text = _load_plan_text(self._config)
+        builder = _BODY_BUILDERS.get(self._type_name)
+        if builder:
+            body = builder(plan_text, kwargs)
+        else:
+            body = _compose_generic_body(kwargs.get("task", ""))
 
-        if self._type_name == "worker":
-            return _compose_worker_context(
-                plan_text=plan_text,
-                subtask_name=kwargs.get("subtask_name", ""),
-                briefing=kwargs.get("briefing", ""),
-                handoff_file=str(handoff_path),
-            )
-        if self._type_name == "review":
-            unit_test_paths = kwargs.get("unit_test_paths", [])
-            if isinstance(unit_test_paths, str):
-                unit_test_paths = [unit_test_paths]
-            return _compose_review_context(
-                plan_text=plan_text,
-                subtask_name=kwargs.get("subtask_name", ""),
-                worker_handoff_path=kwargs.get("worker_handoff_path", ""),
-                unit_test_paths=unit_test_paths,
-                review_file=str(handoff_path),
-                briefing=kwargs.get("briefing", ""),
-            )
-        if self._type_name == "explore_files":
-            return _compose_explore_context(
-                task=kwargs.get("task", ""),
-                handoff_file=str(handoff_path),
-            )
-        return kwargs.get("task", "")
+        handoff_spec = kwargs.get("handoff_spec", "") or self._default_handoff_spec
+        return wrap_envelope(body, kwargs.get("briefing", ""), handoff_spec)
