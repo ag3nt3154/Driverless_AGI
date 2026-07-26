@@ -91,6 +91,36 @@ def _check_conflicts(resolved: list[_Resolved]) -> None:
             )
 
 
+def _changed_span(resolved: list[_Resolved]) -> tuple[int | None, int | None]:
+    """First and last changed line in POST-edit 1-indexed coordinates."""
+    offset = 0
+    first: int | None = None
+    last: int | None = None
+    for e in sorted(resolved, key=lambda r: (r.start, r.index)):
+        post_start = e.start + offset
+        candidate_last = post_start + len(e.lines) if e.lines else post_start
+        first = post_start + 1 if first is None else min(first, post_start + 1)
+        last = candidate_last if last is None else max(last, candidate_last)
+        offset += len(e.lines) - (e.end - e.start)
+    return first, last
+
+
+def _render_anchors(new_lines: list[str], resolved: list[_Resolved]) -> str:
+    first, last = _changed_span(resolved)
+    span = H.compute_affected_range(first, last, len(new_lines))
+    if span is None:
+        return H.ANCHORS_OMITTED_TEXT
+    start, end = span
+    anchors = H.build_anchors(new_lines)
+    block = (
+        f"--- Anchors {start}-{end} ---\n"
+        + H.format_region(new_lines, anchors, start, end)
+    )
+    if len(block.encode("utf-8")) > H.ANCHOR_TEXT_BUDGET_BYTES:
+        return H.ANCHORS_OMITTED_TEXT
+    return block
+
+
 _RESOLVERS = {
     "replace": _resolve_replace,
     "append": _resolve_append,
@@ -190,8 +220,11 @@ class EditTool(BaseTool):
             return f"Error: [{exc.code}] {exc.message}"
 
         new_lines = self._apply(lines, resolved)
+        if new_lines == lines:
+            return f"No changes made to {p.name}\nClassification: noop"
+
         p.write_text("\n".join(new_lines), encoding="utf-8", newline="\n")
-        return f"Edited {p.name}"
+        return _render_anchors(new_lines, resolved)
 
     def _resolve_all(
         self,

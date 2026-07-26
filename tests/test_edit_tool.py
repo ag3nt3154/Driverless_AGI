@@ -258,3 +258,61 @@ class TestBatching:
 
         assert "E_STALE_ANCHOR" in result
         assert f.read_text(encoding="utf-8").splitlines() == lines
+
+
+class TestEditResponse:
+    def test_returns_fresh_anchors_for_changed_region(self, tmp_path):
+        lines = [f"L{i}" for i in range(1, 11)]
+        _write(tmp_path, "f.txt", lines)
+        tool = _make_tool(tmp_path)
+
+        result = tool.run(path="f.txt", edits=[
+            {"op": "replace", "pos": _anchor_for(lines, 5), "lines": ["FIVE"]},
+        ])
+
+        assert result.startswith("--- Anchors 3-7 ---")
+        assert ":FIVE" in result
+
+    def test_returned_anchors_are_usable_for_a_follow_up_edit(self, tmp_path):
+        lines = [f"L{i}" for i in range(1, 11)]
+        f = _write(tmp_path, "f.txt", lines)
+        tool = _make_tool(tmp_path)
+
+        first = tool.run(path="f.txt", edits=[
+            {"op": "replace", "pos": _anchor_for(lines, 5), "lines": ["FIVE"]},
+        ])
+        anchor_line = [ln for ln in first.splitlines() if ":FIVE" in ln][0]
+        anchor = anchor_line.split(":", 1)[0].strip()
+
+        second = tool.run(path="f.txt", edits=[
+            {"op": "replace", "pos": anchor, "lines": ["CINCO"]},
+        ])
+
+        assert "E_STALE_ANCHOR" not in second
+        assert f.read_text(encoding="utf-8").splitlines()[4] == "CINCO"
+
+    def test_large_edit_omits_anchors(self, tmp_path):
+        lines = [f"L{i}" for i in range(1, 51)]
+        _write(tmp_path, "f.txt", lines)
+        tool = _make_tool(tmp_path)
+
+        result = tool.run(path="f.txt", edits=[{
+            "op": "replace",
+            "pos": _anchor_for(lines, 1),
+            "end": _anchor_for(lines, 40),
+            "lines": [f"N{i}" for i in range(1, 41)],
+        }])
+
+        assert result == H.ANCHORS_OMITTED_TEXT
+
+    def test_identical_content_reports_noop(self, tmp_path):
+        lines = ["a", "b", "c"]
+        f = _write(tmp_path, "f.txt", lines)
+        tool = _make_tool(tmp_path)
+
+        result = tool.run(path="f.txt", edits=[
+            {"op": "replace", "pos": _anchor_for(lines, 2), "lines": ["b"]},
+        ])
+
+        assert "noop" in result.lower()
+        assert f.read_text(encoding="utf-8").splitlines() == lines
