@@ -56,6 +56,25 @@ def _drain_stdout(proc: subprocess.Popen) -> None:
         pass
 
 
+def _check_unverified(handoff_path: Path) -> bool:
+    """Return True if a sidecar '_unverified.flag' exists next to handoff_path.
+
+    Written by tools/subagent_main.py when a handoff was scraped from the last
+    assistant message (retry+degrade path) rather than deliberately reported.
+    """
+    unverified_flag_path = handoff_path.with_name(f"{handoff_path.stem}_unverified.flag")
+    return unverified_flag_path.exists()
+
+
+def _handoff_result(handoff_path: Path) -> dict | None:
+    """Build the ok/ok_unverified result dict for a written handoff, or None if absent."""
+    if not handoff_path.exists():
+        return None
+    if _check_unverified(handoff_path):
+        return {"status": "ok_unverified", "handoff": str(handoff_path)}
+    return {"status": "ok", "handoff": str(handoff_path)}
+
+
 def _poll_until(
     state: _SubagentState,
     extra_seconds: float,
@@ -63,11 +82,16 @@ def _poll_until(
     """Poll proc until it exits, escalates, or extra_seconds elapses.
 
     Returns:
-        {"status": "ok",        "handoff": str}   — done, handoff written
-        {"status": "escalated", "escalation": str} — subagent raised a blocking issue
-        {"status": "timeout",   "pid": int}        — still alive, deadline expired
-        {"status": "error",     "message": str}    — exited without writing handoff,
-                                                      or escalation file unreadable
+        {"status": "ok",            "handoff": str}   — done, handoff written
+        {"status": "ok_unverified", "handoff": str}   — done, but handoff was scraped
+                                                         from the last assistant message
+                                                         after retry+degrade (see
+                                                         tools/subagent_main.py), not a
+                                                         deliberate structured report
+        {"status": "escalated",     "escalation": str} — subagent raised a blocking issue
+        {"status": "timeout",       "pid": int}        — still alive, deadline expired
+        {"status": "error",         "message": str}    — exited without writing handoff,
+                                                          or escalation file unreadable
     """
     import time
 
@@ -104,8 +128,9 @@ def _poll_until(
             with _active_lock:
                 _active.pop(proc.pid, None)
             state.task_file.unlink(missing_ok=True)
-            if state.handoff_path.exists():
-                return {"status": "ok", "handoff": str(state.handoff_path)}
+            handoff_result = _handoff_result(state.handoff_path)
+            if handoff_result is not None:
+                return handoff_result
             return {
                 "status": "error",
                 "message": f"subagent exited (code {ret}) without writing handoff",

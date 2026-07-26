@@ -6,7 +6,7 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 from agent.base_tool import BaseTool
-from agent.loop import AgentCallbacks, AgentConfig, AgentLoop, TASK_END_FLAG
+from agent.loop import AgentCallbacks, AgentConfig, AgentLoop, TASK_END_FLAG, WRITE_HANDOFF_SENTINEL
 from agent.registry import ToolRegistry
 
 
@@ -177,6 +177,152 @@ class TestToolDispatch:
         assert tool_b.calls == [{}]
         tool_msgs = [m for m in loop._messages if m.get("role") == "tool"]
         assert [m["tool_call_id"] for m in tool_msgs] == ["tc1", "tc2"]
+
+
+class TestWriteHandoffSentinel:
+    """WRITE_HANDOFF_SENTINEL in a tool result must terminate the subagent's
+    turn immediately — no further API calls, transcript stays well-formed."""
+
+    def test_run_returns_cleaned_text_and_makes_no_further_api_call(self):
+        tool = FakeTool(name="write_handoff", result=f"Handoff written. {WRITE_HANDOFF_SENTINEL}")
+        registry = ToolRegistry()
+        registry.register(tool)
+        loop = _make_loop(registry=registry)
+        loop.client = MagicMock()
+        loop.client.chat.completions.create.side_effect = [
+            _make_response(None, tool_calls=[_make_tool_call("tc1", "write_handoff", "{}")]),
+            _make_response(f"Done. {TASK_END_FLAG}"),
+        ]
+
+        result = loop.run("do something")
+
+        assert result == "Handoff written."
+        assert loop.client.chat.completions.create.call_count == 1
+
+    def test_returned_text_does_not_contain_raw_sentinel(self):
+        tool = FakeTool(name="write_handoff", result=f"Handoff written. {WRITE_HANDOFF_SENTINEL}")
+        registry = ToolRegistry()
+        registry.register(tool)
+        loop = _make_loop(registry=registry)
+        loop.client = MagicMock()
+        loop.client.chat.completions.create.side_effect = [
+            _make_response(None, tool_calls=[_make_tool_call("tc1", "write_handoff", "{}")]),
+        ]
+
+        result = loop.run("do something")
+
+        assert WRITE_HANDOFF_SENTINEL not in result
+
+    def test_transcript_has_well_formed_tool_reply(self):
+        tool = FakeTool(name="write_handoff", result=f"Handoff written. {WRITE_HANDOFF_SENTINEL}")
+        registry = ToolRegistry()
+        registry.register(tool)
+        loop = _make_loop(registry=registry)
+        loop.client = MagicMock()
+        loop.client.chat.completions.create.side_effect = [
+            _make_response(None, tool_calls=[_make_tool_call("tc1", "write_handoff", "{}")]),
+        ]
+
+        loop.run("do something")
+
+        tool_msgs = [m for m in loop._messages if m.get("role") == "tool"]
+        assert len(tool_msgs) == 1
+        assert tool_msgs[0]["tool_call_id"] == "tc1"
+        assert tool_msgs[0]["content"] == "Handoff written."
+
+    def test_on_done_callback_fires_with_cleaned_text(self):
+        tool = FakeTool(name="write_handoff", result=f"Handoff written. {WRITE_HANDOFF_SENTINEL}")
+        registry = ToolRegistry()
+        registry.register(tool)
+
+        done_calls = []
+        callbacks = AgentCallbacks(on_done=lambda r: done_calls.append(r))
+
+        loop = _make_loop(registry=registry)
+        loop.callbacks = callbacks
+        loop.client = MagicMock()
+        loop.client.chat.completions.create.side_effect = [
+            _make_response(None, tool_calls=[_make_tool_call("tc1", "write_handoff", "{}")]),
+        ]
+
+        loop.run("do something")
+
+        assert done_calls == ["Handoff written."]
+
+    def test_bookkeeping_fires_on_handoff_path(self):
+        """record_assistant and on_token_update must fire on the handoff
+        termination path, same as every other early-exit path."""
+        tool = FakeTool(name="write_handoff", result=f"Handoff written. {WRITE_HANDOFF_SENTINEL}")
+        registry = ToolRegistry()
+        registry.register(tool)
+
+        token_updates = []
+        callbacks = AgentCallbacks(
+            on_token_update=lambda p, c, cost, t: token_updates.append((p, c, cost, t))
+        )
+
+        loop = _make_loop(registry=registry)
+        loop.callbacks = callbacks
+        loop.client = MagicMock()
+        loop.client.chat.completions.create.side_effect = [
+            _make_response(
+                None,
+                tool_calls=[_make_tool_call("tc1", "write_handoff", "{}")],
+                prompt_tokens=10,
+                completion_tokens=5,
+            ),
+        ]
+
+        loop.run("do something")
+
+        loop.tracker.record_assistant.assert_called_once()
+        assert token_updates == [(10, 5, None, 0)]
+
+    def test_large_handoff_result_gets_filtered(self, tmp_path):
+        """A large handoff report must be routed through filter_tool_output,
+        same as the normal per-tool-call path."""
+        large_report = "x" * 100_000
+        tool = FakeTool(
+            name="write_handoff", result=f"{large_report}{WRITE_HANDOFF_SENTINEL}"
+        )
+        registry = ToolRegistry()
+        registry.register(tool)
+
+        warnings = []
+        callbacks = AgentCallbacks(on_assistant_text=lambda t: warnings.append(t))
+
+        loop = _make_loop(registry=registry, reserve_tokens=10, project_path=tmp_path)
+        loop.callbacks = callbacks
+        loop.client = MagicMock()
+        loop.client.chat.completions.create.side_effect = [
+            _make_response(None, tool_calls=[_make_tool_call("tc1", "write_handoff", "{}")]),
+        ]
+
+        result = loop.run("do something")
+
+        tool_msgs = [m for m in loop._messages if m.get("role") == "tool"]
+        assert "OUTPUT TRUNCATED" in tool_msgs[0]["content"]
+        assert any("[output filter]" in w for w in warnings)
+        # Final returned/on_done value is the full, unfiltered report (JSONL/caller-facing).
+        assert result == large_report
+
+    def test_non_sentinel_tool_result_behaves_as_before(self):
+        """Regression guard: a normal tool result without the sentinel proceeds
+        to the next iteration rather than returning early."""
+        tool = FakeTool(name="echo", result="just a normal result")
+        registry = ToolRegistry()
+        registry.register(tool)
+        loop = _make_loop(registry=registry)
+        loop.client = MagicMock()
+        loop.client.chat.completions.create.side_effect = [
+            _make_response(None, tool_calls=[_make_tool_call("tc1", "echo", "{}")]),
+            _make_response(f"Done. {TASK_END_FLAG}"),
+        ]
+
+        result = loop.run("do something")
+
+        assert loop.client.chat.completions.create.call_count == 2
+        assert result == "Done."
 
 
 class TestCompactionTrigger:

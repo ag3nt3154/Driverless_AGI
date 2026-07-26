@@ -17,8 +17,6 @@ from uuid import uuid4
 
 from agent.base_tool import BaseTool
 
-from agent import DAGI_ROOT as _DAGI_ROOT  # noqa: F401 (kept for module-level symmetry)
-
 if TYPE_CHECKING:
     from agent.session import SessionTracker
 
@@ -52,6 +50,20 @@ class SpawnCliSubagentTool(BaseTool):
                 "type": "integer",
                 "description": "Max seconds to wait for a response. Default: 300.",
             },
+            "briefing": {
+                "type": "string",
+                "description": (
+                    "Additional guidance from the main agent: traps to avoid, prior "
+                    "failed attempt context, or extra constraints. Optional."
+                ),
+            },
+            "handoff_spec": {
+                "type": "string",
+                "description": (
+                    "Free-text description of what the parent wants in the handoff "
+                    "report. Optional."
+                ),
+            },
         },
         "required": ["system_prompt", "task"],
     }
@@ -66,20 +78,45 @@ class SpawnCliSubagentTool(BaseTool):
         self._on_event_factory = on_event_factory
         self._tracker = tracker
 
+    @staticmethod
+    def _write_prompt_file(system_prompt: str) -> Path:
+        """Write `system_prompt` to a fresh temp file and return its path.
+
+        Caller is responsible for unlinking the file once the subagent run
+        has finished consuming it.
+        """
+        fd, _tmp = tempfile.mkstemp(suffix=".txt", prefix="dagi_prompt_")
+        os.close(fd)
+        prompt_file = Path(_tmp)
+        prompt_file.write_text(system_prompt, encoding="utf-8")
+        return prompt_file
+
+    @staticmethod
+    def _dispatch_result(result: dict) -> str:
+        """Translate a `run_subagent` result dict into the tool's return string."""
+        from tools._handoff_format import format_handoff_result
+
+        if result["status"] == "ok":
+            return format_handoff_result(result["handoff"])
+        if result["status"] == "ok_unverified":
+            return format_handoff_result(result["handoff"], unverified=True)
+        if result["status"] == "timeout":
+            return json.dumps({"status": "timeout", "pid": result["pid"]})
+        return f"[spawn_cli_subagent error] {result.get('message', 'unknown error')}"
+
     def run(
         self,
         system_prompt: str,
         task: str,
         timeout: int = 300,
+        briefing: str = "",
+        handoff_spec: str = "",
     ) -> str:
         from tools._subagent_runner import run_subagent
+        from tools._task_envelope import wrap_envelope
 
         subagent_id = uuid4().hex[:8]
-
-        fd, _tmp = tempfile.mkstemp(suffix=".txt", prefix="dagi_prompt_")
-        os.close(fd)
-        prompt_file = Path(_tmp)
-        prompt_file.write_text(system_prompt, encoding="utf-8")
+        prompt_file = self._write_prompt_file(system_prompt)
 
         handoffs_dir = self._project_path / ".dagi" / "handoffs"
         handoffs_dir.mkdir(parents=True, exist_ok=True)
@@ -89,14 +126,20 @@ class SpawnCliSubagentTool(BaseTool):
         if on_event:
             on_event(json.dumps({"type": "start", "subagent_type": "custom"}))
 
+        # No config.yaml exists for the dynamic `custom` path, so there is no
+        # `default_handoff_spec` source; `wrap_envelope` falls back to a
+        # hardcoded default when `handoff_spec` is omitted.
+        body = f"## Task\n{task}" if task else ""
+        enveloped_task = wrap_envelope(body, briefing, handoff_spec)
+
         depth = self._tracker._depth if self._tracker else 0
         if self._tracker:
-            self._tracker.record_subagent_start(subagent_id, "custom", task, depth)
+            self._tracker.record_subagent_start(subagent_id, "custom", enveloped_task, depth)
 
         try:
             result = run_subagent(
                 subagent_type="custom",
-                task=task,
+                task=enveloped_task,
                 project_path=self._project_path,
                 handoff_path=handoff_path,
                 timeout=float(timeout),
@@ -109,8 +152,4 @@ class SpawnCliSubagentTool(BaseTool):
         if self._tracker:
             self._tracker.record_subagent_end(subagent_id, str(result), depth)
 
-        if result["status"] == "ok":
-            return f"Subagent completed. Handoff written to: {result['handoff']}"
-        if result["status"] == "timeout":
-            return json.dumps({"status": "timeout", "pid": result["pid"]})
-        return f"[spawn_cli_subagent error] {result.get('message', 'unknown error')}"
+        return self._dispatch_result(result)

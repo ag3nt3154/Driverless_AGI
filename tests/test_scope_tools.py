@@ -1,19 +1,20 @@
-"""tests/test_scope_tools.py — Unit tests for _tools_from_list() in agent/tools.py."""
+"""tests/test_scope_tools.py — Unit tests for _tools_from_list() in agent/subagent_tools.py."""
 from __future__ import annotations
 
 from pathlib import Path
 
-from agent.tools import _tools_from_list
+from agent.subagent_tools import _tools_from_list
 from tools.bash import BashTool
 from tools.edit import EditTool
 from tools.find import FindTool
 from tools.grep import GrepTool
 from tools.read import ReadTool
 from tools.write import WriteTool
+from tools.write_handoff import WriteHandoffTool
 
 
-def _make(names: list[str]):
-    return _tools_from_list(names, Path("."), [Path(".")])
+def _make(names: list[str], handoff_path: Path | None = None):
+    return _tools_from_list(names, Path("."), [Path(".")], handoff_path=handoff_path)
 
 
 class TestToolsFromList:
@@ -54,3 +55,14 @@ class TestToolsFromList:
     def test_edit_tool_included(self):
         tools = _make(["edit"])
         assert any(isinstance(t, EditTool) for t in tools)
+
+    def test_write_handoff_auto_injected_when_handoff_path_given(self, tmp_path):
+        handoff_path = tmp_path / "handoff.md"
+        tools = _make(["read", "grep", "find"], handoff_path=handoff_path)
+        write_handoff_tools = [t for t in tools if isinstance(t, WriteHandoffTool)]
+        assert len(write_handoff_tools) == 1
+        assert write_handoff_tools[0]._handoff_path == handoff_path
+
+    def test_write_handoff_absent_when_no_handoff_path(self):
+        tools = _make(["read", "grep", "find"])
+        assert not any(isinstance(t, WriteHandoffTool) for t in tools)
