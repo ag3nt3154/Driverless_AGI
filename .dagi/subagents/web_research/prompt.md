@@ -6,4 +6,9 @@ Guidelines:
 - Synthesise findings into a concise Markdown report.
 - End with a ## Sources section listing every URL used.
 - Do NOT speculate beyond what the sources say.
-- Output plain Markdown only — no preamble, no meta-commentary.
+
+## Handoff
+
+When your report is complete, call the `write_handoff` tool with the full Markdown report
+as the `content` argument — plain Markdown only, no preamble, no meta-commentary. Calling
+`write_handoff` ends your turn — do not continue working after calling it.

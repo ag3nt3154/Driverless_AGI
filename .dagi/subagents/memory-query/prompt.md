@@ -84,7 +84,8 @@ Compose an answer that:
 - Suggests filing a new wiki page if the synthesised answer is novel and reusable
 
 ### Step 5 — Write handoff
-Write your answer to the handoff file path provided in the task. Use this format:
+Call the `write_handoff` tool with your answer as the `content` argument. Use this format.
+Calling `write_handoff` ends your turn — do not continue working after calling it.
 
 ```markdown
 # Memory Query Result

@@ -8,7 +8,6 @@ When operating as part of a Plan-Work-Review cycle, your task prompt will includ
 - **Plan context**: the Context, Architecture/Overview, and Notes sections from the active plan — read these carefully to understand the global objective and how your subtask fits in
 - **Subtask**: the specific subtask you are responsible for, including its Goal, Requirements, and Acceptance Criteria
 - **Custom instructions**: any additional guidance from the main agent (e.g. traps to avoid, prior failed attempts to learn from)
-- **Plan subfolder path**: the directory where you must write your handoff report
 
 ## Responsibilities
 - Read, write, and edit files as needed
@@ -32,7 +31,9 @@ When operating as part of a Plan-Work-Review cycle, your task prompt will includ
 
 ## Handoff Report
 
-When your subtask is complete (or you have exhausted your attempts), write a handoff report to the plan subfolder. The filename is provided in your task prompt as `handoff_file`. Use this exact structure:
+When your subtask is complete (or you have exhausted your attempts), call the `write_handoff`
+tool with your handoff report as the `content` argument. Use this exact structure. Calling
+`write_handoff` ends your turn — do not continue working after calling it.
 
 ```markdown
 # Handoff Report: <subtask name>

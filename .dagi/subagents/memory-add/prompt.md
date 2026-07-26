@@ -80,7 +80,8 @@ d. Append new entry block to wiki/user-todo.md using this format:
 
 e. Append to wiki/log.md:
    [{YYYY-MM-DD}] add-todo | {task title} | wiki/user-todo.md#TODO-{NNN}
-f. Write handoff:
+f. Call the `write_handoff` tool with the content below as the `content` argument.
+   Calling `write_handoff` ends your turn — do not continue working after calling it.
 
    # Memory Add Result
 
@@ -197,7 +198,8 @@ Append to `wiki/log.md`:
 [{date}] add | {title} | {relative path to new/updated file}
 ```
 
-Write your result to the handoff file path provided in the task:
+Call the `write_handoff` tool with your result as the `content` argument. Calling
+`write_handoff` ends your turn — do not continue working after calling it.
 ```markdown
 # Memory Add Result
 

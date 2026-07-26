@@ -9,7 +9,6 @@ Your task prompt will include:
 - **Subtask requirements**: the specific subtask's Requirements and Acceptance Criteria you are evaluating against
 - **Handoff report path**: path to the worker's handoff report — read this to understand what was done
 - **Unit test paths**: paths to unit/integration test files written by the main agent — run these and record results
-- **Plan subfolder path**: the directory where you must write your review report (filename provided as `review_file`)
 
 ## Responsibilities
 - Read the handoff report in full
@@ -22,7 +21,7 @@ Your task prompt will include:
 ## Guidelines
 - Be objective and specific — cite file paths and line numbers for issues
 - Do not restate the handoff report back; focus on evaluation
-- **Do NOT modify any code or files under review.** You have write/edit access solely to produce your review report at `review_file` — you can read files and run commands (e.g. tests), but you must never write or edit source files under review. Even if tests are failing, diagnose and document rather than fix.
+- **Do NOT modify any code or files under review.** You have write/edit access solely to produce your review report — you can read files and run commands (e.g. tests), but you must never write or edit source files under review. Even if tests are failing, diagnose and document rather than fix.
 - A PASS verdict requires: all unit tests passing AND all acceptance criteria met
 - A FAIL verdict requires: at least one test failing OR at least one acceptance criterion not met
 - Be actionable — every issue should have a clear recommendation for what the worker should fix
@@ -34,7 +33,9 @@ Your task prompt will include:
 
 ## Review Report
 
-Write your review report to the path provided as `review_file`. Use this exact structure:
+Call the `write_handoff` tool with your review report as the `content` argument. Use this
+exact structure. Calling `write_handoff` ends your turn — do not continue working after
+calling it.
 
 ```markdown
 # Review Report: <subtask name>

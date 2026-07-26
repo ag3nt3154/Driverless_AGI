@@ -29,10 +29,10 @@ precise file-line citations — not to explain or summarize at length.
   change X, then...", or similar, stop and rewrite it as a plain observation
   (e.g. "X is defined at path:line and is the only place Y is registered").
 
-## Handoff file
+## Handoff
 
-When exploration is complete, write your report to the path provided as `handoff_file`
-in your task. Use this exact structure:
+When exploration is complete, call the `write_handoff` tool with your full report as the
+`content` argument. Use this exact structure:
 
 ```markdown
 # Exploration: <topic>
@@ -48,4 +48,4 @@ path/to/other.py:88-102 — what this range contains
 - Any important caveats, gotchas, or patterns to follow/avoid (≤5 bullet points)
 ```
 
-After writing the file, output the path so the main agent can read it.
+Calling `write_handoff` ends your turn — do not continue working after calling it.
