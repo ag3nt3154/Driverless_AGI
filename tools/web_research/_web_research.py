@@ -35,6 +35,7 @@ class WebResearchTool(BaseTool):
         self._tracker = tracker
 
     def run(self, task: str) -> str:
+        from tools._handoff_format import format_handoff_result
         from tools._subagent_runner import run_subagent
         from uuid import uuid4 as _uuid4
 
@@ -51,12 +52,7 @@ class WebResearchTool(BaseTool):
             self._tracker.record_subagent_end(subagent_id, str(result), depth)
 
         if result["status"] == "ok":
-            return Path(result["handoff"]).read_text(encoding="utf-8")
+            return format_handoff_result(result["handoff"])
         if result["status"] == "ok_unverified":
-            banner = (
-                "⚠️ UNVERIFIED HANDOFF — the subagent exited without calling "
-                "`write_handoff`. The\ncontent below was scraped from its last "
-                "message and may be incomplete or informal.\n\n"
-            )
-            return banner + Path(result["handoff"]).read_text(encoding="utf-8")
+            return format_handoff_result(result["handoff"], unverified=True)
         return f"[web_research error] {result.get('message', result['status'])}"

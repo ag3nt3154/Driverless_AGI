@@ -202,25 +202,14 @@ class SpawnSubagentTool(BaseTool):
         When `unverified` is True, the subagent never called `write_handoff` and
         the parent process scraped its last message into the handoff file instead.
         A warning banner is prepended so the caller doesn't mistake scraped,
-        informal text for a deliberate structured report."""
-        banner = (
-            "⚠️ UNVERIFIED HANDOFF — the subagent exited without calling "
-            "`write_handoff`. The\ncontent below was scraped from its last message "
-            "and may be incomplete or informal.\n\n"
-            if unverified
-            else ""
-        )
-        try:
-            content = Path(handoff_path).read_text(encoding="utf-8")
-        except (OSError, UnicodeDecodeError) as exc:
-            return (
-                f"{banner}Subagent completed. Handoff written to: {handoff_path}\n\n"
-                f"(could not read handoff file: {exc})"
-            )
-        return (
-            f"{banner}Subagent completed. Handoff written to: {handoff_path}\n\n"
-            f"--- Handoff content ---\n{content}"
-        )
+        informal text for a deliberate structured report.
+
+        Thin wrapper kept for backward compatibility (e.g. `extend_timeout`
+        imports this staticmethod directly); the actual formatting lives in
+        the shared `tools._handoff_format.format_handoff_result`."""
+        from tools._handoff_format import format_handoff_result
+
+        return format_handoff_result(handoff_path, unverified=unverified)
 
     def _compose_task(self, handoff_path: Path, **kwargs) -> str:
         plan_text = _load_plan_text(self._config)

@@ -72,6 +72,7 @@ class SpawnCliSubagentTool(BaseTool):
         task: str,
         timeout: int = 300,
     ) -> str:
+        from tools._handoff_format import format_handoff_result
         from tools._subagent_runner import run_subagent
 
         subagent_id = uuid4().hex[:8]
@@ -110,14 +111,9 @@ class SpawnCliSubagentTool(BaseTool):
             self._tracker.record_subagent_end(subagent_id, str(result), depth)
 
         if result["status"] == "ok":
-            return f"Subagent completed. Handoff written to: {result['handoff']}"
+            return format_handoff_result(result["handoff"])
         if result["status"] == "ok_unverified":
-            return (
-                "⚠️ UNVERIFIED HANDOFF — the subagent exited without calling "
-                "`write_handoff`. The\ncontent below was scraped from its last "
-                "message and may be incomplete or informal.\n\n"
-                f"Subagent completed. Handoff written to: {result['handoff']}"
-            )
+            return format_handoff_result(result["handoff"], unverified=True)
         if result["status"] == "timeout":
             return json.dumps({"status": "timeout", "pid": result["pid"]})
         return f"[spawn_cli_subagent error] {result.get('message', 'unknown error')}"
