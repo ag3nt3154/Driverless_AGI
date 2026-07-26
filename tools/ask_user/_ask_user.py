@@ -10,14 +10,11 @@ from agent.base_tool import BaseTool
 class AskUserTool(BaseTool):
     name = "ask_user"
     description = (
-        "Pause and present the user with a question. "
-        "Use to resolve ambiguities, choose between approaches, "
-        "confirm architectural decisions, or collect free-text feedback. "
-        "Optionally provide 2-4 options with labels, descriptions, and a recommended flag — "
-        "these are displayed as hints, but the user always responds in free text. "
-        "Set no_timeout=true to wait indefinitely for the user's answer. "
-        "By default, auto-proceeds after the session timeout using the recommended option. "
-        "Returns the original question, the full options list, and the user's verbatim answer as JSON."
+        "Pause and ask the user a question. Use to resolve ambiguity, choose between approaches, "
+        "or collect feedback. Optionally provide 2-4 hint options (label+description+recommended); "
+        "user always answers in free text. Set no_timeout=true to wait indefinitely; default "
+        "auto-proceeds after session timeout using the recommended option. "
+        "Returns {question, options, answer} as JSON."
     )
     _parameters = {
         "type": "object",
@@ -28,27 +25,21 @@ class AskUserTool(BaseTool):
             },
             "options": {
                 "type": "array",
-                "description": (
-                    "Optional hint options shown to the user (2-4 items). "
-                    "The user always responds in free text regardless."
-                ),
+                "description": "Hint options shown to user (2-4 items); user always answers in free text.",
                 "items": {
                     "type": "object",
                     "properties": {
                         "label": {
                             "type": "string",
-                            "description": "Short option identifier shown to the user.",
+                            "description": "Short option label.",
                         },
                         "description": {
                             "type": "string",
-                            "description": "Explanation of this option and its trade-offs.",
+                            "description": "Explanation and trade-offs.",
                         },
                         "recommended": {
                             "type": "boolean",
-                            "description": (
-                                "True if this is the recommended default. "
-                                "At most one option should be recommended."
-                            ),
+                            "description": "True if recommended default (at most one).",
                         },
                     },
                     "required": ["label", "description"],
@@ -58,10 +49,7 @@ class AskUserTool(BaseTool):
             },
             "no_timeout": {
                 "type": "boolean",
-                "description": (
-                    "If true, the terminal waits indefinitely for the user's answer. "
-                    "If false (default), auto-proceeds after the session timeout."
-                ),
+                "description": "If true, wait indefinitely; default auto-proceeds after session timeout.",
             },
         },
         "required": ["question"],

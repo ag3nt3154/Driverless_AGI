@@ -57,18 +57,12 @@ def _select_pages(md_text: str, page_spec: str) -> str:
 class ReadTool(BaseTool):
     name = "read"
     description = (
-        "Read the contents of a file. Supports all text files (any extension) — "
-        "attempts UTF-8 decoding. Defaults to first 2000 lines. "
-        ".docx, .xlsx, .pptx, and .pdf files are converted to markdown via the "
-        "document converter service (must be running). "
-        "Use the optional `pages` parameter to select specific PDF pages. "
-        "Use offset/limit for large files. Accepts both relative paths "
-        "(resolved from the project root) and absolute paths. "
-        "Output is anchored: each line is prefixed with `LINE#HASH:` where LINE "
-        "is the 1-indexed line number and HASH verifies the line's content. "
-        "Pass the whole `LINE#HASH` token (e.g. `18#aB3`) as an anchor to `edit`. "
-        "The prefix is not part of the file content. "
-        "For large-scale codebase exploration, prefer `explore_files`."
+        "Read a file's contents. Text files decoded as UTF-8 (default 2000 lines). "
+        ".pdf/.docx/.xlsx/.pptx converted to markdown via the document converter service. "
+        "Use `pages` for PDF page selection; offset/limit for large files. "
+        "Relative paths resolved from project root. "
+        "Output: each line prefixed `LINE#HASH:` — pass the token to `edit` as an anchor. "
+        "For codebase exploration, prefer `explore_files`."
     )
     _parameters = {
         "type": "object",
@@ -87,11 +81,7 @@ class ReadTool(BaseTool):
             },
             "pages": {
                 "type": "string",
-                "description": (
-                    "Page range for PDF files (e.g. '1-5', '3', '10-12,15'). "
-                    "Only applicable to PDFs. Selects which pages of the converted "
-                    "markdown to return. Omit to return all pages."
-                ),
+                "description": "PDF page range (e.g. '1-5', '3', '10-12,15'). Omit for all pages.",
             },
         },
         "required": ["path"],

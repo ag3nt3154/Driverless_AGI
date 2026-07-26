@@ -148,6 +148,7 @@ tui.py / telegram_bot.py / main.py
 - **2026-07-26**: TUI displayed wrong model name — `get_model_display_name()` only read root config, missed `.dagi/config.yaml` overrides → TUI now resolves via `resolve_model_config()`.
 - **2026-07-26**: Subagent handoff enforcement — write_handoff auto-injection, sentinel detection, corrective re-entry, and unverified-flag scraping added.
 - **2026-07-26**: Post-merge cleanup — duplicated dispatch logic across 5 spawn tools centralized into `dispatch_status_result()`; `unverified_flag_path()` shared; `_handle_write_handoff` refactored to share `_bookkeep_tool_call()`/`_finalize_turn()`.
+- **2026-07-26**: Typed subagent spawn tools absent from runtime registry → `tools:` allowlist in `.dagi/config.yaml` filtered them out post-registration; added all 7 typed spawner names to the list.
 - **2026-07-26 (known, deferred)**: `agent/loop.py` is 1172 lines (cap: 500), `AgentLoop.run` CC is 48 (cap: 8) — spun off as standalone refactor task.
 
 ## Notes & Terms
@@ -162,6 +163,7 @@ tui.py / telegram_bot.py / main.py
 - **Tiers**: `default`/`worker`/`plan` model slots in `config.yaml`; `switch_model` tool only registered when non-default tiers exist.
 - **`unified_score`**: `normalize_perf(recorded, baseline, golden) / normalize_tokens(tokens_in+tokens_out)`, clamped to 10.0. Reference scores computed fresh each run.
 - **Memory wiki**: `G:\My Drive\black_grimoire\dagi-memory\wiki\` (Claude Code skills) vs. repo-local `dagi-memory/wiki/` (DAGI's own subagents). Two separate systems.
+- **`tools:` allowlist** (`config.yaml`): post-registration filter via `reg.filter_to(config.tools)`. Any tool not named here is silently stripped — including auto-discovered spawn tools. When adding a new subagent type, also add its `spawn_{type}_subagent` name to the list.
 - **`dagi/*` branch**: only prefix where `git_add`/`git_commit`/`git_reset` work (dedicated tools only; `BashTool` bypasses).
 - **Windows**: `EditTool`/`WriteTool` always write LF, normalize `oldText`/`newText` for CRLF safety. Use `conda run -n dagi python` not bare `python.exe`.
 - **Dependencies**: `pyproject.toml` is single source of truth. Doc-converter has own `services/doc_converter/environment.yml`.
