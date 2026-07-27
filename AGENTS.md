@@ -163,22 +163,13 @@ tui.py / telegram_bot.py / main.py
 - **AGENTS.md** is force-injected into every session's system prompt by `_assemble_system_string()`.
 - **`<<END_OF_RESPONSE>>`**: primary exit sentinel (substring check anywhere in response).
 - **Document conversion**: `.pdf/.docx/.xlsx/.pptx` → doc-converter service at `AgentConfig.services["doc_converter"]`, hard-fail if unreachable. PDF page selection via `pages` parameter.
-- **Auto-summarization gate**: `ReadTool` with `reserve_tokens > 0` auto-invokes `summarize_document()` for large docs; subagent instances get `reserve_tokens=0` to prevent recursion.
 - **Subagent handoff**: WriteHandoffTool auto-injected, `<<HANDOFF_WRITTEN>>` sentinel triggers immediate return. Missing handoff → corrective re-entry → last-resort scrape + `_unverified.flag`.
 - **Skill chain**: `grilling` → `plan` → `to-spec` → `dagi-execute` (write-tests/worker/review cycle, 2-attempt retry, escalation sidecar).
-- **Tiers**: `default`/`worker`/`plan` model slots in `config.yaml`; `switch_model` tool only registered when non-default tiers exist.
-- **`unified_score`**: `normalize_perf(recorded, baseline, golden) / normalize_tokens(tokens_in+tokens_out)`, clamped to 10.0. Reference scores computed fresh each run.
 - **Memory wiki**: `G:\My Drive\black_grimoire\dagi-memory\wiki\` (Claude Code skills) vs. repo-local `dagi-memory/wiki/` (DAGI's own subagents). Two separate systems.
 - **`tools:` allowlist** (`config.yaml`): post-registration filter via `reg.filter_to(config.tools)`. Any tool not named here is silently stripped — including auto-discovered spawn tools. When adding a new subagent type, also add its `spawn_{type}_subagent` name to the list.
-- **`dagi/*` branch**: all plan-mode work lands here. Auto-created by `agent/_git_branch.py` on `enter_plan_mode`. DAGI commits here and asks the user before merging back. See **Git Workflow** section in Rules.
 - **Windows**: `EditTool`/`WriteTool` always write LF, normalize `oldText`/`newText` for CRLF safety. Use `conda run -n dagi python` not bare `python.exe`.
-- **Dependencies**: `pyproject.toml` is single source of truth. Doc-converter has own `services/doc_converter/environment.yml`.
-- **Compaction**: Pi-style context summarization mid-loop; preserves system prompt and tail. Never crashes session.
-- **TUI**: `StreamPreview` expands on first delta (not `on_stream_start`), collapses on `on_stream_end`. Sidebar uses plain attributes + `refresh()`. `_model_name` derived from resolved config.
-- **Scheduler**: `.dagi/scheduler/schedule.yaml`, intervals in seconds (min 60). Sets `plan_mode_initiated_by="dagi"`, `ask_user_timeout=60`.
-- **Telegram**: `allowed_chat_ids` defaults to empty frozenset (open), logs warning; set `TELEGRAM_ALLOWED_CHAT_IDS` to restrict.
+- **TUI**: `StreamPreview` expands on first delta, collapses on `on_stream_end`. `on_emote` callback is `(name: str, display: str)` — name rendered as dim label beneath art in sidebar. `_model_name` derived from resolved config.
 - **dagi_eval caveats**: `--timeout-min` only bounds agent loop, not scoring phases. Relative `task_dir` silently breaks scoring — always use `harness.TASKS_DIR`.
-- **CLI streaming**: live deltas to stdout + finalized log lines (deliberate duplication). `__list__:` prefix encodes non-string results in JSONL.
 
 ## User Insights
 
