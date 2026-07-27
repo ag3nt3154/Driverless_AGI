@@ -186,6 +186,7 @@ logs/
 
 .env
 .claude/
+CLAUDE*
 dagi-memory/*
 .dagi/config.yaml
 .dagi/logs/*

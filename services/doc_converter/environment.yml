@@ -1,17 +1,101 @@
 name: doc_converter
 channels:
-  - defaults
   - conda-forge
+  - defaults
 dependencies:
   - python=3.14
   - pip
+  - tesseract>=5.5      # OCR engine (required by ocrmypdf)
+  - leptonica>=1.87     # tesseract image processing dep
   - pip:
-    - fastapi>=0.115
-    - uvicorn[standard]>=0.30
-    - python-multipart>=0.0.9
-    - docling>=2.75
-    - pymupdf>=1.26.6
-    - ocrmypdf>=16.0
-    - markitdown>=0.1.0
-    - torch
-    - psutil>=5.9.0
+      # Service framework
+      - fastapi>=0.115
+      - uvicorn[standard]>=0.30
+      - python-multipart>=0.0.9
+      - psutil>=7.2
+      - pydantic>=2.13
+      - python-dotenv>=1.2
+      # PDF conversion
+      - docling>=2.113
+      - docling-core>=2.87
+      - docling-ibm-models>=3.13
+      - docling-parse>=7.8
+      - docling-slim>=2.113
+      - doclang>=0.7
+      - pymupdf>=1.28
+      - ocrmypdf>=17.8
+      - pypdfium2>=5.12
+      - pdfminer-six>=20260107
+      - pikepdf>=10.10
+      - img2pdf>=0.6
+      # Office file conversion
+      - markitdown>=0.1
+      - python-docx>=1.2
+      - python-pptx>=1.0
+      - openpyxl>=3.1
+      # ML runtime (docling table/layout models)
+      - torch>=2.13
+      - torchvision>=0.28
+      - onnxruntime>=1.27
+      - transformers>=5.14
+      - accelerate>=1.14
+      - safetensors>=0.8
+      - tokenizers>=0.22
+      - huggingface-hub>=1.24
+      - hf-xet>=1.5
+      # OCR / computer vision
+      - rapidocr>=3.9
+      - opencv-python>=5.0
+      - pillow>=12.3
+      - pi-heif>=1.4
+      # Docling geometry / font deps
+      - rtree>=1.4
+      - shapely>=2.1
+      - uharfbuzz>=0.55
+      - fonttools>=4.63
+      - pyclipper>=1.4
+      - pylatexenc>=2.10
+      - latex2mathml>=3.81
+      # Numeric / scientific
+      - numpy>=2.5
+      - scipy>=1.18
+      - scikit-learn>=1.9
+      - networkx>=3.6
+      - sympy>=1.14
+      - mpmath>=1.3
+      # File / MIME detection
+      - magika>=0.6
+      - filetype>=1.2
+      # Parsing / serialization
+      - lxml>=6.1
+      - narwhals>=2.24
+      - orjson>=3.11
+      - pyyaml>=6.0
+      - packaging>=26.2
+      # Multiprocessing utilities
+      - mpire>=2.10
+      - multiprocess>=0.70
+      - dill>=0.4
+      # Misc
+      - tqdm>=4.68
+      - joblib>=1.5
+      - threadpoolctl>=3.6
+      - filelock>=3.31
+      - fsspec>=2026.6
+      - regex>=2026.7
+      - xxhash>=3.8
+      - zstandard>=0.25
+      - platformdirs>=4.10
+      - typing-extensions>=4.16
+      - attrs>=26.1
+      - protobuf>=7.35
+      - flatbuffers>=25.12
+      - requests>=2.34
+      - urllib3>=2.7
+      - certifi>=2026.6
+      - idna>=3.18
+      - httpx>=0.28
+      - anyio>=4.14
+      - sniffio>=1.3
+      - h11>=0.16
+      - setuptools>=83.0
