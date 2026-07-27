@@ -1,6 +1,6 @@
 # AGENTS.md
 
-> Last updated: 2026-07-26 | [README](README.md) | [TODO](TODO.md)
+> Last updated: 2026-07-27 | [README](README.md) | [TODO](TODO.md)
 
 ---
 
@@ -121,7 +121,7 @@ tui.py / telegram_bot.py / main.py
             └── AgentCallbacks → TUI via App.call_from_thread()
 ```
 
-**Tool layout:** `tools/<name>/__init__.py` re-exports from `_<name>.py`; shared helpers are flat files in `tools/` (`_path_guard.py`, `_hash_cache.py`, `_subagent_runner.py`, `_handoff_format.py`, `_task_envelope.py`, `output_filter.py`, `subagent_main.py`).
+**Tool layout:** `tools/<name>/__init__.py` re-exports from `_<name>.py`; shared helpers are flat files in `tools/` (`_path_guard.py`, `_hash_cache.py`, `_subagent_runner.py`, `_handoff_format.py`, `_task_envelope.py`, `output_filter.py`, `subagent_main.py`). `edit` uses `oldText`/`newText` unique-substring matching; `read` outputs `cat -n` style line numbers.
 
 **Subagents:** Pipe-based subprocesses, each type declares `tools:` in `.dagi/subagents/<type>/subagent_config.yaml`. WriteHandoffTool auto-injected when `handoff_path` is set — calling it writes the report and triggers immediate return via `<<HANDOFF_WRITTEN>>` sentinel. If missing at exit, `_ensure_handoff()` re-enters with a corrective prompt; last-resort scrape drops `<stem>_unverified.flag`. All spawn tools render `ok_unverified` as a warning banner. Every subagent task is wrapped by `_task_envelope.py` (`## Task` / `## Instructions` / `## Output`), with parent-supplied `briefing` and `handoff_spec`.
 
@@ -131,14 +131,13 @@ tui.py / telegram_bot.py / main.py
 |------|---------|
 | `agent/loop.py` | Core agent loop, system-prompt assembly, termination/compaction, WriteHandoff sentinel dispatch |
 | `agent/config_loader.py` | Reads `config.yaml`, merges `.dagi/config.yaml`, resolves API key, services, Telegram config |
-| `tools/read/` | `ReadTool` — text inline, docs delegated to doc-converter service over HTTP; hashline anchors |
-| `tools/edit.py`, `tools/write.py` | File editing (hash-anchored, CRLF-safe) and writing |
-| `tools/grep.py`, `tools/find.py` | Search with hashline anchors, glob file finding |
-| `tools/bash.py` | Unsandboxed shell execution — all git operations run through here |
+| `tools/read/` | `ReadTool` — text inline (`cat -n` style), docs delegated to doc-converter service over HTTP |
+| `tools/edit/` | `EditTool` — `oldText`/`newText` unique-substring replacement, CRLF-safe |
+| `tools/grep/`, `tools/find/` | Regex search (`file:line: content` format), glob file finding |
+| `tools/bash/` | Unsandboxed shell execution — all git operations run through here |
 | `tools/_subagent_runner.py` | Pipe-based `run_subagent()`/`resume_subagent()` with unverified-flag detection |
 | `tools/_handoff_format.py` | Shared handoff rendering and status dispatch for all 5 subagent-spawning tools |
 | `tools/_task_envelope.py` | Universal `briefing`/`handoff_spec` envelope for subagent tasks |
-| `tools/_hashline.py` | blake2b-based line anchoring (3-char base64url hash, collision-resolved) |
 | `tools/output_filter.py` | Truncates tool results; full output stored in content-addressed cache |
 | `tools/_document_reader.py` | Long-document summarization via `document-reader` subagent with cache |
 | `services/doc_converter/` | Standalone FastAPI service (port 8100); PDF→markdown via docling/ocrmypdf, Office→markdown via markitdown; own conda env |
@@ -157,12 +156,12 @@ tui.py / telegram_bot.py / main.py
 - **2026-07-26**: Post-merge cleanup — duplicated dispatch logic across 5 spawn tools centralized into `dispatch_status_result()`; `unverified_flag_path()` shared; `_handle_write_handoff` refactored to share `_bookkeep_tool_call()`/`_finalize_turn()`.
 - **2026-07-26**: Typed subagent spawn tools absent from runtime registry → `tools:` allowlist in `.dagi/config.yaml` filtered them out post-registration; added all 7 typed spawner names to the list.
 - **2026-07-26 (known, deferred)**: `agent/loop.py` is 1172 lines (cap: 500), `AgentLoop.run` CC is 48 (cap: 8) — spun off as standalone refactor task.
+- **2026-07-27**: Hashline experiment reverted — smaller models made too many errors copying opaque `LINE#HASH` anchors → restored `oldText`/`newText` edit, `cat -n` read, plain `file:line:` grep. `_hashline.py`, `edit_text/` tool, and hashline tests removed.
 
 ## Notes & Terms
 
 - **AGENTS.md** is force-injected into every session's system prompt by `_assemble_system_string()`.
 - **`<<END_OF_RESPONSE>>`**: primary exit sentinel (substring check anywhere in response).
-- **hashline anchors** (`read`/`grep`/`edit`): every line gets `LINE#HASH:` (3-char blake2b, collision-resolved). `edit` ops: `replace`/`append`/`prepend`/`replace_text`. Stateless validation — anchors rebuilt from disk every call, stale → `E_STALE_ANCHOR`. Design doc: `docs/superpowers/specs/2026-07-26-hashline-read-edit-design.md`.
 - **Document conversion**: `.pdf/.docx/.xlsx/.pptx` → doc-converter service at `AgentConfig.services["doc_converter"]`, hard-fail if unreachable. PDF page selection via `pages` parameter.
 - **Auto-summarization gate**: `ReadTool` with `reserve_tokens > 0` auto-invokes `summarize_document()` for large docs; subagent instances get `reserve_tokens=0` to prevent recursion.
 - **Subagent handoff**: WriteHandoffTool auto-injected, `<<HANDOFF_WRITTEN>>` sentinel triggers immediate return. Missing handoff → corrective re-entry → last-resort scrape + `_unverified.flag`.

@@ -5,7 +5,6 @@ from pathlib import Path
 from agent.base_tool import BaseTool
 from tools._path_guard import validate_path
 from tools.read._doc_service import cache_path_for, convert_document, DocServiceError
-from tools import _hashline as H
 
 try:
     from tools.read._document_reader import summarize_document
@@ -43,7 +42,6 @@ def _select_pages(md_text: str, page_spec: str) -> str:
     wanted = _parse_page_spec(page_spec)
     sections = _PAGE_MARKER_RE.split(md_text)
     result_parts: list[str] = []
-    # sections[0] is text before first marker (if any)
     i = 1
     while i < len(sections):
         page_num = int(sections[i])
@@ -57,12 +55,16 @@ def _select_pages(md_text: str, page_spec: str) -> str:
 class ReadTool(BaseTool):
     name = "read"
     description = (
-        "Read a file's contents. Text files decoded as UTF-8 (default 2000 lines). "
-        ".pdf/.docx/.xlsx/.pptx converted to markdown via the document converter service. "
-        "Use `pages` for PDF page selection; offset/limit for large files. "
-        "Relative paths resolved from project root. "
-        "Output: each line prefixed `LINE#HASH:` — pass the token to `edit` as an anchor. "
-        "For codebase exploration, prefer `explore_files`."
+        "Read the contents of a file. Supports all text files (any extension) — "
+        "attempts UTF-8 decoding. Defaults to first 2000 lines. "
+        ".docx, .xlsx, .pptx, and .pdf files are converted to markdown via the "
+        "document converter service (must be running). "
+        "Use the optional `pages` parameter to select specific PDF pages. "
+        "Use offset/limit for large files. Accepts both relative paths "
+        "(resolved from the project root) and absolute paths. "
+        "Output uses `cat -n` style: each line is prefixed with its 1-indexed "
+        "line number followed by a tab — the number is not part of the file content. "
+        "For large-scale codebase exploration, prefer `explore_files`."
     )
     _parameters = {
         "type": "object",
@@ -81,7 +83,11 @@ class ReadTool(BaseTool):
             },
             "pages": {
                 "type": "string",
-                "description": "PDF page range (e.g. '1-5', '3', '10-12,15'). Omit for all pages.",
+                "description": (
+                    "Page range for PDF files (e.g. '1-5', '3', '10-12,15'). "
+                    "Only applicable to PDFs. Selects which pages of the converted "
+                    "markdown to return. Omit to return all pages."
+                ),
             },
         },
         "required": ["path"],
@@ -165,10 +171,11 @@ class ReadTool(BaseTool):
                     f"to be binary or uses an encoding other than UTF-8."
                 )
 
-        anchors = H.build_anchors(lines)
-        start = max(1, offset)
-        end = min(len(lines), start + limit - 1)
-        numbered = H.format_region(lines, anchors, start, end) if lines else ""
+        start = max(0, offset - 1)
+        selected = lines[start : start + limit]
+        numbered = "\n".join(
+            f"{i:6d}\t{line}" for i, line in enumerate(selected, start + 1)
+        )
 
         raw_result = f"{header}\n{numbered}" if header else numbered
 
@@ -181,7 +188,9 @@ class ReadTool(BaseTool):
             and limit == 2000
         ):
             _CHARS_PER_TOKEN = 4
-            full_text = H.format_region(lines, anchors, 1, len(lines)) if lines else ""
+            full_text = "\n".join(
+                f"{i:6d}\t{line}" for i, line in enumerate(lines, 1)
+            )
             estimated_tokens = len(full_text) // _CHARS_PER_TOKEN
             if estimated_tokens >= self._reserve_tokens:
                 summary = summarize_document(
