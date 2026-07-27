@@ -26,6 +26,13 @@ class ToolRegistry:
             if name not in keep:
                 del self._tools[name]
 
+    def filter_out(self, names: list[str] | None) -> None:
+        """Remove tools whose names are in *names*. None is a no-op."""
+        if not names:
+            return
+        for name in names:
+            self._tools.pop(name, None)
+
     def dispatch(self, name: str, kwargs: dict) -> str | list:
         if name not in self._tools:
             return f"Error: unknown tool '{name}'"

@@ -141,6 +141,7 @@ def _build_config_from_entry(entry: dict, raw: dict, model_id: str = "") -> Agen
 
     bash_backend = str(raw.get("bash_backend", "subprocess"))
     tools: list[str] | None = raw.get("tools") or None
+    disabled_tools: list[str] | None = raw.get("disabled_tools") or None
     sandbox_mode = bool(raw.get("sandbox_mode", False))
     system_prompt_preamble = str(raw.get("system_prompt_preamble", "") or "")
     provider_order: list[str] | None = entry.get("provider_order") or None
@@ -163,6 +164,7 @@ def _build_config_from_entry(entry: dict, raw: dict, model_id: str = "") -> Agen
         stream=stream,
         bash_backend=bash_backend,
         tools=tools,
+        disabled_tools=disabled_tools,
         sandbox_mode=sandbox_mode,
         system_prompt_preamble=system_prompt_preamble,
         provider_order=provider_order,

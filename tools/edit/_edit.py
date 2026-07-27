@@ -25,11 +25,6 @@ class _Resolved:
     index: int          # position in the caller's edits list, for messages
 
 
-def _norm(text: str) -> str:
-    """Normalise line endings — used by replace_text (added in a later task)."""
-    return text.replace("\r\n", "\n").replace("\r", "\n")
-
-
 def _doc_guard(p: Path) -> str | None:
     """Redirect document edits to the converted-markdown cache entry."""
     ext = p.suffix.lower()
@@ -47,55 +42,27 @@ def _doc_guard(p: Path) -> str | None:
 
 
 def _resolve_replace(edit: dict, i: int, lines: list[str], anchors: list[str]) -> _Resolved:
-    pos = edit.get("pos")
-    if not pos:
-        raise H.AnchorError("E_INVALID_ANCHOR", f"edit {i}: replace requires 'pos'")
-    start = H.resolve_anchor(pos, anchors)
+    start_anchor = edit.get("start")
+    if not start_anchor:
+        raise H.AnchorError("E_INVALID_ANCHOR", f"edit {i}: replace requires 'start'")
+    start = H.resolve_anchor(start_anchor, anchors)
     end_anchor = edit.get("end")
     end = H.resolve_anchor(end_anchor, anchors) if end_anchor else start
     if end < start:
-        raise H.AnchorError("E_INVALID_ANCHOR", f"edit {i}: 'end' precedes 'pos'")
+        raise H.AnchorError("E_INVALID_ANCHOR", f"edit {i}: 'end' precedes 'start'")
     return _Resolved(start, end + 1, list(edit.get("lines", [])), i)
 
 
 def _resolve_append(edit: dict, i: int, lines: list[str], anchors: list[str]) -> _Resolved:
-    pos = edit.get("pos")
-    at = len(lines) if not pos else H.resolve_anchor(pos, anchors) + 1
+    start_anchor = edit.get("start")
+    at = len(lines) if not start_anchor else H.resolve_anchor(start_anchor, anchors) + 1
     return _Resolved(at, at, list(edit.get("lines", [])), i)
 
 
 def _resolve_prepend(edit: dict, i: int, lines: list[str], anchors: list[str]) -> _Resolved:
-    pos = edit.get("pos")
-    at = 0 if not pos else H.resolve_anchor(pos, anchors)
+    start_anchor = edit.get("start")
+    at = 0 if not start_anchor else H.resolve_anchor(start_anchor, anchors)
     return _Resolved(at, at, list(edit.get("lines", [])), i)
-
-
-def _resolve_replace_text(edit: dict, i: int, lines: list[str], anchors: list[str]) -> _Resolved:
-    """Desugar a substring replacement into an ordinary line-range splice.
-
-    Resolving here means the positional path is the only execution path, so
-    ordering and conflict rules apply uniformly to every op.
-    """
-    old = _norm(edit.get("oldText", ""))
-    new = _norm(edit.get("newText", ""))
-    if not old:
-        raise H.AnchorError("E_INVALID_PATCH", f"edit {i}: replace_text requires 'oldText'")
-
-    content = "\n".join(lines)
-    count = content.count(old)
-    if count == 0:
-        raise H.AnchorError("E_TEXT_NOT_FOUND", f"edit {i}: oldText not found in file")
-    if count > 1:
-        raise H.AnchorError(
-            "E_TEXT_AMBIGUOUS",
-            f"edit {i}: oldText found {count} times; use a hash anchor instead",
-        )
-
-    offset = content.index(old)
-    start = content.count("\n", 0, offset)
-    end = content.count("\n", 0, offset + len(old))
-    span = "\n".join(lines[start:end + 1])
-    return _Resolved(start, end + 1, span.replace(old, new, 1).split("\n"), i)
 
 
 def _check_conflicts(resolved: list[_Resolved]) -> None:
@@ -142,7 +109,6 @@ _RESOLVERS = {
     "replace": _resolve_replace,
     "append": _resolve_append,
     "prepend": _resolve_prepend,
-    "replace_text": _resolve_replace_text,
 }
 
 
@@ -152,8 +118,12 @@ class EditTool(BaseTool):
         "Edit a file using hash anchors from `read` or `grep`. Each anchor is a "
         "`LINE#HASH` token (e.g. `18#aB3`) that is re-verified against the file "
         "before the edit is applied, so an edit can never land on the wrong line. "
-        "Pass a list of edits; they are applied together against a single "
-        "pre-edit snapshot. Returns fresh anchors for the changed region. "
+        "Supported ops: "
+        "replace — swap lines from `start` to `end` (inclusive) with `lines`; omit `end` for single-line replace. "
+        "append — insert `lines` after `start`; omit `start` to append at end of file. "
+        "prepend — insert `lines` before `start`; omit `start` to prepend at start of file. "
+        "All edits in a call are applied against a single pre-edit snapshot with overlap conflict detection. "
+        "Returns fresh anchors for the changed region. "
         "Paths are relative to the project root."
     )
     _parameters = {
@@ -171,10 +141,10 @@ class EditTool(BaseTool):
                     "properties": {
                         "op": {
                             "type": "string",
-                            "enum": ["replace", "append", "prepend", "replace_text"],
+                            "enum": ["replace", "append", "prepend"],
                             "description": "Operation kind",
                         },
-                        "pos": {
+                        "start": {
                             "type": "string",
                             "description": (
                                 "Anchor of the target line, e.g. '18#aB3'. For append, "
@@ -190,18 +160,6 @@ class EditTool(BaseTool):
                             "type": "array",
                             "items": {"type": "string"},
                             "description": "Replacement lines, without any LINE#HASH prefix",
-                        },
-                        "oldText": {
-                            "type": "string",
-                            "description": (
-                                "replace_text only: exact unique substring to replace. "
-                                "Fallback for when an anchor has gone stale — prefer "
-                                "`replace` with a fresh anchor."
-                            ),
-                        },
-                        "newText": {
-                            "type": "string",
-                            "description": "replace_text only: replacement substring",
                         },
                     },
                     "required": ["op"],

@@ -172,6 +172,8 @@ class AgentConfig:
     bash_backend: str = "subprocess"
     # Accessible tools: None = all tools available; list = only named tools registered.
     tools: list[str] | None = None
+    # Disabled tools: tools to remove from the registry even when `tools` is None.
+    disabled_tools: list[str] | None = None
     # Sandbox mode: when True, file tools have no path restrictions (allowed_roots=None).
     sandbox_mode: bool = False
     # Benchmark/sandbox environment preamble injected at the TOP of the system prompt.
