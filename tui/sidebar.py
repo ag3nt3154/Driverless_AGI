@@ -47,6 +47,7 @@ class Sidebar(Widget):
         self._subtasks: list[dict] = []
         self._plan_title: str = ""
         self._emote_display: str = self._resolve_emote("default")
+        self._emote_name: str = "default"
 
     def set_status(self, status: str) -> None:
         self._status = status
@@ -82,8 +83,9 @@ class Sidebar(Widget):
             raw = text
         return pad_to_lines(raw)
 
-    def update_emote(self, display_text: str) -> None:
-        """Set the emote display text (already resolved by EmoteTool)."""
+    def update_emote(self, name: str, display_text: str) -> None:
+        """Set the emote name and display text (already resolved by EmoteTool)."""
+        self._emote_name = name
         self._emote_display = display_text
         self.refresh()
 
@@ -119,7 +121,11 @@ class Sidebar(Widget):
         if self._memory_root is not None:
             info.add_row("mem", _path_tail(self._memory_root))
 
-        return Group(Text.from_markup(f"[#4da6ff]{face}[/#4da6ff]"), info)
+        face_group = Group(
+            Text.from_markup(f"[#4da6ff]{face}[/#4da6ff]"),
+            Text.from_markup(f"[dim]{self._emote_name}[/dim]"),
+        )
+        return Group(face_group, info)
 
     def _tokens_context_col(self) -> Group:
         cost_str = f"${self._cost:.5f}" if self._cost is not None else "$—"
