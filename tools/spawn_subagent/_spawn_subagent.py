@@ -62,14 +62,24 @@ def _load_plan_text(config: "AgentConfig") -> str:
 
 
 def _compose_worker_body(plan_text: str, subtask_name: str) -> str:
-    """Build the worker's task body: just the `## Subtask` section, if any.
+    """Build the worker's task body: plan context + subtask section.
 
     Envelope sections (Instructions/Output) are added later by `wrap_envelope`.
     """
-    from tools._plan_parser import extract_subtask
+    from tools._plan_parser import extract_global_sections, extract_subtask
 
-    subtask_ctx = extract_subtask(plan_text, subtask_name, include_tests=False) if plan_text else ""
-    return f"## Subtask\n{subtask_ctx}" if subtask_ctx else ""
+    sections: list[str] = []
+
+    if plan_text:
+        global_ctx = extract_global_sections(plan_text)
+        if global_ctx:
+            sections.append(f"## Plan Context\n{global_ctx}")
+
+        subtask_ctx = extract_subtask(plan_text, subtask_name, include_tests=False)
+        if subtask_ctx:
+            sections.append(f"## Subtask\n{subtask_ctx}")
+
+    return "\n\n---\n\n".join(sections)
 
 
 def _compose_review_body(
@@ -78,18 +88,21 @@ def _compose_review_body(
     worker_handoff_path: str,
     unit_test_paths: list[str],
 ) -> str:
-    """Build the review's task body: `## Subtask Being Reviewed` and
-    `## Worker Handoff` (which folds in the unit test paths, real content the
-    reviewer needs, not path-delivery prose). Envelope sections are added
-    later by `wrap_envelope`.
+    """Build the review's task body: plan context, subtask being reviewed, and
+    worker handoff details. Envelope sections are added later by `wrap_envelope`.
     """
-    from tools._plan_parser import extract_subtask
-
-    subtask_ctx = extract_subtask(plan_text, subtask_name, include_tests=True) if plan_text else ""
+    from tools._plan_parser import extract_global_sections, extract_subtask
 
     sections: list[str] = []
-    if subtask_ctx:
-        sections.append(f"## Subtask Being Reviewed\n{subtask_ctx}")
+
+    if plan_text:
+        global_ctx = extract_global_sections(plan_text)
+        if global_ctx:
+            sections.append(f"## Plan Context\n{global_ctx}")
+
+        subtask_ctx = extract_subtask(plan_text, subtask_name, include_tests=True)
+        if subtask_ctx:
+            sections.append(f"## Subtask Being Reviewed\n{subtask_ctx}")
     if worker_handoff_path:
         lines = [
             f"The worker's implementation report is at: {worker_handoff_path}",
