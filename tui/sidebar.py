@@ -123,7 +123,7 @@ class Sidebar(Widget):
 
         face_group = Group(
             Text.from_markup(f"[#4da6ff]{face}[/#4da6ff]"),
-            Text.from_markup(f"[dim]{self._emote_name}[/dim]"),
+            Text.from_markup(f"[#4da6ff]{self._emote_name}[/#4da6ff]"),
         )
         return Group(face_group, info)
 
