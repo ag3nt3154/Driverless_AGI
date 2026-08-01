@@ -320,6 +320,7 @@ class AgentLoop:
         system = self._assemble_system_string(dagi_root)
         self.system_parts: list[dict]  # populated by _assemble_system_string
 
+        self._has_initial_messages: bool = bool(initial_messages)
         if initial_messages:
             # multi-turn: continue from existing conversation history
             self._messages = list(initial_messages)
@@ -459,6 +460,27 @@ class AgentLoop:
         )
         return message, usage
 
+    _SLUG_SYSTEM = (
+        "Generate a 3-5 word snake_case slug summarising this task. "
+        "Reply with ONLY the slug, nothing else."
+    )
+
+    def _generate_session_slug(self, first_message: str) -> str | None:
+        """LLM side-call to generate a session name slug. Returns None on failure."""
+        try:
+            resp = self.client.chat.completions.create(
+                model=self.config.model,
+                messages=[
+                    {"role": "system", "content": self._SLUG_SYSTEM},
+                    {"role": "user", "content": first_message[:500]},
+                ],
+                max_tokens=30,
+            )
+            slug = (resp.choices[0].message.content or "").strip()
+            return slug if slug else None
+        except Exception:
+            return None
+
     def run(self, task: str) -> str:
         if task.strip().lower() == "/reload":
             added, removed, errors = self._rebuild_for_reload()
@@ -472,6 +494,13 @@ class AgentLoop:
             self._messages.append({"role": "system", "content": wiki_ctx})
         self._messages.append({"role": "user", "content": task})
         self.tracker.record_user(task)
+
+        # ── Auto-name session file from first user message ────────────────────
+        if not self._has_initial_messages:
+            slug = self._generate_session_slug(task)
+            if slug:
+                self.tracker.rename_with_slug(slug)
+
         self._continuation_count = 0
 
         try:

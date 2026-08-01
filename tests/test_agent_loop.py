@@ -60,6 +60,9 @@ def _make_loop(registry=None, **config_overrides) -> AgentLoop:
 
     loop.tracker = fake_tracker
     loop.registry = real_registry
+    # Suppress slug-generation side-call so existing tests don't need an extra
+    # mocked response at the front of their side_effect list.
+    loop._has_initial_messages = True
     return loop
 
 
