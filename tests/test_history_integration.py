@@ -35,7 +35,8 @@ class TestRestoreSlice:
         ]
         # turn_index 0 = system message only (edge case — shouldn't happen from UI,
         # but slice is safe)
-        restored = raw[:1]
+        turn_index = 0
+        restored = raw[:turn_index + 1]
         assert len(restored) == 1
         assert restored[0]["role"] == "system"
 

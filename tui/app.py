@@ -278,13 +278,11 @@ class DagiApp(SlashCommandsMixin, App[None]):
         self, event: "HistoryScreen.SessionSelected"
     ) -> None:
         """Handle session selection from the history picker."""
-        from tui.history import HistoryScreen  # noqa: F401 — type ref
         self.pop_screen()
         self._restore_session(event.path, event.turn_index)
 
     def on_history_screen_dismissed(self, event: "HistoryScreen.Dismissed") -> None:
         """Handle dismissal of the history picker (Escape)."""
-        from tui.history import HistoryScreen  # noqa: F401 — type ref
         self.pop_screen()
 
     def _restore_session(self, path: Path, turn_index: int) -> None:
@@ -299,6 +297,7 @@ class DagiApp(SlashCommandsMixin, App[None]):
             self.query_one(ConversationPane).append_info(
                 "[red]✗ Cannot restore — session has no raw_messages.[/red]"
             )
+            self._enable_input()
             return
         # Slice to requested turn depth; safe for turn_index == len(raw)
         restored = raw[:turn_index + 1]
