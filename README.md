@@ -1,6 +1,6 @@
 # Driverless AGI
 
-A minimal, self-hosted coding agent. Give it a task — it plans, calls tools, reads results, and iterates until done. Ships with a Rich interactive CLI. Supports any OpenAI-compatible API, automatic context compaction for long sessions, extended reasoning, skills-based guidance, and full session logging with cost tracking.
+A minimal, self-hosted coding agent. Give it a task — it plans, calls tools, reads results, and iterates until done. Ships with a Rich interactive CLI. Supports any OpenAI-compatible API, automatic context compaction for long sessions, extended reasoning, skills-based guidance, and full session logging with auto-named session files and history restore via `/hist`.
 
 ---
 
@@ -354,7 +354,7 @@ All slash commands work identically in the TUI and CLI.
 | `/tools` | List all registered tools for the active session |
 | `/skills` | List all loaded skills |
 | `/workflows` | List all loaded workflows |
-| `/hist [n]` | Show the `n` most recent session summaries (default 20) |
+| `/hist [n]` | Open the session history picker — browse the `n` most recent sessions (default 20), select a session, then pick a message turn to resume from |
 | `/init` | Scaffold `.dagi/` and `dagi-memory/` directories for the current project |
 | `/<skill-name>` | Invoke any loaded skill directly (e.g. `/memory-query`) |
 | `/<workflow-name>` | Run any loaded workflow (e.g. `/improve-yourself`) |
