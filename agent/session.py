@@ -55,6 +55,7 @@ class SessionTracker:
         self._subagent_stats: list[dict] = []
 
         self._logs_dir.mkdir(parents=True, exist_ok=True)
+        self._renamed: bool = False
         ts = self._started_at.strftime("%Y-%m-%d_%H-%M-%S")
         self._path = self._logs_dir / f"session_{ts}.jsonl"
 
@@ -81,11 +82,42 @@ class SessionTracker:
         child._subagent_stats = []  # unused for children but keeps attr access safe
         child._path = None
         child._logs_dir = None
+        child._renamed = False
         return child
 
     @property
     def thread_id(self) -> str:
         return self._thread_id
+
+    def rename_with_slug(self, slug: str) -> None:
+        """Rename the session file to include a human-readable slug.
+
+        Idempotent — silently returns if already renamed or if this is a
+        child tracker (no own file).
+        """
+        if self._renamed or self._parent is not None:
+            return
+        clean = self._sanitise_slug(slug)
+        if not clean:
+            return
+        ts = self._started_at.strftime("%Y-%m-%d_%H-%M-%S")
+        new_name = f"{ts}_{clean}_logs.jsonl"
+        new_path = self._logs_dir / new_name
+        try:
+            self._path.rename(new_path)
+        except OSError:
+            return
+        self._path = new_path
+        self._renamed = True
+
+    @staticmethod
+    def _sanitise_slug(raw: str) -> str:
+        """Lowercase, strip non-alnum/underscore, collapse runs, truncate."""
+        import re
+        slug = raw.lower().strip()
+        slug = re.sub(r"[^a-z0-9_]+", "_", slug)
+        slug = re.sub(r"_+", "_", slug).strip("_")
+        return slug[:50]
 
     # ------------------------------------------------------------------ events
 
