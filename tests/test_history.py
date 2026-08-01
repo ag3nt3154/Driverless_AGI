@@ -1,7 +1,7 @@
 import json
 import pytest
 from pathlib import Path
-from tui.history import load_sessions, load_raw_messages, build_turn_list, _derive_title
+from tui.history import load_sessions, load_raw_messages, build_turn_list
 
 
 def _write_session(tmp_path: Path, filename: str, started_at: str,
@@ -71,6 +71,15 @@ class TestLoadSessions:
                        "2026-08-01T10:00:00Z", raw_messages=raw)
         result = load_sessions(tmp_path)
         assert len(result[0]["title"]) <= 61  # 60 chars + ellipsis
+
+    def test_no_duplicate_when_file_matches_both_globs(self, tmp_path):
+        # A file named session_foo_logs.jsonl matches both *_logs.jsonl AND session_*.jsonl.
+        # Deduplication must ensure it appears only once.
+        _write_session(
+            tmp_path, "session_2026-08-01_10-00-00_logs.jsonl", "2026-08-01T10:00:00Z"
+        )
+        result = load_sessions(tmp_path)
+        assert len(result) == 1
 
     def test_corrupted_file_skipped(self, tmp_path):
         bad = tmp_path / "session_2026-08-01_12-00-00.jsonl"

@@ -175,7 +175,7 @@ class HistoryScreen(Screen):
                     disabled=True,
                 )
             )
-            opt_list.add_option(Option("↩ Press Escape to go back"))
+            opt_list.add_option(Option("↩ Press Escape to go back", disabled=True))
             opt_list.focus()
             return
         turns = build_turn_list(raw)
