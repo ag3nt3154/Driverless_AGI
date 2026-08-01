@@ -62,7 +62,7 @@ def _make_loop(registry=None, **config_overrides) -> AgentLoop:
     loop.registry = real_registry
     # Suppress slug-generation side-call so existing tests don't need an extra
     # mocked response at the front of their side_effect list.
-    loop._has_initial_messages = True
+    loop._skip_slug_generation = True
     return loop
 
 

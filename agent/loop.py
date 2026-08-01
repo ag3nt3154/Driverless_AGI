@@ -320,7 +320,7 @@ class AgentLoop:
         system = self._assemble_system_string(dagi_root)
         self.system_parts: list[dict]  # populated by _assemble_system_string
 
-        self._has_initial_messages: bool = bool(initial_messages)
+        self._skip_slug_generation: bool = bool(initial_messages)
         if initial_messages:
             # multi-turn: continue from existing conversation history
             self._messages = list(initial_messages)
@@ -496,7 +496,7 @@ class AgentLoop:
         self.tracker.record_user(task)
 
         # ── Auto-name session file from first user message ────────────────────
-        if not self._has_initial_messages:
+        if not self._skip_slug_generation:
             slug = self._generate_session_slug(task)
             if slug:
                 self.tracker.rename_with_slug(slug)

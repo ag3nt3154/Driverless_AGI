@@ -77,14 +77,15 @@ class TestGenerateSessionSlug:
         assert system_msg == AgentLoop._SLUG_SYSTEM
 
 
-class TestHasInitialMessages:
-    """_has_initial_messages tracks whether loop was resumed from history.
+class TestSkipSlugGeneration:
+    """_skip_slug_generation controls whether slug naming runs in run().
 
-    When resuming, slug generation is skipped — the session already has a name.
+    When True (resumed session), slug generation is skipped — the session
+    already has a name. When False (fresh session), the slug side-call fires.
     """
 
     def test_false_when_no_initial_messages(self, tmp_path):
-        """Fresh sessions must have _has_initial_messages == False."""
+        """Fresh sessions must have _skip_slug_generation == False."""
         from agent.loop import AgentLoop, AgentConfig
 
         config = AgentConfig(
@@ -96,10 +97,10 @@ class TestHasInitialMessages:
         with pytest.MonkeyPatch().context() as mp:
             mp.setattr("agent.loop.SessionTracker", MagicMock())
             loop = AgentLoop(config)
-        assert loop._has_initial_messages is False
+        assert loop._skip_slug_generation is False
 
     def test_true_when_initial_messages_provided(self, tmp_path):
-        """Resumed sessions must have _has_initial_messages == True."""
+        """Resumed sessions must have _skip_slug_generation == True."""
         from agent.loop import AgentLoop, AgentConfig
 
         config = AgentConfig(
@@ -112,7 +113,7 @@ class TestHasInitialMessages:
         with pytest.MonkeyPatch().context() as mp:
             mp.setattr("agent.loop.SessionTracker", MagicMock())
             loop = AgentLoop(config, initial_messages=initial)
-        assert loop._has_initial_messages is True
+        assert loop._skip_slug_generation is True
 
 
 class TestSlugWiredIntoRun:
@@ -167,7 +168,7 @@ class TestSlugWiredIntoRun:
         loop.run("Add dark mode support")
         loop.tracker.rename_with_slug.assert_not_called()
 
-    def test_rename_not_called_when_has_initial_messages(self, tmp_path):
+    def test_rename_not_called_when_skip_slug_generation(self, tmp_path):
         """run() must NOT generate or apply a slug when resuming from history."""
         from agent.loop import AgentLoop, AgentConfig, TASK_END_FLAG
 
