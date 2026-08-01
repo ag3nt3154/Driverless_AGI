@@ -216,7 +216,7 @@ class SlashCommandsMixin:
         from tui.history import HistoryScreen
         conv = self.query_one(ConversationPane)
         if self._worker and self._worker.is_alive():
-            conv.append_info("[yellow]⚠ Agent is running — pause first (/compact or ESC)[/yellow]")
+            conv.append_info("[yellow]⚠ Agent is running — press ESC to pause it first[/yellow]")
             return
         try:
             n = int(arg) if arg else 20

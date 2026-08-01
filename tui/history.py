@@ -139,6 +139,7 @@ class HistoryScreen(Screen):
         self._max_sessions = max_sessions
         self._sessions: list[dict] = []
         self._selected_session: dict | None = None
+        self._selected_raw: list[dict] | None = None  # cached raw_messages for step 2
 
     def compose(self) -> ComposeResult:
         yield Header()
@@ -164,6 +165,7 @@ class HistoryScreen(Screen):
 
     def _load_turns(self, session: dict) -> None:
         raw = load_raw_messages(session["path"])
+        self._selected_raw = raw  # cache to avoid re-reading in option_selected handler
         opt_list = self.query_one("#hist-list", OptionList)
         opt_list.clear_options()
         lbl = self.query_one("#hist-label", Label)
@@ -204,7 +206,7 @@ class HistoryScreen(Screen):
             # Step 2: user selected a turn
             option_id = event.option.id or ""
             sess = self._selected_session
-            raw = load_raw_messages(sess["path"])
+            raw = self._selected_raw  # use cached value from _load_turns
             total = len(raw) if raw else 0
             if option_id == "turn_end":
                 turn_index = total
@@ -221,6 +223,7 @@ class HistoryScreen(Screen):
         if self._selected_session is not None:
             # In step 2 — go back to step 1
             self._selected_session = None
+            self._selected_raw = None
             lbl = self.query_one("#hist-label", Label)
             lbl.update("Session History — select a session (↑/↓, Enter)")
             self._load_sessions()
