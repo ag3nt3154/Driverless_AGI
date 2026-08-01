@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 import sys
 from dataclasses import dataclass, field, asdict
 from datetime import datetime, timezone
@@ -113,7 +114,6 @@ class SessionTracker:
     @staticmethod
     def _sanitise_slug(raw: str) -> str:
         """Lowercase, strip non-alnum/underscore, collapse runs, truncate."""
-        import re
         slug = raw.lower().strip()
         slug = re.sub(r"[^a-z0-9_]+", "_", slug)
         slug = re.sub(r"_+", "_", slug).strip("_")

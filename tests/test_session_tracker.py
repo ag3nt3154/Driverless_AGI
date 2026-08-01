@@ -210,7 +210,7 @@ class TestRenameWithSlug:
         long_slug = "a" * 100
         tracker.rename_with_slug(long_slug)
         parts = tracker._path.stem.split("_logs")[0]
-        slug_part = "_".join(parts.split("_")[3:])  # skip YYYY, MM-DD, HH-MM-SS
+        slug_part = "_".join(parts.split("_")[2:])  # skip YYYY-MM-DD, HH-MM-SS
         assert len(slug_part) <= 50
 
     def test_child_tracker_rename_is_noop(self, tmp_path):
