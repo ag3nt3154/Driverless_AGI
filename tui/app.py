@@ -7,6 +7,7 @@ from pathlib import Path
 from rich.panel import Panel
 from rich.text import Text
 from textual.app import App, ComposeResult
+from textual.containers import Vertical
 from textual.widgets import Static
 
 from agent import DAGI_ROOT
@@ -37,9 +38,10 @@ class DagiApp(SlashCommandsMixin, App[None]):
     _PROMPT_HEIGHT_COLLAPSED: int = 8  # must match CSS `#prompt { height: 8 }`
 
     CSS = """
-    Screen           { layout: vertical; }
+    Screen           { layout: horizontal; }
+    #main-column     { width: 65%; layout: vertical; }
     ConversationPane { height: 1fr; }
-    Sidebar          { height: 12; border-bottom: solid $panel; }
+    Sidebar          { width: 35%; border-left: solid $panel; }
     #running-indicator { height: 1; display: none; color: $success; text-align: center; }
     #prompt          { dock: bottom; height: 8; border-top: solid $panel; }
     """
@@ -75,15 +77,16 @@ class DagiApp(SlashCommandsMixin, App[None]):
 
     def compose(self) -> ComposeResult:
         dagi_root = DAGI_ROOT
+        with Vertical(id="main-column"):
+            yield ConversationPane(id="conversation", highlight=True, markup=True, wrap=True)
+            yield StreamPreview(id="stream-preview")
+            yield Static("", id="running-indicator")
+            yield PromptInput(id="prompt")
         yield Sidebar(
             self._model_name, self._config.context_window, self._config.reserve_tokens,
             dagi_root=dagi_root, project_path=self._project_path,
             memory_root=getattr(self._config, "memory_root", None),
         )
-        yield ConversationPane(id="conversation", highlight=True, markup=True, wrap=True)
-        yield StreamPreview(id="stream-preview")
-        yield Static("", id="running-indicator")
-        yield PromptInput(id="prompt")
 
     def on_mount(self) -> None:
         self._load_maps()

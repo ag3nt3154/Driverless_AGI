@@ -20,7 +20,7 @@ def _path_tail(path: Path | str, max_chars: int = 36) -> str:
 class Sidebar(Widget):
     """Fixed-height top header: status/emote, token+context, plan — three columns."""
 
-    DEFAULT_CSS = "Sidebar { overflow-x: hidden; }"
+    DEFAULT_CSS = "Sidebar { overflow-x: hidden; overflow-y: auto; }"
 
     def __init__(
         self,
@@ -90,12 +90,11 @@ class Sidebar(Widget):
         self.refresh()
 
     def render(self):
-        t = Table(expand=True, box=None, padding=(0, 1))
-        t.add_column(ratio=1)
-        t.add_column(ratio=1)
-        t.add_column(ratio=1)
-        t.add_row(self._status_col(), self._tokens_context_col(), self._plan_col())
-        return t
+        return Group(
+            self._status_col(),
+            self._tokens_context_col(),
+            self._plan_col(),
+        )
 
     def _status_col(self) -> Group:
         face = self._emote_display

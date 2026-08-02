@@ -170,7 +170,7 @@ tui.py / telegram_bot.py / main.py
 - **Memory wiki**: `G:\My Drive\black_grimoire\dagi-memory\wiki\` (Claude Code skills) vs. repo-local `dagi-memory/wiki/` (DAGI's own subagents). Two separate systems.
 - **`tools:` allowlist** (`config.yaml`): post-registration filter via `reg.filter_to(config.tools)`. Any tool not named here is silently stripped — including auto-discovered spawn tools. When adding a new subagent type, also add its `spawn_{type}_subagent` name to the list.
 - **Windows**: `EditTool`/`WriteTool` always write LF, normalize `oldText`/`newText` for CRLF safety. Use `conda run -n dagi python` not bare `python.exe`.
-- **TUI**: `StreamPreview` expands on first delta, collapses on `on_stream_end`. `on_emote` callback is `(name: str, display: str)` — name rendered as dim label beneath art in sidebar. `_model_name` derived from resolved config.
+- **TUI**: `StreamPreview` expands on first delta, collapses on `on_stream_end`. `on_emote` callback is `(name: str, display: str)` — name rendered as dim label beneath art in sidebar. `_model_name` derived from resolved config. Layout is horizontal 65/35: `#main-column` (Vertical, 65%) holds chat + prompt on the left; `Sidebar` (35%) is a right panel with sections stacked vertically (status → tokens → plan).
 - **dagi_eval caveats**: `--timeout-min` only bounds agent loop, not scoring phases. Relative `task_dir` silently breaks scoring — always use `harness.TASKS_DIR`.
 
 ## User Insights
