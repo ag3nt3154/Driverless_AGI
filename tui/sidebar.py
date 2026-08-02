@@ -83,16 +83,18 @@ class Sidebar(Widget):
             raw = text
         return pad_to_lines(raw)
 
-    def update_emote(self, name: str, display_text: str) -> None:
+    def update_emote(self, name: str, display_text: str, is_named: bool = True) -> None:
         """Set the emote name and display text (already resolved by EmoteTool)."""
-        self._emote_name = name
+        self._emote_name = name if is_named else ""
         self._emote_display = display_text
         self.refresh()
 
     def render(self):
         return Group(
             self._status_col(),
+            Text(""),
             self._tokens_context_col(),
+            Text(""),
             self._plan_col(),
         )
 
@@ -120,10 +122,10 @@ class Sidebar(Widget):
         if self._memory_root is not None:
             info.add_row("mem", _path_tail(self._memory_root))
 
-        face_group = Group(
-            Text.from_markup(f"[#4da6ff]{face}[/#4da6ff]"),
-            Text.from_markup(f"[#4da6ff]{self._emote_name}[/#4da6ff]"),
-        )
+        face_items = [Text.from_markup(f"[#4da6ff]{face}[/#4da6ff]")]
+        if self._emote_name:
+            face_items.append(Text.from_markup(f"[#4da6ff]{self._emote_name}[/#4da6ff]"))
+        face_group = Group(*face_items)
         return Group(face_group, info)
 
     def _tokens_context_col(self) -> Group:

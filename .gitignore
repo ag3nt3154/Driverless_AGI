@@ -206,3 +206,5 @@ models/docling_models/docling-project--docling-models/*
 benchmarks/dagi_eval/tasks/*/hidden/data/
 benchmarks/dagi_eval/logs/
 config.yaml
+
+docs/*

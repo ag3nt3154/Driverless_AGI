@@ -139,8 +139,8 @@ def build_callbacks(app: DagiApp, loop_ref: list) -> AgentCallbacks:
             f"[dim yellow]↩ No exit flag — continue prompt injected ({cur}/{mx})[/dim yellow]",
         )
 
-    def on_emote(name: str, display: str) -> None:
-        app.call_from_thread(sidebar.update_emote, name, display)
+    def on_emote(name: str, display: str, is_named: bool) -> None:
+        app.call_from_thread(sidebar.update_emote, name, display, is_named)
 
     def on_subagent_event_factory(subagent_type: str) -> Callable[[str], None]:
         return build_subagent_relay_callback(app, subagent_type)
