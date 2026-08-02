@@ -32,6 +32,20 @@ TASK_END_FLAG = "<<TASK_END>>"           # legacy alias — still recognised
 AWAIT_USER_FLAG = "<<END_OF_RESPONSE>>"
 WRITE_HANDOFF_SENTINEL = "<<HANDOFF_WRITTEN>>"
 
+_LOOP_SENTINELS = (AWAIT_USER_FLAG, TASK_END_FLAG)
+
+
+def _escape_sentinels(text: str) -> str:
+    """Break loop-control sentinels so they cannot leak from tool results into the
+    LLM's message history and cause premature termination on the next turn.
+
+    Replaces '<<' with '< <' in each sentinel — visually similar but won't match
+    the substring checks in AgentLoop.run().
+    """
+    for sentinel in _LOOP_SENTINELS:
+        text = text.replace(sentinel, sentinel.replace("<<", "< <"))
+    return text
+
 
 def _is_plan_empty(path: Path) -> bool:
     """Return True if the plan file has no meaningful content beyond scaffold boilerplate."""
@@ -322,8 +336,10 @@ class AgentLoop:
 
         self._skip_slug_generation: bool = bool(initial_messages)
         if initial_messages:
-            # multi-turn: continue from existing conversation history
+            # multi-turn: continue from existing conversation history, but always
+            # refresh the system prompt so updates to AGENTS.md take effect next task.
             self._messages = list(initial_messages)
+            self._messages[0] = {"role": "system", "content": system}
         else:
             self._messages = [{"role": "system", "content": system}]
 
@@ -683,7 +699,11 @@ class AgentLoop:
 
                     args = json.loads(tc.function.arguments)
                     result = self.registry.dispatch(tc.function.name, args)
-                    if isinstance(result, str) and WRITE_HANDOFF_SENTINEL in result:
+                    if (
+                        isinstance(result, str)
+                        and WRITE_HANDOFF_SENTINEL in result
+                        and tc.function.name == "write_handoff"
+                    ):
                         return self._handle_write_handoff(
                             tc, result, description, tool_records, (message, response)
                         )
@@ -761,8 +781,13 @@ class AgentLoop:
             input=tc.function.arguments,
             result=full_str,                                        # full (JSONL)
         ))
+        _tool_content = (
+            _escape_sentinels(context_result)
+            if isinstance(context_result, str)
+            else context_result
+        )
         self._messages.append(
-            {"role": "tool", "tool_call_id": tc.id, "content": context_result}
+            {"role": "tool", "tool_call_id": tc.id, "content": _tool_content}
         )
         return full_str
 

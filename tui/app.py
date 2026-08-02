@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import threading
+import time
 from pathlib import Path
 
 from rich.panel import Panel
@@ -19,6 +20,17 @@ from .prompt_input import PromptInput
 from .sidebar import Sidebar
 from .streaming import StreamPreview
 from .utils import _Stats
+
+
+def _format_elapsed(start: float | None) -> str:
+    if start is None:
+        return "0s"
+    secs = int(time.monotonic() - start)
+    if secs < 60:
+        return f"{secs}s"
+    if secs < 3600:
+        return f"{secs // 60}m {secs % 60:02d}s"
+    return f"{secs // 3600}h {(secs % 3600) // 60:02d}m {secs % 60:02d}s"
 
 
 class DagiApp(SlashCommandsMixin, App[None]):
@@ -57,6 +69,7 @@ class DagiApp(SlashCommandsMixin, App[None]):
         self._skill_map: dict = {}
         self._workflow_map: dict = {}
         self._spinner_idx: int = 0
+        self._run_start_time: float | None = None
         self._input_expanded: bool = False
         self._restore_initial_messages: list | None = None
 
@@ -239,14 +252,17 @@ class DagiApp(SlashCommandsMixin, App[None]):
         if not bar.display:
             return
         self._spinner_idx = (self._spinner_idx + 1) % len(self._SPINNER)
-        bar.update(f"  {self._SPINNER[self._spinner_idx]} Running…")
+        elapsed = _format_elapsed(self._run_start_time)
+        bar.update(f"  {self._SPINNER[self._spinner_idx]} Running…  {elapsed}")
 
     def _show_running_indicator(self) -> None:
+        self._run_start_time = time.monotonic()
         bar = self.query_one("#running-indicator", Static)
-        bar.update(f"  {self._SPINNER[0]} Running…")
+        bar.update(f"  {self._SPINNER[0]} Running…  0s")
         bar.display = True
 
     def _hide_running_indicator(self) -> None:
+        self._run_start_time = None
         self.query_one("#running-indicator", Static).display = False
 
     def _expand_stream_preview(self) -> None:

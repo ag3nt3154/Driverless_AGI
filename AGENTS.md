@@ -1,6 +1,6 @@
 # AGENTS.md
 
-> Last updated: 2026-08-02 | [README](README.md) | [TODO](TODO.md)
+> Last updated: 2026-08-02 (system-prompt refresh fix) | [README](README.md) | [TODO](TODO.md)
 
 ---
 
@@ -150,7 +150,9 @@ tui.py / telegram_bot.py / main.py
 
 ## Errors Log (recent)
 
-- **2026-07-25**: `ReadTool` rewrite to call doc-converter service broke test collection → fixed by mocking `convert_document` in tests and removing dead `PdfConfig`.
+- **2026-08-02**: `AgentLoop.__init__` with `initial_messages` discarded the freshly-assembled system string — AGENTS.md updates never propagated to the next task's context window → overwrite `_messages[0]` with fresh `system` after copying `initial_messages`.
+- **2026-08-02**: `<<END_OF_RESPONSE>>` in tool results (file read or unverified subagent handoff) caused LLM to echo sentinel on next turn, breaking loop prematurely → `_escape_sentinels()` in `_bookkeep_tool_call` rewrites `<<` to `< <` before storing in `_messages`.
+- **2026-08-02**: `<<HANDOFF_WRITTEN>>` embedded in inlined handoff content falsely triggered `_handle_write_handoff` in parent loop → sentinel check now gated on `tc.function.name == "write_handoff"`.
 - **2026-07-26**: TUI displayed wrong model name — `get_model_display_name()` only read root config, missed `.dagi/config.yaml` overrides → TUI now resolves via `resolve_model_config()`.
 - **2026-07-26**: Subagent handoff enforcement — write_handoff auto-injection, sentinel detection, corrective re-entry, and unverified-flag scraping added.
 - **2026-07-26**: Post-merge cleanup — duplicated dispatch logic across 5 spawn tools centralized into `dispatch_status_result()`; `unverified_flag_path()` shared; `_handle_write_handoff` refactored to share `_bookkeep_tool_call()`/`_finalize_turn()`.
@@ -160,10 +162,10 @@ tui.py / telegram_bot.py / main.py
 
 ## Notes & Terms
 
-- **AGENTS.md** is force-injected into every session's system prompt by `_assemble_system_string()`.
-- **`<<END_OF_RESPONSE>>`**: primary exit sentinel (substring check anywhere in response).
+- **AGENTS.md** is force-injected into every session's system prompt by `_assemble_system_string()`; the file is re-read from disk on every `AgentLoop.__init__` and `_messages[0]` is always overwritten — so AGENTS.md edits made during task N are live in task N+1's context window.
+- **`<<END_OF_RESPONSE>>`**: primary exit sentinel (substring check on LLM text responses only); `_escape_sentinels()` rewrites it to `< <END_OF_RESPONSE>>` in tool results before they enter `_messages` to prevent LLM echo-back.
 - **Document conversion**: `.pdf/.docx/.xlsx/.pptx` → doc-converter service at `AgentConfig.services["doc_converter"]`, hard-fail if unreachable. PDF page selection via `pages` parameter.
-- **Subagent handoff**: WriteHandoffTool auto-injected, `<<HANDOFF_WRITTEN>>` sentinel triggers immediate return. Missing handoff → corrective re-entry → last-resort scrape + `_unverified.flag`.
+- **Subagent handoff**: WriteHandoffTool auto-injected; `<<HANDOFF_WRITTEN>>` sentinel triggers immediate return **only when `tc.function.name == "write_handoff"`** (name-gated to prevent false fire from inlined handoff content). Missing handoff → corrective re-entry → last-resort scrape + `_unverified.flag`.
 - **Skill chain**: `grilling` → `plan` → `to-spec` → `dagi-execute` (write-tests/worker/review cycle, 2-attempt retry, escalation sidecar).
 - **Memory wiki**: `G:\My Drive\black_grimoire\dagi-memory\wiki\` (Claude Code skills) vs. repo-local `dagi-memory/wiki/` (DAGI's own subagents). Two separate systems.
 - **`tools:` allowlist** (`config.yaml`): post-registration filter via `reg.filter_to(config.tools)`. Any tool not named here is silently stripped — including auto-discovered spawn tools. When adding a new subagent type, also add its `spawn_{type}_subagent` name to the list.
