@@ -39,9 +39,9 @@ class DagiApp(SlashCommandsMixin, App[None]):
 
     CSS = """
     Screen           { layout: horizontal; }
-    #main-column     { width: 65%; layout: vertical; }
+    #main-column     { width: 1fr; layout: vertical; }
     ConversationPane { height: 1fr; }
-    Sidebar          { width: 35%; border-left: solid $panel; }
+    Sidebar          { width: 30%; max-width: 45; border-left: solid $panel; }
     #running-indicator { height: 1; display: none; color: $success; text-align: center; }
     #prompt          { dock: bottom; height: 8; border-top: solid $panel; }
     """
