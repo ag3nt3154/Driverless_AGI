@@ -24,7 +24,6 @@ from agent.base_tool import BaseTool
 from agent.registry import ToolRegistry
 from tools.bash import BashTool
 from tools.edit import EditTool
-from tools.edit_text import EditTextTool
 from tools.find import FindTool
 from tools.grep import GrepTool
 from tools.read import ReadTool
@@ -198,7 +197,6 @@ def create_tool_registry(
     else:
         reg.register(WriteTool(cwd=cwd, allowed_roots=effective_roots))
         reg.register(EditTool(cwd=cwd, allowed_roots=effective_roots))
-        reg.register(EditTextTool(cwd=cwd, allowed_roots=effective_roots))
         reg.register(CopyTool(cwd=cwd, allowed_roots=effective_roots))
         reg.register(BashTool(cwd=cwd))
         if bash_tool is not None:

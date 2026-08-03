@@ -32,6 +32,20 @@ TASK_END_FLAG = "<<TASK_END>>"           # legacy alias — still recognised
 AWAIT_USER_FLAG = "<<END_OF_RESPONSE>>"
 WRITE_HANDOFF_SENTINEL = "<<HANDOFF_WRITTEN>>"
 
+_LOOP_SENTINELS = (AWAIT_USER_FLAG, TASK_END_FLAG)
+
+
+def _escape_sentinels(text: str) -> str:
+    """Break loop-control sentinels so they cannot leak from tool results into the
+    LLM's message history and cause premature termination on the next turn.
+
+    Replaces '<<' with '< <' in each sentinel — visually similar but won't match
+    the substring checks in AgentLoop.run().
+    """
+    for sentinel in _LOOP_SENTINELS:
+        text = text.replace(sentinel, sentinel.replace("<<", "< <"))
+    return text
+
 
 def _is_plan_empty(path: Path) -> bool:
     """Return True if the plan file has no meaningful content beyond scaffold boilerplate."""
@@ -211,7 +225,7 @@ class AgentCallbacks:
             options[0]["label"] if options else "",
         )
     )
-    on_emote:          Callable[[str], None] | None              = None
+    on_emote:          Callable[[str, str], None] | None         = None
     # Factory for subagent stdout relay: takes subagent_type, returns per-event callback.
     # None in headless / CLI mode — subagent output is not relayed.
     on_subagent_event_factory: Callable[[str], Callable[[str], None]] | None = None
@@ -320,9 +334,12 @@ class AgentLoop:
         system = self._assemble_system_string(dagi_root)
         self.system_parts: list[dict]  # populated by _assemble_system_string
 
+        self._skip_slug_generation: bool = bool(initial_messages)
         if initial_messages:
-            # multi-turn: continue from existing conversation history
+            # multi-turn: continue from existing conversation history, but always
+            # refresh the system prompt so updates to AGENTS.md take effect next task.
             self._messages = list(initial_messages)
+            self._messages[0] = {"role": "system", "content": system}
         else:
             self._messages = [{"role": "system", "content": system}]
 
@@ -459,6 +476,27 @@ class AgentLoop:
         )
         return message, usage
 
+    _SLUG_SYSTEM = (
+        "Generate a 3-5 word snake_case slug summarising this task. "
+        "Reply with ONLY the slug, nothing else."
+    )
+
+    def _generate_session_slug(self, first_message: str) -> str | None:
+        """LLM side-call to generate a session name slug. Returns None on failure."""
+        try:
+            resp = self.client.chat.completions.create(
+                model=self.config.model,
+                messages=[
+                    {"role": "system", "content": self._SLUG_SYSTEM},
+                    {"role": "user", "content": first_message[:500]},
+                ],
+                max_tokens=30,
+            )
+            slug = (resp.choices[0].message.content or "").strip()
+            return slug if slug else None
+        except Exception:
+            return None
+
     def run(self, task: str) -> str:
         if task.strip().lower() == "/reload":
             added, removed, errors = self._rebuild_for_reload()
@@ -472,6 +510,13 @@ class AgentLoop:
             self._messages.append({"role": "system", "content": wiki_ctx})
         self._messages.append({"role": "user", "content": task})
         self.tracker.record_user(task)
+
+        # ── Auto-name session file from first user message ────────────────────
+        if not self._skip_slug_generation:
+            slug = self._generate_session_slug(task)
+            if slug:
+                self.tracker.rename_with_slug(slug)
+
         self._continuation_count = 0
 
         try:
@@ -654,7 +699,11 @@ class AgentLoop:
 
                     args = json.loads(tc.function.arguments)
                     result = self.registry.dispatch(tc.function.name, args)
-                    if isinstance(result, str) and WRITE_HANDOFF_SENTINEL in result:
+                    if (
+                        isinstance(result, str)
+                        and WRITE_HANDOFF_SENTINEL in result
+                        and tc.function.name == "write_handoff"
+                    ):
                         return self._handle_write_handoff(
                             tc, result, description, tool_records, (message, response)
                         )
@@ -732,8 +781,13 @@ class AgentLoop:
             input=tc.function.arguments,
             result=full_str,                                        # full (JSONL)
         ))
+        _tool_content = (
+            _escape_sentinels(context_result)
+            if isinstance(context_result, str)
+            else context_result
+        )
         self._messages.append(
-            {"role": "tool", "tool_call_id": tc.id, "content": context_result}
+            {"role": "tool", "tool_call_id": tc.id, "content": _tool_content}
         )
         return full_str
 

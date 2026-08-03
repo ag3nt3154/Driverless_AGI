@@ -6,7 +6,11 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 from agent.base_tool import BaseTool
-from agent.loop import AgentCallbacks, AgentConfig, AgentLoop, TASK_END_FLAG, WRITE_HANDOFF_SENTINEL
+from agent.loop import (
+    AgentCallbacks, AgentConfig, AgentLoop,
+    AWAIT_USER_FLAG, TASK_END_FLAG, WRITE_HANDOFF_SENTINEL,
+    _escape_sentinels,
+)
 from agent.registry import ToolRegistry
 
 
@@ -60,6 +64,9 @@ def _make_loop(registry=None, **config_overrides) -> AgentLoop:
 
     loop.tracker = fake_tracker
     loop.registry = real_registry
+    # Suppress slug-generation side-call so existing tests don't need an extra
+    # mocked response at the front of their side_effect list.
+    loop._skip_slug_generation = True
     return loop
 
 
@@ -306,6 +313,28 @@ class TestWriteHandoffSentinel:
         # Final returned/on_done value is the full, unfiltered report (JSONL/caller-facing).
         assert result == large_report
 
+    def test_non_write_handoff_tool_containing_sentinel_does_not_short_circuit(self):
+        """A tool other than write_handoff (e.g. a subagent spawn tool inlining a handoff
+        file that contains <<HANDOFF_WRITTEN>>) must NOT trigger _handle_write_handoff."""
+        tool = FakeTool(
+            name="spawn_subagent",
+            result=f"Subagent done.\n--- Handoff ---\n{WRITE_HANDOFF_SENTINEL}\nreport text",
+        )
+        registry = ToolRegistry()
+        registry.register(tool)
+        loop = _make_loop(registry=registry)
+        loop.client = MagicMock()
+        loop.client.chat.completions.create.side_effect = [
+            _make_response(None, tool_calls=[_make_tool_call("tc1", "spawn_subagent", "{}")]),
+            _make_response(f"Done. {TASK_END_FLAG}"),
+        ]
+
+        result = loop.run("spawn a subagent")
+
+        # Must have continued to the second LLM call — no false short-circuit.
+        assert loop.client.chat.completions.create.call_count == 2
+        assert result == "Done."
+
     def test_non_sentinel_tool_result_behaves_as_before(self):
         """Regression guard: a normal tool result without the sentinel proceeds
         to the next iteration rather than returning early."""
@@ -397,3 +426,112 @@ class TestCompactionTrigger:
 
         assert result.did_compact is False
         assert any("compaction blew up" in w for w in warnings)
+
+
+class TestSentinelEscape:
+    """Sentinel strings in tool results must not leak into message history and
+    cause premature loop termination on the next LLM turn."""
+
+    def test_escape_sentinels_breaks_await_flag(self):
+        escaped = _escape_sentinels(f"prefix {AWAIT_USER_FLAG} suffix")
+        assert AWAIT_USER_FLAG not in escaped
+        assert "END_OF_RESPONSE" in escaped  # content still visible, just broken
+
+    def test_escape_sentinels_breaks_task_end_flag(self):
+        escaped = _escape_sentinels(f"prefix {TASK_END_FLAG} suffix")
+        assert TASK_END_FLAG not in escaped
+        assert "TASK_END" in escaped
+
+    def test_escape_sentinels_is_idempotent_on_clean_text(self):
+        text = "no sentinels here"
+        assert _escape_sentinels(text) == text
+
+    def test_tool_result_containing_sentinel_does_not_terminate_loop(self):
+        """A tool that returns <<END_OF_RESPONSE>> verbatim (e.g. ReadTool reading a
+        session log) must not break the parent loop — the loop should continue and
+        reach the explicit exit flag on the next turn."""
+        tool = FakeTool(name="read", result=f"file content\n{AWAIT_USER_FLAG}\nmore text")
+        registry = ToolRegistry()
+        registry.register(tool)
+        loop = _make_loop(registry=registry)
+        loop.client = MagicMock()
+        loop.client.chat.completions.create.side_effect = [
+            _make_response(None, tool_calls=[_make_tool_call("tc1", "read", "{}")]),
+            _make_response(f"All done. {TASK_END_FLAG}"),
+        ]
+
+        result = loop.run("read a file")
+
+        # Must have made TWO LLM calls — tool call turn + final text turn.
+        assert loop.client.chat.completions.create.call_count == 2
+        assert result == "All done."
+        # Sentinel must be escaped in the tool message stored in history.
+        tool_msgs = [m for m in loop._messages if m.get("role") == "tool"]
+        assert AWAIT_USER_FLAG not in tool_msgs[0]["content"]
+
+    def test_on_tool_end_callback_receives_unescaped_result(self):
+        """The UI callback gets the original unescaped string — only the LLM message
+        history is sanitised."""
+        tool = FakeTool(name="read", result=f"data {AWAIT_USER_FLAG} end")
+        registry = ToolRegistry()
+        registry.register(tool)
+
+        ends = []
+        callbacks = AgentCallbacks(on_tool_end=lambda name, result: ends.append(result))
+        loop = _make_loop(registry=registry)
+        loop.callbacks = callbacks
+        loop.client = MagicMock()
+        loop.client.chat.completions.create.side_effect = [
+            _make_response(None, tool_calls=[_make_tool_call("tc1", "read", "{}")]),
+            _make_response(f"Done. {TASK_END_FLAG}"),
+        ]
+
+        loop.run("read a file")
+
+        # on_tool_end receives the filtered (but not sentinel-escaped) string.
+        assert AWAIT_USER_FLAG in ends[0]
+
+
+class TestSystemPromptRefresh:
+    """When a new AgentLoop is constructed with initial_messages (multi-turn
+    continuation), the system message must reflect the freshly-assembled prompt
+    rather than the stale one carried over from the previous loop."""
+
+    def test_system_prompt_refreshed_when_initial_messages_provided(self):
+        """_messages[0] must contain the NEW system prompt, not the old one."""
+        config = AgentConfig(
+            model="test-model",
+            api_key="test-key",
+            system_prompt="Original prompt.",
+        )
+        fake_tracker = MagicMock()
+
+        with (
+            patch("agent.loop.SessionTracker", return_value=fake_tracker),
+            patch("openai.OpenAI"),
+            patch.object(Path, "exists", return_value=False),
+        ):
+            first_loop = AgentLoop(config=config, _tracker=fake_tracker)
+
+        stale_system = first_loop._messages[0]
+        old_messages = list(first_loop._messages)
+
+        # Now create a second loop with updated system prompt, passing the old messages.
+        updated_config = AgentConfig(
+            model="test-model",
+            api_key="test-key",
+            system_prompt="Updated prompt after AGENTS.md change.",
+        )
+        with (
+            patch("agent.loop.SessionTracker", return_value=fake_tracker),
+            patch("openai.OpenAI"),
+            patch.object(Path, "exists", return_value=False),
+        ):
+            second_loop = AgentLoop(
+                config=updated_config,
+                _tracker=fake_tracker,
+                initial_messages=old_messages,
+            )
+
+        assert second_loop._messages[0]["content"] != stale_system["content"]
+        assert "Updated prompt" in second_loop._messages[0]["content"]

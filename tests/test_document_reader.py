@@ -3,15 +3,15 @@ import hashlib
 from pathlib import Path
 from unittest.mock import patch
 
-from tools import _hashline as H
 from tools.read._document_reader import summarize_document
 from tools.read import ReadTool
 
 
-def _anchored_hash(lines: list[str]) -> str:
+def _numbered_hash(lines: list[str]) -> str:
     """Compute the cache key hash the ReadTool passes to summarize_document."""
-    anchors = H.build_anchors(lines)
-    full_text = H.format_region(lines, anchors, 1, len(lines))
+    full_text = "\n".join(
+        f"{i:6d}\t{line}" for i, line in enumerate(lines, 1)
+    )
     return hashlib.sha256(full_text.encode("utf-8")).hexdigest()
 
 _CHARS_PER_TOKEN = 4
@@ -53,10 +53,8 @@ class TestSummarizeDocumentCacheMiss:
         def fake_run_subagent(
             subagent_type, task, project_path, handoff_path, timeout, on_event
         ):
-            # Simulate what the subagent does: write the summary file
             expected_summary_path.parent.mkdir(parents=True, exist_ok=True)
             expected_summary_path.write_text(fake_summary, encoding="utf-8")
-            # Write handoff
             handoff_path.parent.mkdir(parents=True, exist_ok=True)
             handoff_path.write_text("done", encoding="utf-8")
             return {"status": "ok", "handoff": str(handoff_path)}
@@ -97,7 +95,6 @@ class TestSummarizeDocumentFallback:
 class TestEndToEnd:
     def test_read_tool_with_large_file_produces_summary_via_subagent(self, tmp_path):
         """Integration test: ReadTool → _document_reader → mock subagent → cached summary."""
-        # Create a large file
         lines = [f"Line {i}: content about topic {i % 5}" for i in range(1, 10_001)]
         content = "\n".join(lines)
         f = tmp_path / "large_doc.txt"
@@ -117,8 +114,7 @@ class TestEndToEnd:
         ):
             assert subagent_type == "document-reader"
             assert "large_doc.txt" in task
-            # Simulate subagent writing the summary
-            h = _anchored_hash(lines)
+            h = _numbered_hash(lines)
             summary_dir = project_path / ".dagi" / "hash_cache" / "document_summary"
             summary_dir.mkdir(parents=True, exist_ok=True)
             (summary_dir / f"{h}_summary.md").write_text(
@@ -131,7 +127,7 @@ class TestEndToEnd:
         tool = ReadTool(
             cwd=tmp_path,
             allowed_roots=[tmp_path],
-            reserve_tokens=1_000,  # Low budget to trigger summarization
+            reserve_tokens=1_000,
             project_path=tmp_path,
         )
 
@@ -152,8 +148,7 @@ class TestEndToEnd:
 
         fake_summary = "## Cached summary"
 
-        # Pre-populate cache using the same hash the ReadTool computes
-        h = _anchored_hash(lines)
+        h = _numbered_hash(lines)
         summary_dir = tmp_path / ".dagi" / "hash_cache" / "document_summary"
         summary_dir.mkdir(parents=True, exist_ok=True)
         (summary_dir / f"{h}_summary.md").write_text(

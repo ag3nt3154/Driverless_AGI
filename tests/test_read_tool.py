@@ -3,14 +3,15 @@ from unittest.mock import patch
 
 from tools.read import ReadTool
 from tools.read._doc_service import DocServiceError
-from tools import _hashline as H
 
 
-def _anchored(all_lines, start=1, end=None):
-    """Render the expected read output for lines start..end of all_lines."""
+def _numbered(all_lines, start=1, end=None):
+    """Render the expected cat -n style output for lines start..end."""
     end = len(all_lines) if end is None else end
-    anchors = H.build_anchors(all_lines)
-    return H.format_region(all_lines, anchors, start, end)
+    selected = all_lines[start - 1 : end]
+    return "\n".join(
+        f"{i:6d}\t{line}" for i, line in enumerate(selected, start)
+    )
 
 
 def _make_tool(tmp_path, service_url="http://localhost:8100"):
@@ -32,7 +33,7 @@ class TestTextFileReading:
 
         result = tool.run(path="notes.txt")
 
-        assert result == _anchored(["hello", "world"])
+        assert result == _numbered(["hello", "world"])
 
     def test_offset_and_limit(self, tmp_path):
         all_lines = [f"line{i}" for i in range(1, 11)]
@@ -43,18 +44,7 @@ class TestTextFileReading:
 
         result = tool.run(path="notes.txt", offset=3, limit=2)
 
-        assert result == _anchored(all_lines, start=3, end=4)
-
-    def test_windowed_read_anchors_match_whole_file_anchors(self, tmp_path):
-        all_lines = [f"line{i}" for i in range(1, 21)]
-        f = tmp_path / "notes.txt"
-        f.write_text("\n".join(all_lines), encoding="utf-8")
-        tool = _make_tool(tmp_path)
-
-        windowed = tool.run(path="notes.txt", offset=15, limit=3)
-        anchors = H.build_anchors(all_lines)
-
-        assert f"#{anchors[14]}:line15" in windowed
+        assert result == _numbered(all_lines, start=3, end=4)
 
     def test_binary_file_returns_error(self, tmp_path):
         f = tmp_path / "data.bin"
@@ -214,7 +204,6 @@ class TestAutoSummarization:
         ):
             result = tool.run(path="huge.txt")
 
-        # Falls back to raw text (which output_filter will later truncate)
         assert "line" in result
 
 
@@ -243,4 +232,3 @@ class TestDocumentCacheDisclosure:
             result = tool.run(path="notes.docx")
 
         assert result.startswith("[notes.docx | editable: ")
-

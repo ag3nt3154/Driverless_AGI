@@ -1,6 +1,6 @@
 # AGENTS.md
 
-> Last updated: 2026-07-26 | [README](README.md) | [TODO](TODO.md)
+> Last updated: 2026-08-02 (system-prompt refresh fix) | [README](README.md) | [TODO](TODO.md)
 
 ---
 
@@ -121,7 +121,7 @@ tui.py / telegram_bot.py / main.py
             └── AgentCallbacks → TUI via App.call_from_thread()
 ```
 
-**Tool layout:** `tools/<name>/__init__.py` re-exports from `_<name>.py`; shared helpers are flat files in `tools/` (`_path_guard.py`, `_hash_cache.py`, `_subagent_runner.py`, `_handoff_format.py`, `_task_envelope.py`, `output_filter.py`, `subagent_main.py`).
+**Tool layout:** `tools/<name>/__init__.py` re-exports from `_<name>.py`; shared helpers are flat files in `tools/` (`_path_guard.py`, `_hash_cache.py`, `_subagent_runner.py`, `_handoff_format.py`, `_task_envelope.py`, `output_filter.py`, `subagent_main.py`). `edit` uses `oldText`/`newText` unique-substring matching; `read` outputs `cat -n` style line numbers.
 
 **Subagents:** Pipe-based subprocesses, each type declares `tools:` in `.dagi/subagents/<type>/subagent_config.yaml`. WriteHandoffTool auto-injected when `handoff_path` is set — calling it writes the report and triggers immediate return via `<<HANDOFF_WRITTEN>>` sentinel. If missing at exit, `_ensure_handoff()` re-enters with a corrective prompt; last-resort scrape drops `<stem>_unverified.flag`. All spawn tools render `ok_unverified` as a warning banner. Every subagent task is wrapped by `_task_envelope.py` (`## Task` / `## Instructions` / `## Output`), with parent-supplied `briefing` and `handoff_spec`.
 
@@ -131,14 +131,13 @@ tui.py / telegram_bot.py / main.py
 |------|---------|
 | `agent/loop.py` | Core agent loop, system-prompt assembly, termination/compaction, WriteHandoff sentinel dispatch |
 | `agent/config_loader.py` | Reads `config.yaml`, merges `.dagi/config.yaml`, resolves API key, services, Telegram config |
-| `tools/read/` | `ReadTool` — text inline, docs delegated to doc-converter service over HTTP; hashline anchors |
-| `tools/edit.py`, `tools/write.py` | File editing (hash-anchored, CRLF-safe) and writing |
-| `tools/grep.py`, `tools/find.py` | Search with hashline anchors, glob file finding |
-| `tools/bash.py` | Unsandboxed shell execution — all git operations run through here |
+| `tools/read/` | `ReadTool` — text inline (`cat -n` style), docs delegated to doc-converter service over HTTP |
+| `tools/edit/` | `EditTool` — `oldText`/`newText` unique-substring replacement, CRLF-safe |
+| `tools/grep/`, `tools/find/` | Regex search (`file:line: content` format), glob file finding |
+| `tools/bash/` | Unsandboxed shell execution — all git operations run through here |
 | `tools/_subagent_runner.py` | Pipe-based `run_subagent()`/`resume_subagent()` with unverified-flag detection |
 | `tools/_handoff_format.py` | Shared handoff rendering and status dispatch for all 5 subagent-spawning tools |
 | `tools/_task_envelope.py` | Universal `briefing`/`handoff_spec` envelope for subagent tasks |
-| `tools/_hashline.py` | blake2b-based line anchoring (3-char base64url hash, collision-resolved) |
 | `tools/output_filter.py` | Truncates tool results; full output stored in content-addressed cache |
 | `tools/_document_reader.py` | Long-document summarization via `document-reader` subagent with cache |
 | `services/doc_converter/` | Standalone FastAPI service (port 8100); PDF→markdown via docling/ocrmypdf, Office→markdown via markitdown; own conda env |
@@ -151,35 +150,28 @@ tui.py / telegram_bot.py / main.py
 
 ## Errors Log (recent)
 
-- **2026-07-25**: `ReadTool` rewrite to call doc-converter service broke test collection → fixed by mocking `convert_document` in tests and removing dead `PdfConfig`.
+- **2026-08-02**: `AgentLoop.__init__` with `initial_messages` discarded the freshly-assembled system string — AGENTS.md updates never propagated to the next task's context window → overwrite `_messages[0]` with fresh `system` after copying `initial_messages`.
+- **2026-08-02**: `<<END_OF_RESPONSE>>` in tool results (file read or unverified subagent handoff) caused LLM to echo sentinel on next turn, breaking loop prematurely → `_escape_sentinels()` in `_bookkeep_tool_call` rewrites `<<` to `< <` before storing in `_messages`.
+- **2026-08-02**: `<<HANDOFF_WRITTEN>>` embedded in inlined handoff content falsely triggered `_handle_write_handoff` in parent loop → sentinel check now gated on `tc.function.name == "write_handoff"`.
 - **2026-07-26**: TUI displayed wrong model name — `get_model_display_name()` only read root config, missed `.dagi/config.yaml` overrides → TUI now resolves via `resolve_model_config()`.
 - **2026-07-26**: Subagent handoff enforcement — write_handoff auto-injection, sentinel detection, corrective re-entry, and unverified-flag scraping added.
 - **2026-07-26**: Post-merge cleanup — duplicated dispatch logic across 5 spawn tools centralized into `dispatch_status_result()`; `unverified_flag_path()` shared; `_handle_write_handoff` refactored to share `_bookkeep_tool_call()`/`_finalize_turn()`.
 - **2026-07-26**: Typed subagent spawn tools absent from runtime registry → `tools:` allowlist in `.dagi/config.yaml` filtered them out post-registration; added all 7 typed spawner names to the list.
 - **2026-07-26 (known, deferred)**: `agent/loop.py` is 1172 lines (cap: 500), `AgentLoop.run` CC is 48 (cap: 8) — spun off as standalone refactor task.
+- **2026-07-27**: Hashline experiment reverted — smaller models made too many errors copying opaque `LINE#HASH` anchors → restored `oldText`/`newText` edit, `cat -n` read, plain `file:line:` grep. `_hashline.py`, `edit_text/` tool, and hashline tests removed.
 
 ## Notes & Terms
 
-- **AGENTS.md** is force-injected into every session's system prompt by `_assemble_system_string()`.
-- **`<<END_OF_RESPONSE>>`**: primary exit sentinel (substring check anywhere in response).
-- **hashline anchors** (`read`/`grep`/`edit`): every line gets `LINE#HASH:` (3-char blake2b, collision-resolved). `edit` ops: `replace`/`append`/`prepend`/`replace_text`. Stateless validation — anchors rebuilt from disk every call, stale → `E_STALE_ANCHOR`. Design doc: `docs/superpowers/specs/2026-07-26-hashline-read-edit-design.md`.
+- **AGENTS.md** is force-injected into every session's system prompt by `_assemble_system_string()`; the file is re-read from disk on every `AgentLoop.__init__` and `_messages[0]` is always overwritten — so AGENTS.md edits made during task N are live in task N+1's context window.
+- **`<<END_OF_RESPONSE>>`**: primary exit sentinel (substring check on LLM text responses only); `_escape_sentinels()` rewrites it to `< <END_OF_RESPONSE>>` in tool results before they enter `_messages` to prevent LLM echo-back.
 - **Document conversion**: `.pdf/.docx/.xlsx/.pptx` → doc-converter service at `AgentConfig.services["doc_converter"]`, hard-fail if unreachable. PDF page selection via `pages` parameter.
-- **Auto-summarization gate**: `ReadTool` with `reserve_tokens > 0` auto-invokes `summarize_document()` for large docs; subagent instances get `reserve_tokens=0` to prevent recursion.
-- **Subagent handoff**: WriteHandoffTool auto-injected, `<<HANDOFF_WRITTEN>>` sentinel triggers immediate return. Missing handoff → corrective re-entry → last-resort scrape + `_unverified.flag`.
+- **Subagent handoff**: WriteHandoffTool auto-injected; `<<HANDOFF_WRITTEN>>` sentinel triggers immediate return **only when `tc.function.name == "write_handoff"`** (name-gated to prevent false fire from inlined handoff content). Missing handoff → corrective re-entry → last-resort scrape + `_unverified.flag`.
 - **Skill chain**: `grilling` → `plan` → `to-spec` → `dagi-execute` (write-tests/worker/review cycle, 2-attempt retry, escalation sidecar).
-- **Tiers**: `default`/`worker`/`plan` model slots in `config.yaml`; `switch_model` tool only registered when non-default tiers exist.
-- **`unified_score`**: `normalize_perf(recorded, baseline, golden) / normalize_tokens(tokens_in+tokens_out)`, clamped to 10.0. Reference scores computed fresh each run.
 - **Memory wiki**: `G:\My Drive\black_grimoire\dagi-memory\wiki\` (Claude Code skills) vs. repo-local `dagi-memory/wiki/` (DAGI's own subagents). Two separate systems.
 - **`tools:` allowlist** (`config.yaml`): post-registration filter via `reg.filter_to(config.tools)`. Any tool not named here is silently stripped — including auto-discovered spawn tools. When adding a new subagent type, also add its `spawn_{type}_subagent` name to the list.
-- **`dagi/*` branch**: all plan-mode work lands here. Auto-created by `agent/_git_branch.py` on `enter_plan_mode`. DAGI commits here and asks the user before merging back. See **Git Workflow** section in Rules.
 - **Windows**: `EditTool`/`WriteTool` always write LF, normalize `oldText`/`newText` for CRLF safety. Use `conda run -n dagi python` not bare `python.exe`.
-- **Dependencies**: `pyproject.toml` is single source of truth. Doc-converter has own `services/doc_converter/environment.yml`.
-- **Compaction**: Pi-style context summarization mid-loop; preserves system prompt and tail. Never crashes session.
-- **TUI**: `StreamPreview` expands on first delta (not `on_stream_start`), collapses on `on_stream_end`. Sidebar uses plain attributes + `refresh()`. `_model_name` derived from resolved config.
-- **Scheduler**: `.dagi/scheduler/schedule.yaml`, intervals in seconds (min 60). Sets `plan_mode_initiated_by="dagi"`, `ask_user_timeout=60`.
-- **Telegram**: `allowed_chat_ids` defaults to empty frozenset (open), logs warning; set `TELEGRAM_ALLOWED_CHAT_IDS` to restrict.
+- **TUI**: `StreamPreview` expands on first delta, collapses on `on_stream_end`. `on_emote` callback is `(name: str, display: str)` — name rendered as dim label beneath art in sidebar. `_model_name` derived from resolved config. Layout is horizontal 65/35: `#main-column` (Vertical, 65%) holds chat + prompt on the left; `Sidebar` (35%) is a right panel with sections stacked vertically (status → tokens → plan).
 - **dagi_eval caveats**: `--timeout-min` only bounds agent loop, not scoring phases. Relative `task_dir` silently breaks scoring — always use `harness.TASKS_DIR`.
-- **CLI streaming**: live deltas to stdout + finalized log lines (deliberate duplication). `__list__:` prefix encodes non-string results in JSONL.
 
 ## User Insights
 

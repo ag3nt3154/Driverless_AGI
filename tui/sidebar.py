@@ -20,7 +20,7 @@ def _path_tail(path: Path | str, max_chars: int = 36) -> str:
 class Sidebar(Widget):
     """Fixed-height top header: status/emote, token+context, plan — three columns."""
 
-    DEFAULT_CSS = "Sidebar { overflow-x: hidden; }"
+    DEFAULT_CSS = "Sidebar { overflow-x: hidden; overflow-y: auto; }"
 
     def __init__(
         self,
@@ -47,6 +47,7 @@ class Sidebar(Widget):
         self._subtasks: list[dict] = []
         self._plan_title: str = ""
         self._emote_display: str = self._resolve_emote("default")
+        self._emote_name: str = "default"
 
     def set_status(self, status: str) -> None:
         self._status = status
@@ -82,18 +83,20 @@ class Sidebar(Widget):
             raw = text
         return pad_to_lines(raw)
 
-    def update_emote(self, display_text: str) -> None:
-        """Set the emote display text (already resolved by EmoteTool)."""
+    def update_emote(self, name: str, display_text: str, is_named: bool = True) -> None:
+        """Set the emote name and display text (already resolved by EmoteTool)."""
+        self._emote_name = name if is_named else ""
         self._emote_display = display_text
         self.refresh()
 
     def render(self):
-        t = Table(expand=True, box=None, padding=(0, 1))
-        t.add_column(ratio=1)
-        t.add_column(ratio=1)
-        t.add_column(ratio=1)
-        t.add_row(self._status_col(), self._tokens_context_col(), self._plan_col())
-        return t
+        return Group(
+            self._status_col(),
+            Text(""),
+            self._tokens_context_col(),
+            Text(""),
+            self._plan_col(),
+        )
 
     def _status_col(self) -> Group:
         face = self._emote_display
@@ -119,7 +122,11 @@ class Sidebar(Widget):
         if self._memory_root is not None:
             info.add_row("mem", _path_tail(self._memory_root))
 
-        return Group(Text.from_markup(f"[#4da6ff]{face}[/#4da6ff]"), info)
+        face_items = [Text.from_markup(f"[#4da6ff]{face}[/#4da6ff]")]
+        if self._emote_name:
+            face_items.append(Text.from_markup(f"[#4da6ff]{self._emote_name}[/#4da6ff]"))
+        face_group = Group(*face_items)
+        return Group(face_group, info)
 
     def _tokens_context_col(self) -> Group:
         cost_str = f"${self._cost:.5f}" if self._cost is not None else "$—"

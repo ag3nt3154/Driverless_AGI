@@ -212,9 +212,18 @@ class SlashCommandsMixin:
         conv.write(tbl)
 
     def _cmd_hist(self, arg: str | None) -> None:
-        from hist import run as hist_run
+        """Open the session history picker screen."""
+        from tui.history import HistoryScreen
+        conv = self.query_one(ConversationPane)
+        if self._worker and self._worker.is_alive():
+            conv.append_info("[yellow]⚠ Agent is running — press ESC to pause it first[/yellow]")
+            return
         try:
             n = int(arg) if arg else 20
         except ValueError:
             n = 20
-        hist_run(project=self._project_path, n=n)
+        logs_dir = self._project_path / ".dagi" / "logs"
+        if not logs_dir.exists():
+            conv.append_info("[dim]No session history found in .dagi/logs/[/dim]")
+            return
+        self.push_screen(HistoryScreen(logs_dir, max_sessions=n))

@@ -35,7 +35,7 @@ class EmoteTool(BaseTool):
     def __init__(
         self,
         emotes_dir: Path,
-        on_emote: Callable[[str], None] | None = None,
+        on_emote: Callable[[str, str, bool], None] | None = None,
     ) -> None:
         self._emotes_dir = emotes_dir
         self._on_emote = on_emote
@@ -73,7 +73,7 @@ class EmoteTool(BaseTool):
 
     def run(self, text: str) -> str:
         display = self._resolve(text)
-        if self._on_emote:
-            self._on_emote(display)
         is_named = (self._emotes_dir / f"{text}.md").is_file()
+        if self._on_emote:
+            self._on_emote(text, display, is_named)
         return f"*{text}*" if is_named else f"Displaying: {display}"

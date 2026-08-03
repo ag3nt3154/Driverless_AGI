@@ -1,6 +1,6 @@
 # Driverless AGI
 
-A minimal, self-hosted coding agent. Give it a task — it plans, calls tools, reads results, and iterates until done. Ships with a Rich interactive CLI. Supports any OpenAI-compatible API, automatic context compaction for long sessions, extended reasoning, skills-based guidance, and full session logging with cost tracking.
+A minimal, self-hosted coding agent. Give it a task — it plans, calls tools, reads results, and iterates until done. Ships with a Rich interactive CLI. Supports any OpenAI-compatible API, automatic context compaction for long sessions, extended reasoning, skills-based guidance, and full session logging with auto-named session files and history restore via `/hist`.
 
 ---
 
@@ -354,7 +354,7 @@ All slash commands work identically in the TUI and CLI.
 | `/tools` | List all registered tools for the active session |
 | `/skills` | List all loaded skills |
 | `/workflows` | List all loaded workflows |
-| `/hist [n]` | Show the `n` most recent session summaries (default 20) |
+| `/hist [n]` | Open the session history picker — browse the `n` most recent sessions (default 20), select a session, then pick a message turn to resume from |
 | `/init` | Scaffold `.dagi/` and `dagi-memory/` directories for the current project |
 | `/<skill-name>` | Invoke any loaded skill directly (e.g. `/memory-query`) |
 | `/<workflow-name>` | Run any loaded workflow (e.g. `/improve-yourself`) |
@@ -669,7 +669,7 @@ Driverless_AGI/
 |------|-------------|
 | `read` | Read a text file (paginated) inline. `.pdf`/`.docx`/`.xlsx`/`.pptx` are delegated to the standalone **doc-converter service** over HTTP (see [Document Conversion Service](#document-conversion-service) below) — the service must be running or `read` returns a clear error telling you to start it, no inline fallback. PDF output includes a `[PDF: name \| N pages]` header; `pages` (PDF only, e.g. `'1-5'`) filters by `<!-- Page N -->` markers. For documents exceeding the model's `reserve_tokens` budget, automatically spawns a `document-reader` subagent that produces a sectioned summary digest (per-section line ranges, token estimates, summaries, key excerpts) cached in `.dagi/hash_cache/document_summary/` — the parent receives the digest instead of truncated output and can drill into sections of interest with targeted `offset`/`limit` reads. Pass `path`, optional `offset`/`limit`, optional `pages` |
 | `write` | Overwrite a file. Creates parent dirs. Takes `path` + `content` |
-| `edit` | Hash-anchored editing: targets `LINE#HASH` anchors from `read`/`grep`, batched, with stale anchors rejected rather than silently relocated |
+| `edit` | Edit a file by replacing exact text (`oldText` → `newText`). The match must be unique; CRLF-safe |
 | `bash` | Run a shell command. Returns stdout + stderr + exit code. Pass `command` + optional `timeout` |
 | `grep` | Regex search across files. Returns `file:line:match` format. Uses ripgrep when available |
 | `find` | Find files by glob pattern (e.g. `**/*.py`). Searches all allowed roots when no path given |
