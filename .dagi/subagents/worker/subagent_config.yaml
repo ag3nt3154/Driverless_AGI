@@ -1,8 +1,4 @@
 model_tier: default
-description: >-
-  Execute a single subtask with full tool access (read, write, edit, bash,
-  web search). Receives plan context and subtask details automatically. Writes
-  a structured handoff report when done.
 tools:
   - read
   - grep
@@ -11,26 +7,9 @@ tools:
   - edit
   - bash
   - escalate_issue
-parameters:
-  type: object
-  properties:
-    subtask_name:
-      type: string
-      description: >-
-        Name of the subtask to execute — must match the heading in the plan
-        (e.g. "Add login endpoint").
-    briefing:
-      type: string
-      description: >-
-        Additional guidance from the main agent: traps to avoid, prior failed
-        attempt context, or extra constraints. Optional.
-    handoff_spec:
-      type: string
-      description: >-
-        Free-text description of what the parent wants in the handoff report.
-        Optional — falls back to the default handoff spec for this role.
-  required:
-    - subtask_name
 default_handoff_spec: >-
   Summarize what was implemented, which files changed, test results, and any
   deviations from the plan or concerns for the reviewer.
+agents_md:
+  - dagi
+  - cwd

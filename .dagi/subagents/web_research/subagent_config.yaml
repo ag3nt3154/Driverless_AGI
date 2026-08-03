@@ -1,8 +1,4 @@
 model_tier: worker
-description: >-
-  Search the web and fetch page content. Use for any task requiring
-  up-to-date information, documentation, or external URLs.
-  Prefer this over spawn_cli_subagent for web tasks.
 tools:
   - read
   - grep
@@ -10,25 +6,7 @@ tools:
   - write
   - edit
   - bash
-parameters:
-  type: object
-  properties:
-    task:
-      type: string
-      description: >-
-        The search or research query to answer.
-    briefing:
-      type: string
-      description: >-
-        Additional guidance from the main agent: traps to avoid, prior failed
-        attempt context, or extra constraints. Optional.
-    handoff_spec:
-      type: string
-      description: >-
-        Free-text description of what the parent wants in the handoff report.
-        Optional — falls back to the default handoff spec for this role.
-  required:
-    - task
 default_handoff_spec: >-
   A synthesized answer to the research question with source URLs and key
   excerpts.
+agents_md: []

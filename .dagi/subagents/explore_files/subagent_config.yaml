@@ -1,10 +1,4 @@
 model_tier: worker
-description: >-
-  Explore the codebase with read, grep, find, and bash. Use for open-ended
-  discovery: mapping a module, finding all usages of a symbol, understanding
-  an unfamiliar subsystem, or running shell commands (e.g. dir, tree, pytest
-  --collect-only). Writes a structured exploration report to a handoff file.
-  For targeted reads of specific known files, use read/grep/find directly.
 tools:
   - read
   - grep
@@ -12,26 +6,8 @@ tools:
   - write
   - edit
   - bash
-parameters:
-  type: object
-  properties:
-    task:
-      type: string
-      description: >-
-        The exploration query or question to answer (e.g. "Map all tool
-        registration paths and explain how tools are loaded at startup").
-    briefing:
-      type: string
-      description: >-
-        Additional guidance from the main agent: traps to avoid, prior failed
-        attempt context, or extra constraints. Optional.
-    handoff_spec:
-      type: string
-      description: >-
-        Free-text description of what the parent wants in the handoff report.
-        Optional — falls back to the default handoff spec for this role.
-  required:
-    - task
 default_handoff_spec: >-
   A structured exploration report with a summary, file:line citations for every
   finding, and notable caveats.
+agents_md:
+  - cwd

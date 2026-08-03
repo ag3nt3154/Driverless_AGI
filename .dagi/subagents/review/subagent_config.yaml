@@ -1,8 +1,4 @@
 model_tier: default
-description: >-
-  Review a worker's implementation: run tests, evaluate against acceptance
-  criteria, and write a structured review report. Write/edit access is for
-  the review report only — must not modify code under review.
 tools:
   - read
   - grep
@@ -11,38 +7,9 @@ tools:
   - edit
   - bash
   - escalate_issue
-parameters:
-  type: object
-  properties:
-    subtask_name:
-      type: string
-      description: >-
-        Name of the subtask being reviewed — must match the heading in the plan.
-    worker_handoff_path:
-      type: string
-      description: >-
-        Absolute path to the worker's handoff report. Read this to understand
-        what was implemented.
-    unit_test_paths:
-      type: array
-      items:
-        type: string
-      description: >-
-        Paths to unit/integration test files to run. Run all of them and record
-        each result.
-    briefing:
-      type: string
-      description: >-
-        Additional guidance from the main agent. Optional.
-    handoff_spec:
-      type: string
-      description: >-
-        Free-text description of what the parent wants in the handoff report.
-        Optional — falls back to the default handoff spec for this role.
-  required:
-    - subtask_name
-    - worker_handoff_path
-    - unit_test_paths
 default_handoff_spec: >-
   State pass/fail per acceptance criterion, test results, and any issues found
   (critical/important/minor) with a clear verdict.
+agents_md:
+  - dagi
+  - cwd

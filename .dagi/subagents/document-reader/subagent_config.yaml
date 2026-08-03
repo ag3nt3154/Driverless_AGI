@@ -1,8 +1,4 @@
 model_tier: worker
-description: >-
-  Read a long document in chunks and produce a sectioned summary digest
-  with line ranges, token estimates, and key excerpts. Writes the digest
-  to a cache file; the parent reads it back as the tool result.
 tools:
   - read
   - grep
@@ -10,26 +6,7 @@ tools:
   - write
   - edit
   - bash
-parameters:
-  type: object
-  properties:
-    task:
-      type: string
-      description: >-
-        Instructions including the cached document path, output path,
-        and the document filename for the header.
-    briefing:
-      type: string
-      description: >-
-        Additional guidance from the main agent: traps to avoid, prior failed
-        attempt context, or extra constraints. Optional.
-    handoff_spec:
-      type: string
-      description: >-
-        Free-text description of what the parent wants in the handoff report.
-        Optional — falls back to the default handoff spec for this role.
-  required:
-    - task
 default_handoff_spec: >-
   A sectioned digest with line ranges, token estimates, and key excerpts per
   section.
+agents_md: []
