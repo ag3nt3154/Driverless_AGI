@@ -3,7 +3,10 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from tools.subagent_main import _ensure_handoff, _HANDOFF_RETRY_PROMPT
+import pytest
+import yaml
+
+from tools.subagent_main import _ensure_handoff, _HANDOFF_RETRY_PROMPT, _build_subagent_system_prompt
 
 
 class _FakeLoop:
@@ -173,3 +176,79 @@ def test_pipe_mode_finish_runs_after_handoff_retry(tmp_path, monkeypatch):
 
     assert call_order == ["run:do the thing", f"run:{_HANDOFF_RETRY_PROMPT}", "finish"]
     assert handoff_path.exists()
+
+
+# ── _build_subagent_system_prompt reads agents_md from config ─────────────────
+
+def test_build_system_prompt_reads_agents_md_from_config(tmp_path, monkeypatch):
+    """_build_subagent_system_prompt reads agents_md list from subagent_config.yaml."""
+    import tools.subagent_main as subagent_main
+
+    # Create a fake subagent config with agents_md: [cwd]
+    subagent_dir = tmp_path / ".dagi" / "subagents" / "mytype"
+    subagent_dir.mkdir(parents=True)
+    (subagent_dir / "subagent_config.yaml").write_text(
+        yaml.dump({"agents_md": ["cwd"]}), encoding="utf-8"
+    )
+    (tmp_path / "AGENTS.md").write_text("# Project Context", encoding="utf-8")
+
+    monkeypatch.setattr(subagent_main, "load_subagent_prompt", lambda t: "base prompt")
+
+    result = _build_subagent_system_prompt("mytype", tmp_path)
+
+    assert "base prompt" in result
+    assert "# Project Context" in result
+
+
+def test_build_system_prompt_no_config_returns_base(tmp_path, monkeypatch):
+    """_build_subagent_system_prompt returns base prompt only when config is absent."""
+    import tools.subagent_main as subagent_main
+
+    monkeypatch.setattr(subagent_main, "load_subagent_prompt", lambda t: "base only")
+    # Patch DAGI_ROOT to tmp_path so no real config is accidentally loaded
+    monkeypatch.setattr(subagent_main, "DAGI_ROOT", tmp_path)
+
+    result = _build_subagent_system_prompt("nonexistent_type", tmp_path)
+
+    assert result == "base only"
+
+
+# ── run_subagent_pipe_mode --tools override ───────────────────────────────────
+
+def test_pipe_mode_passes_tool_names_to_registry(tmp_path, monkeypatch):
+    """--tools arg is forwarded as tool_names_override to build_subagent_registry."""
+    import tools.subagent_main as subagent_main
+
+    handoff_path = tmp_path / "worker_abc123.md"
+    task_file = tmp_path / "task.txt"
+    task_file.write_text("do the thing", encoding="utf-8")
+
+    captured: dict = {}
+
+    def _fake_registry(**kwargs):
+        captured.update(kwargs)
+        return object()
+
+    fake_loop = _FakeLoop(handoff_path, write_on_call=1)
+
+    monkeypatch.setattr(
+        subagent_main, "resolve_model_config",
+        lambda model, project_path: subagent_main.AgentConfig()
+    )
+    monkeypatch.setattr(subagent_main, "build_subagent_registry", _fake_registry)
+    monkeypatch.setattr(
+        subagent_main, "_build_subagent_system_prompt",
+        lambda subagent_type, project_path: "sys"
+    )
+    monkeypatch.setattr(subagent_main, "AgentLoop", lambda **kwargs: fake_loop)
+
+    subagent_main.run_subagent_pipe_mode(
+        subagent_type="worker",
+        task_file=str(task_file),
+        handoff=str(handoff_path),
+        project=str(tmp_path),
+        model=None,
+        tool_names=["read", "grep"],
+    )
+
+    assert captured.get("tool_names_override") == ["read", "grep"]

@@ -79,8 +79,7 @@ def _tools_from_list(
             result.append(tool)
         elif name == "escalate_issue" and handoff_path is None:
             # Not actually "unknown" — escalate_issue requires a handoff_path to
-            # construct, which this caller didn't provide (e.g. the "custom"
-            # subagent branch, or an in-process build with no handoff file).
+            # construct, which this caller didn't provide.
             print(
                 "[tools] Warning: 'escalate_issue' requires handoff_path, which "
                 "was not provided; skipping",
@@ -164,54 +163,34 @@ def build_subagent_registry(
     tracker: "SessionTracker | None" = None,
     memory_root: Path | None = None,
     handoff_path: Path | None = None,
+    tool_names_override: list[str] | None = None,
 ) -> ToolRegistry:
     """Build a restricted ToolRegistry for a typed terminal subagent.
 
-    Called by the subprocess (cli.py --subagent-type) to reconstruct the
-    tool scope defined in .dagi/subagents/<type>/config.yaml.
-
-    The "custom" type is handled explicitly:
-      - "custom": full scope (used by SpawnCliSubagentTool)
+    Called by the subprocess (subagent_main.py) to reconstruct the tool scope
+    defined in .dagi/subagents/<type>/subagent_config.yaml, with an optional
+    override for the tool list.
 
     Args:
-        subagent_type: Type name matching a .dagi/subagents/<type>/ directory,
-                       or "custom" for full-scope dynamic subagents.
-        config:        Resolved AgentConfig for this subagent.
-        project_path:  Project root; used for cwd and allowed_roots.
-        plan_file:     Unused; kept for signature compatibility.
-        callbacks:     Subprocess-side callbacks.
-        tracker:       Optional session tracker.
-        memory_root:   Resolved memory root; used when subagent_config.yaml sets
-                       `root: memory_root` to restrict file access to the wiki only.
-        handoff_path:  Path where this subagent must write its handoff report;
-                       threaded to escalate_issue so it knows where to write
-                       its sidecar escalation file.
+        subagent_type:      Type name matching a .dagi/subagents/<type>/ directory.
+        config:             Resolved AgentConfig for this subagent.
+        project_path:       Project root; used for cwd and allowed_roots.
+        plan_file:          Unused; kept for signature compatibility.
+        callbacks:          Subprocess-side callbacks.
+        tracker:            Optional session tracker.
+        memory_root:        Resolved memory root; used when subagent_config.yaml sets
+                            `root: memory_root` to restrict file access to the wiki only.
+        handoff_path:       Path where this subagent must write its handoff report.
+        tool_names_override: When present, replaces the config-derived tool list.
     """
     default_roots: list[Path] | None = None if config.sandbox_mode else [_DAGI_ROOT, project_path]
     reg = ToolRegistry()
-
-    # ── Custom: full scope for dynamic SpawnCliSubagentTool subagents ─────────
-    if subagent_type == "custom":
-        # handoff_path is threaded through here for signature consistency with the
-        # config-driven branch below, but "escalate_issue" is deliberately absent
-        # from this tool list — custom/dynamic subagents do not get escalation support.
-        for tool in _tools_from_list(
-            ["read", "grep", "find", "write", "edit", "bash", "web_search", "web_fetch"],
-            project_path, default_roots,
-            handoff_path=handoff_path,
-        ):
-            reg.register(tool)
-        return reg
 
     # ── Config-driven: read tools list from subagent_config.yaml ─────────────
     try:
         cfg = _load_subagent_config(subagent_type, project_path)
     except FileNotFoundError:
-        raise ValueError(
-            f"No subagent_config.yaml found for subagent_type={subagent_type!r}. "
-            f"Expected: "
-            f"{project_path / '.dagi' / 'subagents' / subagent_type / 'subagent_config.yaml'}"
-        )
+        cfg = {}
 
     # Subagents with `root: memory_root` are restricted to the wiki directory only.
     root_override = cfg.get("root")
@@ -226,7 +205,10 @@ def build_subagent_registry(
         cwd_for_tools = project_path
         effective_roots = default_roots
 
-    tool_names: list[str] = cfg.get("tools", ["read", "grep", "find"])
+    tool_names: list[str] = (
+        tool_names_override if tool_names_override is not None
+        else cfg.get("tools", ["read", "grep", "find"])
+    )
     for tool in _tools_from_list(
         tool_names, cwd_for_tools, effective_roots, handoff_path=handoff_path
     ):

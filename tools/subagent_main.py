@@ -24,12 +24,6 @@ from agent.loop import AgentCallbacks, AgentConfig, AgentLoop
 from agent.prompts import load_subagent_prompt
 from agent.tools import build_subagent_registry
 
-_AGENTS_MD_TYPES = {
-    "explore_files": ["cwd"],
-    "worker": ["dagi", "cwd"],
-    "review": ["dagi", "cwd"],
-}
-
 _HANDOFF_RETRY_PROMPT = (
     "You ended without calling `write_handoff`. Call it now with your complete report."
 )
@@ -162,13 +156,22 @@ def _load_optional_md(path: Path) -> str:
 
 def _build_subagent_system_prompt(subagent_type: str, project_path: Path) -> str:
     base = load_subagent_prompt(subagent_type)
-    which = _AGENTS_MD_TYPES.get(subagent_type, [])
+    config_yaml = (
+        project_path / ".dagi" / "subagents" / subagent_type / "subagent_config.yaml"
+    )
+    if not config_yaml.exists():
+        config_yaml = DAGI_ROOT / ".dagi" / "subagents" / subagent_type / "subagent_config.yaml"
+    agents_md_list: list[str] = []
+    if config_yaml.exists():
+        sa_cfg = yaml.safe_load(config_yaml.read_text(encoding="utf-8")) or {}
+        agents_md_list = sa_cfg.get("agents_md", [])
+
     parts = [base]
-    if "dagi" in which:
+    if "dagi" in agents_md_list:
         md = _load_optional_md(DAGI_ROOT / "AGENTS.md")
         if md:
             parts.append(md)
-    if "cwd" in which:
+    if "cwd" in agents_md_list:
         md = _load_optional_md(project_path / "AGENTS.md")
         if md:
             parts.append(md)
@@ -182,6 +185,8 @@ def run_subagent_pipe_mode(
     project: Optional[str],
     model: Optional[str],
     system_prompt_file: Optional[str] = None,
+    tool_names: Optional[list[str]] = None,
+    model_tier_override: Optional[str] = None,
 ) -> None:
     project_path = Path(project).resolve() if project else Path.cwd()
     handoff_path = Path(handoff)
@@ -192,13 +197,12 @@ def run_subagent_pipe_mode(
     config_yaml = (
         project_path / ".dagi" / "subagents" / subagent_type / "subagent_config.yaml"
     )
+    if not config_yaml.exists():
+        config_yaml = DAGI_ROOT / ".dagi" / "subagents" / subagent_type / "subagent_config.yaml"
+    model_tier = model_tier_override or "worker"
     if config_yaml.exists():
         sa_cfg = yaml.safe_load(config_yaml.read_text(encoding="utf-8")) or {}
-        model_tier = sa_cfg.get("model_tier", "worker")
-    elif subagent_type == "custom":
-        model_tier = "advanced"
-    else:
-        model_tier = "worker"
+        model_tier = model_tier_override or sa_cfg.get("model_tier", "worker")
 
     typed_config = (
         _apply_advanced_config(base_config)
@@ -215,6 +219,7 @@ def run_subagent_pipe_mode(
         callbacks=callbacks,
         memory_root=typed_config.memory_root,
         handoff_path=handoff_path,
+        tool_names_override=tool_names,
     )
 
     if system_prompt_file:
@@ -249,6 +254,9 @@ def main() -> None:
     parser.add_argument("--project", dest="project", default=None)
     parser.add_argument("--model", dest="model", default=None)
     parser.add_argument("--system-prompt-file", dest="system_prompt_file", default=None)
+    parser.add_argument("--tools", dest="tools", default=None,
+                        help="Comma-separated tool names to override preset")
+    parser.add_argument("--model-tier", dest="model_tier", default=None)
     args = parser.parse_args()
 
     run_subagent_pipe_mode(
@@ -258,6 +266,8 @@ def main() -> None:
         project=args.project,
         model=args.model,
         system_prompt_file=args.system_prompt_file,
+        tool_names=args.tools.split(",") if args.tools else None,
+        model_tier_override=args.model_tier,
     )
 
 
