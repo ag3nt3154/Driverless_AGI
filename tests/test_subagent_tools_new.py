@@ -101,6 +101,33 @@ class TestWorkerSubagentTool:
 
         assert "Implemented." in result
 
+    def test_ok_unverified_includes_banner(self):
+        """ok_unverified must route through format_handoff_result so the banner is prepended."""
+        cls = _load_tool_class("worker")
+        config, cb, tr = _make_runtime_args()
+        config.plan_file = Path("/tmp/plan.md")
+        config.active_plan_file = None
+        tool = cls(config=config, callbacks=cb, tracker=tr)
+
+        mock_result = MagicMock()
+        mock_result.status = "ok_unverified"
+        mock_result.is_ok = True
+        mock_result.handoff_text = "scraped text"  # must NOT be returned directly
+        mock_result.handoff_path = Path("/tmp/h.md")
+        plan_content = "## Subtasks\n\n### Subtask 1: Do it\n**Goal:** Build.\n"
+
+        def _read_text_side_effect(self_path, *args, **kwargs):
+            if "plan" in str(self_path):
+                return plan_content
+            return "## Handoff\nWork done.\n"
+
+        with patch("tools.subagent_api.run_subagent", return_value=mock_result), \
+             patch.object(Path, "read_text", _read_text_side_effect):
+            result = tool.run(subtask_name="Do it")
+
+        assert "UNVERIFIED" in result, f"Expected unverified banner in result, got: {result!r}"
+        assert "scraped text" not in result, "handoff_text fast-path must be skipped for ok_unverified"
+
 
 class TestReviewSubagentTool:
     def test_review_includes_worker_handoff_path(self):

@@ -83,11 +83,10 @@ class SpawnWorkerSubagentTool(BaseTool):
         )
 
         if result.is_ok:
-            # Use pre-read handoff_text when available (set by run_subagent);
-            # fall back to reading from disk for robustness.
+            # handoff_text fast-path only for verified ok; unverified needs banner via format_handoff_result.
             unverified = result.status == "ok_unverified"
-            if result.handoff_text:
-                return f"{result.handoff_text}"
+            if result.handoff_text and not unverified:
+                return result.handoff_text
             return format_handoff_result(str(result.handoff_path), unverified=unverified)
         return dispatch_status_result(
             {
