@@ -202,6 +202,9 @@ class AgentConfig:
     # External service URLs (e.g. {"doc_converter": "http://localhost:8100"}).
     # Loaded from the `services` block in .dagi/config.yaml.
     services: dict[str, str] = field(default_factory=dict)
+    # Active Python environment detected at startup (e.g. "conda:dagi" or "venv:/path")
+    # Set by config_loader._detect_python_env()
+    python_env: str = ""
 
 
 @dataclass
@@ -1063,6 +1066,8 @@ class AgentLoop:
         sections = [s for s in [preamble, prompt] if s]
         system = "\n\n---\n\n".join(sections)
         system += f"\n\n---\n\nProject root: {self.config.project_path}"
+        if self.config.python_env:
+            system += f"\nDEFAULT_PYTHON_ENV: {self.config.python_env}"
 
         self._system_prefix = system
         return system + self._build_active_plan_tail()

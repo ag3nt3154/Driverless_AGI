@@ -41,6 +41,17 @@ _FALLBACK_ENTRY: dict = {
 }
 
 
+def _detect_python_env() -> str:
+    """Detect the active Python environment at startup."""
+    conda = os.environ.get("CONDA_DEFAULT_ENV")
+    if conda and conda != "base":
+        return f"conda:{conda}"
+    venv = os.environ.get("VIRTUAL_ENV")
+    if venv:
+        return f"venv:{venv}"
+    return f"system:{sys.executable}"
+
+
 def get_model_display_name(model_id: str | None = None) -> str:
     """Return the human-readable name for a model ID (falls back to the raw model string)."""
     raw = load_raw_config()
@@ -117,7 +128,9 @@ def _merge_configs(root_raw: dict, project_raw: dict) -> dict:
     return merged
 
 
-def _build_config_from_entry(entry: dict, raw: dict, model_id: str = "") -> AgentConfig:
+def _build_config_from_entry(
+    entry: dict, raw: dict, model_id: str = "", python_env: str = ""
+) -> AgentConfig:
     """Build an AgentConfig from a catalog entry dict and the top-level raw config."""
     direct_key = entry.get("api_key", "")
     if direct_key:
@@ -169,6 +182,7 @@ def _build_config_from_entry(entry: dict, raw: dict, model_id: str = "") -> Agen
         system_prompt_preamble=system_prompt_preamble,
         provider_order=provider_order,
         services=services,
+        python_env=python_env,
     )
 
 
@@ -232,7 +246,9 @@ def resolve_model_config(
 
     from dataclasses import replace
 
-    cfg = _build_config_from_entry(entry, raw, model_id=chosen_id)
+    python_env = _detect_python_env()
+
+    cfg = _build_config_from_entry(entry, raw, model_id=chosen_id, python_env=python_env)
     cfg = replace(cfg, display_name=entry.get("name", chosen_id))
     if project_path is not None:
         cfg = replace(cfg, project_path=project_path)
@@ -241,14 +257,18 @@ def resolve_model_config(
     worker_id = raw.get("worker_model")
     worker_cfg: AgentConfig | None = None
     if worker_id and worker_id in catalog:
-        worker_cfg = _build_config_from_entry(catalog[worker_id], raw, model_id=worker_id)
+        worker_cfg = _build_config_from_entry(
+            catalog[worker_id], raw, model_id=worker_id, python_env=python_env
+        )
         worker_cfg = replace(worker_cfg, display_name=catalog[worker_id].get("name", worker_id))
 
     # Resolve optional advanced model for plan mode; silently fall back if unset/invalid.
     advanced_id = raw.get("advanced_model")
     advanced_cfg: AgentConfig | None = None
     if advanced_id and advanced_id in catalog:
-        advanced_cfg = _build_config_from_entry(catalog[advanced_id], raw, model_id=advanced_id)
+        advanced_cfg = _build_config_from_entry(
+            catalog[advanced_id], raw, model_id=advanced_id, python_env=python_env
+        )
         advanced_cfg = replace(advanced_cfg, display_name=catalog[advanced_id].get("name", advanced_id))
 
     return replace(cfg, worker_config=worker_cfg, advanced_config=advanced_cfg)
