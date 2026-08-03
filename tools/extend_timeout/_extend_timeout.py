@@ -30,8 +30,20 @@ class ExtendSubagentTimeoutTool(BaseTool):
     }
 
     def run(self, pid: int, extra_seconds: int = 120) -> str:
-        from tools._handoff_format import dispatch_status_result
-        from tools._subagent_runner import resume_subagent
+        from tools._handoff_format import (
+            dispatch_status_result,
+            format_handoff_result,
+        )
+        from tools.subagent_api import resume_subagent_by_pid
 
-        result = resume_subagent(pid, float(extra_seconds))
-        return dispatch_status_result(result, "subagent")
+        result = resume_subagent_by_pid(pid, float(extra_seconds))
+        if result.is_ok:
+            unverified = result.status == "ok_unverified"
+            return format_handoff_result(
+                str(result.handoff_path), unverified=unverified,
+            )
+        return dispatch_status_result(
+            {"status": result.status, "pid": result.pid,
+             "message": result.escalation or ""},
+            "subagent",
+        )

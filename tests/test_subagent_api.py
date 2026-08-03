@@ -6,7 +6,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from tools.subagent_api import SubagentResult, run_subagent
+from tools.subagent_api import SubagentResult, resume_subagent_by_pid, run_subagent
 
 
 class TestSubagentResult:
@@ -230,3 +230,53 @@ class TestRunSubagent:
 
         assert len(captured) == 1
         assert "security auditor" in captured[0]
+
+
+class TestResumeSubagentByPid:
+    def test_resume_returns_result(self):
+        """resume_subagent_by_pid wraps _runner.resume_subagent and builds result."""
+        raw = {"status": "ok", "handoff": "/tmp/h.md"}
+        with patch("tools.subagent_api._runner.resume_subagent", return_value=raw), \
+             patch("tools.subagent_api._auto_read_handoff", return_value="done"):
+            result = resume_subagent_by_pid(9999, 120.0)
+
+        assert result.status == "ok"
+        assert result.handoff_text == "done"
+        assert result.is_ok is True
+
+    def test_resume_unverified_status(self):
+        """resume_subagent_by_pid handles ok_unverified status."""
+        raw = {"status": "ok_unverified", "handoff": "/tmp/h.md"}
+        with patch("tools.subagent_api._runner.resume_subagent", return_value=raw), \
+             patch("tools.subagent_api._auto_read_handoff", return_value="scraped"):
+            result = resume_subagent_by_pid(9999, 120.0)
+
+        assert result.status == "ok_unverified"
+        assert result.handoff_text == "scraped"
+        assert result.is_ok is True
+
+    def test_resume_error_status(self):
+        """resume_subagent_by_pid handles error status without reading handoff."""
+        raw = {"status": "error", "message": "exited with code 1", "pid": 9999}
+        with patch("tools.subagent_api._runner.resume_subagent", return_value=raw):
+            result = resume_subagent_by_pid(9999, 120.0)
+
+        assert result.status == "error"
+        assert result.handoff_text == ""
+        assert result.is_ok is False
+        assert result.pid == 9999
+
+    def test_resume_escalation_status(self):
+        """resume_subagent_by_pid preserves escalation field."""
+        raw = {
+            "status": "escalated",
+            "handoff": "/tmp/h.md",
+            "escalation": "Needs review.",
+            "pid": 9999,
+        }
+        with patch("tools.subagent_api._runner.resume_subagent", return_value=raw):
+            result = resume_subagent_by_pid(9999, 120.0)
+
+        assert result.status == "escalated"
+        assert result.escalation == "Needs review."
+        assert result.pid == 9999
