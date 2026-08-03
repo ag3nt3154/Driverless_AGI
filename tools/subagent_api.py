@@ -9,6 +9,8 @@ resolution, handoff auto-read, and a structured SubagentResult.
 """
 from __future__ import annotations
 
+import os
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
@@ -134,15 +136,27 @@ def run_subagent(
     if eff_tier != "default":
         extra_argv.extend(["--model-tier", eff_tier])
 
-    raw = _runner.run_subagent(
-        subagent_type=subagent_type,
-        task=enveloped,
-        project_path=proj,
-        handoff_path=handoff_path,
-        timeout=timeout,
-        on_event=on_event,
-        extra_argv=extra_argv if extra_argv else None,
-    )
+    # Write effective prompt to a temp file and forward via --system-prompt-file.
+    # This is the only way to deliver eff_prompt (preset or caller override) to the
+    # subprocess — subagent_main.py reads it via --system-prompt-file and bypasses
+    # load_subagent_prompt() when this arg is present.
+    fd, prompt_tmp = tempfile.mkstemp(suffix=".md", prefix="dagi_prompt_")
+    try:
+        os.close(fd)
+        Path(prompt_tmp).write_text(eff_prompt, encoding="utf-8")
+        extra_argv.extend(["--system-prompt-file", prompt_tmp])
+
+        raw = _runner.run_subagent(
+            subagent_type=subagent_type,
+            task=enveloped,
+            project_path=proj,
+            handoff_path=handoff_path,
+            timeout=timeout,
+            on_event=on_event,
+            extra_argv=extra_argv if extra_argv else None,
+        )
+    finally:
+        Path(prompt_tmp).unlink(missing_ok=True)
 
     return _build_result(raw, handoff_path)
 

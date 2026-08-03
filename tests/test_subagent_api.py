@@ -87,7 +87,19 @@ class TestRunSubagent:
         assert result.status == "ok"
         assert "Custom result." in result.handoff_text
 
+    def _make_preset(self, tmp_path: Path, name: str) -> None:
+        """Create a minimal local preset so tests don't fall back to _DAGI_ROOT."""
+        preset_dir = tmp_path / ".dagi" / "subagents" / name
+        preset_dir.mkdir(parents=True, exist_ok=True)
+        (preset_dir / "prompt.md").write_text(f"You are a {name} agent.", encoding="utf-8")
+        (preset_dir / "subagent_config.yaml").write_text(
+            "tools: [read]\nmodel_tier: worker\n"
+            "default_handoff_spec: report\nagents_md: []\n",
+            encoding="utf-8",
+        )
+
     def test_error_status_returns_empty_handoff_text(self, tmp_path):
+        self._make_preset(tmp_path, "explore_files")
         raw_result = {"status": "error", "message": "exited code 1"}
         with patch("tools.subagent_api._runner.run_subagent", return_value=raw_result):
             result = run_subagent(
@@ -98,6 +110,7 @@ class TestRunSubagent:
         assert result.handoff_text == ""
 
     def test_timeout_returns_pid(self, tmp_path):
+        self._make_preset(tmp_path, "worker")
         raw_result = {"status": "timeout", "pid": 9999}
         with patch("tools.subagent_api._runner.run_subagent", return_value=raw_result):
             result = run_subagent(
@@ -108,6 +121,7 @@ class TestRunSubagent:
         assert result.pid == 9999
 
     def test_escalated_returns_escalation_text(self, tmp_path):
+        self._make_preset(tmp_path, "worker")
         raw_result = {
             "status": "escalated",
             "escalation": "# Escalation\n\n## Question\nWhich lib?",
@@ -153,3 +167,66 @@ class TestRunSubagent:
         assert "--tools" in extra
         tools_idx = extra.index("--tools")
         assert "read,grep,bash" in extra[tools_idx + 1]
+
+    def test_prompt_forwarded_via_system_prompt_file(self, tmp_path):
+        """eff_prompt is written to a temp file and passed as --system-prompt-file."""
+        preset_dir = tmp_path / ".dagi" / "subagents" / "explore_files"
+        preset_dir.mkdir(parents=True)
+        (preset_dir / "prompt.md").write_text("Preset prompt.", encoding="utf-8")
+        (preset_dir / "subagent_config.yaml").write_text(
+            "tools: [read]\nmodel_tier: worker\n"
+            "default_handoff_spec: report\nagents_md: []\n",
+            encoding="utf-8",
+        )
+        handoff_file = tmp_path / ".dagi" / "handoffs" / "test.md"
+        handoff_file.parent.mkdir(parents=True, exist_ok=True)
+        handoff_file.write_text("done", encoding="utf-8")
+
+        raw_result = {"status": "ok", "handoff": str(handoff_file)}
+        captured_prompt_content: list[str] = []
+
+        def capture_and_return(*_args, **kwargs):
+            extra = kwargs.get("extra_argv") or []
+            if "--system-prompt-file" in extra:
+                idx = extra.index("--system-prompt-file")
+                captured_prompt_content.append(
+                    Path(extra[idx + 1]).read_text(encoding="utf-8")
+                )
+            return raw_result
+
+        with patch("tools.subagent_api._runner.run_subagent", side_effect=capture_and_return):
+            run_subagent(
+                task="Do it",
+                preset="explore_files",
+                prompt="Override prompt text.",
+                project_path=tmp_path,
+            )
+
+        assert len(captured_prompt_content) == 1, "--system-prompt-file was not passed"
+        assert "Override prompt text." in captured_prompt_content[0]
+
+    def test_custom_prompt_forwarded_without_preset(self, tmp_path):
+        """When no preset, caller's prompt is forwarded via --system-prompt-file."""
+        handoff_file = tmp_path / ".dagi" / "handoffs" / "test.md"
+        handoff_file.parent.mkdir(parents=True, exist_ok=True)
+        handoff_file.write_text("done", encoding="utf-8")
+
+        raw_result = {"status": "ok", "handoff": str(handoff_file)}
+        captured: list[str] = []
+
+        def capture_and_return(*_args, **kwargs):
+            extra = kwargs.get("extra_argv") or []
+            if "--system-prompt-file" in extra:
+                idx = extra.index("--system-prompt-file")
+                captured.append(Path(extra[idx + 1]).read_text(encoding="utf-8"))
+            return raw_result
+
+        with patch("tools.subagent_api._runner.run_subagent", side_effect=capture_and_return):
+            run_subagent(
+                task="Audit",
+                prompt="You are a security auditor.",
+                project_path=tmp_path,
+            )
+
+        assert len(captured) == 1
+        assert "security auditor" in captured[0]
