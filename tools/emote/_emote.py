@@ -45,7 +45,8 @@ class EmoteTool(BaseTool):
             "Display an emote/emoticon on the sidebar. "
             "Pass a named emote to show its saved ASCII art, "
             "or pass any custom text (unicode faces, kaomoji, ASCII art) to display directly. "
-            f"Named emotes: {names}"
+            f"Named emotes: {names}. "
+            "Call this tool directly — do NOT say 'emote <name>' or announce it in text first."
         )
 
     _parameters = {
