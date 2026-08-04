@@ -9,8 +9,8 @@ auto-discovered from <project>/.dagi/tools/*.py at registry build time and
 registered directly in the visible registry.
 
 Predefined subagent types are auto-discovered from
-<project>/.dagi/subagents/<type>/ directories that contain both prompt.md
-and subagent_config.yaml. Each becomes a SpawnSubagentTool instance in the registry.
+<project>/.dagi/subagents/<type>/main.py via import-based discovery.
+Each BaseTool subclass found is instantiated and registered.
 """
 from __future__ import annotations
 
@@ -43,7 +43,6 @@ from agent import DAGI_ROOT as _DAGI_ROOT
 # build_subagent_registry from agent.tools keep working unchanged.
 from agent.subagent_tools import (  # noqa: F401
     _discover_subagent_tools,
-    _load_subagent_config,
     build_subagent_registry,
 )
 
