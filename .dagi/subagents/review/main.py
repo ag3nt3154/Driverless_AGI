@@ -14,12 +14,10 @@ if TYPE_CHECKING:
 
 _REVIEW_UTILS_PATH = Path(__file__).parent / "review_utils.py"
 
-
-def _load_review_utils():
-    spec = importlib.util.spec_from_file_location("_review_utils", _REVIEW_UTILS_PATH)
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod
+# Load review_utils once at import time; re-executing spec.loader.exec_module per run() is wasteful.
+_spec = importlib.util.spec_from_file_location("_review_utils", _REVIEW_UTILS_PATH)
+_review_utils_mod = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(_review_utils_mod)  # type: ignore[union-attr]
 
 
 def _load_plan_text(config: "AgentConfig") -> str:
@@ -85,9 +83,8 @@ class SpawnReviewSubagentTool(BaseTool):
         if isinstance(unit_test_paths, str):
             unit_test_paths = [unit_test_paths] if unit_test_paths else []
 
-        review_utils = _load_review_utils()
         plan_text = _load_plan_text(self._config)
-        task_body = review_utils.compose_review_task(
+        task_body = _review_utils_mod.compose_review_task(
             plan_text, subtask_name, worker_handoff_path, unit_test_paths,
         )
 

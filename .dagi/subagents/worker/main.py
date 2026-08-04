@@ -14,12 +14,10 @@ if TYPE_CHECKING:
 
 _PLAN_UTILS_PATH = Path(__file__).parent / "plan_utils.py"
 
-
-def _load_plan_utils():
-    spec = importlib.util.spec_from_file_location("_worker_plan_utils", _PLAN_UTILS_PATH)
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod
+# Load plan_utils once at import time; re-executing spec.loader.exec_module per run() is wasteful.
+_spec = importlib.util.spec_from_file_location("_worker_plan_utils", _PLAN_UTILS_PATH)
+_plan_utils_mod = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(_plan_utils_mod)  # type: ignore[union-attr]
 
 
 class SpawnWorkerSubagentTool(BaseTool):
@@ -66,9 +64,8 @@ class SpawnWorkerSubagentTool(BaseTool):
             format_handoff_result,
         )
 
-        plan_utils = _load_plan_utils()
-        plan_text = plan_utils.load_plan_text(self._config)
-        task_body = plan_utils.compose_worker_task(plan_text, subtask_name)
+        plan_text = _plan_utils_mod.load_plan_text(self._config)
+        task_body = _plan_utils_mod.compose_worker_task(plan_text, subtask_name)
 
         on_event = None
         if self._callbacks and self._callbacks.on_subagent_event_factory:

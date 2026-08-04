@@ -1,0 +1,13 @@
+model_tier: worker
+tools:
+  - read
+  - grep
+  - find
+  - write
+  - edit
+  - bash
+default_handoff_spec: >-
+  A concise summary of what was executed, the commands run, their output, and
+  whether the task succeeded or failed.
+agents_md:
+  - cwd

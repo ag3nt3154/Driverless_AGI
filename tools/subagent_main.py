@@ -222,6 +222,11 @@ def run_subagent_pipe_mode(
         tool_names_override=tool_names,
     )
 
+    # --system-prompt-file is the coupling point with tools/subagent_api.py:
+    # run_subagent() writes eff_prompt (preset or caller override) to a temp file
+    # and passes its path here via --system-prompt-file.  When present, it takes
+    # precedence over _build_subagent_system_prompt() so the caller's resolved
+    # prompt (including any caller-supplied override) is always honoured.
     if system_prompt_file:
         system_prompt = Path(system_prompt_file).read_text(encoding="utf-8")
     else:

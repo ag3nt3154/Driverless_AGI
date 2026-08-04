@@ -19,11 +19,7 @@ PATH_LIKE_PARAM_NAMES = {"handoff_file", "handoff_path", "output_file", "output_
 
 
 def _registered_subagent_config_paths() -> list[Path]:
-    """Return subagent_config.yaml paths for dirs that also have a prompt.md.
-
-    Dirs with only a prompt.md (e.g. plan, cli) are vestigial/unregistered and
-    excluded — they are out of scope.
-    """
+    """Return subagent_config.yaml paths for dirs that also have a prompt.md."""
     configs = []
     for subagent_dir in sorted(SUBAGENTS_DIR.iterdir()):
         if not subagent_dir.is_dir():
@@ -35,17 +31,19 @@ def _registered_subagent_config_paths() -> list[Path]:
     return configs
 
 
-def test_at_least_the_seven_registered_subagents_are_found():
+def test_all_nine_registered_subagents_are_found():
     """Sanity check that the discovery glob matches the expected registered set."""
     names = {p.parent.name for p in _registered_subagent_config_paths()}
     assert names == {
-        "web_research",
-        "memory-query",
-        "memory-add",
-        "worker",
-        "review",
+        "cli",
         "document-reader",
         "explore_files",
+        "memory-add",
+        "memory-query",
+        "plan",
+        "review",
+        "web_research",
+        "worker",
     }
 
 

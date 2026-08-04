@@ -1,0 +1,11 @@
+model_tier: default
+tools:
+  - read
+  - grep
+  - find
+  - write
+default_handoff_spec: >-
+  The completed plan document path, and one sentence confirming the plan was
+  written and shown via show_plan.
+agents_md:
+  - cwd
