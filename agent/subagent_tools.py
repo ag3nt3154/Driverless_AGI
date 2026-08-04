@@ -105,16 +105,17 @@ def _discover_subagent_tools(
     callbacks: "AgentCallbacks | None",
     tracker: "SessionTracker | None",
 ) -> list["BaseTool"]:
-    """Scan DAGI_ROOT then cwd for .dagi/subagents/; project types override built-ins by name.
+    """Scan .dagi/subagents/ for main.py; import and instantiate each BaseTool subclass.
 
-    A valid type directory must contain both prompt.md and subagent_config.yaml.
-    Directories missing either file are silently skipped.
+    DAGI_ROOT types are scanned first; project types (cwd) override by name.
+    Directories without main.py are silently skipped.
     """
-    from tools.spawn_subagent import SpawnSubagentTool
+    import importlib.util
+    import inspect
 
-    on_event_factory = (
-        callbacks.on_subagent_event_factory if callbacks else None
-    )
+    dagi_root_str = str(_DAGI_ROOT)
+    if dagi_root_str not in sys.path:
+        sys.path.insert(0, dagi_root_str)
 
     scan_dirs = [_DAGI_ROOT / ".dagi" / "subagents"]
     if cwd != _DAGI_ROOT:
@@ -127,28 +128,32 @@ def _discover_subagent_tools(
         for type_dir in sorted(subagents_dir.iterdir()):
             if not type_dir.is_dir():
                 continue
-            if not (type_dir / "prompt.md").exists():
-                continue
-            if not (type_dir / "subagent_config.yaml").exists():
+            main_py = type_dir / "main.py"
+            if not main_py.exists():
                 continue
             type_name = type_dir.name
+            mod_name = f"_dagi_subagent_{type_name}"
             try:
-                cfg = (
-                    yaml.safe_load(
-                        (type_dir / "subagent_config.yaml").read_text(encoding="utf-8")
-                    ) or {}
-                )
-                description = cfg.get("description", f"Spawn a {type_name} subagent.")
-                tools_by_name[type_name] = SpawnSubagentTool(
-                    type_name=type_name,
-                    description=description,
-                    config=config,
-                    on_event_factory=on_event_factory,
-                    tracker=tracker,
-                )
+                spec = importlib.util.spec_from_file_location(mod_name, main_py)
+                if spec is None or spec.loader is None:
+                    continue
+                module = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(module)
+                for _, obj in inspect.getmembers(module, inspect.isclass):
+                    if (
+                        issubclass(obj, BaseTool)
+                        and obj is not BaseTool
+                        and obj.__module__ == mod_name
+                    ):
+                        tools_by_name[type_name] = obj(
+                            config=config,
+                            callbacks=callbacks,
+                            tracker=tracker,
+                        )
+                        break
             except Exception as exc:  # noqa: BLE001
                 print(
-                    f"[tools] Warning: failed to load subagent type {type_name!r}: {exc}",
+                    f"[tools] Warning: failed to load subagent {type_name!r}: {exc}",
                     file=sys.stderr,
                 )
     return list(tools_by_name.values())
