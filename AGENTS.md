@@ -1,6 +1,6 @@
 # AGENTS.md
 
-> Last updated: 2026-08-04 (subagent refactor + integration test) | [README](README.md) | [TODO](TODO.md)
+> Last updated: 2026-08-04 (subagent refactor merged to main) | [README](README.md) | [TODO](TODO.md)
 
 ---
 
@@ -158,7 +158,7 @@ tui.py / telegram_bot.py / main.py
 - **2026-07-26**: Subagent handoff enforcement — write_handoff auto-injection, sentinel detection, corrective re-entry, and unverified-flag scraping added.
 - **2026-07-26**: Post-merge cleanup — duplicated dispatch logic across 5 spawn tools centralized into `dispatch_status_result()`; `unverified_flag_path()` shared; `_handle_write_handoff` refactored to share `_bookkeep_tool_call()`/`_finalize_turn()`.
 - **2026-07-26 (known, deferred)**: `agent/loop.py` is 1172 lines (cap: 500), `AgentLoop.run` CC is 48 (cap: 8) — spun off as standalone refactor task.
-- **2026-08-04**: Subagent refactor (Tasks 1–10) complete — `tools/subagent_api.py` public API; each type migrated to `.dagi/subagents/<type>/main.py` `BaseTool` subclass; import-based discovery in `agent/subagent_tools.py`; `SpawnSubagentTool`/`SpawnCliSubagentTool` deleted; `subagent_main.py` gains `--tools`/`--model-tier` args + `agents_md` from config; `DEFAULT_PYTHON_ENV` injected into system prompt; `run_subagent` skill added.
+- **2026-08-04**: Subagent refactor merged to main — `tools/subagent_api.py` public API; 9 types each with `main.py` + `subagent_config.yaml`; import-based discovery; `SpawnSubagentTool`/`SpawnCliSubagentTool` deleted; `--tools`/`--model-tier` CLI args; `agents_md` config; `DEFAULT_PYTHON_ENV` in system prompt; `run_subagent` skill; `plan`/`cli` configs fixed (were missing, caused `FileNotFoundError` on preset load).
 - **2026-07-27**: Hashline experiment reverted — smaller models made too many errors copying opaque `LINE#HASH` anchors → restored `oldText`/`newText` edit, `cat -n` read, plain `file:line:` grep. `_hashline.py`, `edit_text/` tool, and hashline tests removed.
 
 ## Notes & Terms
