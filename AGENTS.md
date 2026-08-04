@@ -1,6 +1,6 @@
 # AGENTS.md
 
-> Last updated: 2026-08-04 (subagent refactor Task 1) | [README](README.md) | [TODO](TODO.md)
+> Last updated: 2026-08-04 (subagent refactor + integration test) | [README](README.md) | [TODO](TODO.md)
 
 ---
 
@@ -123,7 +123,7 @@ tui.py / telegram_bot.py / main.py
 
 **Tool layout:** `tools/<name>/__init__.py` re-exports from `_<name>.py`; shared helpers are flat files in `tools/` (`_path_guard.py`, `_hash_cache.py`, `_subagent_runner.py`, `_handoff_format.py`, `_task_envelope.py`, `output_filter.py`, `subagent_main.py`, `subagent_api.py`). `edit` uses `oldText`/`newText` unique-substring matching; `read` outputs `cat -n` style line numbers.
 
-**Subagents:** Pipe-based subprocesses, each type declares `tools:` in `.dagi/subagents/<type>/subagent_config.yaml`. WriteHandoffTool auto-injected when `handoff_path` is set — calling it writes the report and triggers immediate return via `<<HANDOFF_WRITTEN>>` sentinel. If missing at exit, `_ensure_handoff()` re-enters with a corrective prompt; last-resort scrape drops `<stem>_unverified.flag`. All spawn tools render `ok_unverified` as a warning banner. Every subagent task is wrapped by `_task_envelope.py` (`## Task` / `## Instructions` / `## Output`), with parent-supplied `briefing` and `handoff_spec`.
+**Subagents:** Pipe-based subprocesses. Public API: `run_subagent()` / `SubagentResult` / `resume_subagent_by_pid()` in `tools/subagent_api.py` (never import `_subagent_runner` directly). Each type is a self-contained package: `.dagi/subagents/<type>/main.py` exports a `BaseTool` subclass; `_discover_subagent_tools()` in `agent/subagent_tools.py` discovers types by import (scans DAGI root then `cwd/.dagi/subagents/`; project types override built-ins by name). 9 built-in types: `explore_files`, `web_research`, `memory-query`, `memory-add`, `document-reader`, `plan`, `cli`, `worker`, `review`. `subagent_config.yaml` schema: `tools`, `model_tier`, `default_handoff_spec`, `agents_md` (new — path to AGENTS.md injected into subagent system prompt; replaces the old hardcoded dict). WriteHandoffTool auto-injected when `handoff_path` is set — calling it writes the report and triggers immediate return via `<<HANDOFF_WRITTEN>>` sentinel. If missing at exit, `_ensure_handoff()` re-enters with a corrective prompt; last-resort scrape drops `<stem>_unverified.flag`. All spawn tools render `ok_unverified` as a warning banner. Every subagent task is wrapped by `_task_envelope.py` (`## Task` / `## Instructions` / `## Output`), with parent-supplied `briefing` and `handoff_spec`. Custom one-off subagent workflows are authored as DAGI scripts calling `run_subagent()` directly (see `.dagi/skills/run_subagent/SKILL.md`).
 
 ## Key Files
 
@@ -135,14 +135,14 @@ tui.py / telegram_bot.py / main.py
 | `tools/edit/` | `EditTool` — `oldText`/`newText` unique-substring replacement, CRLF-safe |
 | `tools/grep/`, `tools/find/` | Regex search (`file:line: content` format), glob file finding |
 | `tools/bash/` | Unsandboxed shell execution — all git operations run through here |
-| `tools/subagent_api.py` | **Public** `run_subagent()` / `SubagentResult` / `resume_subagent_by_pid()` — import point for all callers |
-| `tools/_subagent_runner.py` | Pipe-based subprocess spawner; returns raw dicts; wrapped by `subagent_api.py` |
+| `tools/subagent_api.py` | **Public API** — `run_subagent()` / `SubagentResult` / `resume_subagent_by_pid()`; only import point for subagent execution |
+| `tools/_subagent_runner.py` | Private pipe-based subprocess spawner; returns raw dicts; wrapped exclusively by `subagent_api.py` |
 | `tools/_handoff_format.py` | Shared handoff rendering and status dispatch for all 5 subagent-spawning tools |
 | `tools/_task_envelope.py` | Universal `briefing`/`handoff_spec` envelope for subagent tasks |
 | `tools/output_filter.py` | Truncates tool results; full output stored in content-addressed cache |
 | `tools/_document_reader.py` | Long-document summarization via `document-reader` subagent with cache |
 | `services/doc_converter/` | Standalone FastAPI service (port 8100); PDF→markdown via docling/ocrmypdf, Office→markdown via markitdown; own conda env |
-| `agent/subagent_tools.py` | Subagent registry construction; auto-injects WriteHandoffTool + EscalateIssueTool |
+| `agent/subagent_tools.py` | `_discover_subagent_tools()` import-based discovery; `build_subagent_registry()` with `tool_names_override`; auto-injects WriteHandoffTool + EscalateIssueTool |
 | `agent/tools.py` | Wires all tools into `ToolRegistry` |
 | `tui/app.py`, `tui/streaming.py`, `tui/callbacks.py` | TUI lifecycle, StreamPreview expand/collapse, callbacks bridge |
 | `tg/bot.py`, `tg/session.py` | Telegram bot with per-chat sessions and `allowed_chat_ids` gate |
@@ -158,7 +158,7 @@ tui.py / telegram_bot.py / main.py
 - **2026-07-26**: Subagent handoff enforcement — write_handoff auto-injection, sentinel detection, corrective re-entry, and unverified-flag scraping added.
 - **2026-07-26**: Post-merge cleanup — duplicated dispatch logic across 5 spawn tools centralized into `dispatch_status_result()`; `unverified_flag_path()` shared; `_handle_write_handoff` refactored to share `_bookkeep_tool_call()`/`_finalize_turn()`.
 - **2026-07-26 (known, deferred)**: `agent/loop.py` is 1172 lines (cap: 500), `AgentLoop.run` CC is 48 (cap: 8) — spun off as standalone refactor task.
-- **2026-08-04**: Subagent refactor Task 1 — `tools/subagent_api.py` created with `SubagentResult` dataclass and `run_subagent()` public API wrapping `_subagent_runner`; 10 tests green.
+- **2026-08-04**: Subagent refactor (Tasks 1–10) complete — `tools/subagent_api.py` public API; each type migrated to `.dagi/subagents/<type>/main.py` `BaseTool` subclass; import-based discovery in `agent/subagent_tools.py`; `SpawnSubagentTool`/`SpawnCliSubagentTool` deleted; `subagent_main.py` gains `--tools`/`--model-tier` args + `agents_md` from config; `DEFAULT_PYTHON_ENV` injected into system prompt; `run_subagent` skill added.
 - **2026-07-27**: Hashline experiment reverted — smaller models made too many errors copying opaque `LINE#HASH` anchors → restored `oldText`/`newText` edit, `cat -n` read, plain `file:line:` grep. `_hashline.py`, `edit_text/` tool, and hashline tests removed.
 
 ## Notes & Terms
@@ -169,11 +169,14 @@ tui.py / telegram_bot.py / main.py
 - **Subagent handoff**: WriteHandoffTool auto-injected; `<<HANDOFF_WRITTEN>>` sentinel triggers immediate return **only when `tc.function.name == "write_handoff"`** (name-gated to prevent false fire from inlined handoff content). Missing handoff → corrective re-entry → last-resort scrape + `_unverified.flag`.
 - **Skill chain**: `grilling` → `plan` → `to-spec` → `dagi-execute` (write-tests/worker/review cycle, 2-attempt retry, escalation sidecar).
 - **Memory wiki**: `G:\My Drive\black_grimoire\dagi-memory\wiki\` (Claude Code skills) vs. repo-local `dagi-memory/wiki/` (DAGI's own subagents). Two separate systems.
-- **`tools:` allowlist** (`config.yaml`): post-registration filter via `reg.filter_to(config.tools)`. Any tool not named here is silently stripped — including auto-discovered spawn tools. When adding a new subagent type, also add its `spawn_{type}_subagent` name to the list.
+- **`tools:` allowlist** (`config.yaml`): post-registration filter via `reg.filter_to(config.tools)`. Any tool not named here is silently stripped — including auto-discovered subagent spawn tools. When adding a new subagent type, also add its tool name to the list.
+- **`DEFAULT_PYTHON_ENV`**: detected at `AgentLoop` startup from `CONDA_DEFAULT_ENV` or `VIRTUAL_ENV` and injected into the system prompt so DAGI knows which env to use for Python commands. Override in the project's `AGENTS.md` if a different env is needed.
 - **Windows**: `EditTool`/`WriteTool` always write LF, normalize `oldText`/`newText` for CRLF safety. Use `conda run -n dagi python` not bare `python.exe`.
 - **TUI**: `StreamPreview` expands on first delta, collapses on `on_stream_end`. `on_emote` callback is `(name: str, display: str)` — name rendered as dim label beneath art in sidebar. `_model_name` derived from resolved config. Layout is horizontal 65/35: `#main-column` (Vertical, 65%) holds chat + prompt on the left; `Sidebar` (35%) is a right panel with sections stacked vertically (status → tokens → plan).
 - **dagi_eval caveats**: `--timeout-min` only bounds agent loop, not scoring phases. Relative `task_dir` silently breaks scoring — always use `harness.TASKS_DIR`.
 - **`subagent_api` vs `_subagent_runner`**: `tools/subagent_api.py` is the public API (preset resolution, envelope, `SubagentResult`); `tools/_subagent_runner.py` is the private subprocess spawner. Never import `_subagent_runner` directly from outside `subagent_api.py`.
+- **Subagent discovery**: `_discover_subagent_tools()` scans `_DAGI_ROOT/.dagi/subagents/` then `cwd/.dagi/subagents/`; imports each `main.py` and instantiates the exported `BaseTool` subclass. Project types with the same name override built-in types.
+- **`run_subagent` skill** (`.dagi/skills/run_subagent/SKILL.md`): teaches DAGI how to write custom one-off workflow scripts that call `run_subagent()` directly, bypassing the registered-tool mechanism. Use for ad-hoc orchestration that doesn't warrant a permanent subagent type.
 
 ## User Insights
 

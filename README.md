@@ -574,7 +574,7 @@ Driverless_AGI/
 │   ├── tools.py           # Builds and returns the tool registry
 │   ├── loop.py            # AgentLoop, AgentConfig, AgentCallbacks
 │   ├── config_loader.py   # Resolves model config from YAML
-│   ├── memory_retriever.py # BM25 wiki retrieval — auto-injects context at session start
+│   │                       #   (memory_retriever.py deleted 2026-06-27; retrieval now subagent-based)
 │   ├── session.py         # SessionTracker — JSONL logs
 │   ├── prompts.py         # Loads system/user prompts from .dagi/prompts/ and .dagi/subagents/
 │   ├── skills.py          # SkillLoader — loads .dagi/skills/
@@ -606,10 +606,10 @@ Driverless_AGI/
 │   ├── web_fetch/           # Fetch and parse a URL
 │   ├── web_research/        # Multi-page web research (spawns pipe subagent)
 │   ├── explore_files/       # Large-scale codebase scanning (spawns pipe subagent)
-│   ├── _subagent_runner.py # Core runner — Popen(stdout=PIPE), JSON event relay, PID polling (shared helper, not a tool folder)
+│   ├── subagent_api.py    # Public API — run_subagent() / SubagentResult / resume_subagent_by_pid()
+│   ├── _subagent_runner.py # Private runner — Popen(stdout=PIPE), JSON event relay, PID polling; only called by subagent_api.py
 │   ├── subagent_main.py   # Piped subagent entry point (spawned via `python -m tools.subagent_main`)
 │   ├── extend_timeout/      # ExtendSubagentTimeoutTool — resume in-flight subagent deadline
-│   ├── cli_subagent/        # Custom subagent with caller-supplied system prompt
 │   ├── compact/             # Trigger context compaction
 │   ├── plan_mode/           # Enter / exit read-only plan mode
 │   ├── switch_model/        # Swap models mid-session
@@ -639,13 +639,17 @@ Driverless_AGI/
 │   ├── prompts/           # Prompt markdown files, organized by role
 │   │   ├── main/          #   main_system.md — primary coding assistant prompt
 │   │   └── compact/       #   compact_system, compact_user (Pi-style summariser)
-│   ├── subagents/         # Per-subagent: <name>/prompt.md + subagent_config.yaml
+│   ├── subagents/         # Per-subagent type: <name>/main.py (BaseTool subclass) + subagent_config.yaml
+│   │   │                  #   Discovered by import via _discover_subagent_tools() in agent/subagent_tools.py
 │   │   ├── document-reader/ # long-document summarizer (tools: read, grep, write)
 │   │   ├── explore_files/ #   exploration agent (tools: read, grep, find)
 │   │   ├── web_research/  #   web research agent (tools: web_search, web_fetch)
-│   │   ├── worker/        #   full-tool worker agent
-│   │   ├── review/        #   code review agent (tools: read, grep, find, bash)
-│   │   └── plan/          #   plan-writing agent prompt
+│   │   ├── memory-query/  #   wiki knowledge retrieval agent
+│   │   ├── memory-add/    #   wiki knowledge persistence agent
+│   │   ├── worker/        #   full-tool worker agent (plan_utils.py helper)
+│   │   ├── review/        #   code review agent (review_utils.py helper; tools: read, grep, find, bash)
+│   │   ├── plan/          #   plan-writing agent
+│   │   └── cli/           #   custom subagent with caller-supplied system prompt
 │   ├── handoffs/          # Generated handoff files: <type>_<uuid8>.md (content is inlined into the spawn_* tool's result automatically — see Tools table)
 │   ├── skills/            # Structured guidance documents (gnhf, memory-*, create-skill, review-session, …)
 │   ├── workflow/          # User-directed workflows (.dagi/workflow/<name>/workflow.md)
@@ -684,15 +688,15 @@ Driverless_AGI/
 | `ask_user` | Pause and ask the user a clarifying question with optional choices |
 | `show_plan` | In plan mode: render the current plan document and ask the user for revisions. Returns "Plan approved" (call `exit_plan_mode`) or "Modifications requested" (revise and call `show_plan` again). In autonomous mode, auto-approves immediately |
 | `escalate_issue` | Worker/review subagent only: raise a blocking question to the main agent instead of guessing. Writes a sidecar file next to the subagent's handoff report; the main agent's subprocess poll loop detects it, terminates the subagent, and surfaces `"[worker escalated]"` / `"[review escalated]"` with the question and context — does not consume a `dagi-execute` retry attempt |
-| `write_handoff` | Auto-injected into every subagent that has a `handoff_path` (all 7 registered types plus `custom`/cli), regardless of that type's declared `tools:` list. The only way a subagent submits its final report — `content` is written verbatim to a path baked in at construction (never model-visible), and the returned sentinel hard-terminates the subagent's turn immediately (no extra continuation round-trip) |
+| `write_handoff` | Auto-injected into every subagent that has a `handoff_path` (all 9 registered types), regardless of that type's declared `tools:` list. The only way a subagent submits its final report — `content` is written verbatim to a path baked in at construction (never model-visible), and the returned sentinel hard-terminates the subagent's turn immediately (no extra continuation round-trip) |
 
 File tools (`read`, `write`, `edit`, `grep`, `find`) are sandboxed to allowed roots via `tools/_path_guard.py`. `bash` is intentionally unsandboxed.
 
-Every `spawn_<type>_subagent` tool (worker, review, explore_files, web_research, or any custom type discovered from `.dagi/subagents/`) reads the subagent's handoff file and inlines its full content directly into the tool's own result on success (`tools/spawn_subagent/_spawn_subagent.py::SpawnSubagentTool._format_ok_result()`, backed by the shared `tools/_handoff_format.py::format_handoff_result()`) — the main agent never has to make a separate `read` call to see what a subagent produced. `extend_subagent_timeout`'s resume path does the same. Large handoffs are still subject to the normal output-filter truncation like any other tool result.
+Every subagent spawn tool (worker, review, explore_files, web_research, or any type discovered from `.dagi/subagents/`) reads the subagent's handoff file and inlines its full content directly into the tool's own result on success (via `tools/_handoff_format.py::format_handoff_result()`) — the main agent never has to make a separate `read` call to see what a subagent produced. `extend_subagent_timeout`'s resume path does the same. Large handoffs are still subject to the normal output-filter truncation like any other tool result.
 
 **Enforced handoff + unverified fallback:** if a subagent's turn ends without ever calling `write_handoff` — e.g. `explore_files`/`web_research`, which have no general `write` tool and previously could not comply structurally — `tools/subagent_main.py::_ensure_handoff()` gives it one corrective retry naming the tool explicitly, then, if still missing, scrapes the last assistant message into the handoff file and drops a `<stem>_unverified.flag` sidecar. `tools/_subagent_runner.py` turns that flag into result status `"ok_unverified"`, and every spawn tool renders it as a `⚠️ UNVERIFIED HANDOFF` warning banner above the (possibly informal) content, so the parent never mistakes a scrape for a deliberate report.
 
-**Parent-authored briefing/handoff_spec:** every `spawn_*_subagent` tool (and `spawn_cli_subagent`) accepts optional `briefing` (guidance: traps to avoid, prior failed-attempt context, extra constraints) and `handoff_spec` (what you want in the report) parameters. Both are composed into the subagent's task via `tools/_task_envelope.py::wrap_envelope()` — an `## Instructions` section (only if `briefing` is given) followed by an always-present `## Output` section (`handoff_spec`, or the type's `default_handoff_spec` from its `subagent_config.yaml`, or a generic fallback).
+**Parent-authored briefing/handoff_spec:** every subagent spawn tool accepts optional `briefing` (guidance: traps to avoid, prior failed-attempt context, extra constraints) and `handoff_spec` (what you want in the report) parameters. Both are composed into the subagent's task via `tools/_task_envelope.py::wrap_envelope()` — an `## Instructions` section (only if `briefing` is given) followed by an always-present `## Output` section (`handoff_spec`, or the type's `default_handoff_spec` from its `subagent_config.yaml`, or a generic fallback).
 
 ### Adding a Custom Tool
 
