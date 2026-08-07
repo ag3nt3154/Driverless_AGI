@@ -640,7 +640,11 @@ class AgentLoop:
 
                     # Store assistant turn. Use result (never None) so that _messages
                     # stays well-formed for all subsequent API calls.
-                    self._messages.append({"role": "assistant", "content": result})
+                    # DeepSeek thinking mode requires reasoning_content to be echoed back.
+                    _asst_msg: dict = {"role": "assistant", "content": result}
+                    if message.reasoning_content:
+                        _asst_msg["reasoning_content"] = message.reasoning_content
+                    self._messages.append(_asst_msg)
                     _thinking_tok = (
                         getattr(getattr(response.usage, "completion_tokens_details", None), "reasoning_tokens", None)
                         or 0
@@ -684,7 +688,7 @@ class AgentLoop:
 
                 first = True
                 for tc in message.tool_calls:
-                    self._messages.append({
+                    _tc_msg: dict = {
                         "role": "assistant",
                         "content": message.content if first else None,
                         "tool_calls": [{
@@ -692,7 +696,10 @@ class AgentLoop:
                             "type": "function",
                             "function": {"name": tc.function.name, "arguments": tc.function.arguments},
                         }],
-                    })
+                    }
+                    if first and message.reasoning_content:
+                        _tc_msg["reasoning_content"] = message.reasoning_content
+                    self._messages.append(_tc_msg)
                     first = False
 
                     tool_obj = self.registry._tools.get(tc.function.name)

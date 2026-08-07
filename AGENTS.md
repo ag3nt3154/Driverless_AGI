@@ -1,6 +1,6 @@
 # AGENTS.md
 
-> Last updated: 2026-08-04 (subagent refactor merged to main) | [README](README.md) | [TODO](TODO.md)
+> Last updated: 2026-08-07 | [README](README.md) | [TODO](TODO.md)
 
 ---
 
@@ -160,6 +160,7 @@ tui.py / telegram_bot.py / main.py
 - **2026-07-26 (known, deferred)**: `agent/loop.py` is 1172 lines (cap: 500), `AgentLoop.run` CC is 48 (cap: 8) — spun off as standalone refactor task.
 - **2026-08-04**: Subagent refactor merged to main — `tools/subagent_api.py` public API; 9 types each with `main.py` + `subagent_config.yaml`; import-based discovery; `SpawnSubagentTool`/`SpawnCliSubagentTool` deleted; `--tools`/`--model-tier` CLI args; `agents_md` config; `DEFAULT_PYTHON_ENV` in system prompt; `run_subagent` skill; `plan`/`cli` configs fixed (were missing, caused `FileNotFoundError` on preset load).
 - **2026-07-27**: Hashline experiment reverted — smaller models made too many errors copying opaque `LINE#HASH` anchors → restored `oldText`/`newText` edit, `cat -n` read, plain `file:line:` grep. `_hashline.py`, `edit_text/` tool, and hashline tests removed.
+- **2026-08-07**: DeepSeek thinking-mode API rejected multi-turn requests with `reasoning_content must be passed back` → both assistant-message append sites in `agent/loop.py` (text-only path line 643, first tool-call path line 687) now conditionally include `reasoning_content` when present on the message object.
 
 ## Notes & Terms
 
