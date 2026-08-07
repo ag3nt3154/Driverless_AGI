@@ -78,13 +78,17 @@ class _Stats:
         self.input_tok = 0
         self.output_tok = 0
         self.thinking_tok = 0
+        self.cached_tok = 0
         self.cost: float | None = None
         self.tool_counts: dict[str, int] = {}
 
-    def update_tokens(self, inp: int, out: int, cost: float | None, thinking: int = 0) -> None:
+    def update_tokens(
+        self, inp: int, out: int, cost: float | None, thinking: int = 0, cached: int = 0
+    ) -> None:
         self.input_tok += inp
         self.output_tok += out
         self.thinking_tok += thinking
+        self.cached_tok += cached
         if cost is not None:
             self.cost = (self.cost or 0.0) + cost
 
