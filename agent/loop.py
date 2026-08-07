@@ -214,7 +214,7 @@ class AgentCallbacks:
     on_tool_start:     Callable[[str, str, str], None]          = field(default=lambda n, d, a: None)
     on_tool_end:       Callable[[str, str], None]               = field(default=lambda n, r: None)
     on_assistant_text: Callable[[str], None]                    = field(default=lambda t: None)
-    on_token_update:   Callable[[int, int, float | None, int], None] = field(default=lambda i, o, c, t: None)
+    on_token_update:   Callable[[int, int, float | None, int, int], None] = field(default=lambda i, o, c, t, ca=0: None)
     on_iteration:      Callable[[int], None]                    = field(default=lambda cur: None)
     on_done:           Callable[[str], None]                    = field(default=lambda r: None)
     on_error:          Callable[[Exception], None]              = field(default=lambda e: None)
@@ -257,7 +257,7 @@ def _extract_reasoning(message) -> str:
     text = getattr(message, "reasoning_content", None) or ""
     if not text:
         extras = getattr(message, "model_extra", None) or {}
-        text = extras.get("reasoning", "")
+        text = extras.get("reasoning") or extras.get("reasoning_content") or ""
     return text or ""
 
 
@@ -439,12 +439,12 @@ class AgentLoop:
                     content_parts.append(piece)
                     self.callbacks.on_assistant_text_delta(piece)
 
-                # OpenRouter sends `reasoning`; some providers send
-                # `reasoning_content`; SDK may park unknown keys in model_extra.
+                # OpenRouter sends `reasoning`; DeepSeek sends `reasoning_content`;
+                # SDK may park unknown keys in model_extra.
                 r = getattr(delta, "reasoning", None) or getattr(delta, "reasoning_content", None)
                 if not r:
                     extras = getattr(delta, "model_extra", None) or {}
-                    r = extras.get("reasoning") or ""
+                    r = extras.get("reasoning") or extras.get("reasoning_content") or ""
                 if r:
                     reasoning_parts.append(r)
                     self.callbacks.on_reasoning_delta(r)
@@ -642,11 +642,16 @@ class AgentLoop:
                     # stays well-formed for all subsequent API calls.
                     # DeepSeek thinking mode requires reasoning_content to be echoed back.
                     _asst_msg: dict = {"role": "assistant", "content": result}
-                    if message.reasoning_content:
-                        _asst_msg["reasoning_content"] = message.reasoning_content
+                    _rc = _extract_reasoning(message)
+                    if _rc:
+                        _asst_msg["reasoning_content"] = _rc
                     self._messages.append(_asst_msg)
                     _thinking_tok = (
                         getattr(getattr(response.usage, "completion_tokens_details", None), "reasoning_tokens", None)
+                        or 0
+                    )
+                    _cached_tok = (
+                        getattr(getattr(response.usage, "prompt_tokens_details", None), "cached_tokens", None)
                         or 0
                     )
                     self.callbacks.on_token_update(
@@ -654,6 +659,7 @@ class AgentLoop:
                         getattr(response.usage, "completion_tokens", 0) or 0,
                         getattr(response.usage, "cost", None),
                         _thinking_tok,
+                        _cached_tok,
                     )
                     self.tracker.record_assistant(message.content, response.usage, tool_records)
 
@@ -681,27 +687,30 @@ class AgentLoop:
                     )
                     continue  # next while True iteration
 
-                # Interleave: each tool call is immediately followed by its result.
-                # First call carries the assistant's text content; subsequent ones get None.
                 if message.content:
                     self.callbacks.on_assistant_text(message.content)
 
-                first = True
-                for tc in message.tool_calls:
-                    _tc_msg: dict = {
-                        "role": "assistant",
-                        "content": message.content if first else None,
-                        "tool_calls": [{
+                # One assistant message with ALL tool_calls (standard OpenAI format).
+                # Splitting into per-tool-call assistant messages breaks providers that
+                # enforce protocol conformance (e.g. DeepSeek thinking mode).
+                _turn_reasoning = _extract_reasoning(message)
+                _asst_tc_msg: dict = {
+                    "role": "assistant",
+                    "content": message.content,
+                    "tool_calls": [
+                        {
                             "id": tc.id,
                             "type": "function",
                             "function": {"name": tc.function.name, "arguments": tc.function.arguments},
-                        }],
-                    }
-                    if first and message.reasoning_content:
-                        _tc_msg["reasoning_content"] = message.reasoning_content
-                    self._messages.append(_tc_msg)
-                    first = False
+                        }
+                        for tc in message.tool_calls
+                    ],
+                }
+                if _turn_reasoning:
+                    _asst_tc_msg["reasoning_content"] = _turn_reasoning
+                self._messages.append(_asst_tc_msg)
 
+                for tc in message.tool_calls:
                     tool_obj = self.registry._tools.get(tc.function.name)
                     description = tool_obj.description if tool_obj else tc.function.name
                     self.callbacks.on_tool_start(tc.function.name, description, tc.function.arguments)
@@ -812,11 +821,16 @@ class AgentLoop:
             getattr(getattr(response.usage, "completion_tokens_details", None), "reasoning_tokens", None)
             or 0
         )
+        _cached_tok = (
+            getattr(getattr(response.usage, "prompt_tokens_details", None), "cached_tokens", None)
+            or 0
+        )
         self.callbacks.on_token_update(
             getattr(response.usage, "prompt_tokens", 0) or 0,
             getattr(response.usage, "completion_tokens", 0) or 0,
             getattr(response.usage, "cost", None),
             _thinking_tok,
+            _cached_tok,
         )
 
     def _handle_write_handoff(

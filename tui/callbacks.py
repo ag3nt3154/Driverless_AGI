@@ -36,10 +36,11 @@ def build_callbacks(app: DagiApp, loop_ref: list) -> AgentCallbacks:
         if text.strip():
             app.call_from_thread(conv.append_assistant, text)
 
-    def on_token_update(inp, out, cost, thinking=0):
-        stats.update_tokens(inp, out, cost, thinking)
+    def on_token_update(inp, out, cost, thinking=0, cached=0):
+        stats.update_tokens(inp, out, cost, thinking, cached)
         app.call_from_thread(
-            sidebar.update_stats, stats.input_tok, stats.output_tok, stats.cost, stats.thinking_tok
+            sidebar.update_stats, stats.input_tok, stats.output_tok, stats.cost,
+            stats.thinking_tok, stats.cached_tok
         )
 
     def on_reasoning(text):

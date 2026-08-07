@@ -37,6 +37,7 @@ class Sidebar(Widget):
         self._input_tok = 0
         self._output_tok = 0
         self._thinking_tok = 0
+        self._cached_tok = 0
         self._cost: float | None = None
         self._buckets: dict[str, int] = {}
         self._context_window = context_window
@@ -57,8 +58,9 @@ class Sidebar(Widget):
         self._model_name = name
         self.refresh()
 
-    def update_stats(self, inp: int, out: int, cost: float | None, thinking: int) -> None:
+    def update_stats(self, inp: int, out: int, cost: float | None, thinking: int, cached: int = 0) -> None:
         self._input_tok, self._output_tok, self._cost, self._thinking_tok = inp, out, cost, thinking
+        self._cached_tok = cached
         self.refresh()
 
     def update_context(self, buckets: dict[str, int]) -> None:
@@ -134,10 +136,14 @@ class Sidebar(Widget):
             f"  [dim]think[/dim] [magenta]~{self._thinking_tok:,}[/magenta]"
             if self._thinking_tok else ""
         )
+        cache_part = (
+            f"  [dim]cache[/dim] [bright_cyan]~{self._cached_tok:,}[/bright_cyan]"
+            if self._cached_tok else ""
+        )
         tok_line = Text.from_markup(
             f"[dim]in[/dim] [cyan]~{self._input_tok:,}[/cyan]"
             f"  [dim]out[/dim] [green]~{self._output_tok:,}[/green]"
-            f"{think_part}  [yellow]{cost_str}[/yellow]"
+            f"{think_part}{cache_part}  [yellow]{cost_str}[/yellow]"
         )
 
         W = self._context_window
