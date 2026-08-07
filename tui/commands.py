@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import subprocess
+import sys
 import threading
 from pathlib import Path
 
@@ -11,6 +13,15 @@ from .conversation import ConversationPane
 from .prompt_input import PromptInput
 from .sidebar import Sidebar
 from .utils import _SLASH_HELP, _Stats
+
+
+def _copy_to_clipboard(text: str) -> None:
+    if sys.platform == "win32":
+        subprocess.run(["clip"], input=text.encode("utf-16-le"), check=True)
+    elif sys.platform == "darwin":
+        subprocess.run(["pbcopy"], input=text.encode(), check=True)
+    else:
+        subprocess.run(["xclip", "-selection", "clipboard"], input=text.encode(), check=True)
 
 
 class SlashCommandsMixin:
@@ -66,6 +77,8 @@ class SlashCommandsMixin:
             self._cmd_skills()
         elif cmd == "/workflows":
             self._cmd_workflows()
+        elif cmd == "/copy":
+            self._cmd_copy()
         elif cmd == "/hist":
             self._cmd_hist(arg)
         elif cmd == "/init":
@@ -172,6 +185,15 @@ class SlashCommandsMixin:
                 self.call_from_thread(conv.append_info, "[dim]Nothing to compact.[/dim]")
 
         threading.Thread(target=_do_compact, daemon=True).start()
+
+    def _cmd_copy(self) -> None:
+        from tui.history import CopyScreen
+        conv = self.query_one(ConversationPane)
+        if self._worker and self._worker.is_alive():
+            conv.append_info("[yellow]⚠ Agent is running — press ESC to pause first[/yellow]")
+            return
+        messages = self._active_loop._messages if self._active_loop else []
+        self.push_screen(CopyScreen(messages))
 
     def _cmd_tools(self) -> None:
         conv = self.query_one(ConversationPane)
