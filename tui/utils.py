@@ -15,6 +15,7 @@ _SLASH_HELP = {
     "/compact": "Force-compact context", "/tools": "List tools",
     "/skills": "List skills", "/workflows": "List workflows",
     "/init": "Initialise .dagi/ scaffold", "/hist": "Show recent sessions",
+    "/copy": "Copy last assistant response to clipboard",
     "/plan": "Enter plan mode", "/model": "Switch model  (/model <id>)",
 }
 

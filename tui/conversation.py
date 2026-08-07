@@ -14,6 +14,7 @@ class ConversationPane(RichLog):
 
     def on_mount(self) -> None:
         self.auto_scroll = True
+        self._last_assistant: str = ""
 
     def append_tool_start(self, name: str, args: str, verbose: bool) -> None:
         col = _colour(name)
@@ -32,6 +33,7 @@ class ConversationPane(RichLog):
             self.write(Text(f"  ✓ {len(result)} chars", style="dim green"))
 
     def append_assistant(self, text: str) -> None:
+        self._last_assistant = text
         self.write(Markdown(text))
 
     def append_reasoning(self, text: str) -> None:
