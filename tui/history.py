@@ -99,7 +99,7 @@ def build_turn_list(raw_messages: list[dict]) -> list[dict]:
 
 
 # ---------------------------------------------------------------------------
-# Textual UI — HistoryScreen
+# Textual UI — HistoryScreen / CopyScreen
 # ---------------------------------------------------------------------------
 
 from textual.app import ComposeResult
@@ -107,6 +107,87 @@ from textual.message import Message
 from textual.screen import Screen
 from textual.widgets import Footer, Header, Label, OptionList
 from textual.widgets.option_list import Option
+
+
+def _build_copy_items(messages: list[dict]) -> list[dict]:
+    """Extract copyable user/assistant messages from a raw_messages list.
+
+    Returns list of {label, content} dicts, oldest-first.
+    Skips system messages, tool messages, tool-call-only assistant turns,
+    and compaction summaries.
+    """
+    items = []
+    for msg in messages:
+        role = msg.get("role")
+        if role not in ("user", "assistant"):
+            continue
+        content = msg.get("content")
+        if isinstance(content, list):
+            text = " ".join(
+                b.get("text", "")
+                for b in content
+                if isinstance(b, dict) and b.get("type") == "text"
+            )
+        elif content:
+            text = str(content)
+        else:
+            continue
+        text = text.strip()
+        if not text or text.startswith("[CONTEXT SUMMARY"):
+            continue
+        role_label = "You" if role == "user" else "DAGI"
+        preview = text[:72].replace("\n", " ")
+        if len(text) > 72:
+            preview += "…"
+        items.append({"label": f"[{role_label}]  {preview}", "content": text})
+    return items
+
+
+class CopyScreen(Screen):
+    """Full-screen message picker for copying conversation text to clipboard.
+
+    Takes the current session's raw messages and presents user + assistant
+    turns in an OptionList. Posts CopyScreen.MessageCopied on selection.
+    """
+
+    BINDINGS = [("escape", "dismiss_screen", "Cancel")]
+
+    class MessageCopied(Message):
+        def __init__(self, text: str) -> None:
+            super().__init__()
+            self.text = text
+
+    class Dismissed(Message):
+        pass
+
+    def __init__(self, messages: list[dict]) -> None:
+        super().__init__()
+        self._items = _build_copy_items(messages)
+
+    def compose(self) -> ComposeResult:
+        yield Header()
+        yield Label("Select message to copy  (↑/↓  Enter  Esc=cancel)", id="copy-label")
+        yield OptionList(id="copy-list")
+        yield Footer()
+
+    def on_mount(self) -> None:
+        opt_list = self.query_one("#copy-list", OptionList)
+        if not self._items:
+            opt_list.add_option(Option("(no messages in current session)", disabled=True))
+        else:
+            for i, item in enumerate(self._items):
+                opt_list.add_option(Option(item["label"], id=f"msg_{i}"))
+        opt_list.focus()
+
+    def on_option_list_option_selected(self, event: OptionList.OptionSelected) -> None:
+        event.stop()
+        option_id = event.option.id or ""
+        if option_id.startswith("msg_"):
+            idx = int(option_id[4:])
+            self.post_message(self.MessageCopied(self._items[idx]["content"]))
+
+    def action_dismiss_screen(self) -> None:
+        self.post_message(self.Dismissed())
 
 
 class HistoryScreen(Screen):

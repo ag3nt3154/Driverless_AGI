@@ -187,17 +187,13 @@ class SlashCommandsMixin:
         threading.Thread(target=_do_compact, daemon=True).start()
 
     def _cmd_copy(self) -> None:
+        from tui.history import CopyScreen
         conv = self.query_one(ConversationPane)
-        text = conv._last_assistant
-        if not text:
-            conv.append_info("[dim]Nothing to copy — no assistant response yet.[/dim]")
+        if self._worker and self._worker.is_alive():
+            conv.append_info("[yellow]⚠ Agent is running — press ESC to pause first[/yellow]")
             return
-        try:
-            _copy_to_clipboard(text)
-            preview = text[:60].replace("\n", " ")
-            conv.append_info(f"[green]✓ Copied to clipboard:[/green] [dim]{preview}…[/dim]")
-        except Exception as exc:
-            conv.append_error(f"Copy failed: {exc}")
+        messages = self._active_loop._messages if self._active_loop else []
+        self.push_screen(CopyScreen(messages))
 
     def _cmd_tools(self) -> None:
         conv = self.query_one(ConversationPane)

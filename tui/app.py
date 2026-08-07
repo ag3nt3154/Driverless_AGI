@@ -304,6 +304,20 @@ class DagiApp(SlashCommandsMixin, App[None]):
         """Handle dismissal of the history picker (Escape)."""
         self.pop_screen()
 
+    def on_copy_screen_message_copied(self, event: "CopyScreen.MessageCopied") -> None:
+        self.pop_screen()
+        conv = self.query_one(ConversationPane)
+        try:
+            from .commands import _copy_to_clipboard
+            _copy_to_clipboard(event.text)
+            preview = event.text[:60].replace("\n", " ")
+            conv.append_info(f"[green]✓ Copied to clipboard:[/green] [dim]{preview}…[/dim]")
+        except Exception as exc:
+            conv.append_error(f"Copy failed: {exc}")
+
+    def on_copy_screen_dismissed(self, event: "CopyScreen.Dismissed") -> None:
+        self.pop_screen()
+
     def _restore_session(self, path: Path, turn_index: int) -> None:
         """Load a prior session's messages into the active loop context.
 
