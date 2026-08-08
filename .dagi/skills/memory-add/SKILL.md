@@ -1,351 +1,257 @@
 ---
 name: memory-add
-description: Integrate a piece of text into the dagi-memory wiki — determines topic, creates a structured wiki node, updates index files, and appends to log.md. Use when the user wants to save to memory, add to wiki, remember this, store in memory, add to memory, write to wiki, note this down, add this thought, log this, capture this, note this. Prefix the task with "Project: <name>" to route to the projects section.
+description: >-
+  File a new entry into the memory wiki. Subagent protocol — the parent agent
+  classifies the content and passes category + metadata; this skill handles
+  wiki-internal routing, schema enforcement, index updates, and logging.
+  Canonical source for both DAGI subagents and Claude Code skills.
 ---
 
 # memory-add
 
 ## Purpose
 
-File new knowledge into the dagi-memory wiki with correct structure, metadata, and index
-updates. Run this skill whenever the user asks to save, remember, or log something.
+File new content into the memory wiki with correct structure, frontmatter, and
+index updates. This is a **subagent protocol** — the parent agent resolves
+category and conversation-context metadata before invoking. The subagent owns
+wiki-internal knowledge (which projects/topics exist, where to file, what to
+link).
 
 ---
 
-## Step 0 — Resolve memory root
+## Memory Root
 
-1. Attempt to read `{cwd}/config.yaml`.
-2. If it exists and contains a non-empty, uncommented `memory_root:` key, use that value.
-   Strip surrounding quotes and trailing slashes.
-3. Otherwise fall back to `{cwd}/dagi-memory`.
-4. If the resolved path differs from the default, note it briefly: "Using memory root: {path}".
+```
+{memory_root} = G:\My Drive\black_grimoire\dagi-memory
+```
 
-All subsequent paths are relative to `{memory_root}`.
+All paths below are relative to `{memory_root}`. Hardcoded — never resolve from
+config or cwd.
 
 ---
 
-## Step 0.4 — Clarify ambiguities before writing
+## Interface (parent → subagent)
 
-Before doing anything else (TODO flow or content flow), scan the input for **material
-ambiguities** — details that change *what gets written* or *where it goes*, and that you
-cannot resolve with high confidence from the input, the wiki, or sensible defaults.
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| `task` | yes | The content to file |
+| `category` | yes | `projects` \| `todos` \| `knowledge` \| `events` |
+| `deadline` | no | For todos — due date (YYYY-MM-DD) |
+| `frequency` | no | For todos — `one-off` \| `daily` \| `weekly` \| `monthly` (default: `one-off`) |
+| `date` | no | For events — when it occurred (default: today) |
+| `custom_instructions` | no | Freeform guidance from parent |
 
-If one or more material ambiguities exist, **ask the user with the `ask_user` tool
-before writing anything.** Wait for the answers, then proceed using them. Do not guess on a
-material detail and silently write a version you may have to rewrite.
-
-**Material ambiguities worth asking about** (non-exhaustive):
-- **Integration / scope target** — *where* something should live or plug in (e.g. which project,
-  subsystem, or pipeline a task targets). Inferring the wrong target is a common, costly error.
-- **Topic / project routing** — when it is genuinely unclear whether the content is knowledge
-  vs. a specific project, or which topic/project it belongs to.
-- **Conflicting or contradictory details** in the input.
-- **A due date or timeframe** that is implied ("soon", "before the release") but not pinned, when
-  the user seems to care about scheduling.
-- **The actual subject** — when the input is too terse to tell what concept is meant.
-
-**Do NOT ask about** things you can reasonably infer or default:
-- Slug, tags, type, `date_added` — derive these yourself.
-- Minor wording of titles or descriptions.
-- Anything the input already states plainly.
-
-Keep questions few and high-leverage (prefer 1–2). If nothing is materially unclear, skip this
-step entirely and proceed — do not interrogate the user over trivia.
+The subagent derives from wiki context (never passed by parent):
+- `project_name` — reads `wiki/projects/.index.md`, matches or creates new
+- `topic` — reads `wiki/knowledge/.index.md`, matches or creates new
+- `title`, `description`, `tags`, `slug` — derived from content
+- `links` — discovered by grepping wiki for related nodes
 
 ---
 
 ## Wiki Structure
 
 ```
-{memory_root}/
-└── wiki/
-    ├── .index.md              ← root nav (three rows: Projects, Knowledge, User TODO)
-    ├── log.md                 ← append-only operation log
-    ├── open_questions.md      ← pending & resolved questions
-    ├── user-todo.md           ← personal task & intention tracker (Admiral)
-    ├── projects/
-    │   ├── .index.md          ← table of all tracked projects
-    │   └── {project-name}/
-    │       ├── .index.md      ← project page index
-    │       ├── context.md     ← project overview, goals, architecture
-    │       ├── updates.md     ← append-only decision log
-    │       └── {slug}.md      ← other project pages
-    └── knowledge/
-        ├── .index.md          ← table of all knowledge topics
-        └── {topic}/
-            ├── .index.md      ← topic page index
-            └── {slug}.md      ← knowledge nodes
+wiki/
+├── .index.md
+├── log.md
+├── projects/
+│   ├── .index.md
+│   └── {project-name}/
+│       ├── overview.md
+│       └── subtask_{NNN}_{title}.md
+├── todos/
+│   ├── .index.md
+│   └── todo_{NNN}_{title}.md
+├── knowledge/
+│   ├── .index.md
+│   └── {topic}/
+│       ├── .index.md
+│       └── {title}.md
+└── events/
+    ├── .index.md
+    └── event_{YYYY-MM-DD}_{title}.md
 ```
 
 ---
 
-## Frontmatter Schema
+## Frontmatter Schemas
 
-Every wiki page uses exactly these five fields:
+### Shared fields (all categories)
 
 ```yaml
----
-type: note | entity | source-summary | reflection | insight | analysis | context | update
-topic: {topic-name}           # knowledge pages — e.g. machine-learning
-                              # project pages   — e.g. project/black-grimoire
-description: one-line summary of what this page contains
-date_added: YYYY-MM-DD
-tags: keyword1, keyword2, keyword3    # comma-separated, grep-friendly
----
+title: Short descriptive name
+description: One-line summary
+tags: keyword1, keyword2, keyword3
+date_created: YYYY-MM-DD
+links:
+  - "[[category/path/to/related-node]]"
 ```
 
----
+### Project overview (overview.md) — additional fields
 
-## Step 0.5 — Detect TODO intent
-
-Before classifying, check whether the input expresses a **personal plan or intention** by the
-user (the Admiral) to do something in the future.
-
-**Trigger phrases** (case-insensitive, at start or anywhere in input):
-
-```
-I want to       I plan to       I need to       I'm going to    I am going to
-I will          I should        I intend to     I'd like to     I was thinking of
-I'm planning    remind me to    my goal is to   TODO:
+```yaml
+status: active | completed | archived | paused
+objective: What "done" looks like
 ```
 
-The input must describe the *user* doing something — not a request for Claude to act right now.
+### Todo — additional fields
 
-**Examples that trigger this step:**
-- "I want to study gamma exposure next week"
-- "I plan to refactor the ingestion pipeline before the release"
-- "remind me to review open questions on Friday"
+```yaml
+status: pending | in-progress | completed | dropped
+deadline: YYYY-MM-DD | null
+frequency: one-off | daily | weekly | monthly
+```
 
-**Examples that do NOT trigger:**
-- "Remember: gamma exposure increases near expiry" ← factual content for wiki
-- "Can you summarise this?" ← direct request to Claude
+### Event — additional fields
+
+```yaml
+date: YYYY-MM-DD    # when the event occurred (distinct from date_created)
+```
+
+### Knowledge — no additional fields
 
 ---
 
-### If TODO intent detected → TODO append flow (skip Steps 1–5)
+## Naming Conventions
 
-**a. Read `wiki/user-todo.md`.**
+| Category | Pattern | Example |
+|----------|---------|---------|
+| Project overview | `wiki/projects/{name}/overview.md` | `projects/dagi/overview.md` |
+| Project subtask | `wiki/projects/{name}/subtask_{NNN}_{slug}.md` | `projects/dagi/subtask_003_unify-memory.md` |
+| Todo | `wiki/todos/todo_{NNN}_{slug}.md` | `todos/todo_042_buy-tickets.md` |
+| Knowledge | `wiki/knowledge/{topic}/{slug}.md` | `knowledge/trading-strategies/momentum.md` |
+| Event | `wiki/events/event_{YYYY-MM-DD}_{slug}.md` | `events/event_2026-08-08_memory-unification.md` |
 
-**b. Count existing `[TODO-NNN]` section headers to determine the next number.**
-   - Pattern: lines matching `## \[TODO-\d+\]`
-   - If none found, start at 001. Pad to 3 digits.
-
-**c. Infer the following fields from the input.** If a field marked *(clarify if unclear)* is
-materially ambiguous, resolve it via Step 0.4 (`AskUserQuestion`) before appending — especially
-the integration/scope target, which is easy to get wrong.
-
-| Field | How to derive |
-|-------|--------------|
-| **Task title** | Short imperative phrase (≤ 8 words) summarising the intent |
-| **Task description** | Expanded sentence or two — what needs doing and why *(clarify the scope/target if unclear)* |
-| **Date due** | Extract explicit date or timeframe ("next week", "by Friday"); convert to YYYY-MM-DD if possible; else `—` *(clarify if implied but unpinned and scheduling matters)* |
-| **Proposed method** | Any "by doing X" / "using Y" hints in input; otherwise infer a sensible first step |
-| **Related nodes** | Grep `wiki/` for key terms from the content; include up to 3 `[[wikilink]]` paths; else `—` |
-
-**d. Append the following block to `wiki/user-todo.md`:**
-
-```markdown
-
-## [TODO-{NNN}] {Task Title}
-- **Date Added**: {YYYY-MM-DD}
-- **Date Due**: {YYYY-MM-DD or —}
-- **Status**: `pending`
-- **Task Description**: {description}
-- **Proposed Method**: {method}
-- **Related Nodes**: {wikilinks or —}
-```
-
-*(Status values: `pending` | `in-progress` | `completed` | `dropped`)*
-
-**e. Append to `wiki/log.md`:**
-
-```
-[{YYYY-MM-DD}] add-todo | {task title} | wiki/user-todo.md#TODO-{NNN}
-```
-
-**f. Report to the user:**
-
-```
-Filed: TODO-{NNN} — {task title}
-Path:  wiki/user-todo.md
-Action: appended
-
-Modified:
-- wiki/user-todo.md — appended TODO-{NNN}
-- wiki/log.md — appended entry
-```
-
-**Then stop.** Do not proceed to Step 1.
+Slugs: kebab-case, max 40 chars, no special characters.
+NNN: zero-padded 3-digit sequence number, determined by counting existing files.
 
 ---
 
-**If NOT detected → continue to Step 1 as normal.**
+## Protocol Steps
 
----
+### Step 1 — Orient within the wiki
 
-## Step 1 — Classify the content
+Read the relevant section `.index.md` based on `category`:
 
-Read the task. Determine:
+- `projects` → read `wiki/projects/.index.md`
+- `todos` → read `wiki/todos/.index.md`
+- `knowledge` → read `wiki/knowledge/.index.md`
+- `events` → read `wiki/events/.index.md`
 
-**Is it project-specific?**
-- Does the input start with `"Project: <name>"`?
-  - **Yes** → route to `wiki/projects/{project-name}/`. Set `topic: project/{project-name}`.
-  - **No** → route to `wiki/knowledge/{topic}/`. Set `topic: {topic-name}`.
+For `projects`: also read the matching project's `.index.md` or `overview.md`
+if the content clearly relates to an existing project. If no project matches,
+create a new project folder with an `overview.md`.
 
-Also determine:
-- What `type` best describes the content?
-- What `topic` (or project name) applies? Use kebab-case.
-- What `tags` (3–6 comma-separated keywords) would help grep find it?
+For `knowledge`: identify the best-fit topic from the index. If no topic
+matches, create a new topic folder with `.index.md`.
 
----
+### Step 2 — Check for existing content
 
-## Step 2 — Check for existing content
-
-grep the relevant section for key terms from the content:
+Grep the relevant section for key terms from the content:
 
 ```
-grep(pattern="<key term>", path="{memory_root}/wiki/knowledge/<topic>/")
-# or: grep(pattern="<key term>", path="{memory_root}/wiki/projects/<name>/")
+grep("<key term>", path="wiki/{category}/...")
 ```
 
-If no hits in the section, widen to the full wiki:
-
-```
-grep(pattern="<key term>", path="{memory_root}/wiki/")
-```
-
-Read the section's `.index.md` to see what pages already exist.
-
-- **Strong match found** → update the existing page (add a section or revise text).
+- **Strong match found** → update the existing page (add a section or revise).
 - **No match** → create a new page.
 
----
+### Step 3 — Determine sequence number and path
 
-## Step 3 — Determine slug and path
+For numbered categories (todos, project subtasks):
+- Count existing files matching the pattern (e.g. `todo_*.md`) to determine
+  the next sequence number.
+- Zero-pad to 3 digits.
 
-- Slug: `kebab-case-from-topic`, max 40 chars, no special chars.
-- Paths:
-  - Knowledge page: `wiki/knowledge/{topic}/{slug}.md`
-  - Project page:   `wiki/projects/{project-name}/{slug}.md`
+For knowledge and events:
+- Derive slug from content. Knowledge uses `{slug}.md`, events use
+  `event_{YYYY-MM-DD}_{slug}.md`.
 
----
+### Step 4 — Write the page
 
-## Step 4 — Write the wiki page
+Write the file with:
+- Correct frontmatter per category schema (shared + category-specific fields)
+- Well-structured markdown body
+- `[[wikilinks]]` to related pages discovered in Step 2
 
-Use this template:
+**Body conventions:**
+- Project `overview.md`: minimum `## Objective`, `## Status`, `## Subtasks`
+- Subtasks: freeform (rich content — plans, specs, how-to)
+- Todos: minimal or no body (frontmatter is the todo)
+- Events: freeform narrative
+- Knowledge: freeform, structure from content domain
 
-```markdown
----
-type: {type}
-topic: {topic}            # project/{project-name} OR {topic-name}
-description: {one-line summary}
-date_added: {YYYY-MM-DD}
-tags: {tag1}, {tag2}, {tag3}
----
+### Step 5 — Update index files
 
-# {Title}
+**5a — Folder `.index.md`:** add a row to the table in the containing folder's
+`.index.md`.
 
-{Content — well-structured markdown. Use ## headings for sections.
- Use [[knowledge/topic/slug]] or [[projects/name/slug]] wikilinks for related pages.}
-```
-
-**For project pages of type `context`**, organise body as:
-```
-## Overview
-## Goals
-## Architecture / Structure
-## Key Decisions
-## Known Issues
-```
-
-**For project pages of type `update`**, organise body as:
-```
-## Summary of Changes
-## Rationale
-## Impact
-```
-
----
-
-## Step 5 — Update index files
-
-After writing the page, update the relevant `.index.md` files. All index files use markdown
-tables with a header row. Append new rows — never delete existing rows.
-
-### 5a — Topic or project `.index.md`
-
-Add a row to `wiki/knowledge/{topic}/.index.md` or `wiki/projects/{project-name}/.index.md`:
+If the `.index.md` does not exist yet (new folder), create it:
 
 ```markdown
-| [Title](slug.md) | {one-line description} | {YYYY-MM-DD} |
-```
+---
+title: {Folder Name}
+description: {one-line description}
+tags: index, {category}
+date_created: {YYYY-MM-DD}
+links: []
+---
 
-If the `.index.md` does not exist yet, create it:
-
-```markdown
-# {Topic Name or Project Name}
+# {Folder Name}
 
 > **Last updated:** {YYYY-MM-DD}
 
-| Page | Description | Date Added |
-|------|-------------|------------|
-| [Title](slug.md) | {one-line description} | {YYYY-MM-DD} |
+| Page | Description | Date Created |
+|------|-------------|--------------|
+| [{title}]({filename}) | {description} | {YYYY-MM-DD} |
 ```
 
-### 5b — Section `.index.md` (only when adding a NEW topic or project folder)
+**5b — Section `.index.md`:** if this is a new project or topic folder, add a
+row to `wiki/projects/.index.md` or `wiki/knowledge/.index.md`.
 
-If this is the first page in a new topic or project, add a row to the section index:
+Do NOT touch `wiki/.index.md` — it only lists the four static sections.
 
-**`wiki/knowledge/.index.md`** — 4 columns:
-```markdown
-| [topic-name](topic-name/.index.md) | {one-line topic description} | {page count} | {YYYY-MM-DD} |
+### Step 6 — Append to log.md
+
+Append one line to `wiki/log.md`:
+
 ```
-
-**`wiki/projects/.index.md`** — 3 columns:
-```markdown
-| [project-name](project-name/.index.md) | {one-line project description} | {YYYY-MM-DD} |
+[{YYYY-MM-DD}] add | {title} | wiki/{category}/{path}/{filename}
 ```
-
-Do **not** touch `wiki/.index.md` — it only lists the two static sections (Projects, Knowledge).
 
 ---
 
-## Step 6 — Append to log.md
-
-Read `wiki/log.md`, then append one line:
-
-```
-[{YYYY-MM-DD}] add | {title} | wiki/{section}/{topic-or-project}/{slug}.md
-```
-
-Where `{section}` is `knowledge` or `projects`.
-
----
-
-## Step 7 — Report to the user
-
-Summarise inline:
+## Handoff (subagent → parent)
 
 ```
 Filed: {title}
-Path:  wiki/{section}/{topic}/{slug}.md
+Path:  wiki/{category}/{...}/{filename}.md
 Action: created | updated
 
 Modified:
-- wiki/{section}/{topic}/{slug}.md — {what changed}
-- wiki/{section}/{topic}/.index.md — added row
-- wiki/{section}/.index.md — added topic row (if new topic)
+- {file1} — {what changed}
+- {file2} — {what changed}
 - wiki/log.md — appended entry
 ```
+
+---
+
+## Error Handling
+
+- If the subagent cannot match a project or topic, it creates a new one.
+- Routing problems (wrong project, duplicates, misclassification) are caught
+  later by `memory-refresh` lint scripts.
+- If the wiki is not initialised (`wiki/.index.md` missing), state this in
+  the handoff and stop.
+- Never write outside `{memory_root}/wiki/`.
 
 ---
 
 ## Guidelines
 
-- One page per distinct concept or project area. Don't cram unrelated things together.
-- Keep frontmatter exact: 5 fields, no extras.
-- Tags should be specific enough for grep to find the page — prefer technical terms over
-  generic words like "overview" or "notes".
-- If the project or topic folder doesn't exist yet, create it and its `.index.md` first.
-- Never write outside the wiki directory.
-- If the wiki is not initialised (`wiki/.index.md` missing), stop and tell the user.
+- One page per distinct concept or project area
+- Tags should be specific enough for grep — prefer technical terms over
+  generic words like "overview" or "notes"
+- If the project or topic folder doesn't exist yet, create it and its
+  `.index.md` before writing pages
