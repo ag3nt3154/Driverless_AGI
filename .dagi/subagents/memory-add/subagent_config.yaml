@@ -6,8 +6,7 @@ tools:
   - find
   - write
   - edit
-  - bash
 default_handoff_spec: >-
-  Confirmation of what was filed, where (path), and what index files were
-  updated.
+  Confirmation of what was filed, path, and what index files were updated.
+  Format per .dagi/skills/memory-add/SKILL.md handoff section.
 agents_md: []

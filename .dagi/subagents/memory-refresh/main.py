@@ -1,4 +1,4 @@
-# .dagi/subagents/memory-query/main.py
+# .dagi/subagents/memory-refresh/main.py
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
@@ -11,27 +11,22 @@ if TYPE_CHECKING:
     from agent.session import SessionTracker
 
 
-class SpawnMemoryQuerySubagentTool(BaseTool):
-    name = "spawn_memory-query_subagent"
+class SpawnMemoryRefreshSubagentTool(BaseTool):
+    name = "spawn_memory-refresh_subagent"
     description = (
-        "Query the memory wiki to retrieve stored knowledge. "
-        "Returns a synthesised answer with citations."
+        "Maintain and repair the memory wiki. Runs lint scripts, "
+        "presents issues for user approval, and executes fixes. "
+        "Handles: todo updates, frontmatter normalisation, "
+        "broken links, index drift."
     )
     _parameters = {
         "type": "object",
         "properties": {
-            "task": {
-                "type": "string",
-                "description": (
-                    "The question or topic to look up."
-                ),
-            },
             "scope": {
                 "type": "string",
                 "description": (
-                    "Narrow search to a subtree, e.g. 'todos', "
-                    "'projects/dagi', "
-                    "'knowledge/trading-strategies'. Optional."
+                    "Narrow to a category, project, or topic. "
+                    "E.g. 'todos', 'projects/dagi'. Optional."
                 ),
             },
             "custom_instructions": {
@@ -41,7 +36,7 @@ class SpawnMemoryQuerySubagentTool(BaseTool):
                 ),
             },
         },
-        "required": ["task"],
+        "required": [],
     }
 
     def __init__(
@@ -56,7 +51,6 @@ class SpawnMemoryQuerySubagentTool(BaseTool):
 
     def run(
         self,
-        task: str,
         scope: str = "",
         custom_instructions: str = "",
     ) -> str:
@@ -65,10 +59,9 @@ class SpawnMemoryQuerySubagentTool(BaseTool):
             format_handoff_result,
         )
 
-        # Build enriched task with scope
-        enriched_task = task
+        task = "Run memory-refresh protocol."
         if scope:
-            enriched_task += f"\nScope: {scope}"
+            task += f"\nScope: {scope}"
 
         on_event = None
         if (
@@ -77,13 +70,13 @@ class SpawnMemoryQuerySubagentTool(BaseTool):
         ):
             on_event = (
                 self._callbacks.on_subagent_event_factory(
-                    "memory-query",
+                    "memory-refresh",
                 )
             )
 
         result = _subagent_api.run_subagent(
-            task=enriched_task,
-            preset="memory-query",
+            task=task,
+            preset="memory-refresh",
             custom_instructions=custom_instructions,
             project_path=self._config.project_path,
             on_event=on_event,
@@ -102,6 +95,6 @@ class SpawnMemoryQuerySubagentTool(BaseTool):
                 "escalation": result.escalation,
                 "message": result.escalation or "",
             },
-            "memory-query",
+            "memory-refresh",
             include_escalation=True,
         )
