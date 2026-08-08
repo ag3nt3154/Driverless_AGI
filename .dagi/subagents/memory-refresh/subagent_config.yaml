@@ -1,0 +1,12 @@
+model_tier: default
+root: memory_root
+tools:
+  - read
+  - grep
+  - find
+  - write
+  - edit
+  - bash
+default_handoff_spec: >-
+  Summary of all issues found and actions taken (or skipped).
+agents_md: []

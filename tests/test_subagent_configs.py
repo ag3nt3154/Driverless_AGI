@@ -31,7 +31,7 @@ def _registered_subagent_config_paths() -> list[Path]:
     return configs
 
 
-def test_all_nine_registered_subagents_are_found():
+def test_all_registered_subagents_are_found():
     """Sanity check that the discovery glob matches the expected registered set."""
     names = {p.parent.name for p in _registered_subagent_config_paths()}
     assert names == {
@@ -40,6 +40,7 @@ def test_all_nine_registered_subagents_are_found():
         "explore_files",
         "memory-add",
         "memory-query",
+        "memory-refresh",
         "plan",
         "review",
         "web_research",

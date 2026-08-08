@@ -19,7 +19,12 @@ When the conversation exceeds the model's context window, **Pi-style context com
 
 Every agent response with no tool calls must end with `<<END_OF_RESPONSE>>` — this applies to greetings, answers, and completed tasks alike. If the flag is absent, the harness treats the response as accidentally truncated and injects a recovery prompt (`.dagi/prompts/main/continue.md`) as a user message to resume the loop. A safety valve (`max_continuations`, default 10, configurable in `config.yaml`) prevents runaway recovery loops. `<<TASK_END>>` is kept as a silent legacy alias.
 
-At session start, **wiki index injection** automatically reads the root and section `.index.md` files from the memory wiki and prepends them as a system message before the first API call — giving the agent a structural map of accumulated knowledge without any manual invocation. The agent then uses `spawn_memory_query_subagent` for targeted retrieval and `spawn_memory_add_subagent` to persist new knowledge after each task.
+At session start, **wiki index injection** automatically reads the root and section `.index.md` files
+from the memory wiki and prepends them as a system message before the first API call — giving the
+agent a structural map of accumulated knowledge without any manual invocation. The agent then uses the
+`memory-query` subagent for targeted retrieval and the `memory-add` subagent to persist new knowledge.
+The unified wiki has four categories: projects, todos, knowledge, events. Three skills govern it:
+`memory-add`, `memory-query`, and `memory-refresh` (lint sweep + triage).
 
 ---
 
@@ -279,7 +284,9 @@ Drop any relevant documents — architecture notes, API references, prior sessio
 Invoke the memory-ingest skill.
 ```
 
-At the start of every subsequent session, BM25 retrieval automatically surfaces the most relevant wiki pages as context before the first API call.
+At the start of every subsequent session, wiki index injection prepends the `.index.md` files as a
+system message, giving the agent a structural map of the wiki. Use `memory-query` for targeted
+retrieval and `memory-refresh` to lint and triage wiki health.
 
 ---
 
@@ -389,10 +396,10 @@ Or as a slash command if the skill is loaded:
 
 | Skill | Purpose |
 |-------|---------|
-| `memory-add` | Add a structured note to the persistent wiki |
+| `memory-add` | Add a structured note to the persistent wiki (projects, todos, knowledge, events) |
 | `memory-ingest` | Bulk-ingest raw documents into the wiki |
-| `memory-query` | Look up information in the wiki |
-| `memory-lint` | Validate wiki structure and internal links |
+| `memory-query` | Look up information in the wiki (read-only; scope parameter) |
+| `memory-refresh` | Lint sweep + interactive triage: validates frontmatter, links, overdue todos, indexes |
 | `create-skill` | Scaffold a new skill document |
 | `review-session` | Analyse sessions described in free text (folder, files, time window) into one running cross-session review report |
 | `grilling` | Adversarial interrogation of a plan or idea before implementation; chains to `plan` |
@@ -742,10 +749,10 @@ Built-in skills:
 
 | Skill | What it does |
 |-------|-------------|
-| `memory-add` | Add a structured note to the wiki |
+| `memory-add` | Add a structured note to the wiki (four categories: projects, todos, knowledge, events) |
 | `memory-ingest` | Bulk-ingest source material into the wiki |
-| `memory-query` | Look up information in the wiki |
-| `memory-lint` | Validate wiki structure and wikilinks |
+| `memory-query` | Look up information in the wiki (read-only; scope parameter) |
+| `memory-refresh` | Lint sweep + interactive triage: frontmatter, links, overdue todos, indexes |
 | `create-skill` | Scaffold a new skill document |
 | `review-session` | Deep-read sessions described in free text, analyse tasks/actions/errors/corrections across all of them, and accumulate findings into one running review report at `.dagi/self-review/` |
 

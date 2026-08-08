@@ -131,23 +131,20 @@ tui.py / telegram_bot.py / main.py
 |------|---------|
 | `agent/loop.py` | Core agent loop, system-prompt assembly, termination/compaction, WriteHandoff sentinel dispatch |
 | `agent/config_loader.py` | Reads `config.yaml`, merges `.dagi/config.yaml`, resolves API key, services, Telegram config |
-| `tools/read/` | `ReadTool` — text inline (`cat -n` style), docs delegated to doc-converter service over HTTP |
-| `tools/edit/` | `EditTool` — `oldText`/`newText` unique-substring replacement, CRLF-safe |
-| `tools/grep/`, `tools/find/` | Regex search (`file:line: content` format), glob file finding |
-| `tools/bash/` | Unsandboxed shell execution — all git operations run through here |
 | `tools/subagent_api.py` | **Public API** — `run_subagent()` / `SubagentResult` / `resume_subagent_by_pid()`; only import point for subagent execution |
 | `tools/_subagent_runner.py` | Private pipe-based subprocess spawner; returns raw dicts; wrapped exclusively by `subagent_api.py` |
 | `tools/_handoff_format.py` | Shared handoff rendering and status dispatch for all 5 subagent-spawning tools |
 | `tools/_task_envelope.py` | Universal `briefing`/`handoff_spec` envelope for subagent tasks |
 | `tools/output_filter.py` | Truncates tool results; full output stored in content-addressed cache |
-| `tools/_document_reader.py` | Long-document summarization via `document-reader` subagent with cache |
 | `services/doc_converter/` | Standalone FastAPI service (port 8100); PDF→markdown via docling/ocrmypdf, Office→markdown via markitdown; own conda env |
 | `agent/subagent_tools.py` | `_discover_subagent_tools()` import-based discovery; `build_subagent_registry()` with `tool_names_override`; auto-injects WriteHandoffTool + EscalateIssueTool |
-| `agent/tools.py` | Wires all tools into `ToolRegistry` |
 | `tui/app.py`, `tui/streaming.py`, `tui/callbacks.py` | TUI lifecycle, StreamPreview expand/collapse, callbacks bridge |
 | `tg/bot.py`, `tg/session.py` | Telegram bot with per-chat sessions and `allowed_chat_ids` gate |
 | `benchmarks/dagi_eval/` | Coding + DS scorecard; `--solver` defaults to `"agent"` — **never invoke without `naive`/`gold` unless authorized** |
-| `archives/cli.py` | Archived Rich REPL — dead code since 2026-07-12 |
+| `.dagi/skills/memory-add/SKILL.md` | Canonical memory-add protocol (parent passes category+metadata; subagent routes) |
+| `.dagi/skills/memory-query/SKILL.md` | Canonical memory-query protocol (read-only; scope parameter) |
+| `.dagi/skills/memory-refresh/SKILL.md` | Canonical memory-refresh protocol (lint sweep + interactive triage) |
+| `.dagi/skills/memory-refresh/scripts/` | Python lint scripts: lint_frontmatter, verify_links, scan_overdue_todos, check_indexes |
 
 ## Errors Log (recent)
 
@@ -168,15 +165,18 @@ tui.py / telegram_bot.py / main.py
 - **Document conversion**: `.pdf/.docx/.xlsx/.pptx` → doc-converter service at `AgentConfig.services["doc_converter"]`, hard-fail if unreachable. PDF page selection via `pages` parameter.
 - **Subagent handoff**: WriteHandoffTool auto-injected; `<<HANDOFF_WRITTEN>>` sentinel triggers immediate return **only when `tc.function.name == "write_handoff"`** (name-gated to prevent false fire from inlined handoff content). Missing handoff → corrective re-entry → last-resort scrape + `_unverified.flag`.
 - **Skill chain**: `grilling` → `plan` → `to-spec` → `dagi-execute` (write-tests/worker/review cycle, 2-attempt retry, escalation sidecar).
-- **Memory wiki**: `G:\My Drive\black_grimoire\dagi-memory\wiki\` (Claude Code skills) vs. repo-local `dagi-memory/wiki/` (DAGI's own subagents). Two separate systems.
+- **Memory wiki**: unified store at `G:\My Drive\black_grimoire\dagi-memory\wiki\` — four categories
+  (projects, todos, knowledge, events), three skills (memory-add, memory-query, memory-refresh).
+  Canonical skill protocols in `.dagi/skills/`; DAGI subagents in `.dagi/subagents/` reference them;
+  Claude Code skills at `~/.claude/skills/` are thin pointers. Both runtimes delegate to subagents.
+- **memory-refresh lint scripts**: `.dagi/skills/memory-refresh/scripts/` — 5 Python scripts; each outputs a JSON array of issues to stdout; run from their directory so `_common` is importable as a local module. Requires `pyyaml` (`dagi` env has 6.0.3).
 - **`tools:` allowlist** (`config.yaml`): post-registration filter via `reg.filter_to(config.tools)`. Any tool not named here is silently stripped — including auto-discovered subagent spawn tools. When adding a new subagent type, also add its tool name to the list.
 - **`DEFAULT_PYTHON_ENV`**: detected at `AgentLoop` startup from `CONDA_DEFAULT_ENV` or `VIRTUAL_ENV` and injected into the system prompt so DAGI knows which env to use for Python commands. Override in the project's `AGENTS.md` if a different env is needed.
 - **Windows**: `EditTool`/`WriteTool` always write LF, normalize `oldText`/`newText` for CRLF safety. Use `conda run -n dagi python` not bare `python.exe`.
 - **TUI**: horizontal layout — `#main-column` (1fr) left, `Sidebar` (30%, max 45) right. `/copy` pushes `CopyScreen` (OptionList of all user+assistant turns); selecting copies full text via clip/pbcopy/xclip. `StreamPreview` expands on first delta, collapses on `on_stream_end`. `_model_name` derived from resolved config.
-- **dagi_eval caveats**: `--timeout-min` only bounds agent loop, not scoring phases. Relative `task_dir` silently breaks scoring — always use `harness.TASKS_DIR`.
 - **`subagent_api` vs `_subagent_runner`**: `tools/subagent_api.py` is the public API (preset resolution, envelope, `SubagentResult`); `tools/_subagent_runner.py` is the private subprocess spawner. Never import `_subagent_runner` directly from outside `subagent_api.py`.
 - **Subagent discovery**: `_discover_subagent_tools()` scans `_DAGI_ROOT/.dagi/subagents/` then `cwd/.dagi/subagents/`; imports each `main.py` and instantiates the exported `BaseTool` subclass. Project types with the same name override built-in types.
-- **`run_subagent` skill** (`.dagi/skills/run_subagent/SKILL.md`): teaches DAGI how to write custom one-off workflow scripts that call `run_subagent()` directly, bypassing the registered-tool mechanism. Use for ad-hoc orchestration that doesn't warrant a permanent subagent type.
+- **dagi_eval caveats**: `--timeout-min` only bounds agent loop, not scoring phases. Relative `task_dir` silently breaks scoring — always use `harness.TASKS_DIR`.
 
 ## User Insights
 
