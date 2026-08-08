@@ -247,6 +247,44 @@ class TestRunWrapper:
         assert output == "Nothing to compact."
 
 
+class TestMultiToolCallSafety:
+    """Compaction must never split a multi-tool-call group, orphaning
+    tool-result messages from their parent assistant message."""
+
+    def test_tail_never_starts_with_orphaned_tool_message(self):
+        messages = [
+            {"role": "system", "content": "sys"},
+            {"role": "user", "content": "hello"},
+            {"role": "assistant", "content": "hi!"},
+            {"role": "user", "content": "task A"},
+            {"role": "assistant", "content": None, "tool_calls": [
+                {"id": "tc1", "type": "function",
+                 "function": {"name": "read", "arguments": "{}"}},
+                {"id": "tc2", "type": "function",
+                 "function": {"name": "grep", "arguments": "{}"}},
+            ]},
+            {"role": "tool", "tool_call_id": "tc1", "content": "file content"},
+            {"role": "tool", "tool_call_id": "tc2", "content": "grep result"},
+            {"role": "user", "content": "task B"},
+            {"role": "assistant", "content": "done B"},
+        ]
+        client = MagicMock()
+        client.chat.completions.create.return_value = _summary_response()
+        tool = CompactTool()
+        tool.bind(messages, _config(keep_recent_tokens=0), client)
+
+        tool.compact(force=True)
+
+        for i, msg in enumerate(messages):
+            if msg.get("role") == "tool":
+                assert i > 0, "tool message at start of messages list"
+                prev = messages[i - 1]
+                assert prev.get("role") in ("assistant", "tool"), (
+                    f"tool message at index {i} preceded by '{prev.get('role')}' "
+                    f"instead of assistant/tool — would be rejected by strict APIs"
+                )
+
+
 class TestHelperFunctions:
     def test_estimate_tokens_counts_content_and_tool_call_args(self):
         msg = {

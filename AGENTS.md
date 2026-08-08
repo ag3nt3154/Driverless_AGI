@@ -1,6 +1,6 @@
 # AGENTS.md
 
-> Last updated: 2026-08-07 | [README](README.md) | [TODO](TODO.md)
+> Last updated: 2026-08-08 | [README](README.md) | [TODO](TODO.md)
 
 ---
 
@@ -155,12 +155,11 @@ tui.py / telegram_bot.py / main.py
 - **2026-08-02**: `<<END_OF_RESPONSE>>` in tool results (file read or unverified subagent handoff) caused LLM to echo sentinel on next turn, breaking loop prematurely → `_escape_sentinels()` in `_bookkeep_tool_call` rewrites `<<` to `< <` before storing in `_messages`.
 - **2026-08-02**: `<<HANDOFF_WRITTEN>>` embedded in inlined handoff content falsely triggered `_handle_write_handoff` in parent loop → sentinel check now gated on `tc.function.name == "write_handoff"`.
 - **2026-07-26**: TUI displayed wrong model name — `get_model_display_name()` only read root config, missed `.dagi/config.yaml` overrides → TUI now resolves via `resolve_model_config()`.
-- **2026-07-26**: Subagent handoff enforcement — write_handoff auto-injection, sentinel detection, corrective re-entry, and unverified-flag scraping added.
-- **2026-07-26**: Post-merge cleanup — duplicated dispatch logic across 5 spawn tools centralized into `dispatch_status_result()`; `unverified_flag_path()` shared; `_handle_write_handoff` refactored to share `_bookkeep_tool_call()`/`_finalize_turn()`.
 - **2026-07-26 (known, deferred)**: `agent/loop.py` is 1172 lines (cap: 500), `AgentLoop.run` CC is 48 (cap: 8) — spun off as standalone refactor task.
 - **2026-08-04**: Subagent refactor merged to main — `tools/subagent_api.py` public API; 9 types each with `main.py` + `subagent_config.yaml`; import-based discovery; `SpawnSubagentTool`/`SpawnCliSubagentTool` deleted; `--tools`/`--model-tier` CLI args; `agents_md` config; `DEFAULT_PYTHON_ENV` in system prompt; `run_subagent` skill; `plan`/`cli` configs fixed (were missing, caused `FileNotFoundError` on preset load).
 - **2026-07-27**: Hashline experiment reverted — smaller models made too many errors copying opaque `LINE#HASH` anchors → restored `oldText`/`newText` edit, `cat -n` read, plain `file:line:` grep. `_hashline.py`, `edit_text/` tool, and hashline tests removed.
 - **2026-08-07**: DeepSeek thinking-mode rejected multi-tool-call batches — (1) `model_extra` fallback in `_consume_stream` / `_extract_reasoning` only checked `"reasoning"` key, missing DeepSeek's `"reasoning_content"` key; (2) interleaved format split tool_calls across multiple assistant messages, only the first carrying `reasoning_content` → fixed both key lookups; restructured to emit one assistant message with all tool_calls before the dispatch loop (standard OpenAI format).
+- **2026-08-08**: DeepSeek rejected orphaned tool messages — two causes: (1) compaction safe-cut logic could split multi-tool-call groups, leaving tool-result messages without their parent assistant → safe cuts now skip positions where the tail would start with a tool message; (2) `RELOAD_SKILLS_SENTINEL` injected a system message between assistant+tool_calls and tool results → deferred system messages until after all tool results are appended.
 
 ## Notes & Terms
 
