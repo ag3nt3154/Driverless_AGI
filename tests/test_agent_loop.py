@@ -265,7 +265,7 @@ class TestWriteHandoffSentinel:
 
         token_updates = []
         callbacks = AgentCallbacks(
-            on_token_update=lambda p, c, cost, t: token_updates.append((p, c, cost, t))
+            on_token_update=lambda p, c, cost, t, cached=0: token_updates.append((p, c, cost, t))
         )
 
         loop = _make_loop(registry=registry)

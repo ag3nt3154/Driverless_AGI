@@ -155,6 +155,7 @@ class TestLoopIntegration:
         )
         with patch("agent.loop.openai.OpenAI"):
             loop = AgentLoop(cfg)
+        loop._skip_slug_generation = True
 
         large_output = "z" * 500   # 500 chars = 125 tokens > reserve_tokens=100
 

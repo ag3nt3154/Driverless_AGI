@@ -29,4 +29,5 @@ def test_render_group_has_three_children() -> None:
     sb = _make_sidebar()
     result = sb.render()
     # Group is a NamedTuple; renderables is a tuple of its children
-    assert len(result.renderables) == 3
+    # Structure: _status_col, Text(""), _tokens_context_col, Text(""), _plan_col
+    assert len(result.renderables) == 5

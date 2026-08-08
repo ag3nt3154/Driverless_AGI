@@ -67,6 +67,7 @@ def _make_loop(max_continuations: int = 3) -> AgentLoop:
 
     loop.tracker = fake_tracker
     loop.registry = fake_registry
+    loop._skip_slug_generation = True
     return loop
 
 

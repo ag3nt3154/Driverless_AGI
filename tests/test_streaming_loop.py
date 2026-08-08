@@ -37,6 +37,7 @@ def _make_loop(callbacks=None, **config_kwargs) -> AgentLoop:
         )
     loop.tracker = fake_tracker
     loop.registry = fake_registry
+    loop._skip_slug_generation = True
     return loop
 
 
@@ -187,7 +188,7 @@ class TestStreamingRun:
         cb = AgentCallbacks(
             on_assistant_text_delta=deltas.append,
             on_assistant_text=finals.append,
-            on_token_update=lambda i, o, c, t: tokens.append((i, o)),
+            on_token_update=lambda i, o, c, t, cached=0: tokens.append((i, o)),
         )
         loop = _make_loop(callbacks=cb, stream=True)
         loop.client, calls = _stream_client([
