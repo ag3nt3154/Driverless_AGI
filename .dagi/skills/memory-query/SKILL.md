@@ -1,142 +1,162 @@
 ---
 name: memory-query
-description: Answer questions by searching the dagi-memory wiki using both index navigation and grep, then synthesise an answer with citations. Offers to file novel synthesis as a new wiki page via memory-add. Use when the user asks about something that may be in the wiki, wants to recall prior knowledge, or asks "what do I know about X".
+description: >-
+  Search the memory wiki and synthesise an answer with citations. Subagent
+  protocol — strictly read-only. The parent agent passes a question and
+  optional scope; this skill navigates indexes, greps for terms, reads
+  candidates, and returns a grounded answer.
+  Canonical source for both DAGI subagents and Claude Code skills.
 ---
 
 # memory-query
 
 ## Purpose
 
-Answer questions by traversing the wiki's index structure and grepping for relevant content.
-Ground every answer in what the wiki contains. Do not answer from training knowledge alone —
-state clearly when wiki evidence is absent.
+Answer questions by traversing the memory wiki's index structure and grepping
+for relevant content. Ground every answer in what the wiki contains. State
+clearly when wiki evidence is absent. **Strictly read-only** — never write to
+the wiki.
 
 ---
 
-## Step 0 — Resolve memory root
+## Memory Root
 
-1. Attempt to read `{cwd}/config.yaml`.
-2. If it exists and contains a non-empty, uncommented `memory_root:` key, use that value.
-   Strip surrounding quotes and trailing slashes.
-3. Otherwise fall back to `{cwd}/dagi-memory`.
-4. If the resolved path differs from the default, note it briefly.
+```
+{memory_root} = G:\My Drive\black_grimoire\dagi-memory
+```
 
-All subsequent paths are relative to `{memory_root}`.
+All paths below are relative to `{memory_root}`. Hardcoded — never resolve from
+config or cwd.
+
+---
+
+## Interface (parent → subagent)
+
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| `task` | yes | The question or topic to look up |
+| `scope` | no | Narrows search to a subtree (e.g. `todos`, `projects/dagi`, `knowledge/trading-strategies`) |
+| `custom_instructions` | no | Freeform guidance from parent |
 
 ---
 
 ## Wiki Structure
 
 ```
-{memory_root}/
-└── wiki/
-    ├── .index.md              ← root nav — lists Projects and Knowledge sections
-    ├── log.md
-    ├── open_questions.md
-    ├── projects/
-    │   ├── .index.md          ← table of all tracked projects
-    │   └── {project-name}/
-    │       ├── .index.md      ← project page index
-    │       └── *.md
-    └── knowledge/
-        ├── .index.md          ← table of all knowledge topics
-        └── {topic}/
-            ├── .index.md      ← topic page index
-            └── *.md
+wiki/
+├── .index.md
+├── projects/   ← bounded initiatives
+├── todos/      ← actionable items
+├── knowledge/  ← durable domain expertise
+└── events/     ← life events, decisions, conversations
 ```
 
-All page frontmatter follows this schema:
-```yaml
----
-type: note | entity | source-summary | reflection | insight | analysis | context | update
-topic: {topic-name}     # or project/{project-name} for project pages
-description: one-line summary
-date_added: YYYY-MM-DD
-tags: keyword1, keyword2, keyword3
----
-```
+Each section and sub-folder has a `.index.md` with a table of its children.
 
 ---
 
-## Step 1 — Scan injected wiki indexes
+## Protocol Steps
 
-The wiki index is injected into every session as `[WIKI INDEX]` in the system prompt.
-If it is not sufficient (e.g. first query of session, or you need per-topic indexes),
-read them explicitly:
+### Step 1 — Load indexes
+
+Read the root and section indexes to orient:
+
 ```
-read("{memory_root}/wiki/.index.md")
-read("{memory_root}/wiki/projects/.index.md")
-read("{memory_root}/wiki/knowledge/.index.md")
-```
-
----
-
-## Step 2 — Grep for key terms
-
-Extract the most specific terms from the query (entity names, technical terms, project names).
-
-**grep the likely section first:**
-```
-grep(pattern="<term>", path="{memory_root}/wiki/knowledge/")
-# or
-grep(pattern="<term>", path="{memory_root}/wiki/projects/")
+read("wiki/.index.md")
+read("wiki/projects/.index.md")
+read("wiki/todos/.index.md")
+read("wiki/knowledge/.index.md")
+read("wiki/events/.index.md")
 ```
 
-If fewer than 3 hits, widen to the full wiki:
+If `scope` is provided, only load the scoped section's index.
+
+Use these to identify candidate sections and likely topics relevant to the
+query before grepping.
+
+### Step 2 — Grep for key terms
+
+Extract the most specific terms from the query (entity names, technical terms,
+project names).
+
+Grep the most likely section first (based on Step 1's candidates):
+
 ```
-grep(pattern="<term>", path="{memory_root}/wiki/")
+grep("<term>", path="wiki/{likely-section}/")
 ```
 
-Rank candidate pages by grep hit density (number of matching lines). Run multiple grep
-passes for different key terms if the first yields sparse results.
+If `scope` is provided, search only within that subtree.
 
----
+If fewer than 3 hits in the scoped section, widen to the full wiki:
 
-## Step 3 — Read candidates
+```
+grep("<term>", path="wiki/")
+```
+
+Rank candidate pages by grep hit density (number of matching lines). Run
+multiple grep passes for different key terms if the first yields sparse
+results.
+
+### Step 3 — Read candidates
 
 For the top 3–5 candidates:
-1. Read the page.
-2. If the page contains `[[wikilinks]]` to related pages, read those too if they are relevant.
-3. If a topic or project `.index.md` is relevant, read it to discover other pages in that
-   folder that did not surface in the grep.
+
+1. Read the page
+2. If the page contains `[[wikilinks]]` to related pages, read those too if
+   relevant
+3. If a topic or project `.index.md` is relevant, read it to discover other
+   pages in that folder that did not surface in the grep
+
+### Step 4 — Synthesise and report
+
+Compose an answer that:
+- Directly addresses the query
+- Cites each wiki page used with `[[wikilinks]]`
+- Notes any gaps: "The wiki does not contain information about X"
+- Suggests filing a new wiki page via memory-add if the synthesised answer
+  is novel and reusable
 
 ---
 
-## Step 4 — Synthesise and report
-
-Compose an answer that:
-- Directly addresses the query.
-- Cites each wiki page used: `[knowledge/topic/slug.md]` or `[projects/name/page.md]`.
-- Notes any gaps: "The wiki does not contain information about X."
-- Suggests filing a new wiki page if the synthesised answer is novel and reusable.
-
-Report inline. Example format:
+## Handoff (subagent → parent)
 
 ```
 ## Answer
 
-{synthesised answer with inline citations}
+{synthesised answer with [[wikilink]] citations}
 
 ## Sources
 
-- knowledge/machine-learning/bias-variance.md — definition and decomposition
-- knowledge/statistics/probability-theory.md — supporting probability background
+- {wiki/path/to/page.md} — {one-line reason it was relevant}
 
 ## Gaps
 
-The wiki has no pages on {X}. Would you like me to file a note on this?
+{relevant topics not found in the wiki, or "None identified"}
+
+## Suggestions
+
+{if synthesis is novel: "Consider filing via memory-add: {brief description}"}
+{otherwise: "None"}
 ```
 
 ---
 
 ## Guidelines
 
-- Do not answer from training knowledge without wiki grounding — state clearly when wiki
-  evidence is absent.
-- Prefer specificity: a precise answer citing 2 pages beats a vague one citing 10.
-- If the injected indexes are sufficient to answer the query without further reads, do so —
-  keep tool calls lean.
-- If the query matches a project (starts with "Project: <name>" or clearly refers to a
-  tracked project), scan `wiki/projects/<name>/` first, reading `context.md` and
-  `updates.md` before grepping for sub-pages.
-- If the wiki is not initialised (`wiki/.index.md` missing), stop and tell the user.
+- Do not answer from training knowledge without wiki grounding — state
+  clearly when wiki evidence is absent
+- Prefer specificity: a precise answer citing 2 pages beats a vague one
+  citing 10
+- If the indexes are sufficient to answer the query without reading every
+  page, do so — keep tool calls lean
+- If the query matches a project, scan `wiki/projects/{name}/` first,
+  reading `overview.md` before grepping for sub-pages
+- If the wiki is not initialised (`wiki/.index.md` missing), state this in
+  the handoff and stop
+- **Never write to the wiki.** Suggest memory-add in the handoff if
+  appropriate; the parent decides
+
+## Coding Standards
+
+- Files ≤ 500 lines
+- Line length ≤ 100 chars
