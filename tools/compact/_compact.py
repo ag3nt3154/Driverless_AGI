@@ -164,8 +164,13 @@ class CompactTool(BaseTool):
             search_start = 2  # skip the old summary when scanning safe cuts
 
         # ── Find safe cut points ──────────────────────────────────────────
+        # A cut at index i means the tail starts at msgs[i]. Never start
+        # the tail with a tool message — it would be orphaned from its
+        # parent assistant (which lands in the summarised middle).
         safe_cuts: list[int] = []
         for i in range(search_start + 1, len(msgs)):
+            if msgs[i].get("role") == "tool":
+                continue
             prev = msgs[i - 1]
             if prev.get("role") == "tool":
                 safe_cuts.append(i)
