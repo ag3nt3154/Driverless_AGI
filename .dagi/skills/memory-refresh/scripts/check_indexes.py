@@ -26,7 +26,7 @@ def _actual_children(folder: Path) -> set[str]:
         return set()
     return {
         f.name for f in folder.iterdir()
-        if f.suffix == ".md" and not is_index_file(f)
+        if f.suffix == ".md" and not is_index_file(f) and f.name != "log.md"
     }
 
 
@@ -56,7 +56,7 @@ def check(scope: str | None = None) -> list[dict]:
 
         # Files in folder but not in index
         for f in actual:
-            if f not in indexed and f != "log.md":
+            if f not in indexed:
                 issues.append({
                     "file": rel_index,
                     "type": "missing_from_index",
