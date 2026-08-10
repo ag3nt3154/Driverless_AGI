@@ -22,7 +22,7 @@ from agent.registry import ToolRegistry
 from agent.session import SessionTracker, ToolCallRecord
 from agent.skills import Skill, SkillLoader
 from tools.compact import CompactTool, CompactionResult, _NO_COMPACTION
-from tools.complete_plan import COMPLETE_PLAN_SENTINEL
+from tools.update_task_status import UPDATE_TASK_STATUS_SENTINEL
 from tools.plan_mode import ENTER_PLAN_MODE_SENTINEL, EXIT_PLAN_MODE_SENTINEL
 from tools.reload_skills import RELOAD_SKILLS_SENTINEL
 from tools.output_filter import filter_tool_output
@@ -526,7 +526,7 @@ class AgentLoop:
             iteration = 0
             while True:
                 iteration += 1
-                self._refresh_active_plan_tail()
+                self._refresh_dynamic_context()
                 self.callbacks.on_iteration(iteration)
                 self._pause_event.wait()  # blocks here when paused; instant no-op otherwise
 
@@ -735,7 +735,10 @@ class AgentLoop:
                         result = self._handle_enter_plan_mode(args)
                     elif result == EXIT_PLAN_MODE_SENTINEL:
                         result = self._handle_exit_plan_mode(args)
-                    elif result == COMPLETE_PLAN_SENTINEL:
+                    elif (
+                        isinstance(result, str)
+                        and UPDATE_TASK_STATUS_SENTINEL in result
+                    ):
                         result = self._handle_complete_plan()
                     elif result == RELOAD_SKILLS_SENTINEL:
                         added, removed, errors = self._rebuild_for_reload()
@@ -1092,80 +1095,80 @@ class AgentLoop:
         sections = [s for s in [preamble, prompt] if s]
         system = "\n\n---\n\n".join(sections)
         system += f"\n\n---\n\nProject root: {self.config.project_path}"
-        if self.config.python_env:
-            system += f"\nDEFAULT_PYTHON_ENV: {self.config.python_env}"
 
         self._system_prefix = system
-        return system + self._build_active_plan_tail()
+        return system
 
-    def _build_active_plan_tail(self) -> str:
-        """Build the '## Active Plan' + live status board tail.
+    _DYNAMIC_CONTEXT_SENTINEL = "## Session Context"
 
-        Returns an empty string when no plan is active (or plan mode is active,
-        in which case the plan file is being edited directly and doesn't need
-        this reminder). Called both at system-string assembly time and, every
-        loop iteration, by _refresh_active_plan_tail() to keep the status board
-        current without rebuilding the (cache-relevant) prefix.
+    def _build_dynamic_context(self) -> str:
+        """Build the dynamic context board appended as the last message.
+
+        Contains mutable session state that the model should always see:
+        python env, active plan status. Kept lean — titles and markers
+        only. The model reads the plan file for full task descriptions.
         """
-        if not (self.config.active_plan_file and not self.config.plan_mode):
-            return ""
-
-        tail = (
-            f"\n\n---\n\n"
-            f"## Active Plan\n\n"
-            f"A plan document is active at: `{self.config.active_plan_file}`\n\n"
-            f"**Before starting any implementation work**, read the plan file "
-            f"in full — it contains the subtask definitions you must work "
-            f"through. Use the `dagi-execute` skill to drive the "
-            f"write-tests / implement / review cycle for each subtask.\n\n"
-            f"As you work:\n"
-            f"- Follow the `dagi-execute` skill's cycle for each subtask.\n"
-            f"- After completing each subtask, edit the plan and update its "
-            f"status marker.\n"
-            f"- If something feels wrong or unclear, re-read the plan file — "
-            f"the answer is likely there.\n"
-            f"- If you deviate from the plan, update it to reflect reality."
-        )
-        tail += self._render_plan_status_section()
-        return tail
-
-    def _render_plan_status_section(self) -> str:
-        """Render the '## Plan Status' board from the active plan file's subtask markers."""
         from tools._plan_parser import parse_subtask_statuses
 
-        try:
-            plan_text = Path(self.config.active_plan_file).read_text(encoding="utf-8")
-        except (OSError, UnicodeDecodeError):
-            return ""
+        parts = [self._DYNAMIC_CONTEXT_SENTINEL]
 
-        statuses = parse_subtask_statuses(plan_text)
-        if not statuses:
-            return ""
+        if self.config.python_env:
+            parts.append(f"Python env: {self.config.python_env}")
 
-        marker_map = {
-            "pending": " ", "in_progress": "~", "complete": "x",
-            "failed": "!", "unknown": "?",
-        }
-        # Numbering here is positional/display-only (1, 2, 3...) — intentionally
-        # decoupled from each subtask's own "### Subtask N" number in plan.md.
-        lines = [
-            f"{i}. [{marker_map.get(s['status'], '?')}] {s['name']}"
-            for i, s in enumerate(statuses, start=1)
-        ]
-        return "\n\n## Plan Status\n" + "\n".join(lines)
+        plan_file = self.config.active_plan_file
+        if plan_file and not self.config.plan_mode:
+            parts.append(f"Plan: {plan_file}")
+            try:
+                text = Path(plan_file).read_text(encoding="utf-8")
+            except (OSError, UnicodeDecodeError):
+                text = ""
 
-    def _refresh_active_plan_tail(self) -> None:
-        """Re-splice the Active Plan + Plan Status tail onto the cached prefix.
+            statuses = parse_subtask_statuses(text)
+            if statuses:
+                # Active = first in_progress, else first pending
+                active = next(
+                    (s for s in statuses if s["status"] == "in_progress"),
+                    next(
+                        (s for s in statuses if s["status"] == "pending"),
+                        None,
+                    ),
+                )
+                if active:
+                    idx = statuses.index(active) + 1
+                    parts.append(f"Active: {idx}. {active['name']}")
 
-        Called at the top of every iteration of run()'s main loop. It's cheap
-        (one file read + one regex parse) and never touches self._system_prefix,
-        so cache_prompt's hit rate on the large static prefix is unaffected.
+                marker_map = {
+                    "pending": " ", "in_progress": "~",
+                    "complete": "x", "failed": "!",
+                }
+                status_line = " ".join(
+                    f"{i}.[{marker_map.get(s['status'], '?')}]"
+                    for i, s in enumerate(statuses, start=1)
+                )
+                parts.append(f"Status: {status_line}")
+
+        return "\n".join(parts)
+
+    def _refresh_dynamic_context(self) -> None:
+        """Pop any existing board and append a fresh one at the end.
+
+        Called at the top of every iteration of ``run()``'s main loop.
+        Uses sentinel search (not index tracking) so it is safe across
+        compaction, which may remove or shift messages.
         """
-        if self.config.active_plan_file and not self.config.plan_mode:
-            self._messages[0] = {
-                "role": "system",
-                "content": self._system_prefix + self._build_active_plan_tail(),
-            }
+        sentinel = self._DYNAMIC_CONTEXT_SENTINEL
+        for i in range(len(self._messages) - 1, 0, -1):
+            content = self._messages[i].get("content", "")
+            if (
+                self._messages[i].get("role") == "system"
+                and isinstance(content, str)
+                and sentinel in content
+            ):
+                self._messages.pop(i)
+                break
+
+        board = self._build_dynamic_context()
+        self._messages.append({"role": "system", "content": board})
 
     def _rebuild_for_normal_mode(self, dagi_root: Path) -> None:
         from agent.tools import create_tool_registry

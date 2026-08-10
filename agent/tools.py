@@ -200,10 +200,15 @@ def create_tool_registry(
         reg.register(BashTool(cwd=cwd))
         if bash_tool is not None:
             reg.register(bash_tool)
-        from tools.complete_plan import CompletePlanTool
         from tools.plan_mode import EnterPlanModeTool
+        from tools.update_task_status import UpdateTaskStatusTool
         reg.register(EnterPlanModeTool())
-        reg.register(CompletePlanTool())
+        _plan_path = (
+            Path(config.active_plan_file)
+            if config and config.active_plan_file
+            else None
+        )
+        reg.register(UpdateTaskStatusTool(plan_path=_plan_path))
         from tools.ask_user import AskUserTool
         _on_ask = callbacks.on_ask_user if callbacks else _default_ask_user
         _ask_timeout = (

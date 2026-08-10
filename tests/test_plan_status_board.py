@@ -1,4 +1,4 @@
-"""tests/test_plan_status_board.py — Live plan status board rendering + prefix caching."""
+"""tests/test_plan_status_board.py — Dynamic context board (migrated)."""
 from __future__ import annotations
 
 from pathlib import Path
@@ -9,7 +9,10 @@ import pytest
 from agent.loop import AgentConfig, AgentLoop
 
 
-def _make_loop(project_path: Path, active_plan_file: str | None = None) -> AgentLoop:
+def _make_loop(
+    project_path: Path,
+    active_plan_file: str | None = None,
+) -> AgentLoop:
     config = AgentConfig(
         model="test-model",
         api_key="test-key",
@@ -17,23 +20,23 @@ def _make_loop(project_path: Path, active_plan_file: str | None = None) -> Agent
         project_path=project_path,
         active_plan_file=active_plan_file,
     )
-
     fake_registry = MagicMock()
     fake_registry.get_openai_tools_list.return_value = []
     fake_registry.list_tools.return_value = []
-
     fake_tracker = MagicMock()
     fake_tracker.record_system = MagicMock()
     fake_tracker.record_user = MagicMock()
     fake_tracker.record_assistant = MagicMock()
-
     with (
         patch("agent.loop.SessionTracker", return_value=fake_tracker),
         patch("openai.OpenAI"),
         patch.object(Path, "exists", return_value=False),
     ):
-        loop = AgentLoop(config=config, _registry=fake_registry, _tracker=fake_tracker)
-
+        loop = AgentLoop(
+            config=config,
+            _registry=fake_registry,
+            _tracker=fake_tracker,
+        )
     loop.tracker = fake_tracker
     loop.registry = fake_registry
     return loop
@@ -58,111 +61,115 @@ PLAN_TEXT = """\
 """
 
 
-class TestPlanStatusBoardRendering:
-    def test_status_board_lists_all_subtasks_with_markers(self, tmp_path):
+class TestDynamicContextRendering:
+    def test_board_lists_all_tasks_with_markers(self, tmp_path):
         plan_file = tmp_path / "plan.md"
         plan_file.write_text(PLAN_TEXT, encoding="utf-8")
         loop = _make_loop(tmp_path, active_plan_file=str(plan_file))
 
-        tail = loop._build_active_plan_tail()
+        board = loop._build_dynamic_context()
 
-        assert "## Plan Status" in tail
-        assert "[x] Add escalate_issue tool" in tail
-        assert "[~] Wire runner escalation detection" in tail
-        assert "[ ] Update plan-work-review skill" in tail
-        assert "[!] Add status board renderer" in tail
+        assert "## Session Context" in board
+        assert "[x]" in board
+        assert "[~]" in board
+        assert "[ ]" in board
+        assert "[!]" in board
 
-    def test_no_active_plan_returns_empty_tail(self, tmp_path):
+    def test_no_active_plan_omits_plan_lines(self, tmp_path):
         loop = _make_loop(tmp_path, active_plan_file=None)
 
-        assert loop._build_active_plan_tail() == ""
+        board = loop._build_dynamic_context()
 
-    def test_plan_mode_active_returns_empty_tail(self, tmp_path):
+        assert "## Session Context" in board
+        assert "Plan:" not in board
+        assert "Status:" not in board
+
+    def test_plan_mode_active_omits_plan_lines(self, tmp_path):
         plan_file = tmp_path / "plan.md"
         plan_file.write_text(PLAN_TEXT, encoding="utf-8")
         loop = _make_loop(tmp_path, active_plan_file=str(plan_file))
         loop.config.plan_mode = True
 
-        assert loop._build_active_plan_tail() == ""
+        board = loop._build_dynamic_context()
 
-    def test_malformed_plan_file_does_not_raise(self, tmp_path):
+        assert "Status:" not in board
+
+    def test_malformed_plan_no_crash(self, tmp_path):
         plan_file = tmp_path / "plan.md"
-        plan_file.write_text("not a real plan, no headings at all", encoding="utf-8")
+        plan_file.write_text("not a plan", encoding="utf-8")
         loop = _make_loop(tmp_path, active_plan_file=str(plan_file))
 
-        tail = loop._build_active_plan_tail()
+        board = loop._build_dynamic_context()
 
-        assert "## Active Plan" in tail  # pointer section still renders
+        assert "## Session Context" in board
+        assert "Plan:" in board
 
-    def test_missing_plan_file_does_not_raise(self, tmp_path):
-        loop = _make_loop(tmp_path, active_plan_file=str(tmp_path / "does_not_exist.md"))
+    def test_missing_plan_file_no_crash(self, tmp_path):
+        loop = _make_loop(
+            tmp_path,
+            active_plan_file=str(tmp_path / "missing.md"),
+        )
 
-        tail = loop._build_active_plan_tail()
+        board = loop._build_dynamic_context()
 
-        assert "## Active Plan" in tail
+        assert "## Session Context" in board
 
 
-class TestSystemPrefixCaching:
-    def test_system_prefix_set_after_init(self, tmp_path):
-        loop = _make_loop(tmp_path, active_plan_file=None)
+class TestStaticPrefixClean:
+    def test_prefix_excludes_python_env(self, tmp_path):
+        loop = _make_loop(tmp_path)
+        assert "DEFAULT_PYTHON_ENV" not in loop._system_prefix
 
-        assert isinstance(loop._system_prefix, str)
-        assert len(loop._system_prefix) > 0
-
-    def test_system_prefix_excludes_active_plan_tail(self, tmp_path):
+    def test_prefix_excludes_plan_content(self, tmp_path):
         plan_file = tmp_path / "plan.md"
         plan_file.write_text(PLAN_TEXT, encoding="utf-8")
         loop = _make_loop(tmp_path, active_plan_file=str(plan_file))
 
         assert "## Active Plan" not in loop._system_prefix
         assert "## Plan Status" not in loop._system_prefix
+        assert "## Session Context" not in loop._system_prefix
 
-    def test_full_system_string_equals_prefix_plus_tail(self, tmp_path):
+
+class TestRefreshUpdatesLastMessage:
+    def test_board_at_messages_end(self, tmp_path):
         plan_file = tmp_path / "plan.md"
         plan_file.write_text(PLAN_TEXT, encoding="utf-8")
         loop = _make_loop(tmp_path, active_plan_file=str(plan_file))
 
-        full = loop._messages[0]["content"]
-        assert full == loop._system_prefix + loop._build_active_plan_tail()
+        loop._refresh_dynamic_context()
 
+        assert loop._messages[-1]["role"] == "system"
+        assert "## Session Context" in loop._messages[-1]["content"]
 
-class TestPerIterationRefresh:
-    def test_status_board_reflects_change_between_iterations(self, tmp_path):
+    def test_messages_0_unchanged_after_refresh(self, tmp_path):
+        plan_file = tmp_path / "plan.md"
+        plan_file.write_text(PLAN_TEXT, encoding="utf-8")
+        loop = _make_loop(tmp_path, active_plan_file=str(plan_file))
+        msg0 = loop._messages[0]["content"]
+
+        plan_file.write_text(
+            PLAN_TEXT.replace("[~]", "[x]"), encoding="utf-8",
+        )
+        loop._refresh_dynamic_context()
+
+        assert loop._messages[0]["content"] == msg0
+
+    def test_board_reflects_disk_changes(self, tmp_path):
         plan_file = tmp_path / "plan.md"
         plan_file.write_text(PLAN_TEXT, encoding="utf-8")
         loop = _make_loop(tmp_path, active_plan_file=str(plan_file))
 
-        loop._refresh_active_plan_tail()
-        assert "[~] Wire runner escalation detection" in loop._messages[0]["content"]
+        loop._refresh_dynamic_context()
+        assert "[~]" in loop._messages[-1]["content"]
 
-        # Simulate the subtask completing between iterations.
         plan_file.write_text(
             PLAN_TEXT.replace(
-                "### Subtask 2: [~] Wire runner escalation detection",
-                "### Subtask 2: [x] Wire runner escalation detection",
+                "### Subtask 2: [~]",
+                "### Subtask 2: [x]",
             ),
             encoding="utf-8",
         )
-        loop._refresh_active_plan_tail()
+        loop._refresh_dynamic_context()
 
-        assert "[x] Wire runner escalation detection" in loop._messages[0]["content"]
-        assert "[~] Wire runner escalation detection" not in loop._messages[0]["content"]
-
-    def test_prefix_unchanged_across_refreshes(self, tmp_path):
-        plan_file = tmp_path / "plan.md"
-        plan_file.write_text(PLAN_TEXT, encoding="utf-8")
-        loop = _make_loop(tmp_path, active_plan_file=str(plan_file))
-        prefix_before = loop._system_prefix
-
-        plan_file.write_text(PLAN_TEXT.replace("[~]", "[x]"), encoding="utf-8")
-        loop._refresh_active_plan_tail()
-
-        assert loop._system_prefix == prefix_before
-
-    def test_no_active_plan_refresh_is_a_no_op(self, tmp_path):
-        loop = _make_loop(tmp_path, active_plan_file=None)
-        content_before = loop._messages[0]["content"]
-
-        loop._refresh_active_plan_tail()
-
-        assert loop._messages[0]["content"] == content_before
+        last = loop._messages[-1]["content"]
+        assert "[~]" not in last
