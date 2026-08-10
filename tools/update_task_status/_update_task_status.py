@@ -9,6 +9,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from agent.base_tool import BaseTool
+from tools._plan_parser import update_task_marker
 
 UPDATE_TASK_STATUS_SENTINEL = "__UPDATE_TASK_STATUS_ALL_RESOLVED__"
 
@@ -40,13 +41,12 @@ class UpdateTaskStatusTool(BaseTool):
     }
 
     def __init__(self, plan_path: Path | None = None) -> None:
+        super().__init__()
         self._plan_path = plan_path
 
     def run(self, task: int, status: str) -> str:
         if self._plan_path is None:
             return "Error: no active plan file."
-
-        from tools._plan_parser import update_task_marker
 
         try:
             statuses = update_task_marker(
