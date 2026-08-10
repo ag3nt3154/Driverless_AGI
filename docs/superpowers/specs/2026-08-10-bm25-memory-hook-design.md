@@ -124,6 +124,10 @@ Each entry in `systemMessage`: `### {title}`, description line, up to 300 chars 
 
 ## Hook Registration
 
+> **Note:** Use the env's Python interpreter directly — `conda run` does not forward stdin
+> to the subprocess (it uses a wrapper script that severs the pipe), so `json.load(sys.stdin)`
+> would always fail. Direct invocation via `envs/dagi/python.exe` preserves stdin correctly.
+
 Add to `C:\Users\alexr\.claude\settings.json`:
 
 ```json
@@ -135,7 +139,7 @@ Add to `C:\Users\alexr\.claude\settings.json`:
         "hooks": [
           {
             "type": "command",
-            "command": "conda run -n dagi python C:/Users/alexr/.claude/hooks/bm25_memory_recall.py",
+            "command": "C:/Users/alexr/miniconda3/envs/dagi/python.exe C:/Users/alexr/.claude/hooks/bm25_memory_recall.py",
             "timeout": 30
           }
         ]
