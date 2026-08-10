@@ -31,6 +31,7 @@ Plan file format:
 from __future__ import annotations
 
 import re
+from pathlib import Path
 
 
 # ---------------------------------------------------------------------------
@@ -145,10 +146,12 @@ def parse_subtask_statuses(plan_text: str) -> list[dict]:
 
     _MARKER_MAP = {" ": "pending", "~": "in_progress", "x": "complete", "!": "failed"}
     _WITH_MARKER = re.compile(
-        r'^###\s+Subtask\s+\d+:\s*\[([ ~x!])\]\s*(.+)$', re.MULTILINE
+        r'^###\s+(?:Subtask|Task)\s+\d+:\s*\[([ ~x!])\]\s*(.+)$',
+        re.MULTILINE,
     )
     _WITHOUT_MARKER = re.compile(
-        r'^###\s+Subtask\s+\d+:(?!\s*\[[ ~x!]\])\s*(.+)$', re.MULTILINE
+        r'^###\s+(?:Subtask|Task)\s+\d+:(?!\s*\[[ ~x!]\])\s*(.+)$',
+        re.MULTILINE,
     )
 
     results: list[dict] = []
@@ -165,6 +168,53 @@ def parse_subtask_statuses(plan_text: str) -> list[dict]:
 
     results.sort(key=lambda d: d.pop("_pos"))
     return results
+
+
+def update_task_marker(
+    plan_path: Path, task_number: int, new_status: str,
+) -> list[dict]:
+    """Update the status marker for the Nth task heading in a plan file.
+
+    Writes the change to disk and returns the full status list after
+    the update (same format as ``parse_subtask_statuses``).
+
+    Raises ``ValueError`` if *task_number* does not match any heading.
+    """
+    _STATUS_TO_MARKER = {
+        "pending": " ", "in_progress": "~",
+        "complete": "x", "failed": "!",
+    }
+    marker = _STATUS_TO_MARKER.get(new_status)
+    if marker is None:
+        raise ValueError(
+            f"Invalid status {new_status!r}; "
+            f"expected one of {list(_STATUS_TO_MARKER)}"
+        )
+
+    text = plan_path.read_text(encoding="utf-8")
+
+    # Match both flavours: ### Task N: ... and ### Subtask N: ...
+    # With or without an existing [marker].
+    _HEADING = re.compile(
+        r'^(###\s+(?:Subtask|Task)\s+\d+:\s*)'
+        r'(?:\[[ ~x!]\]\s*)?'
+        r'(.+)$',
+        re.MULTILINE,
+    )
+    matches = list(_HEADING.finditer(text))
+    if task_number < 1 or task_number > len(matches):
+        raise ValueError(
+            f"Task {task_number} not found "
+            f"(plan has {len(matches)} task headings)"
+        )
+
+    m = matches[task_number - 1]
+    prefix, name = m.group(1), m.group(2)
+    replacement = f"{prefix}[{marker}] {name}"
+    text = text[:m.start()] + replacement + text[m.end():]
+
+    plan_path.write_text(text, encoding="utf-8")
+    return parse_subtask_statuses(text)
 
 
 def _strip_tests_subsection(block: str) -> str:

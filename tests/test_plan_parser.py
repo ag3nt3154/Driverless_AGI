@@ -305,3 +305,145 @@ class TestEdgeCases:
         # The #### Other section that follows Tests should be retained
         assert "#### Other" in result
         assert "some other section" in result
+
+
+# ---------------------------------------------------------------------------
+# Task keyword support (alongside Subtask)
+# ---------------------------------------------------------------------------
+
+TASK_KEYWORD_PLAN = """\
+# Plan: Feature
+
+## Subtasks
+
+### Task 1: [x] Setup project
+**Goal:** Init the repo.
+
+### Task 2: [~] Implement core
+**Goal:** Build the thing.
+
+### Task 3: [ ] Add tests
+**Goal:** Test the thing.
+"""
+
+MIXED_KEYWORD_PLAN = """\
+# Plan: Migration
+
+## Subtasks
+
+### Subtask 1: [x] Old format task
+**Goal:** Legacy.
+
+### Task 2: [ ] New format task
+**Goal:** Modern.
+"""
+
+
+class TestTaskKeywordSupport:
+    def test_parse_statuses_with_task_keyword(self):
+        from tools._plan_parser import parse_subtask_statuses
+        statuses = parse_subtask_statuses(TASK_KEYWORD_PLAN)
+        assert len(statuses) == 3
+        assert statuses[0] == {"name": "Setup project", "status": "complete"}
+        assert statuses[1] == {"name": "Implement core", "status": "in_progress"}
+        assert statuses[2] == {"name": "Add tests", "status": "pending"}
+
+    def test_parse_statuses_mixed_keywords(self):
+        from tools._plan_parser import parse_subtask_statuses
+        statuses = parse_subtask_statuses(MIXED_KEYWORD_PLAN)
+        assert len(statuses) == 2
+        assert statuses[0]["name"] == "Old format task"
+        assert statuses[1]["name"] == "New format task"
+
+    def test_extract_subtask_with_task_keyword(self):
+        result = extract_subtask(TASK_KEYWORD_PLAN, "Implement core")
+        assert "### Task 2:" in result
+        assert "Build the thing" in result
+
+    def test_extract_subtask_with_task_keyword_no_bleed(self):
+        result = extract_subtask(TASK_KEYWORD_PLAN, "Implement core")
+        assert "### Task 3:" not in result
+
+
+from pathlib import Path
+
+
+class TestUpdateTaskMarker:
+    def test_marks_pending_to_in_progress(self, tmp_path):
+        from tools._plan_parser import update_task_marker
+        plan = tmp_path / "plan.md"
+        plan.write_text(TASK_KEYWORD_PLAN, encoding="utf-8")
+
+        statuses = update_task_marker(plan, task_number=3, new_status="in_progress")
+
+        text = plan.read_text(encoding="utf-8")
+        assert "### Task 3: [~] Add tests" in text
+        assert statuses[2]["status"] == "in_progress"
+
+    def test_marks_in_progress_to_complete(self, tmp_path):
+        from tools._plan_parser import update_task_marker
+        plan = tmp_path / "plan.md"
+        plan.write_text(TASK_KEYWORD_PLAN, encoding="utf-8")
+
+        statuses = update_task_marker(plan, task_number=2, new_status="complete")
+
+        text = plan.read_text(encoding="utf-8")
+        assert "### Task 2: [x] Implement core" in text
+        assert statuses[1]["status"] == "complete"
+
+    def test_marks_task_as_failed(self, tmp_path):
+        from tools._plan_parser import update_task_marker
+        plan = tmp_path / "plan.md"
+        plan.write_text(TASK_KEYWORD_PLAN, encoding="utf-8")
+
+        statuses = update_task_marker(plan, task_number=1, new_status="failed")
+
+        text = plan.read_text(encoding="utf-8")
+        assert "### Task 1: [!] Setup project" in text
+
+    def test_works_with_subtask_keyword(self, tmp_path):
+        from tools._plan_parser import update_task_marker
+        plan = tmp_path / "plan.md"
+        plan.write_text(MIXED_KEYWORD_PLAN, encoding="utf-8")
+
+        statuses = update_task_marker(plan, task_number=1, new_status="in_progress")
+
+        text = plan.read_text(encoding="utf-8")
+        assert "### Subtask 1: [~] Old format task" in text
+
+    def test_invalid_task_number_raises(self, tmp_path):
+        from tools._plan_parser import update_task_marker
+        plan = tmp_path / "plan.md"
+        plan.write_text(TASK_KEYWORD_PLAN, encoding="utf-8")
+
+        with pytest.raises(ValueError, match="Task 99 not found"):
+            update_task_marker(plan, task_number=99, new_status="complete")
+
+    def test_adds_marker_to_heading_without_one(self, tmp_path):
+        from tools._plan_parser import update_task_marker
+        plan_text = (
+            "# Plan\n\n## Subtasks\n\n"
+            "### Task 1: No marker task\n**Goal:** Do it.\n"
+        )
+        plan = tmp_path / "plan.md"
+        plan.write_text(plan_text, encoding="utf-8")
+
+        statuses = update_task_marker(
+            plan, task_number=1, new_status="in_progress",
+        )
+
+        text = plan.read_text(encoding="utf-8")
+        assert "### Task 1: [~] No marker task" in text
+        assert statuses[0]["status"] == "in_progress"
+
+    def test_returns_all_statuses_after_update(self, tmp_path):
+        from tools._plan_parser import update_task_marker
+        plan = tmp_path / "plan.md"
+        plan.write_text(TASK_KEYWORD_PLAN, encoding="utf-8")
+
+        statuses = update_task_marker(plan, task_number=2, new_status="complete")
+
+        assert len(statuses) == 3
+        assert statuses[0]["status"] == "complete"   # was already [x]
+        assert statuses[1]["status"] == "complete"   # just updated
+        assert statuses[2]["status"] == "pending"    # unchanged
