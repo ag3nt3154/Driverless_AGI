@@ -2,18 +2,19 @@
 
 > Last updated: 2026-08-10 | [README](README.md) | [TODO](TODO.md)
 
+
 ---
 
 ## Overview
 
-Driverless AGI (dagi) is a self-hosted Python agentic coding assistant: Plan → Act → Observe loop with tools (read, write, edit, bash, grep, etc), surfaced via Textual TUI. Survives long tasks via context compaction, accumulates knowledge via a wiki memory system, spawns specialist subagents.
+Driverless AGI (dagi) is a self-hosted Python agentic coding assistant: Plan → Act → Observe loop with tools (read, write, edit, bash, grep, etc). 
 
 ## Rules
 
 - Use `DEFAULT_PYTHON_ENV` for all Python scripts and package installs.
 - Never invoke `benchmarks/dagi_eval` against a real model without explicit authorization — `--solver` defaults to `"agent"`, always pass `naive`/`gold` unless authorized.
 - DAGI never merges, switches off, or deletes its own `dagi/*` task branch — the user handles that.
-- Always update `README.md`, `TODO.md`, and `AGENTS.md` after completing a task.
+- Always update `AGENTS.md` after completing a task.
 
 ## Git Workflow
 
@@ -31,6 +32,7 @@ All git operations use `bash`. Follow this workflow at the start of every task:
 > explicit standing behavioral instruction.
 
 ### Coding standards
+
 - Functions: <= 100 lines
 - Cyclomatic complexity: <= 8
 - Positional parameters: <= 5
@@ -38,17 +40,20 @@ All git operations use `bash`. Follow this workflow at the start of every task:
 - Files: <= 500 lines
 
 ### Calibrate to Ambiguity
+
 - **High ambiguity** (vague or conceptual): ask clarifying questions before acting
 - **Medium ambiguity**: ask targeted questions on gaps, then proceed
 - **Low ambiguity**: verify quickly and proceed
 - **Trivial changes**: trust user intent — don't over-process obvious requests (e.g. "fix typo", "add tooltip")
 
 ### Before Acting
+
 - **State assumptions.** Don't smuggle them. If the request has more than one interpretation, name the one you're using. If it could materially change the answer, ask first.
 - **Read before write.** Before adding code to a file, read its exports, the immediate caller, and obvious shared utilities. "Looks orthogonal" is the warning sign.
 - **Project consequences.** Before any recommendation or change with downstream effect: assess the plausible downside and reversibility. If material, escalate care.
 
 ### During Execution
+
 - **Simplicity first.** Minimum code that solves the problem. Nothing speculative. No abstractions for single-use code. No features beyond what was asked.
 - **Surgical scope.** Touch only what the task requires. Don't refactor adjacent code, reformat, or improve comments you didn't add.
 - **Match conventions.** Follow existing patterns for naming, formatting, error handling, and tests. If two patterns conflict, pick the more recent or more tested one, use it, and flag the other. Conformance over taste.
@@ -57,27 +62,33 @@ All git operations use `bash`. Follow this workflow at the start of every task:
 - NEVER commit secrets, credentials, or .env files
 
 ### Verify Invariants Before Shipping
+
 For non-trivial changes, confirm before shipping:
-- [ ] State ownership and consistency clear?
-- [ ] Feedback / observability in place?
-- [ ] Blast radius understood?
-- [ ] Timing and ordering safe?
-- [ ] Follows existing patterns (or intentionally breaks them)?
-- [ ] Security / obvious risks addressed?
+
+- [ ]  State ownership and consistency clear?
+- [ ]  Feedback / observability in place?
+- [ ]  Blast radius understood?
+- [ ]  Timing and ordering safe?
+- [ ]  Follows existing patterns (or intentionally breaks them)?
+- [ ]  Security / obvious risks addressed?
 
 If any are unclear → flag explicitly, ask, or defer.
 
 ### After Acting
+
 - **Ground claims.** Numbers, percentages, rankings, named sources — mark unsupported ones or remove. Bounded language over invented specificity.
 - **Fail loud.** "Done" is wrong if anything was skipped silently. "Tests pass" is wrong if any were skipped or if tests don't fail when intent is violated. Surface uncertainty — don't hide it.
 - **Checkpoint.** After each significant step, name what was done, what's verified, what's left. Don't continue from a state you can't describe back.
 
 ### Tests
+
 - Tests must encode **why** behavior matters, not just what it does.
 - A test that can't fail when business logic changes is wrong.
 
 ### Hard Stops
+
 Stop and flag when:
+
 - State ownership is unclear
 - Blast radius is unknown
 - Timing or race condition hazards are present
@@ -85,14 +96,17 @@ Stop and flag when:
 - Complexity debt would be significant
 
 ### Token Budgets
+
 - Per-task: 4,000 tokens. Per-session: 30,000 tokens.
 - If approaching budget: summarize and start fresh. Surface the breach — do not silently overrun.
 
 ### Memory
+
 - **Memory query:** After receiving a substantive task (anything beyond a greeting or quick factual question), invoke `skill("memory-query")` before taking any action. Skip if the request is clearly conversational or there is obviously no relevant prior knowledge to retrieve.
 - **Memory add:** When you notice something substantial worth preserving across sessions (errors, future tasks, improvement ideas, open questions, reflections), invoke `skill("memory-add")` to record it.
 
 ### Error handling
+
 - Fail fast with clear, actionable messages
 - Never swallow exceptions silently
 - Include context (what operation, what input, suggested fix)
@@ -127,24 +141,25 @@ tui.py / telegram_bot.py / main.py
 
 ## Key Files
 
-| Path | Purpose |
-|------|---------|
-| `agent/loop.py` | Core agent loop, system-prompt assembly, termination/compaction, WriteHandoff sentinel dispatch |
-| `agent/config_loader.py` | Reads `config.yaml`, merges `.dagi/config.yaml`, resolves API key, services, Telegram config |
-| `tools/subagent_api.py` | **Public API** — `run_subagent()` / `SubagentResult` / `resume_subagent_by_pid()`; only import point for subagent execution |
-| `tools/_subagent_runner.py` | Private pipe-based subprocess spawner; returns raw dicts; wrapped exclusively by `subagent_api.py` |
-| `tools/_handoff_format.py` | Shared handoff rendering and status dispatch for all 5 subagent-spawning tools |
-| `tools/_task_envelope.py` | Universal `briefing`/`handoff_spec` envelope for subagent tasks |
-| `tools/output_filter.py` | Truncates tool results; full output stored in content-addressed cache |
-| `services/doc_converter/` | Standalone FastAPI service (port 8100); PDF→markdown via docling/ocrmypdf, Office→markdown via markitdown; own conda env |
-| `agent/subagent_tools.py` | `_discover_subagent_tools()` import-based discovery; `build_subagent_registry()` with `tool_names_override`; auto-injects WriteHandoffTool + EscalateIssueTool |
-| `tui/app.py`, `tui/streaming.py`, `tui/callbacks.py` | TUI lifecycle, StreamPreview expand/collapse, callbacks bridge |
-| `tg/bot.py`, `tg/session.py` | Telegram bot with per-chat sessions and `allowed_chat_ids` gate |
-| `benchmarks/dagi_eval/` | Coding + DS scorecard; `--solver` defaults to `"agent"` — **never invoke without `naive`/`gold` unless authorized** |
-| `tools/read/_long_reader.py` | Long-file summarization via `long-reader` subagent; caches digest by SHA-256 of full text |
-| `.dagi/skills/memory-add/SKILL.md` | Canonical memory-add protocol (parent passes category+metadata; subagent routes) |
-| `.dagi/skills/memory-query/SKILL.md` | Canonical memory-query protocol (read-only; scope parameter) |
-| `.dagi/skills/memory-refresh/SKILL.md` | Canonical memory-refresh protocol (lint sweep + triage); scripts/ has 5 lint scripts |
+
+| Path                                                 | Purpose                                                                                                                                                        |
+| ---------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `agent/loop.py`                                      | Core agent loop, system-prompt assembly, termination/compaction, WriteHandoff sentinel dispatch                                                                |
+| `agent/config_loader.py`                             | Reads`config.yaml`, merges `.dagi/config.yaml`, resolves API key, services, Telegram config                                                                    |
+| `tools/subagent_api.py`                              | **Public API** — `run_subagent()` / `SubagentResult` / `resume_subagent_by_pid()`; only import point for subagent execution                                   |
+| `tools/_subagent_runner.py`                          | Private pipe-based subprocess spawner; returns raw dicts; wrapped exclusively by`subagent_api.py`                                                              |
+| `tools/_handoff_format.py`                           | Shared handoff rendering and status dispatch for all 5 subagent-spawning tools                                                                                 |
+| `tools/_task_envelope.py`                            | Universal`briefing`/`handoff_spec` envelope for subagent tasks                                                                                                 |
+| `tools/output_filter.py`                             | Truncates tool results; full output stored in content-addressed cache                                                                                          |
+| `services/doc_converter/`                            | Standalone FastAPI service (port 8100); PDF→markdown via docling/ocrmypdf, Office→markdown via markitdown; own conda env                                     |
+| `agent/subagent_tools.py`                            | `_discover_subagent_tools()` import-based discovery; `build_subagent_registry()` with `tool_names_override`; auto-injects WriteHandoffTool + EscalateIssueTool |
+| `tui/app.py`, `tui/streaming.py`, `tui/callbacks.py` | TUI lifecycle, StreamPreview expand/collapse, callbacks bridge                                                                                                 |
+| `tg/bot.py`, `tg/session.py`                         | Telegram bot with per-chat sessions and`allowed_chat_ids` gate                                                                                                 |
+| `benchmarks/dagi_eval/`                              | Coding + DS scorecard;`--solver` defaults to `"agent"` — **never invoke without `naive`/`gold` unless authorized**                                            |
+| `tools/read/_long_reader.py`                         | Long-file summarization via`long-reader` subagent; caches digest by SHA-256 of full text                                                                       |
+| `.dagi/skills/memory-add/SKILL.md`                   | Canonical memory-add protocol (parent passes category+metadata; subagent routes)                                                                               |
+| `.dagi/skills/memory-query/SKILL.md`                 | Canonical memory-query protocol (read-only; scope parameter)                                                                                                   |
+| `.dagi/skills/memory-refresh/SKILL.md`               | Canonical memory-refresh protocol (lint sweep + triage); scripts/ has 5 lint scripts                                                                           |
 
 ## Errors Log (recent)
 
@@ -157,6 +172,7 @@ tui.py / telegram_bot.py / main.py
 - **2026-07-27**: Hashline experiment reverted — smaller models made too many errors copying opaque `LINE#HASH` anchors → restored `oldText`/`newText` edit, `cat -n` read, plain `file:line:` grep. `_hashline.py`, `edit_text/` tool, and hashline tests removed.
 - **2026-08-07**: DeepSeek thinking-mode rejected multi-tool-call batches — (1) `model_extra` fallback in `_consume_stream` / `_extract_reasoning` only checked `"reasoning"` key, missing DeepSeek's `"reasoning_content"` key; (2) interleaved format split tool_calls across multiple assistant messages, only the first carrying `reasoning_content` → fixed both key lookups; restructured to emit one assistant message with all tool_calls before the dispatch loop (standard OpenAI format).
 - **2026-08-08**: DeepSeek rejected orphaned tool messages — two causes: (1) compaction safe-cut logic could split multi-tool-call groups, leaving tool-result messages without their parent assistant → safe cuts now skip positions where the tail would start with a tool message; (2) `RELOAD_SKILLS_SENTINEL` injected a system message between assistant+tool_calls and tool results → deferred system messages until after all tool results are appended.
+- **2026-08-10**: `conda run` drops stdin when used in Claude Code hook context — `json.load(sys.stdin)` always gets empty input → use `C:/Users/alexr/miniconda3/envs/dagi/python.exe` directly for hook scripts instead of `conda run -n dagi python`.
 
 ## Notes & Terms
 
@@ -164,25 +180,19 @@ tui.py / telegram_bot.py / main.py
 - **`<<END_OF_RESPONSE>>`**: primary exit sentinel (substring check on LLM text responses only); `_escape_sentinels()` rewrites it to `< <END_OF_RESPONSE>>` in tool results before they enter `_messages` to prevent LLM echo-back.
 - **Document conversion**: `.pdf/.docx/.xlsx/.pptx` → doc-converter service at `AgentConfig.services["doc_converter"]`, hard-fail if unreachable. PDF page selection via `pages` parameter.
 - **Subagent handoff**: WriteHandoffTool auto-injected; `<<HANDOFF_WRITTEN>>` sentinel triggers immediate return **only when `tc.function.name == "write_handoff"`** (name-gated to prevent false fire from inlined handoff content). Missing handoff → corrective re-entry → last-resort scrape + `_unverified.flag`.
-- **Skill chain**: `grilling` → `plan` → `to-spec` → `dagi-execute` (write-tests/worker/review cycle, 2-attempt retry, escalation sidecar).
-- **Memory wiki**: unified store at `G:\My Drive\black_grimoire\dagi-memory\wiki\` — four categories
-  (projects, todos, knowledge, events), three skills (memory-add, memory-query, memory-refresh).
-  Canonical skill protocols in `.dagi/skills/`; DAGI subagents in `.dagi/subagents/` reference them;
-  Claude Code skills at `~/.claude/skills/` are thin pointers. Both runtimes delegate to subagents.
-- **memory-refresh lint scripts**: `.dagi/skills/memory-refresh/scripts/` — 5 Python scripts; each outputs a JSON array of issues to stdout; run from their directory so `_common` is importable as a local module. Requires `pyyaml` (`dagi` env has 6.0.3).
+- **Memory wiki**: unified store at `G:\My Drive\black_grimoire\dagi-memory\wiki\` — four categories (projects, todos, knowledge, events), three skills (memory-add, memory-query, memory-refresh); Claude Code hook at `~/.claude/hooks/bm25_memory_recall.py` provides passive BM25 recall on every substantive prompt.
 - **`tools:` allowlist** (`config.yaml`): post-registration filter via `reg.filter_to(config.tools)`. Any tool not named here is silently stripped — including auto-discovered subagent spawn tools. When adding a new subagent type, also add its tool name to the list.
 - **`DEFAULT_PYTHON_ENV`**: detected at `AgentLoop` startup from `CONDA_DEFAULT_ENV` or `VIRTUAL_ENV` and injected into the system prompt so DAGI knows which env to use for Python commands. Override in the project's `AGENTS.md` if a different env is needed.
-- **Windows**: `EditTool`/`WriteTool` always write LF, normalize `oldText`/`newText` for CRLF safety. Use `conda run -n dagi python` not bare `python.exe`.
-- **TUI**: horizontal layout — `#main-column` (1fr) left, `Sidebar` (30%, max 45) right. `/copy` pushes `CopyScreen` (OptionList of all user+assistant turns); selecting copies full text via clip/pbcopy/xclip. `StreamPreview` expands on first delta, collapses on `on_stream_end`. `_model_name` derived from resolved config.
+- **Windows / conda**: `EditTool`/`WriteTool` always write LF, normalize `oldText`/`newText` for CRLF safety. Use `conda run -n dagi python` for DAGI scripts; for Claude Code hooks use `envs/dagi/python.exe` directly — `conda run` drops stdin in hook context.
 - **`subagent_api` vs `_subagent_runner`**: `tools/subagent_api.py` is the public API (preset resolution, envelope, `SubagentResult`); `tools/_subagent_runner.py` is the private subprocess spawner. Never import `_subagent_runner` directly from outside `subagent_api.py`.
 - **Subagent discovery**: `_discover_subagent_tools()` scans `_DAGI_ROOT/.dagi/subagents/` then `cwd/.dagi/subagents/`; imports each `main.py` and instantiates the exported `BaseTool` subclass. Project types with the same name override built-in types.
-- **dagi_eval caveats**: `--timeout-min` only bounds agent loop, not scoring phases. Relative `task_dir` silently breaks scoring — always use `harness.TASKS_DIR`.
 
 ## User Insights
 
 > Independent observations — not highlighted by the user.
 
 ### User Tendencies
+
 - Ships incrementally, tests at each step; no large-batch refactors.
 - Structural cleanup at ~800 lines, organizational only, behavior preserved.
 - Works directly on `main`; prefers local merge over push+PR.
@@ -190,9 +200,11 @@ tui.py / telegram_bot.py / main.py
 - Follows strict TDD for infrastructure; adversarial design grilling before implementation.
 - Comfortable delegating multi-task features to autonomous subagents without check-ins.
 - Hard line on real LLM spend — never without explicit permission.
-- GNHF self-review dormant 85+ days despite 259 unanalysed sessions.
+- GNHF self-review dormant 95+ days despite 259 unanalysed sessions.
+- Actively building Claude Code tooling (BM25 memory hook) around DAGI's wiki infra — treats Claude Code as first-class runtime alongside DAGI.
 
 ### Project Shortcomings
+
 - ESC pauses parent loop but child subprocesses continue.
 - Session cost tracking mostly blank (providers don't populate `usage.cost`).
 - `/hist` in TUI broken — writes to `rich.Console` behind Textual's canvas.
@@ -201,8 +213,10 @@ tui.py / telegram_bot.py / main.py
 - dagi_eval `--timeout-min` doesn't bound scoring phases or blocked API iterations.
 
 ### Potential Areas of Exploration
+
 - Extract `web_fetch`/`web_search` as MCP-analog services (like doc_converter).
 - Fix `/hist`; add cache-hit visibility in sidebar.
 - Session replay / dry-run mode from JSONL logs.
 - Parallel subagent dispatch via `background: true` + `get_subagent_result(id)` two-tool protocol.
 - Bootstrap GNHF self-review against 259 accumulated session logs.
+- TODO-013: DAGI-native `memory_recall` tool (BM25 inside agent loop, explicit tool call) still pending — Claude Code hook (passive, pre-prompt) is a complement, not a replacement.
