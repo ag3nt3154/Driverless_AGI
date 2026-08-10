@@ -739,7 +739,7 @@ class AgentLoop:
                         isinstance(result, str)
                         and UPDATE_TASK_STATUS_SENTINEL in result
                     ):
-                        result = self._handle_complete_plan()
+                        result = self._handle_all_tasks_resolved()
                     elif result == RELOAD_SKILLS_SENTINEL:
                         added, removed, errors = self._rebuild_for_reload()
                         result = _format_reload_notification(len(self.skills), added, removed, errors)
@@ -957,7 +957,7 @@ class AgentLoop:
             f"{plan_contents}"
         )
 
-    def _handle_complete_plan(self) -> str:
+    def _handle_all_tasks_resolved(self) -> str:
         cleared = self.config.active_plan_file
         self.config.active_plan_file = None
         self._rebuild_for_normal_mode(DAGI_ROOT)
