@@ -6,7 +6,7 @@ triggers: /execute, execute plan, start execution
 
 # dagi-execute
 
-Execute the approved plan subtask by subtask. Delegate implementation to worker
+Execute the approved plan task by task. Delegate implementation to worker
 subagents and evaluation to review subagents. The main agent writes tests and
 commits.
 
@@ -16,33 +16,32 @@ commits.
 - The plan must have been approved and plan mode exited
 - Read the plan file in full before starting
 
-## Per-Subtask Cycle
+## Per-Task Cycle
 
-For each `[ ] pending` subtask in the plan:
+For each `[ ] pending` task in the plan:
 
 ### Step 1 — Write Tests
 
-Before spawning the worker, write the test file(s) for this subtask:
-- Read the subtask's **Acceptance Criteria** and **Test snippets**
+Before spawning the worker, write the test file(s) for this task:
+- Read the task's **Acceptance Criteria** and **Test snippets**
 - Expand them into full test files
 - Save to `.dagi/plans/{plan_dir}/tests/`
-- Edit `plan.md` to fill in the subtask's `#### Tests` subsection with test file
+- Edit `plan.md` to fill in the task's `#### Tests` subsection with test file
   paths and a one-line description of what each test verifies
 - Do NOT pass test paths to the worker — tests are a hidden oracle for review only
 
 ### Step 2 — Spawn Worker
 
-Edit `plan.md` to change the subtask heading marker from `[ ]` to `[~]`
-(in-progress).
+Call `update_task_status(task=N, status="in_progress")` to mark the task.
 
 Call `spawn_worker_subagent(subtask_name, briefing)`. The tool
-automatically injects plan context and subtask details. Keep the returned handoff
+automatically injects plan context and task details. Keep the returned handoff
 path for Step 3.
 
 ### Step 3 — Spawn Review
 
 Call `spawn_review_subagent(subtask_name, worker_handoff_path, unit_test_paths)`.
-The tool automatically injects plan context and the subtask block (including
+The tool automatically injects plan context and the task block (including
 Tests section). Read the returned review report.
 
 ### Step 4 — Evaluate and Decide
@@ -59,12 +58,12 @@ Pass/fail is determined by the review subagent's verdict — not your own judgme
 - This does NOT consume a retry attempt — go back to Step 2 or 3
 
 **If PASS:**
-- Edit `plan.md` and mark the subtask `[x] complete`
-- `git add` the files this subtask touched, then `git commit` with a message
-  summarizing the subtask
+- Call `update_task_status(task=N, status="complete")`
+- `git add` the files this task touched, then `git commit` with a message
+  summarizing the task
 - Append a PASS entry to `cycle_log.md` in the plan directory
 - Update the `## Notes` section of `plan.md` with salient findings
-- Proceed to the next subtask
+- Proceed to the next task
 
 **If FAIL:**
 - Append a FAIL entry to `cycle_log.md` with: verdict, artifact file names,
@@ -73,11 +72,11 @@ Pass/fail is determined by the review subagent's verdict — not your own judgme
 - Decide retry strategy:
   - **Worker fell into a trap** (plan is sound): retry with augmented
     briefing
-  - **Plan is flawed** (subtask requirements wrong): edit the subtask in plan.md,
+  - **Plan is flawed** (task requirements wrong): edit the task in plan.md,
     then retry
 
 **If 2 attempts exhausted** (1 initial + 1 retry; escalations free):
-- Mark the subtask `[!] failed` in plan.md
+- Call `update_task_status(task=N, status="failed")`
 - Stop the cycle
 - Present structured escalation report:
   - Summary of all attempt handoff/review artifacts
@@ -87,10 +86,13 @@ Pass/fail is determined by the review subagent's verdict — not your own judgme
 
 ## Completion
 
-Once every subtask is resolved (all markers `[x]` or `[!]`):
+The plan auto-completes when all tasks are resolved (`[x]` or `[!]`).
+The `update_task_status` tool handles this automatically — when the last
+task is marked, it clears the active plan and restores full tools.
 
-1. Call `complete_plan()`
-2. Invoke `skill("update-project-context")`
+After auto-completion:
+
+1. Invoke `skill("update-project-context")`
 3. Commit context updates
 4. If `config.previous_branch` is set, run `git checkout <previous_branch>` to
    return to the branch the user was on before plan mode. If it is `None` (e.g.
@@ -107,10 +109,10 @@ Once every subtask is resolved (all markers `[x]` or `[!]`):
 Maintain `cycle_log.md` in the plan directory. Append one block per attempt:
 
 ```
-## Subtask N: <name>
+## Task N: <name>
 ### Attempt N — PASS/FAIL
 - Worker: .dagi/handoffs/worker_<id>.md
 - Review: .dagi/handoffs/review_<id>.md
 - Issue: <one-line summary, or "None">
-- Action: <what you did next, or "Subtask complete">
+- Action: <what you did next, or "Task complete">
 ```

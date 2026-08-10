@@ -405,7 +405,7 @@ Or as a slash command if the skill is loaded:
 | `grilling` | Adversarial interrogation of a plan or idea before implementation; chains to `plan` |
 | `to-spec` | Synthesize the current conversation into a written spec (`spec.md`); invoked by `plan`, not user-triggered |
 | `plan` | Orchestrate the planning lifecycle: spec synthesis, codebase exploration, plan-file authoring, and user approval; chains to `dagi-execute` |
-| `dagi-execute` | Execute an approved plan subtask by subtask via the worker/review subagent cycle, with retry and escalation handling |
+| `dagi-execute` | Execute an approved plan task by task via the worker/review subagent cycle, with retry and escalation handling; calls `update_task_status` to mark tasks in-progress/complete/failed (auto-completes plan when all tasks resolved) |
 | `update-project-context` | Update `AGENTS.md` with current project state |
 
 Add a project-specific skill by creating `.dagi/skills/<name>/SKILL.md` in your project directory.

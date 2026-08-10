@@ -2,6 +2,13 @@
 
 ## Completed
 
+- **Dynamic context board + `update_task_status`** · `done` · `2026-08-10` — plan status board moved from `_messages[0]` to an ephemeral trailing context injected at API-call time (`_build_active_plan_tail()`); `update_task_status` tool replaces `complete_plan` (regex-updates plan markers, auto-completes plan when all tasks resolved); `complete_plan` tool deleted; `dagi-execute` skill updated to use `update_task_status`; 568 tests passing. (wiki: TODO-012 marked in-progress; remaining items: compaction cache, DeepSeek cache stats, TUI cache visibility.)
+
+- **`is_scanned_pdf` / `_get_page_count` fitz handle leak** · `done` · `verified:2026-08-09` — `services/doc_converter/converter/pdf.py` now calls `.close()` in both functions; handle leak no longer present.
+- **`_estimate_worker_count` ZeroDivisionError on `worker_ram_gb=0`** · `done` · `verified:2026-08-09` — `worker_ram_gb` defaults to `4.0`, eliminating the division-by-zero path.
+- **`BashTool._killed_by_user` race between `run()` and `force_kill()`** · `done` · `verified:2026-08-09` — lock now properly wraps the `_killed_by_user` read; race window closed.
+- **Reading any image file crashes agent loop (`AttributeError` on list result)** · `done` · `verified:2026-08-09` — `isinstance(result, str)` guard confirmed present before `parse_switch_sentinel()` in `agent/loop.py`.
+- **`tg/bot.py` `asyncio.get_event_loop()` deprecated — Python 3.14 breakage risk** · `done` · `verified:2026-08-09` — already uses `asyncio.get_running_loop()` at line 73.
 - [x] Unify DAGI and Claude Code memory system (2026-08-08) — four-category wiki
   (projects, todos, knowledge, events); canonical SKILL.md protocols in `.dagi/skills/`;
   lint scripts in `.dagi/skills/memory-refresh/scripts/`; DAGI subagents updated to
@@ -93,41 +100,17 @@
   - **Fix:** Extend `scripts/verify_pdf_env.py` (or add a companion check, run inside the `doc_converter` env) to (1) run `tesseract --version`/a trivial hocr conversion to catch `TESSDATA_PREFIX` misconfiguration, and (2) validate `models/docling_models/` has the full expected file set for the layout and tableformer models before `_convert_pdf_digital`/`_convert_pdf_scanned` (now in `services/doc_converter/converter/pdf.py`) are ever called from a real read.
   - **Source:** recurrence found 2026-07-21 while investigating a user-reported tesseract error.
 
-- **Reading any image file crashes the agent loop (`AttributeError` on list result)** · `priority:medium` · `open:9d` · `effort:XS` · `needs-verification`
-  - **File:** `agent/loop.py:562-564`
-  - **Problem (original):** `ReadTool.run()` returns a `list` for image files. The sentinel-detection chain's `else` branch was reported to call `parse_switch_sentinel(result)` without a type guard, crashing with `AttributeError`.
-  - **Status 2026-07-14:** Current code at line 563 has `if isinstance(result, str):` guard before `parse_switch_sentinel()` — the crash path described appears to be already guarded. All upstream sentinel checks (lines 549–558) use `==` comparisons that return False for lists. `filter_tool_output` at line 568 also handles lists via `_serialise()`. **Needs a manual test with an actual image file to confirm the bug is unreproducible.** Downgraded from CRITICAL pending verification.
-  - **Source:** `docs/fable/code_review_2026-07-11.md` (#1)
-
 - **`archives/cli.py:1240` `plan_mode_exited` — AttributeError (dead code)** · `priority:low` · `open:9d` · `effort:XS`
   - **File:** `archives/cli.py:1240`
   - **Problem:** `active_loop.plan_mode_exited` is referenced but the attribute was removed on 2026-05-31. **However, `cli.py` was moved to `archives/cli.py` on 2026-07-12 (`d6f7f25`) and is no longer imported or executed by any live code.** This bug exists only in dead code. The live entry points are `tui.py` and `telegram_bot.py`.
   - **Fix:** Delete `archives/cli.py` entirely (tracked under dead code cleanup).
   - **Source:** `docs/fable/code_review_2026-07-11.md` (#2) · Downgraded 2026-07-14: cli.py archived, bug unreachable.
 
-- **`is_scanned_pdf` / `_get_page_count` leak fitz document handle on exception** · `priority:medium` · `open:2d` · `effort:XS`
-  - **File:** `services/doc_converter/converter/pdf.py` (moved verbatim from `tools/_pdf_convert.py` on 2026-07-25 — bug still present, line numbers may have shifted)
-  - **Problem:** Both functions call `fitz.open(str(pdf_path))` and `doc.close()` with no `try/finally` or context manager. If `doc[i].get_text()` raises (corrupt page, `MemoryError`), or `len(doc)` fails on a malformed PDF, the file handle is leaked. pymupdf's `fitz.Document` supports the context manager protocol.
-  - **Fix:** Replace `doc = fitz.open(...); ...; doc.close()` with `with fitz.open(...) as doc:` in both functions.
-  - **Source:** `review/2026-07-18`
-
-- **`_estimate_worker_count` ZeroDivisionError when `worker_ram_gb` is 0** · `priority:medium` · `open:2d` · `effort:XS`
-  - **File:** `services/doc_converter/converter/pdf.py` (moved verbatim from `tools/_pdf_convert.py` on 2026-07-25 — bug still present, line numbers may have shifted; the config source is now the service's own request/config handling rather than dagi's deleted `PdfConfig`)
-  - **Problem:** `available_bytes // (cfg.worker_ram_gb * 1024**3)` raises `ZeroDivisionError` if `worker_ram_gb` is set to 0. No validation guards this. The function is not yet called from production code (only tests), but it was written for the parallel PDF conversion feature.
-  - **Fix:** Validate at the config-loading boundary: `max(worker_ram_gb, 0.1)`, or guard in `_estimate_worker_count` with `if worker_ram_gb > 0`.
-  - **Source:** `review/2026-07-18`
-
 - **`_convert_pdf_scanned` OCR temp file path collides across same-stem PDFs** · `priority:low` · `open:2d` · `effort:XS`
   - **File:** `services/doc_converter/converter/pdf.py` (moved verbatim from `tools/_pdf_convert.py` on 2026-07-25 — bug still present, line numbers may have shifted)
   - **Problem:** `searchable_path = cache_dir / f"{pdf_path.stem}_ocr.pdf"` uses the source filename's stem, not the content hash. Two different scanned PDFs with the same filename stem (e.g., `A/report.pdf` and `B/report.pdf`) produce the same OCR temp path. The `finally` block cleans up the temp file, so sequential calls are safe, but concurrent calls (relevant since parallel conversion is wired up) would corrupt each other's OCR output.
   - **Fix:** Use the content hash for the temp file name: `searchable_path = cache_dir / f"{content_hash}_ocr.pdf"` (pass `content_hash` from the caller).
   - **Source:** `review/2026-07-18`
-
-- **`BashTool._killed_by_user` race between `run()` and `force_kill()`** · `priority:medium` · `open:4d` · `effort:XS`
-  - **File:** `tools/bash.py:54-56,78,84-92`
-  - **Problem:** `_killed_by_user` is read at line 78 *outside* the lock, after `self._proc = None` is set inside the lock at line 75. Two race windows exist: (1) `force_kill()` fires after `communicate()` returns but before the flag check at line 78 — a normal completion is reported as `[killed by user]`. (2) `force_kill()` fires between `Popen()` (line 45) and the lock acquisition (line 54), setting `_killed_by_user = True` on a previous `_proc` that's already `None` — `force_kill` returns `False` (correct), but the flag sticks and the *new* run inherits it because `_killed_by_user = False` only runs at line 56, inside the lock that `force_kill` may have already exited.
-  - **Fix:** Read `_killed_by_user` inside the `finally` lock block and store it in a local; reset the flag there too: `with self._lock: self._proc = None; was_killed = self._killed_by_user; self._killed_by_user = False`. Use `was_killed` at line 78.
-  - **Source:** `review/2026-07-16`
 
 - **Scheduler `loop.finish()` races with daemon thread on timeout** · `priority:medium` · `open:21d` · `effort:XS`
   - **File:** `scheduler/runner.py:113`
@@ -172,8 +155,8 @@
   - **Updated 2026-07-14:** Removed `tools/plan_subagent.py` (already deleted in `bfbdd63`) and `cli.py:77 _resolve_option` (only exists in `archives/cli.py`, dead code).
   - **Source:** `_todo/todo_2026-06-13.md` #4, `docs/fable/code_review_2026-07-11.md` (#6, #12)
 
-- **Split `agent/loop.py` (1114 lines) into focused modules** · `priority:high` · `open:6d` · `effort:M`
-  - **File:** `agent/loop.py` (1114 lines — 2× over 500-line standard)
+- **Split `agent/loop.py` (1259 lines) into focused modules** · `priority:high` · `open:6d` · `effort:M`
+  - **File:** `agent/loop.py` (1259 lines — 2.5× over 500-line standard; was 1114 on 2026-08-03, grew with streaming + plan-mode additions)
   - **Problem:** Mixes core loop execution, plan-mode handling, system-prompt assembly, wiki injection, sentinel parsing, model switching, tool dispatch, compaction, streaming response accumulation, and the live plan-status board rendering. Largest Python file in the live codebase.
   - **Suggested split:** Extract `_handle_enter_plan_mode`/`_handle_exit_plan_mode`/`_handle_complete_plan` → `agent/_plan_mode.py`; extract `_assemble_system_string`/`_build_active_plan_tail`/`_render_plan_status_section`/`_refresh_active_plan_tail` → `agent/_system_prompt.py`; extract `_handle_switch_model`/`_base_config_snapshot` → `agent/_model_switch.py`; extract `_consume_stream` → `agent/_streaming.py`.
   - **Note:** Replaces the old "Split cli.py" item — `cli.py` was moved to `archives/cli.py` on 2026-07-12 and is dead code.
@@ -264,13 +247,6 @@
 
 - **README troubleshooting section recommends `pip install langchain` — stale advice** · `done` · `2026-07-20` — removed as part of the `requirements.txt` → `pyproject.toml` consolidation; replaced with a `.env`/`python-dotenv` pointer.
   - **Source:** `review/2026-07-20`
-
-- **`tg/bot.py:153` uses deprecated `asyncio.get_event_loop()` — Python 3.14 breakage risk** · `priority:medium` · `open:16d` · `effort:XS`
-  - **Escalated 2026-07-20:** Open 16 days with no fix commit.
-  - **File:** `tg/bot.py:153`
-  - **Problem:** `asyncio.get_event_loop()` is deprecated since Python 3.10 and emits `DeprecationWarning` in 3.12+. In Python 3.14 (which this project's conda env runs), it may raise `DeprecationWarning` or behave unexpectedly when called inside a running coroutine. Line 61 already correctly uses `asyncio.get_running_loop()`. The method `_run_agent_task` is `async`, so a running loop is guaranteed.
-  - **Fix:** Replace `asyncio.get_event_loop()` with `asyncio.get_running_loop()` at line 153.
-  - **Source:** `review/2026-07-04`
 
 ---
 
