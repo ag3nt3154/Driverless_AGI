@@ -1,16 +1,16 @@
 # AGENTS.md
 
-> Last updated: 2026-08-08 | [README](README.md) | [TODO](TODO.md)
+> Last updated: 2026-08-10 | [README](README.md) | [TODO](TODO.md)
 
 ---
 
 ## Overview
 
-Driverless AGI (dagi) is a self-hosted Python agentic coding assistant: Plan→Act→Observe loop with tools (read, write, edit, bash, grep, web search), surfaced via Textual TUI, Telegram bot, or one-shot CLI. Survives long tasks via context compaction, accumulates knowledge via a wiki memory system, spawns specialist subagents, and self-improves via GNHF. Non-goals: cloud hosting, multi-user auth, UI beyond terminal/Telegram.
+Driverless AGI (dagi) is a self-hosted Python agentic coding assistant: Plan → Act → Observe loop with tools (read, write, edit, bash, grep, etc), surfaced via Textual TUI. Survives long tasks via context compaction, accumulates knowledge via a wiki memory system, spawns specialist subagents.
 
 ## Rules
 
-- Use `conda run -n dagi ...` for all Python scripts and package installs.
+- Use `DEFAULT_PYTHON_ENV` for all Python scripts and package installs.
 - Never invoke `benchmarks/dagi_eval` against a real model without explicit authorization — `--solver` defaults to `"agent"`, always pass `naive`/`gold` unless authorized.
 - DAGI never merges, switches off, or deletes its own `dagi/*` task branch — the user handles that.
 - Always update `README.md`, `TODO.md`, and `AGENTS.md` after completing a task.
