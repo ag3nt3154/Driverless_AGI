@@ -12,7 +12,7 @@ class TestGrepBasic:
         )
         tool = _make_tool(tmp_path)
 
-        result = tool.run(pattern="needle")
+        result = tool.run(pattern="needle", path=str(tmp_path))
 
         assert "f.txt:2:" in result
         assert "needle" in result
@@ -21,7 +21,7 @@ class TestGrepBasic:
         (tmp_path / "f.txt").write_text("alpha", encoding="utf-8", newline="\n")
         tool = _make_tool(tmp_path)
 
-        assert tool.run(pattern="zzzz") == "[no matches]"
+        assert tool.run(pattern="zzzz", path=str(tmp_path)) == "[no matches]"
 
     def test_literal_mode(self, tmp_path):
         (tmp_path / "f.txt").write_text(
@@ -29,7 +29,7 @@ class TestGrepBasic:
         )
         tool = _make_tool(tmp_path)
 
-        result = tool.run(pattern="a.b", literal=True)
+        result = tool.run(pattern="a.b", path=str(tmp_path), literal=True)
 
         assert "a.b" in result
         # literal mode should not match aXb via regex dot

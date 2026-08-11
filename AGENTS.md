@@ -1,6 +1,6 @@
 # AGENTS.md
 
-> Last updated: 2026-08-10 | [README](README.md) | [TODO](TODO.md)
+> Last updated: 2026-08-11 | [README](README.md) | [TODO](TODO.md)
 
 
 ---
@@ -173,6 +173,7 @@ tui.py / telegram_bot.py / main.py
 - **2026-08-07**: DeepSeek thinking-mode rejected multi-tool-call batches — (1) `model_extra` fallback in `_consume_stream` / `_extract_reasoning` only checked `"reasoning"` key, missing DeepSeek's `"reasoning_content"` key; (2) interleaved format split tool_calls across multiple assistant messages, only the first carrying `reasoning_content` → fixed both key lookups; restructured to emit one assistant message with all tool_calls before the dispatch loop (standard OpenAI format).
 - **2026-08-08**: DeepSeek rejected orphaned tool messages — two causes: (1) compaction safe-cut logic could split multi-tool-call groups, leaving tool-result messages without their parent assistant → safe cuts now skip positions where the tail would start with a tool message; (2) `RELOAD_SKILLS_SENTINEL` injected a system message between assistant+tool_calls and tool results → deferred system messages until after all tool results are appended.
 - **2026-08-10**: `conda run` drops stdin when used in Claude Code hook context — `json.load(sys.stdin)` always gets empty input → use `C:/Users/alexr/miniconda3/envs/dagi/python.exe` directly for hook scripts instead of `conda run -n dagi python`.
+- **2026-08-11**: Grep Python fallback (no ripgrep) had no timeout — `rglob("*")` over Google Drive mount (`memory_root`) hung indefinitely, freezing TUI spinner → added 15s wall-clock timeout to both enumeration and file-scanning phases; installed `ripgrep` via conda.
 
 ## Notes & Terms
 

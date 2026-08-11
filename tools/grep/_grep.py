@@ -1,12 +1,13 @@
 import re
 import subprocess
+import time
 from pathlib import Path
 
 from agent.base_tool import BaseTool
 from tools._path_guard import validate_path
 
 _MAX_RESULTS = 200
-_DEFAULT_PATH = object()  # sentinel: "no path given" → search all allowed_roots
+_FALLBACK_TIMEOUT = 15  # seconds — wall-clock cap for the Python fallback
 _HIDDEN_WHITELIST = {'.dagi', '.index.md'}
 
 
@@ -15,18 +16,17 @@ class GrepTool(BaseTool):
     description = (
         "Search for a pattern in files using regex or literal match. "
         "Returns matching lines with file:line format. "
-        "Paths are relative to the project root. Uses ripgrep (rg) if available. "
-        "When no path is given, searches across all configured search roots."
+        "Paths are relative to the project root. Uses ripgrep (rg) if available."
     )
     _parameters = {
         "type": "object",
         "properties": {
             "pattern": {"type": "string", "description": "Regex pattern (or literal string) to search for"},
-            "path": {"type": "string", "description": "File or directory to search (default: all search roots)"},
+            "path": {"type": "string", "description": "File or directory to search"},
             "glob": {"type": "string", "description": "Glob pattern to filter files (e.g. '*.py', '**/*.ts')"},
             "literal": {"type": "boolean", "description": "Treat pattern as a literal string, not regex (default: false)"},
         },
-        "required": ["pattern"],
+        "required": ["pattern", "path"],
     }
 
     def __init__(self, cwd: Path = Path("."), allowed_roots: list[Path] | None = None):
@@ -36,29 +36,44 @@ class GrepTool(BaseTool):
     def run(
         self,
         pattern: str,
-        path: str | object = _DEFAULT_PATH,
+        path: str,
         glob: str | None = None,
         literal: bool = False,
     ) -> str:
-        if path is _DEFAULT_PATH:
-            search_paths = list(self.allowed_roots) if self.allowed_roots is not None else [self.cwd]
-        else:
-            sp = Path(str(path))
-            if not sp.is_absolute():
-                sp = self.cwd / sp
-            search_paths = [validate_path(sp, self.allowed_roots)]
+        sp = Path(path)
+        if not sp.is_absolute():
+            sp = self.cwd / sp
+        search_path = validate_path(sp, self.allowed_roots)
 
-        all_lines: list[str] = []
-        for search_path in search_paths:
-            lines = self._search_one(pattern, search_path, glob, literal)
-            all_lines.extend(lines)
-            if len(all_lines) >= _MAX_RESULTS:
-                break
+        lines = self._search_one(pattern, search_path, glob, literal)
+        if len(lines) > _MAX_RESULTS:
+            lines = lines[:_MAX_RESULTS]
+            lines.append(f"[truncated — showing first {_MAX_RESULTS} results]")
+        return "\n".join(lines) if lines else "[no matches]"
 
-        if len(all_lines) > _MAX_RESULTS:
-            all_lines = all_lines[:_MAX_RESULTS]
-            all_lines.append(f"[truncated — showing first {_MAX_RESULTS} results]")
-        return "\n".join(all_lines) if all_lines else "[no matches]"
+    @staticmethod
+    def _enumerate_files(
+        search_path: Path, glob_pat: str | None, deadline: float,
+    ):
+        """Yield files under *search_path*, aborting if *deadline* is passed."""
+        source = (
+            search_path.rglob(glob_pat) if glob_pat
+            else search_path.rglob("*")
+        )
+        for p in source:
+            if time.monotonic() > deadline:
+                return
+            if not p.is_file():
+                continue
+            if glob_pat:
+                yield p
+                continue
+            parts = p.relative_to(search_path).parts
+            if parts[0] == ".dagi" or not any(
+                part.startswith(".") and part not in _HIDDEN_WHITELIST
+                for part in parts
+            ):
+                yield p
 
     def _search_one(
         self,
@@ -88,31 +103,32 @@ class GrepTool(BaseTool):
         except re.error as e:
             return [f"Error: invalid regex pattern: {e}"]
 
+        deadline = time.monotonic() + _FALLBACK_TIMEOUT
         if search_path.is_file():
             files = [search_path]
         else:
-            if glob:
-                files = sorted(search_path.rglob(glob))
-            else:
-                files = sorted(
-                    p for p in search_path.rglob("*")
-                    if p.is_file() and (
-                        p.relative_to(search_path).parts[0] == ".dagi"
-                        or not any(
-                            part.startswith(".") and part not in _HIDDEN_WHITELIST
-                            for part in p.relative_to(search_path).parts
-                        )
-                    )
-                )
+            files = list(self._enumerate_files(
+                search_path, glob, deadline,
+            ))
 
         results: list[str] = []
         for fpath in files:
+            if time.monotonic() > deadline:
+                results.append(
+                    f"[timeout — Python fallback exceeded {_FALLBACK_TIMEOUT}s, "
+                    "install ripgrep (rg) for faster searches]"
+                )
+                break
             try:
                 text = fpath.read_text(encoding="utf-8", errors="replace")
             except (OSError, PermissionError):
                 continue
             for lineno, line in enumerate(text.splitlines(), 1):
                 if rx.search(line):
-                    rel = fpath.relative_to(self.cwd) if fpath.is_relative_to(self.cwd) else fpath
+                    rel = (
+                        fpath.relative_to(self.cwd)
+                        if fpath.is_relative_to(self.cwd)
+                        else fpath
+                    )
                     results.append(f"{rel}:{lineno}: {line}")
         return results
