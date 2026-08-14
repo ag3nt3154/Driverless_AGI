@@ -268,7 +268,7 @@ def _make_threaded_callbacks(q: queue.Queue, stats: _Stats) -> AgentCallbacks:
         on_tool_start     = lambda n, d, a: put(_EVT_TOOL_START, n, d, a),
         on_tool_end       = lambda n, r:    put(_EVT_TOOL_END, n, r),
         on_assistant_text = lambda t:       put(_EVT_ASSISTANT, t),
-        on_token_update   = lambda i, o, c, t=0: put(_EVT_TOKENS, i, o, c, t),
+        on_token_update   = lambda i, o, c, t=0, ca=0: put(_EVT_TOKENS, i, o, c, t),
         on_compaction     = lambda k, r:    put(_EVT_COMPACTION, k, r),
         on_reasoning      = lambda t:       put(_EVT_REASONING, t),
         on_model_switch   = lambda f, t:    put(_EVT_MODEL_SWITCH, f, t),
@@ -929,7 +929,7 @@ def _build_pipe_callbacks() -> AgentCallbacks:
         on_compaction=lambda kept, removed: _emit({
             "type": "status", "text": f"compacted ({removed} msgs removed, {kept} kept)",
         }),
-        on_token_update=lambda i, o, c, t: None,  # silent in pipe mode
+        on_token_update=lambda i, o, c, t, ca=0: None,  # silent in pipe mode
     )
 
 

@@ -83,7 +83,7 @@ def build_callbacks(
         on_tool_start=on_tool_start,
         on_tool_end=lambda _n, _r: None,
         on_assistant_text=on_assistant_text,
-        on_token_update=lambda _i, _o, _c, _t=0: None,
+        on_token_update=lambda _i, _o, _c, _t=0, _ca=0: None,
         on_iteration=lambda _: None,
         on_done=lambda _: None,
         on_error=on_error,

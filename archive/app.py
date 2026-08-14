@@ -646,7 +646,7 @@ def start_agent_thread(task: str) -> None:
         on_tool_start=lambda n, d, a: q.put({"type": "tool_start", "name": n, "description": d, "args": a}),
         on_tool_end=lambda n, r: q.put({"type": "tool_end", "name": n, "result": r}),
         on_assistant_text=lambda t: q.put({"type": "assistant_text", "text": t}),
-        on_token_update=lambda i, o, c: q.put({"type": "token_update", "input_tokens": i, "output_tokens": o, "cost": c}),
+        on_token_update=lambda i, o, c, t=0, ca=0: q.put({"type": "token_update", "input_tokens": i, "output_tokens": o, "cost": c}),
         on_iteration=lambda cur, mx: q.put({"type": "iteration", "current": cur, "maximum": mx}),
         on_done=lambda r: q.put({"type": "done", "result": r}),
         on_error=lambda e: q.put({"type": "error", "error": str(e)}),

@@ -143,7 +143,7 @@ def _build_pipe_callbacks() -> AgentCallbacks:
         on_compaction=lambda kept, removed: _emit({
             "type": "status", "text": f"compacted ({removed} msgs removed, {kept} kept)",
         }),
-        on_token_update=lambda i, o, c, t: None,  # silent in pipe mode
+        on_token_update=lambda i, o, c, t, ca=0: None,  # silent in pipe mode
     )
 
 
