@@ -45,10 +45,11 @@ def _make_runtime_args():
 
 class TestGenericSubagentTool:
     # Maps a subagent directory name to its expected tool `name` when the two
-    # differ. `read-large-text` still exposes the tool as
-    # `spawn_document-reader_subagent` pending a later rename that also
-    # updates benchmarks/dagi_eval/config_dagi_eval.yaml in lockstep.
-    _TOOL_NAME_OVERRIDES = {"read-large-text": "spawn_document-reader_subagent"}
+    # differ. `read-large-text` intentionally does not follow the
+    # `spawn_{type}_subagent` naming convention: it's directly LLM-callable
+    # under the plain name `read_large_text`, mirroring the built-in `read`
+    # tool's naming rather than the generic subagent-spawning pattern.
+    _TOOL_NAME_OVERRIDES = {"read-large-text": "read_large_text"}
 
     @pytest.mark.parametrize("type_name", [
         "explore_files", "web_research", "memory-query",

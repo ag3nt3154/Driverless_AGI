@@ -11,12 +11,14 @@ if TYPE_CHECKING:
     from agent.session import SessionTracker
 
 
-class SpawnDocumentReaderSubagentTool(BaseTool):
-    name = "spawn_document-reader_subagent"
+class ReadLargeTextTool(BaseTool):
+    name = "read_large_text"
     description = (
-        "Read and digest a long document (PDF, DOCX, or large text file). "
-        "Returns a sectioned summary with key excerpts. Use when a document "
-        "is too long to fit in context or requires structured summarization."
+        "Read and digest a large text file. Returns a sectioned summary "
+        "with key excerpts, line ranges, and token estimates. Use when a "
+        "file is too long to fit in context or requires structured "
+        "summarization. Also called automatically by read when the "
+        "file exceeds the default 2000-line window."
     )
     _parameters = {
         "type": "object",
@@ -24,7 +26,7 @@ class SpawnDocumentReaderSubagentTool(BaseTool):
             "task": {
                 "type": "string",
                 "description": (
-                    "The document path and what to extract or summarize from it."
+                    "The file path and what to extract or summarize from it."
                 ),
             },
             "custom_instructions": {
@@ -65,7 +67,9 @@ class SpawnDocumentReaderSubagentTool(BaseTool):
 
         if result.is_ok:
             unverified = result.status == "ok_unverified"
-            return format_handoff_result(str(result.handoff_path), unverified=unverified)
+            return format_handoff_result(
+                str(result.handoff_path), unverified=unverified
+            )
         return dispatch_status_result(
             {
                 "status": result.status,
