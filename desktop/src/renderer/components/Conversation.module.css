@@ -1,0 +1,90 @@
+.container {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--sp-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+}
+
+.turn {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+
+.thinking {
+  color: var(--text-muted);
+  font-style: italic;
+  font-size: var(--font-size-sm);
+  padding: var(--sp-2) var(--sp-3);
+  border-left: 2px solid var(--border-subtle);
+}
+
+.markdown {
+  color: var(--text-primary);
+  line-height: 1.6;
+}
+
+/* Markdown sub-element styles */
+.markdown :global(p)    { margin-bottom: var(--sp-2); }
+.markdown :global(code) {
+  background: var(--bg-raised);
+  padding: 1px 4px;
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-sm);
+}
+.markdown :global(pre) {
+  background: var(--bg-raised);
+  padding: var(--sp-3);
+  border-radius: var(--radius-base);
+  overflow-x: auto;
+  margin: var(--sp-2) 0;
+}
+.markdown :global(pre code) {
+  background: none;
+  padding: 0;
+}
+.markdown :global(blockquote) {
+  border-left: 3px solid var(--border-default);
+  padding-left: var(--sp-3);
+  color: var(--text-secondary);
+  margin: var(--sp-2) 0;
+}
+.markdown :global(ul),
+.markdown :global(ol) {
+  padding-left: var(--sp-5);
+  margin: var(--sp-2) 0;
+}
+.markdown :global(h1),
+.markdown :global(h2),
+.markdown :global(h3) {
+  margin: var(--sp-3) 0 var(--sp-2);
+  color: var(--text-primary);
+}
+
+.empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-sm);
+}
+
+.cursor {
+  display: inline-block;
+  width: 2px;
+  height: 1em;
+  background: var(--accent);
+  animation: blink 1s step-end infinite;
+  vertical-align: text-bottom;
+  margin-left: 1px;
+}
+
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0; }
+}

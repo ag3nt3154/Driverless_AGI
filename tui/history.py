@@ -1,101 +1,21 @@
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
+# Pure parsing is in agent/history.py (no Textual imports, shared with the GUI sidecar)
+from agent.history import (
+    build_copyable_messages as _build_copy_items_data,
+    build_turn_list,
+    load_raw_messages,
+    load_sessions,
+)
 
-def load_sessions(logs_dir: Path, max_sessions: int = 20) -> list[dict]:
-    """Load session files from logs_dir, return newest-first (up to max_sessions).
-
-    Supports both new (*_logs.jsonl) and old (session_*.jsonl) filename formats.
-    Each returned dict has keys: path, filename, started_at, model, title.
-    """
-    sessions: list[dict] = []
-    for pattern in ("*_logs.jsonl", "session_*.jsonl"):
-        for f in logs_dir.glob(pattern):
-            parsed = _parse_session_file(f)
-            if parsed:
-                sessions.append(parsed)
-    # Deduplicate by path (a file could match both patterns — unlikely but safe)
-    seen: set[Path] = set()
-    unique: list[dict] = []
-    for s in sessions:
-        if s["path"] not in seen:
-            seen.add(s["path"])
-            unique.append(s)
-    unique.sort(key=lambda s: s["started_at"], reverse=True)
-    return unique[:max_sessions]
+__all__ = ["load_sessions", "load_raw_messages", "build_turn_list"]
 
 
-def _parse_session_file(path: Path) -> dict | None:
-    """Parse a JSONL session file into a summary dict. Returns None on any error."""
-    try:
-        lines = [
-            json.loads(line)
-            for line in path.read_text(encoding="utf-8").splitlines()
-            if line.strip()
-        ]
-    except Exception:
-        return None
-    start = next((l for l in lines if l.get("type") == "session_start"), {})
-    started_at = start.get("started_at", "")
-    model = start.get("model", "?")
-    # Derive display title: first user-role line in raw_messages, or filename
-    title = _derive_title(path, lines)
-    return {
-        "path": path,
-        "filename": path.name,
-        "started_at": started_at,
-        "model": model,
-        "title": title,
-    }
-
-
-def _derive_title(path: Path, lines: list[dict]) -> str:
-    """Return first user message (<=60 chars) as title, or the filename stem."""
-    end_rec = next((l for l in lines if l.get("type") == "session_end"), None)
-    if end_rec:
-        for msg in end_rec.get("raw_messages") or []:
-            if msg.get("role") == "user":
-                text = str(msg.get("content") or "").strip().replace("\n", " ")
-                return text[:60] + ("…" if len(text) > 60 else "")
-    # Fallback: strip trailing _logs from stem
-    stem = path.stem
-    if stem.endswith("_logs"):
-        stem = stem[:-5]
-    return stem
-
-
-def load_raw_messages(path: Path) -> list[dict] | None:
-    """Read a session file and return its raw_messages list, or None if absent."""
-    try:
-        lines = [
-            json.loads(line)
-            for line in path.read_text(encoding="utf-8").splitlines()
-            if line.strip()
-        ]
-    except Exception:
-        return None
-    end_rec = next((l for l in lines if l.get("type") == "session_end"), None)
-    if end_rec is None:
-        return None
-    return end_rec.get("raw_messages") or None
-
-
-def build_turn_list(raw_messages: list[dict]) -> list[dict]:
-    """Build a list of user-turn dicts from raw_messages for display.
-
-    Each dict: {"index": int, "label": str, "content": str}
-    where index is the position of the user message in raw_messages.
-    Only user-role messages are returned (the turn entry points).
-    """
-    turns: list[dict] = []
-    for i, msg in enumerate(raw_messages):
-        if msg.get("role") == "user":
-            content = str(msg.get("content") or "").strip().replace("\n", " ")
-            label = content[:70] + ("…" if len(content) > 70 else "")
-            turns.append({"index": i, "label": label, "content": content})
-    return turns
+def _build_copy_items(messages: list[dict]) -> list[dict]:
+    """Thin alias kept for backward-compat with internal TUI callers."""
+    return _build_copy_items_data(messages)
 
 
 # ---------------------------------------------------------------------------

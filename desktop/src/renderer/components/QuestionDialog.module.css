@@ -1,0 +1,84 @@
+.overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+}
+
+.dialog {
+  background: var(--bg-raised);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+  padding: var(--sp-5);
+  width: min(480px, 90vw);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+}
+
+.text {
+  color: var(--text-primary);
+  line-height: 1.6;
+}
+
+.options {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+
+.optionBtn {
+  padding: var(--sp-2) var(--sp-3);
+  background: var(--bg-hover);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-base);
+  color: var(--text-primary);
+  font-size: var(--font-size-base);
+  cursor: pointer;
+  text-align: left;
+  transition: border-color var(--transition-fast), background var(--transition-fast);
+}
+
+.optionBtn:hover,
+.optionBtn:focus {
+  border-color: var(--border-focus);
+  background: var(--bg-active);
+  outline: none;
+}
+
+.freeInput {
+  display: flex;
+  gap: var(--sp-2);
+}
+
+.input {
+  flex: 1;
+  background: var(--bg-panel);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-base);
+  color: var(--text-primary);
+  font-size: var(--font-size-base);
+  padding: var(--sp-2) var(--sp-3);
+  outline: none;
+}
+
+.input:focus {
+  border-color: var(--border-focus);
+}
+
+.submitBtn {
+  padding: var(--sp-2) var(--sp-4);
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  border-radius: var(--radius-base);
+  cursor: pointer;
+  transition: background var(--transition-fast);
+}
+
+.submitBtn:hover {
+  background: var(--accent-hover);
+}

@@ -1,0 +1,74 @@
+.bar {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--sp-2);
+  padding: var(--sp-3) var(--sp-4);
+  border-top: 1px solid var(--border-subtle);
+  background: var(--bg-panel);
+}
+
+.textarea {
+  flex: 1;
+  background: var(--bg-raised);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-base);
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-base);
+  padding: var(--sp-2) var(--sp-3);
+  resize: none;
+  min-height: 40px;
+  max-height: 200px;
+  line-height: 1.5;
+  transition: border-color var(--transition-fast);
+  outline: none;
+}
+
+.textarea:focus {
+  border-color: var(--border-focus);
+}
+
+.textarea:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.sendBtn {
+  padding: var(--sp-2) var(--sp-4);
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  border-radius: var(--radius-base);
+  font-size: var(--font-size-base);
+  cursor: pointer;
+  transition: background var(--transition-fast);
+  white-space: nowrap;
+  height: 40px;
+}
+
+.sendBtn:hover:not(:disabled) {
+  background: var(--accent-hover);
+}
+
+.sendBtn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.cancelBtn {
+  composes: sendBtn;
+  background: transparent;
+  border: 1px solid var(--border-default);
+  color: var(--text-secondary);
+}
+
+.cancelBtn:hover:not(:disabled) {
+  background: var(--bg-hover);
+}
+
+.hint {
+  font-size: var(--font-size-sm);
+  color: var(--text-muted);
+  padding: 0 var(--sp-4) var(--sp-1);
+  font-family: var(--font-mono);
+}
