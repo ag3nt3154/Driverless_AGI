@@ -175,6 +175,47 @@ Double-click `dagi_run.bat` in the repo root. It opens a Windows Terminal window
 
 ...then launches `tui.py --model <id> [--verbose]` with your selections.
 
+### Electron Desktop GUI (`desktop/`) [experimental]
+
+A native Electron 33 + React 18 desktop app that pairs with the Python sidecar over a versioned NDJSON-over-stdio pipe. Functionally equivalent to the TUI — full conversation, tool cards, plan panel, question dialogs, slash commands — but rendered in a hardware-accelerated browser window.
+
+**Requirements:** Node.js 18+ on PATH.
+
+**Install and run:**
+
+```bash
+cd desktop
+npm install
+npm start   # launches Electron with the Python sidecar auto-detected via DAGI_PYTHON env var
+```
+
+**Package (Windows Squirrel installer):**
+
+```bash
+cd desktop
+npm run make
+# output: desktop/out/make/squirrel.windows/
+```
+
+**How it works:**
+
+```
+Electron main (main.ts)
+  ├── PythonSupervisor — spawns dagi_gui/__main__.py, splits NDJSON lines, restarts on crash
+  ├── preload.ts — channel-whitelisted contextBridge (send: dagi:command, receive: dagi:event/crash/ready)
+  └── Renderer (React)
+        ├── App.tsx — useReducer(dagiReducer) + IPC subscription
+        ├── Conversation — auto-scroll, ReactMarkdown, streaming cursor
+        ├── ToolCard — collapsible, per-tool colour coding
+        ├── Composer — auto-resize textarea, slash command autocomplete
+        ├── Sidebar — status, cost, tokens, plan panel
+        └── QuestionDialog — modal with option buttons or free text
+```
+
+**Slash commands:** `/compact`, `/clear`, `/cancel`, `/model <id>`, `/skill <name>`, `/workflow <name>`, `/history`, `/help`
+
+**Security:** `contextIsolation: true`, `nodeIntegration: false`, `sandbox: true`. No Node.js APIs exposed to renderer — all IPC goes through the whitelisted `window.dagiAPI` bridge.
+
 ### Interactive CLI (`archives/cli.py`) [DEPRECATED]
 
 The legacy CLI REPL has been **archived** in favour of the TUI (`python tui.py`).

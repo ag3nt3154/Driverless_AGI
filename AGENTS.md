@@ -1,6 +1,6 @@
 # AGENTS.md
 
-> Last updated: 2026-08-11 | [README](README.md) | [TODO](TODO.md)
+> Last updated: 2026-08-15 | [README](README.md) | [TODO](TODO.md)
 
 
 ---
@@ -123,9 +123,23 @@ Stop and flag when:
 ## Architecture
 
 ```
-tui.py / telegram_bot.py / main.py
+tui.py / telegram_bot.py / main.py / dagi_gui/__main__.py
     │
     tui.py → tui/ (app, commands, callbacks, conversation, sidebar, prompt_input, streaming)
+    │
+    dagi_gui/__main__.py → dagi_gui/ (protocol, interaction, callbacks, session, catalog, history, server, plan_monitor)
+    │   Python sidecar: reads NDJSON commands on stdin, emits NDJSON events on stdout.
+    │   dagi_gui/server.py drives AgentLoop; dagi_gui/plan_monitor.py watches PLAN.md.
+    │   Paired with Electron frontend (desktop/) over stdio NDJSON pipe.
+    │
+    desktop/ (Electron 33 + React 18 + TypeScript + Vite, three build contexts)
+    │   main/main.ts         — BrowserWindow, PythonSupervisor, IPC routing
+    │   main/python-supervisor.ts — spawns sidecar, line-splits NDJSON, crash restarts
+    │   main/preload.ts      — channel-whitelisted contextBridge (SEND/RECV sets)
+    │   renderer/App.tsx     — useReducer(dagiReducer), IPC subscription, slash dispatch
+    │   renderer/state.ts    — pure dagiReducer (no Redux); AppState + Action union
+    │   renderer/components/ — Conversation, ToolCard, Composer, Sidebar, QuestionDialog
+    │   shared/protocol.ts   — Zod discriminated unions for all 19 commands + 17 events
     │
     └── AgentLoop (agent/loop.py)
             ├── ToolRegistry (agent/registry.py)
@@ -133,6 +147,7 @@ tui.py / telegram_bot.py / main.py
             ├── CompactTool (tools/compact.py)
             ├── SkillLoader (.dagi/skills/)
             └── AgentCallbacks → TUI via App.call_from_thread()
+                             → GUI via dagi_gui/callbacks.py (EventWriter)
 ```
 
 **Tool layout:** `tools/<name>/__init__.py` re-exports from `_<name>.py`; shared helpers are flat files in `tools/` (`_path_guard.py`, `_hash_cache.py`, `_subagent_runner.py`, `_handoff_format.py`, `_task_envelope.py`, `output_filter.py`, `subagent_main.py`, `subagent_api.py`). `edit` uses `oldText`/`newText` unique-substring matching; `read` outputs `cat -n` style line numbers.
@@ -160,6 +175,14 @@ tui.py / telegram_bot.py / main.py
 | `.dagi/skills/memory-add/SKILL.md`                   | Canonical memory-add protocol (parent passes category+metadata; subagent routes)                                                                               |
 | `.dagi/skills/memory-query/SKILL.md`                 | Canonical memory-query protocol (read-only; scope parameter)                                                                                                   |
 | `.dagi/skills/memory-refresh/SKILL.md`               | Canonical memory-refresh protocol (lint sweep + triage); scripts/ has 5 lint scripts                                                                           |
+| `dagi_gui/__main__.py`                               | Electron GUI sidecar entry point; wires `AgentLoop` → `GUISession` → `EventWriter` stdout NDJSON                                                               |
+| `dagi_gui/server.py`                                 | `GUIServer`: reads NDJSON commands from stdin loop, dispatches to `AgentLoop`/session                                                                          |
+| `dagi_gui/session.py`                                | `GUISession`: one-shot task execution, question/answer flow, compact + history support                                                                          |
+| `dagi_gui/plan_monitor.py`                           | `PlanMonitor`: watchdog (ReadDirectoryChangesW) primary + 5s poll fallback; emits `plan_update`                                                                 |
+| `desktop/src/shared/protocol.ts`                     | Zod discriminated unions: 19 command types + 17 event types; `PROTOCOL_VERSION=1`; `parseEvent`/`serializeCommand`                                              |
+| `desktop/src/main/python-supervisor.ts`              | `PythonSupervisor extends EventEmitter`: spawns sidecar, NDJSON line-splitting, pending Map, exponential back-off restarts; injectable `spawnFn` for tests      |
+| `desktop/src/main/main.ts`                           | Electron main process: hardened BrowserWindow, windowStateKeeper, IPC routing, conda env auto-detection                                                         |
+| `desktop/src/renderer/state.ts`                      | Pure `dagiReducer`: handles all 17 event types → `AppState`; no Redux/Zustand                                                                                   |
 
 ## Errors Log (recent)
 
