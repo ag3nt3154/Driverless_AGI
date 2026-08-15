@@ -224,7 +224,7 @@ class TestLargeFileDelegation:
         assert "Big file summary." in result
 
     def test_explicit_offset_skips_delegation(self, tmp_path):
-        f, all_lines = _make_large_file(tmp_path)
+        f, _ = _make_large_file(tmp_path)
         config = _make_config(tmp_path)
         tool = ReadTool(
             cwd=tmp_path,
@@ -243,7 +243,7 @@ class TestLargeFileDelegation:
         assert "line5" in result
 
     def test_explicit_limit_skips_delegation(self, tmp_path):
-        f, all_lines = _make_large_file(tmp_path)
+        f, _ = _make_large_file(tmp_path)
         config = _make_config(tmp_path)
         tool = ReadTool(
             cwd=tmp_path,
@@ -259,7 +259,8 @@ class TestLargeFileDelegation:
 
         mock_run.assert_not_called()
         assert "Delegated to read_large_text" not in result
-        assert "line1\t" in result or "1\tline1" in result
+        assert f"{1:6d}\tline1" in result
+        assert "line11" not in result
 
     def test_small_file_no_delegation(self, tmp_path):
         f = tmp_path / "small.txt"
@@ -296,6 +297,109 @@ class TestLargeFileDelegation:
 
         mock_run.assert_not_called()
         assert "Delegated to read_large_text" not in result
+
+    def test_doc_ext_over_default_limit_skips_delegation(self, tmp_path):
+        """Converted doc files must not be delegated even if over the line limit —
+        delegation would drop the header/pages info and hand off the raw path."""
+        md_text = "\n".join(f"line{i}" for i in range(1, 2501))
+        f = tmp_path / "big.docx"
+        f.write_bytes(b"fake docx")
+        config = _make_config(tmp_path)
+        tool = ReadTool(
+            cwd=tmp_path,
+            allowed_roots=[tmp_path],
+            service_url="http://localhost:8100",
+            project_path=tmp_path,
+            callbacks=None,
+            config=config,
+        )
+
+        with patch("tools.read._read.convert_document", return_value=md_text):
+            with patch("tools.subagent_api.run_subagent") as mock_run:
+                result = tool.run(path="big.docx")
+
+        mock_run.assert_not_called()
+        assert "Delegated to read_large_text" not in result
+        assert result.startswith("[big.docx | editable: ")
+
+    def test_on_event_factory_called_with_preset_name(self, tmp_path):
+        _make_large_file(tmp_path)
+        handoff = tmp_path / "handoff.md"
+        handoff.write_text("summary", encoding="utf-8")
+        config = _make_config(tmp_path)
+        callbacks = MagicMock()
+        factory = MagicMock(return_value="on_event_sentinel")
+        callbacks.on_subagent_event_factory = factory
+        tool = ReadTool(
+            cwd=tmp_path,
+            allowed_roots=[tmp_path],
+            service_url="http://localhost:8100",
+            project_path=tmp_path,
+            callbacks=callbacks,
+            config=config,
+        )
+
+        with patch(
+            "tools.subagent_api.run_subagent",
+            return_value=_make_ok_result(handoff),
+        ) as mock_run:
+            tool.run(path="big.txt")
+
+        factory.assert_called_once_with("read-large-text")
+        assert mock_run.call_args.kwargs["on_event"] == "on_event_sentinel"
+
+    def test_ok_unverified_banner_via_delegation(self, tmp_path):
+        _make_large_file(tmp_path)
+        handoff = tmp_path / "handoff.md"
+        handoff.write_text("## Summary\nUnverified summary.", encoding="utf-8")
+        config = _make_config(tmp_path)
+        result_mock = MagicMock()
+        result_mock.is_ok = True
+        result_mock.status = "ok_unverified"
+        result_mock.handoff_path = handoff
+        tool = ReadTool(
+            cwd=tmp_path,
+            allowed_roots=[tmp_path],
+            service_url="http://localhost:8100",
+            project_path=tmp_path,
+            callbacks=None,
+            config=config,
+        )
+
+        with patch(
+            "tools.subagent_api.run_subagent", return_value=result_mock
+        ):
+            result = tool.run(path="big.txt")
+
+        assert "UNVERIFIED" in result
+        assert "Summary below." in result
+
+    def test_failure_dispatch_via_delegation(self, tmp_path):
+        _make_large_file(tmp_path)
+        config = _make_config(tmp_path)
+        result_mock = MagicMock()
+        result_mock.is_ok = False
+        result_mock.status = "timeout"
+        result_mock.pid = 4321
+        result_mock.escalation = None
+        tool = ReadTool(
+            cwd=tmp_path,
+            allowed_roots=[tmp_path],
+            service_url="http://localhost:8100",
+            project_path=tmp_path,
+            callbacks=None,
+            config=config,
+        )
+
+        with patch(
+            "tools.subagent_api.run_subagent", return_value=result_mock
+        ):
+            result = tool.run(path="big.txt")
+
+        assert "timeout" in result
+        assert "4321" in result
+        assert "Delegation result below." in result
+        assert "Summary below." not in result
 
     def test_query_passed_as_custom_instructions(self, tmp_path):
         _make_large_file(tmp_path)

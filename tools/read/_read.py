@@ -16,6 +16,7 @@ _IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
 _BLOCKED_EXTS = _IMAGE_EXTS.copy()
 _DOC_EXTS = {".pdf", ".docx", ".xlsx", ".pptx"}
 _PAGE_MARKER_RE = re.compile(r"<!-- Page (\d+) -->")
+_DEFAULT_LIMIT = 2000
 
 
 def _parse_page_spec(spec: str) -> set[int]:
@@ -66,7 +67,8 @@ class ReadTool(BaseTool):
         "Output uses `cat -n` style: each line is prefixed with its 1-indexed "
         "line number followed by a tab — the number is not part of the file content. "
         "Files exceeding 2000 lines are automatically delegated to "
-        "read_large_text for chunked summarization. Use the optional query "
+        "read_large_text for chunked summarization when read with default "
+        "offset and limit. Use the optional query "
         "parameter to focus the summary on specific content. "
         "For large-scale codebase exploration, prefer `explore_files`."
     )
@@ -125,7 +127,7 @@ class ReadTool(BaseTool):
         self,
         path: str,
         offset: int = 1,
-        limit: int = 2000,
+        limit: int = _DEFAULT_LIMIT,
         pages: str | None = None,
         query: str | None = None,
     ) -> str | list:
@@ -188,9 +190,10 @@ class ReadTool(BaseTool):
 
         if (
             offset == 1
-            and limit == 2000
+            and limit == _DEFAULT_LIMIT
             and len(lines) > limit
             and self._config is not None
+            and ext not in _DOC_EXTS
         ):
             return self._delegate_to_read_large_text(p, len(lines), query)
 
@@ -224,9 +227,10 @@ class ReadTool(BaseTool):
             on_event=on_event,
         )
 
+        trailer = "Summary below." if result.is_ok else "Delegation result below."
         signpost = (
             f"[File too large for inline display ({total_lines} lines). "
-            f"Delegated to read_large_text. Summary below.]"
+            f"Delegated to read_large_text. {trailer}]"
         )
 
         if result.is_ok:
