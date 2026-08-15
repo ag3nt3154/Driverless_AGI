@@ -14,8 +14,8 @@ if TYPE_CHECKING:
 class MemoryAddTool(BaseTool):
     name = "memory_add"
     description = (
-        "File a new entry into the memory wiki. Parent must classify "
-        "the content and provide category. Use to persist decisions, "
+        "File a new entry into the memory wiki. You must classify the "
+        "content and provide a category. Use to persist decisions, "
         "knowledge, events, or todos."
     )
     _parameters = {

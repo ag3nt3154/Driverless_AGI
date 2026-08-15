@@ -14,9 +14,9 @@ if TYPE_CHECKING:
 class WritePlanTool(BaseTool):
     name = "write_plan"
     description = (
-        "Write a structured plan document for a task. The planner does NOT "
-        "execute — it only produces a plan file with subtasks, acceptance "
-        "criteria, and test paths. Use before dispatching workers."
+        "Writes a plan file with subtasks, acceptance criteria, and test "
+        "paths. Does not execute anything — call run_worker afterwards to "
+        "implement."
     )
     _parameters = {
         "type": "object",

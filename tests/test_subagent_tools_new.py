@@ -44,23 +44,28 @@ def _make_runtime_args():
 
 
 class TestGenericSubagentTool:
-    # Maps a subagent directory name to its expected tool `name`. All
-    # subagent-backed tools now use a plain, task-descriptive name — the
-    # `spawn_{type}_subagent` naming convention was retired project-wide so
-    # the LLM never sees "this is implemented via a spawned subagent" in the
-    # tool name (mirroring `read_large_text`, which set the precedent).
-    _TOOL_NAME_OVERRIDES = {
+    # Maps every auto-discovered subagent directory name (under
+    # .dagi/subagents/, i.e. every directory with both prompt.md and
+    # subagent_config.yaml) to its expected tool `name`. All subagent-backed
+    # tools now use a plain, task-descriptive name — the
+    # `spawn_{type}_subagent` fallback naming convention was retired
+    # project-wide so the LLM never sees "this is implemented via a spawned
+    # subagent" in the tool name (mirroring `read_large_text`, which set the
+    # precedent). This dict is the sole source of truth for expected names.
+    _EXPECTED_TOOL_NAMES = {
         "read-large-text": "read_large_text",
         "explore_files": "explore_files",
         "web_research": "web_research",
         "memory-query": "memory_query",
         "memory-add": "memory_add",
+        "memory-refresh": "memory_refresh",
+        "cli": "run_cli",
+        "plan": "write_plan",
+        "review": "review_work",
+        "worker": "run_worker",
     }
 
-    @pytest.mark.parametrize("type_name", [
-        "explore_files", "web_research", "memory-query",
-        "memory-add", "read-large-text",
-    ])
+    @pytest.mark.parametrize("type_name", sorted(_EXPECTED_TOOL_NAMES))
     def test_tool_has_required_attributes(self, type_name):
         cls = _load_tool_class(type_name)
         config, cb, tr = _make_runtime_args()
@@ -69,7 +74,7 @@ class TestGenericSubagentTool:
         assert hasattr(tool, "description")
         assert hasattr(tool, "_parameters")
         assert isinstance(tool.name, str)
-        expected_name = self._TOOL_NAME_OVERRIDES[type_name]
+        expected_name = self._EXPECTED_TOOL_NAMES[type_name]
         assert tool.name == expected_name
 
     @pytest.mark.parametrize("type_name", [
