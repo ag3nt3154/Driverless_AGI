@@ -32,14 +32,14 @@ tools:
   - skill
   - run_skill_script
   - switch_model
-  - spawn_document-reader_subagent
-  - spawn_explore_files_subagent
-  - spawn_memory-add_subagent
-  - spawn_memory-query_subagent
-  - spawn_review_subagent
-  - spawn_web_research_subagent
-  - spawn_worker_subagent
-  - spawn_cli_subagent
+  - read_large_text
+  - explore_files
+  - memory_add
+  - memory_query
+  - review_work
+  - web_research
+  - run_worker
+  - run_cli
   - extend_subagent_timeout
 
 system_prompt_preamble: |

@@ -11,12 +11,12 @@ if TYPE_CHECKING:
     from agent.session import SessionTracker
 
 
-class SpawnPlanSubagentTool(BaseTool):
-    name = "spawn_plan_subagent"
+class WritePlanTool(BaseTool):
+    name = "write_plan"
     description = (
         "Write a structured plan document for a task. The planner does NOT "
         "execute — it only produces a plan file with subtasks, acceptance "
-        "criteria, and test paths. Use before dispatching worker subagents."
+        "criteria, and test paths. Use before dispatching workers."
     )
     _parameters = {
         "type": "object",

@@ -11,8 +11,8 @@ if TYPE_CHECKING:
     from agent.session import SessionTracker
 
 
-class SpawnCliSubagentTool(BaseTool):
-    name = "spawn_cli_subagent"
+class RunCliTool(BaseTool):
+    name = "run_cli"
     description = (
         "Run an interactive CLI session — shell commands, scripts, or any "
         "task requiring a live ConPTY terminal. Use when bash alone is "

@@ -707,7 +707,7 @@ def _cmd_init(project_path: Path) -> None:
     if not created and not skipped:
         console.print(f"[dim]Already initialised: {dagi_dir}[/dim]")
     console.print(
-        "[dim]Next: use [bold]spawn_memory_add_subagent[/bold] to add knowledge, "
+        "[dim]Next: use [bold]memory_add[/bold] to add knowledge, "
         "or drop files into [bold]dagi-memory/raw/[/bold] then invoke [bold]memory-ingest[/bold]. "
         "Add workflows to [bold].dagi/workflow/<name>/workflow.md[/bold].[/dim]"
     )

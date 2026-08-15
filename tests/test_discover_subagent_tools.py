@@ -27,7 +27,7 @@ def test_discovers_tool_from_main_py(tmp_path, monkeypatch):
     (sub_dir / "main.py").write_text(
         "from agent.base_tool import BaseTool\n\n"
         "class TestTool(BaseTool):\n"
-        "    name = 'spawn_test_type_subagent'\n"
+        "    name = 'test_type_tool'\n"
         "    description = 'Test'\n"
         "    _parameters = {'type': 'object', 'properties': {}}\n"
         "    def __init__(self, config=None, callbacks=None, tracker=None):\n"
@@ -42,7 +42,7 @@ def test_discovers_tool_from_main_py(tmp_path, monkeypatch):
     )
 
     assert len(tools) == 1
-    assert tools[0].name == "spawn_test_type_subagent"
+    assert tools[0].name == "test_type_tool"
 
 
 def test_skips_directory_without_main_py(tmp_path, monkeypatch):
@@ -71,7 +71,7 @@ def test_project_overrides_dagi_root(tmp_path, monkeypatch):
     (dagi_dir / "main.py").write_text(
         "from agent.base_tool import BaseTool\n\n"
         "class RootTool(BaseTool):\n"
-        "    name = 'spawn_shared_type_subagent'\n"
+        "    name = 'shared_type_tool'\n"
         "    description = 'Root version'\n"
         "    _parameters = {'type': 'object', 'properties': {}}\n"
         "    def __init__(self, **kw): pass\n"
@@ -85,7 +85,7 @@ def test_project_overrides_dagi_root(tmp_path, monkeypatch):
     (proj_dir / "main.py").write_text(
         "from agent.base_tool import BaseTool\n\n"
         "class ProjectTool(BaseTool):\n"
-        "    name = 'spawn_shared_type_subagent'\n"
+        "    name = 'shared_type_tool'\n"
         "    description = 'Project version'\n"
         "    _parameters = {'type': 'object', 'properties': {}}\n"
         "    def __init__(self, **kw): pass\n"

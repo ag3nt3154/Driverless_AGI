@@ -179,8 +179,8 @@ def create_tool_registry(
         # Subagents available in plan mode: web_research + explore_files
         if config is not None:
             _plan_mode_names = {
-                "spawn_web_research_subagent",
-                "spawn_explore_files_subagent",
+                "web_research",
+                "explore_files",
             }
             for spawn_tool in _discover_subagent_tools(
                 cwd=cwd, config=config, callbacks=callbacks, tracker=tracker,

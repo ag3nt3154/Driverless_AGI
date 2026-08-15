@@ -39,7 +39,7 @@ Wait for the user to confirm the test seams before proceeding.
 
 ### Step 3 — Explore Codebase
 
-Call `spawn_explore_files_subagent(...)` with a task informed by the spec's
+Call `explore_files(...)` with a task informed by the spec's
 Implementation Decisions and Testing Decisions sections. The subagent maps
 relevant files, architecture, and patterns. Read its handoff when it returns.
 

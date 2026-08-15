@@ -11,8 +11,8 @@ if TYPE_CHECKING:
     from agent.session import SessionTracker
 
 
-class SpawnMemoryAddSubagentTool(BaseTool):
-    name = "spawn_memory-add_subagent"
+class MemoryAddTool(BaseTool):
+    name = "memory_add"
     description = (
         "File a new entry into the memory wiki. Parent must classify "
         "the content and provide category. Use to persist decisions, "

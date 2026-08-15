@@ -44,12 +44,18 @@ def _make_runtime_args():
 
 
 class TestGenericSubagentTool:
-    # Maps a subagent directory name to its expected tool `name` when the two
-    # differ. `read-large-text` intentionally does not follow the
-    # `spawn_{type}_subagent` naming convention: it's directly LLM-callable
-    # under the plain name `read_large_text`, mirroring the built-in `read`
-    # tool's naming rather than the generic subagent-spawning pattern.
-    _TOOL_NAME_OVERRIDES = {"read-large-text": "read_large_text"}
+    # Maps a subagent directory name to its expected tool `name`. All
+    # subagent-backed tools now use a plain, task-descriptive name — the
+    # `spawn_{type}_subagent` naming convention was retired project-wide so
+    # the LLM never sees "this is implemented via a spawned subagent" in the
+    # tool name (mirroring `read_large_text`, which set the precedent).
+    _TOOL_NAME_OVERRIDES = {
+        "read-large-text": "read_large_text",
+        "explore_files": "explore_files",
+        "web_research": "web_research",
+        "memory-query": "memory_query",
+        "memory-add": "memory_add",
+    }
 
     @pytest.mark.parametrize("type_name", [
         "explore_files", "web_research", "memory-query",
@@ -63,9 +69,7 @@ class TestGenericSubagentTool:
         assert hasattr(tool, "description")
         assert hasattr(tool, "_parameters")
         assert isinstance(tool.name, str)
-        expected_name = self._TOOL_NAME_OVERRIDES.get(
-            type_name, f"spawn_{type_name}_subagent"
-        )
+        expected_name = self._TOOL_NAME_OVERRIDES[type_name]
         assert tool.name == expected_name
 
     @pytest.mark.parametrize("type_name", [

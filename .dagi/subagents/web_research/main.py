@@ -11,8 +11,8 @@ if TYPE_CHECKING:
     from agent.session import SessionTracker
 
 
-class SpawnWebResearchSubagentTool(BaseTool):
-    name = "spawn_web_research_subagent"
+class WebResearchTool(BaseTool):
+    name = "web_research"
     description = (
         "Research a topic using web search and web fetch. Use for questions "
         "that require current information, documentation lookup, or finding "

@@ -117,7 +117,7 @@ sandbox_mode: false  # true  = file tools (read, write, edit, grep, find, copy) 
 #   - complete_plan           # Mark a plan step as done and continue
 #   # ── Agent / subagent tools ───────────────────────────────────────────────────
 #   - ask_user                # Pause and prompt the user for input
-#   - spawn_cli_subagent      # Spawn a dynamic full-scope subagent
+#   - run_cli                 # Run a dynamic full-scope subagent session
 #   - extend_subagent_timeout # Extend timeout for an in-flight subagent
 #   # ── Model tools ──────────────────────────────────────────────────────────────
 #   - switch_model            # Switch between default / worker / advanced models

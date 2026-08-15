@@ -20,8 +20,8 @@ _plan_utils_mod = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_plan_utils_mod)  # type: ignore[union-attr]
 
 
-class SpawnWorkerSubagentTool(BaseTool):
-    name = "spawn_worker_subagent"
+class RunWorkerTool(BaseTool):
+    name = "run_worker"
     description = (
         "Execute a single subtask with full tool access. Receives plan "
         "context and subtask details automatically. Writes a structured "

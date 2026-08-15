@@ -11,8 +11,8 @@ if TYPE_CHECKING:
     from agent.session import SessionTracker
 
 
-class SpawnMemoryQuerySubagentTool(BaseTool):
-    name = "spawn_memory-query_subagent"
+class MemoryQueryTool(BaseTool):
+    name = "memory_query"
     description = (
         "Query the memory wiki to retrieve stored knowledge. "
         "Returns a synthesised answer with citations."

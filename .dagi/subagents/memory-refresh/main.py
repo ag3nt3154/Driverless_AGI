@@ -11,8 +11,8 @@ if TYPE_CHECKING:
     from agent.session import SessionTracker
 
 
-class SpawnMemoryRefreshSubagentTool(BaseTool):
-    name = "spawn_memory-refresh_subagent"
+class MemoryRefreshTool(BaseTool):
+    name = "memory_refresh"
     description = (
         "Maintain and repair the memory wiki. Runs lint scripts, "
         "presents issues for user approval, and executes fixes. "

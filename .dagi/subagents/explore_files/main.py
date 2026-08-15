@@ -12,8 +12,8 @@ if TYPE_CHECKING:
     from agent.session import SessionTracker
 
 
-class SpawnExploreFilesSubagentTool(BaseTool):
-    name = "spawn_explore_files_subagent"
+class ExploreFilesTool(BaseTool):
+    name = "explore_files"
     description = (
         "Explore the codebase with read, grep, find, and bash. Use for "
         "open-ended discovery: mapping a module, finding all usages of a "

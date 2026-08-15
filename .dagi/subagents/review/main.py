@@ -31,8 +31,8 @@ def _load_plan_text(config: "AgentConfig") -> str:
     return ""
 
 
-class SpawnReviewSubagentTool(BaseTool):
-    name = "spawn_review_subagent"
+class ReviewWorkTool(BaseTool):
+    name = "review_work"
     description = (
         "Review a worker's implementation against the plan's subtask "
         "requirements. Reads the worker handoff and runs tests."

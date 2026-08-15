@@ -34,13 +34,13 @@ Before spawning the worker, write the test file(s) for this task:
 
 Call `update_task_status(task=N, status="in_progress")` to mark the task.
 
-Call `spawn_worker_subagent(subtask_name, briefing)`. The tool
+Call `run_worker(subtask_name, briefing)`. The tool
 automatically injects plan context and task details. Keep the returned handoff
 path for Step 3.
 
 ### Step 3 — Spawn Review
 
-Call `spawn_review_subagent(subtask_name, worker_handoff_path, unit_test_paths)`.
+Call `review_work(subtask_name, worker_handoff_path, unit_test_paths)`.
 The tool automatically injects plan context and the task block (including
 Tests section). Read the returned review report.
 

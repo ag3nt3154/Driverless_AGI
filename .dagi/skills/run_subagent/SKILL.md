@@ -12,7 +12,7 @@ triggers: custom subagent, subagent workflow, orchestrate subagents, chain subag
 ## When to Use
 
 Use this skill when:
-- No predefined subagent tool (`spawn_worker_subagent`, `spawn_explore_files_subagent`, etc.)
+- No predefined subagent tool (`run_worker`, `explore_files`, etc.)
   fits your task
 - You need to run multiple subagents in sequence, with data flow between them
 - You need to fan out work across multiple subagents in a loop

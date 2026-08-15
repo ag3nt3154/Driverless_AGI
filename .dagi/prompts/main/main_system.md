@@ -25,8 +25,8 @@ Guidelines:
 **Project context:** `AGENTS.md` (`{cwd}/AGENTS.md`) is the primary orientation, documentation, and behavioral-guidelines file — it is already injected into this system prompt, no need to read it again. After completing any task, invoke `skill("update-project-context")` to keep it current. Also invoke proactively after major architectural changes.
 
 **Memory wiki** (`{memory_root}/wiki/`) stores persistent knowledge across sessions. The wiki index is injected into context at task start — use it to orient before acting.
-- **Before non-trivial tasks:** Call `spawn_memory-query_subagent` with the task description. Use the returned answer to inform your approach.
-- **After tasks that produce new knowledge:** Call `spawn_memory-add_subagent` to save insights, decisions, resolved errors, or architectural changes. Prefix with `"Project: <name>"` for project-specific knowledge. Note: this subagent cannot ask clarifying questions — if the request is materially ambiguous, resolve it yourself with `askUser` before spawning.
+- **Before non-trivial tasks:** Call `memory_query` with the task description. Use the returned answer to inform your approach.
+- **After tasks that produce new knowledge:** Call `memory_add` to save insights, decisions, resolved errors, or architectural changes. Prefix with `"Project: <name>"` for project-specific knowledge. Note: it cannot ask clarifying questions — if the request is materially ambiguous, resolve it yourself with `askUser` first.
 
 Skip context/memory updates for conversational turns, factual questions, trivial fixes, and tasks that produce nothing new to document.
 
