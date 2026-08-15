@@ -6,11 +6,6 @@ from agent.base_tool import BaseTool
 from tools._path_guard import validate_path
 from tools.read._doc_service import cache_path_for, convert_document, DocServiceError
 
-try:
-    from tools.read._document_reader import summarize_document
-except ImportError:
-    summarize_document = None  # type: ignore[assignment]
-
 _IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
 _BLOCKED_EXTS = _IMAGE_EXTS.copy()
 _DOC_EXTS = {".pdf", ".docx", ".xlsx", ".pptx"}
@@ -97,13 +92,11 @@ class ReadTool(BaseTool):
         self,
         cwd: Path = Path("."),
         allowed_roots: list[Path] | None = None,
-        reserve_tokens: int = 0,
         project_path: Path | None = None,
         service_url: str | None = None,
     ):
         self.cwd = cwd
         self.allowed_roots = allowed_roots
-        self._reserve_tokens = reserve_tokens
         self._project_path = project_path
         self._service_url = service_url
 
@@ -178,28 +171,5 @@ class ReadTool(BaseTool):
         )
 
         raw_result = f"{header}\n{numbered}" if header else numbered
-
-        # Auto-summarization gate
-        if (
-            self._reserve_tokens > 0
-            and self._project_path is not None
-            and summarize_document is not None
-            and offset == 1
-            and limit == 2000
-        ):
-            _CHARS_PER_TOKEN = 4
-            full_text = "\n".join(
-                f"{i:6d}\t{line}" for i, line in enumerate(lines, 1)
-            )
-            estimated_tokens = len(full_text) // _CHARS_PER_TOKEN
-            if estimated_tokens >= self._reserve_tokens:
-                summary = summarize_document(
-                    full_text=full_text,
-                    source_path=p,
-                    filename=p.name,
-                    project_path=self._project_path,
-                )
-                if summary is not None:
-                    return summary
 
         return raw_result

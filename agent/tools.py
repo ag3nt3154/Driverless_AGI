@@ -140,13 +140,11 @@ def create_tool_registry(
     else:
         effective_roots = allowed_roots if allowed_roots is not None else [_DAGI_ROOT, cwd]
     reg = ToolRegistry()
-    _reserve = config.reserve_tokens if config else 0
     _proj = config.project_path if config else None
     _services = config.services if config else {}
     reg.register(ReadTool(
         cwd=cwd,
         allowed_roots=effective_roots,
-        reserve_tokens=_reserve,
         project_path=_proj,
         service_url=_services.get("doc_converter"),
     ))
