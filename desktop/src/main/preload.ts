@@ -1,15 +1,64 @@
 /**
- * Preload script — runs in a sandboxed renderer context with access to
- * a limited Node.js API. Exposes the IPC bridge via contextBridge.
- * Populated fully in Task 8 (Secure IPC).
+ * Preload script — runs in the renderer's isolated world with selective
+ * access to ipcRenderer. Exposes a narrow, typed API via contextBridge
+ * so the renderer never touches Electron internals directly.
+ *
+ * Security rules:
+ *  - Only whitelisted IPC channels are allowed
+ *  - No Node.js APIs leak into renderer scope
+ *  - contextIsolation: true + sandbox: true are enforced in main.ts
  */
 
-import { contextBridge, ipcRenderer } from "electron";
+import { contextBridge, ipcRenderer, IpcRendererEvent } from "electron";
 
-contextBridge.exposeInMainWorld("dagiAPI", {
-  send: (channel: string, data: unknown) => ipcRenderer.send(channel, data),
-  on: (channel: string, fn: (...args: unknown[]) => void) => {
-    ipcRenderer.on(channel, (_evt, ...args) => fn(...args));
+// Channels the renderer may send on (main process listens)
+const SEND_CHANNELS = new Set([
+  "dagi:command",
+  "dagi:window-state",
+]);
+
+// Channels the renderer may listen on (main process sends)
+const RECV_CHANNELS = new Set([
+  "dagi:event",
+  "dagi:crash",
+  "dagi:ready",
+]);
+
+export type DagiAPI = typeof api;
+
+const api = {
+  /** Send a command to the main process. */
+  send(channel: string, payload: unknown): void {
+    if (!SEND_CHANNELS.has(channel)) {
+      console.error(`[preload] Blocked send on disallowed channel: ${channel}`);
+      return;
+    }
+    ipcRenderer.send(channel, payload);
   },
-  removeAllListeners: (channel: string) => ipcRenderer.removeAllListeners(channel),
-});
+
+  /** Subscribe to events from the main process. Returns unsubscribe fn. */
+  on(channel: string, fn: (payload: unknown) => void): () => void {
+    if (!RECV_CHANNELS.has(channel)) {
+      console.error(`[preload] Blocked subscribe on disallowed channel: ${channel}`);
+      return () => undefined;
+    }
+    const handler = (_evt: IpcRendererEvent, payload: unknown) => fn(payload);
+    ipcRenderer.on(channel, handler);
+    return () => ipcRenderer.removeListener(channel, handler);
+  },
+
+  /** One-shot listener. */
+  once(channel: string, fn: (payload: unknown) => void): void {
+    if (!RECV_CHANNELS.has(channel)) return;
+    ipcRenderer.once(channel, (_evt, payload) => fn(payload));
+  },
+};
+
+contextBridge.exposeInMainWorld("dagiAPI", api);
+
+// Type augmentation for renderer TypeScript
+declare global {
+  interface Window {
+    dagiAPI: DagiAPI;
+  }
+}
