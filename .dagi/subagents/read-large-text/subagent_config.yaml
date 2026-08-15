@@ -3,9 +3,6 @@ tools:
   - read
   - grep
   - find
-  - write
-  - edit
-  - bash
 default_handoff_spec: >-
   A sectioned digest with line ranges, token estimates, and key excerpts per
   section.
