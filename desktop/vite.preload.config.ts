@@ -1,11 +1,13 @@
 import { defineConfig } from "vite";
+import path from "path";
 
 export default defineConfig({
-  build: {
-    lib: {
-      entry: "src/main/preload.ts",
-      formats: ["cjs"],
+  resolve: {
+    alias: {
+      "@shared": path.resolve(__dirname, "src/shared"),
     },
+  },
+  build: {
     rollupOptions: {
       external: ["electron"],
     },

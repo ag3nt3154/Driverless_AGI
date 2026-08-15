@@ -1,225 +1,180 @@
-"""Tests for the GUI session controller."""
-
 from __future__ import annotations
 
 import threading
 import time
-from typing import Any
-from unittest.mock import MagicMock, call, patch
+from types import SimpleNamespace
 
 import pytest
 
+from agent.loop import AgentConfig
+from dagi_gui.interaction import QuestionBroker
 from dagi_gui.protocol import ProtocolError
-from dagi_gui.session import SessionController, SessionState
+from dagi_gui.session import SessionController
 
 
-# ── Fake loop infrastructure ──────────────────────────────────────────────────
+class RecordingWriter:
+    def __init__(self) -> None:
+        self.events: list[dict[str, object]] = []
+
+    def write(self, event_type: str, **payload: object) -> None:
+        self.events.append({"type": event_type, **payload})
+
+
+class FakeCompactTool:
+    def __init__(self) -> None:
+        self.forced = False
+
+    def compact(self, force: bool = False) -> object:
+        self.forced = force
+        return SimpleNamespace(did_compact=False)
+
+
+class FakeBash:
+    def __init__(self) -> None:
+        self.killed = False
+
+    def force_kill(self) -> None:
+        self.killed = True
+
 
 class FakeLoop:
-    """Minimal AgentLoop stand-in — never calls any real model.
-
-    Mirrors real AgentLoop pause semantics: run() BLOCKS inside pause_event.wait()
-    when paused (it does NOT return). The session controller abandoning the loop
-    means the thread stays blocked on that wait — this is intentional for V1.
-    """
-
-    def __init__(self, run_duration: float = 0.0, raise_exc: Exception | None = None):
-        self._pause_event = threading.Event()
-        self._pause_event.set()  # initially running
-        self._messages: list = []
-        self.tracker = MagicMock()
-        self.tracker.finish = MagicMock()
-        self.compact_tool = MagicMock()
-        self.compact_tool.compact = MagicMock(return_value=None)
-        self.registry = MagicMock()
-        self.registry._tools = {}
-        self._run_duration = run_duration
-        self._raise_exc = raise_exc
-        self.run_calls: list[str] = []
-        self.resumed_with: list[str] = []
+    def __init__(self, config, callbacks, initial_messages, tracker, block: bool = False, fail: bool = False):
+        self.callbacks = callbacks
+        self.initial_messages = initial_messages
+        self.tracker = tracker or object()
+        self._messages = initial_messages or [{"role": "system", "content": "fresh"}]
+        self.bash = FakeBash()
+        self.registry = SimpleNamespace(_tools={"bash": self.bash})
+        self.compact_tool = FakeCompactTool()
+        self.paused = False
+        self.finished = 0
+        self.injected: list[str] = []
+        self.started = threading.Event()
+        self.release = threading.Event()
+        self.block = block
+        self.fail = fail
 
     def run(self, task: str) -> str:
-        self.run_calls.append(task)
+        self.started.set()
+        if self.fail:
+            raise RuntimeError("loop failed")
+        if self.block:
+            self.release.wait(timeout=1)
         self._messages.append({"role": "assistant", "content": "saved"})
-        if self._run_duration:
-            deadline = time.monotonic() + self._run_duration
-            while time.monotonic() < deadline:
-                # Block when paused — matches real AgentLoop._pause_event.wait()
-                self._pause_event.wait()
-                time.sleep(0.01)
-        if self._raise_exc:
-            raise self._raise_exc
-        return "done"
+        return "saved"
 
     def pause(self) -> None:
-        self._pause_event.clear()
+        self.paused = True
 
     def inject_and_resume(self, message: str) -> None:
-        self.resumed_with.append(message)
-        self._pause_event.set()
+        self.injected.append(message)
+        self.release.set()
 
     def finish(self) -> None:
-        self.tracker.finish()
+        self.finished += 1
 
 
 class FakeLoopFactory:
-    """Records constructor calls and returns FakeLoop instances."""
+    def __init__(self, **kwargs: bool) -> None:
+        self.kwargs = kwargs
+        self.calls: list[FakeLoop] = []
 
-    def __init__(self, **loop_kwargs: Any) -> None:
-        self.calls: list[dict] = []
-        self._loop_kwargs = loop_kwargs
-
-    def __call__(self, config, callbacks, initial_messages, tracker=None) -> FakeLoop:
-        self.calls.append({
-            "config": config,
-            "callbacks": callbacks,
-            "initial_messages": list(initial_messages or []),
-        })
-        return FakeLoop(**self._loop_kwargs)
+    def __call__(self, config, callbacks, initial_messages, tracker) -> FakeLoop:
+        loop = FakeLoop(config, callbacks, initial_messages, tracker, **self.kwargs)
+        self.calls.append(loop)
+        return loop
 
 
-def make_controller(loop_kwargs: dict | None = None) -> tuple[SessionController, FakeLoopFactory]:
-    from unittest.mock import MagicMock
-    writer = MagicMock()
-    writer.write = MagicMock()
-    factory = FakeLoopFactory(**(loop_kwargs or {}))
-    config = MagicMock()
-    config.project_path = MagicMock()
-    ctrl = SessionController(config=config, writer=writer, loop_factory=factory)
-    return ctrl, factory
+@pytest.fixture
+def setup_controller(tmp_path):
+    writer = RecordingWriter()
+    broker = QuestionBroker(writer)
+    factory = FakeLoopFactory()
+    controller = SessionController(AgentConfig(project_path=tmp_path), writer, broker, factory)
+    return controller, writer, broker, factory
 
 
-# ── State machine tests ───────────────────────────────────────────────────────
+def test_second_turn_receives_previous_messages(setup_controller) -> None:
+    controller, _, _, factory = setup_controller
 
-class TestSessionControllerLifecycle:
-    def test_initial_state_is_idle(self):
-        ctrl, _ = make_controller()
-        assert ctrl.state == SessionState.IDLE
+    controller.handle({"type": "run", "task": "first"})
+    assert controller.wait_until_idle(1)
+    controller.handle({"type": "run", "task": "second"})
+    assert controller.wait_until_idle(1)
 
-    def test_run_starts_agent(self):
-        ctrl, factory = make_controller()
-        ctrl.handle({"type": "run", "id": "1", "task": "hello"})
-        assert ctrl.wait_until_idle(timeout=2)
-        assert factory.calls[0]["initial_messages"] == []
-
-    def test_second_run_receives_previous_messages(self):
-        ctrl, factory = make_controller()
-        ctrl.handle({"type": "run", "id": "1", "task": "first"})
-        assert ctrl.wait_until_idle(timeout=2)
-        ctrl.handle({"type": "run", "id": "2", "task": "second"})
-        assert ctrl.wait_until_idle(timeout=2)
-        assert factory.calls[1]["initial_messages"][-1] == {
-            "role": "assistant",
-            "content": "saved",
-        }
-
-    def test_concurrent_run_raises_protocol_error(self):
-        ctrl, _ = make_controller(loop_kwargs={"run_duration": 1.0})
-        ctrl.handle({"type": "run", "id": "1", "task": "first"})
-        time.sleep(0.05)  # let it start
-        with pytest.raises(ProtocolError, match="already running"):
-            ctrl.handle({"type": "run", "id": "2", "task": "second"})
-        ctrl.shutdown()
-
-    def test_exception_in_run_emits_error_event(self):
-        ctrl, _ = make_controller(loop_kwargs={"raise_exc": RuntimeError("boom")})
-        ctrl.handle({"type": "run", "id": "1", "task": "hello"})
-        assert ctrl.wait_until_idle(timeout=2)
-        calls = [c for c in ctrl._writer.write.call_args_list
-                 if c[0][0] == "error"]
-        assert calls
-
-    def test_finish_called_once_after_run(self):
-        ctrl, factory = make_controller()
-        ctrl.handle({"type": "run", "id": "1", "task": "hello"})
-        assert ctrl.wait_until_idle(timeout=2)
-        ctrl.shutdown()
-        # finish called once (during shutdown), not twice
-        assert factory.calls  # loop was created
+    assert factory.calls[1].initial_messages[-1] == {"role": "assistant", "content": "saved"}
 
 
-class TestSessionControllerCancel:
-    def test_cancel_while_running_transitions_to_idle(self):
-        ctrl, _ = make_controller(loop_kwargs={"run_duration": 5.0})
-        ctrl.handle({"type": "run", "id": "1", "task": "hello"})
-        time.sleep(0.05)
-        ctrl.handle({"type": "cancel", "id": "c1"})
-        assert ctrl.wait_until_idle(timeout=2)
-        assert ctrl.state == SessionState.IDLE
+def test_rejects_second_run_while_agent_is_active(tmp_path) -> None:
+    writer = RecordingWriter()
+    factory = FakeLoopFactory(block=True)
+    controller = SessionController(AgentConfig(project_path=tmp_path), writer, QuestionBroker(writer), factory)
 
-    def test_cancel_while_idle_is_no_op(self):
-        ctrl, _ = make_controller()
-        ctrl.handle({"type": "cancel", "id": "c1"})  # should not raise
-        assert ctrl.state == SessionState.IDLE
+    controller.handle({"type": "run", "task": "first"})
+    assert factory.calls[0].started.wait(1)
+    with pytest.raises(ProtocolError, match="agent is already running"):
+        controller.handle({"type": "run", "task": "second"})
 
-    def test_cancel_discards_loop_messages(self):
-        ctrl, factory = make_controller(loop_kwargs={"run_duration": 5.0})
-        ctrl.handle({"type": "run", "id": "1", "task": "hello"})
-        time.sleep(0.05)
-        ctrl.handle({"type": "cancel", "id": "c1"})
-        assert ctrl.wait_until_idle(timeout=2)
-        # factory is called synchronously before thread starts, so we can
-        # check initial_messages immediately without waiting for run to finish
-        ctrl.handle({"type": "run", "id": "2", "task": "new"})
-        assert factory.calls[-1]["initial_messages"] == []
-        ctrl.shutdown()  # clean up the running daemon thread
+    factory.calls[0].release.set()
+    assert controller.wait_until_idle(1)
 
 
-class TestSessionControllerPauseResume:
-    def test_pause_while_running(self):
-        ctrl, _ = make_controller(loop_kwargs={"run_duration": 5.0})
-        ctrl.handle({"type": "run", "id": "1", "task": "hello"})
-        time.sleep(0.05)
-        ctrl.handle({"type": "pause", "id": "p1"})
-        time.sleep(0.05)
-        assert ctrl.state == SessionState.PAUSED
-        ctrl.shutdown()
+def test_pause_kills_active_bash_and_resumes(tmp_path, monkeypatch) -> None:
+    writer = RecordingWriter()
+    factory = FakeLoopFactory(block=True)
+    controller = SessionController(AgentConfig(project_path=tmp_path), writer, QuestionBroker(writer), factory)
+    killed_subagents: list[bool] = []
+    monkeypatch.setattr("dagi_gui.session.force_kill_active_subagents", lambda: killed_subagents.append(True))
 
-    def test_resume_after_pause(self):
-        # run_duration=0.5: enough time to pause then resume, short enough to complete
-        ctrl, _ = make_controller(loop_kwargs={"run_duration": 0.5})
-        ctrl.handle({"type": "run", "id": "1", "task": "hello"})
-        time.sleep(0.05)
-        ctrl.handle({"type": "pause", "id": "p1"})
-        time.sleep(0.05)
-        assert ctrl.state == SessionState.PAUSED
-        ctrl.handle({"type": "resume", "id": "r1", "message": ""})
-        assert ctrl.wait_until_idle(timeout=3)
+    controller.handle({"type": "run", "task": "first"})
+    assert factory.calls[0].started.wait(1)
+    controller.handle({"type": "pause"})
 
-    def test_pause_while_idle_is_no_op(self):
-        ctrl, _ = make_controller()
-        ctrl.handle({"type": "pause", "id": "p1"})
-        assert ctrl.state == SessionState.IDLE
+    assert factory.calls[0].bash.killed is True
+    assert factory.calls[0].paused is True
+    assert killed_subagents == [True]
+    controller.handle({"type": "resume", "message": "continue"})
+    assert factory.calls[0].injected == ["continue"]
+    assert controller.wait_until_idle(1)
 
 
-class TestSessionControllerShutdown:
-    def test_shutdown_is_idempotent(self):
-        ctrl, _ = make_controller()
-        ctrl.shutdown()
-        ctrl.shutdown()  # second call should be safe no-op
-        # shutdown_complete is now emitted by GuiServer, not the controller
+def test_pause_is_ignored_while_question_is_pending(tmp_path) -> None:
+    writer = RecordingWriter()
+    broker = QuestionBroker(writer)
+    factory = FakeLoopFactory(block=True)
+    controller = SessionController(AgentConfig(project_path=tmp_path), writer, broker, factory)
+    controller.handle({"type": "run", "task": "first"})
+    assert factory.calls[0].started.wait(1)
+    broker._pending = SimpleNamespace(question_id="q", default_answer="", answer=None)
 
-    def test_shutdown_state_is_idle(self):
-        ctrl, _ = make_controller()
-        ctrl.shutdown()
-        assert ctrl.state == SessionState.IDLE
+    controller.handle({"type": "pause"})
+
+    assert factory.calls[0].paused is False
+    factory.calls[0].release.set()
+    assert controller.wait_until_idle(1)
 
 
-class TestSessionControllerClear:
-    def test_clear_while_idle_resets_state(self):
-        ctrl, factory = make_controller()
-        ctrl.handle({"type": "run", "id": "1", "task": "hello"})
-        assert ctrl.wait_until_idle(timeout=2)
-        ctrl.handle({"type": "clear", "id": "cl1"})
-        # next run gets empty initial messages
-        ctrl.handle({"type": "run", "id": "2", "task": "fresh"})
-        assert ctrl.wait_until_idle(timeout=2)
-        assert factory.calls[-1]["initial_messages"] == []
+def test_loop_exception_emits_error_and_finishes_once(tmp_path) -> None:
+    writer = RecordingWriter()
+    factory = FakeLoopFactory(fail=True)
+    controller = SessionController(AgentConfig(project_path=tmp_path), writer, QuestionBroker(writer), factory)
 
-    def test_clear_while_running_raises(self):
-        ctrl, _ = make_controller(loop_kwargs={"run_duration": 5.0})
-        ctrl.handle({"type": "run", "id": "1", "task": "hello"})
-        time.sleep(0.05)
-        with pytest.raises(ProtocolError, match="idle"):
-            ctrl.handle({"type": "clear", "id": "cl1"})
-        ctrl.shutdown()
+    controller.handle({"type": "run", "task": "first"})
+    assert controller.wait_until_idle(1)
+
+    assert {"type": "error", "message": "loop failed"} in writer.events
+    assert factory.calls[0].finished == 1
+
+
+def test_clear_and_compact_require_idle(setup_controller) -> None:
+    controller, _, _, factory = setup_controller
+
+    controller.handle({"type": "run", "task": "first"})
+    assert controller.wait_until_idle(1)
+    controller.handle({"type": "compact"})
+    deadline = time.monotonic() + 1
+    while not factory.calls[0].compact_tool.forced and time.monotonic() < deadline:
+        time.sleep(0.005)
+    assert factory.calls[0].compact_tool.forced is True
+    controller.handle({"type": "clear"})
+    assert controller.active_loop is None

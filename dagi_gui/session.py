@@ -1,256 +1,236 @@
-"""GUI session controller — owns one AgentLoop and its lifecycle."""
+"""Python-owned session lifecycle for the desktop GUI sidecar."""
 
 from __future__ import annotations
 
 import threading
-from enum import Enum, auto
-from typing import TYPE_CHECKING, Any, Callable
+from collections.abc import Callable
+from typing import Protocol
 
-from dagi_gui.callbacks import build_gui_callbacks
-from dagi_gui.interaction import QuestionBroker
-from dagi_gui.protocol import EventWriter, ProtocolError
+from agent.loop import AgentCallbacks, AgentConfig, AgentLoop
+from tools._subagent_runner import force_kill_active_subagents
 
-if TYPE_CHECKING:
-    from agent.config_loader import AgentConfig
-
-
-class SessionState(Enum):
-    IDLE = auto()
-    RUNNING = auto()
-    PAUSED = auto()
-    ERROR = auto()
-    STOPPING = auto()
+from .callbacks import build_gui_callbacks
+from .interaction import EventSink, QuestionBroker
+from .protocol import ProtocolError
 
 
-# Allowed state transitions
-_TRANSITIONS: dict[SessionState, set[SessionState]] = {
-    SessionState.IDLE: {SessionState.RUNNING, SessionState.STOPPING},
-    SessionState.RUNNING: {SessionState.PAUSED, SessionState.IDLE, SessionState.ERROR},
-    SessionState.PAUSED: {SessionState.RUNNING, SessionState.IDLE},
-    SessionState.ERROR: {SessionState.IDLE},
-    SessionState.STOPPING: set(),
-}
+class LoopFactory(Protocol):
+    """Construct an AgentLoop-compatible object for a GUI turn."""
 
-_IDLE_ONLY_COMMANDS = {"compact", "clear", "set_model", "set_project", "shutdown"}
-
-
-def _default_loop_factory(
-    config: "AgentConfig",
-    callbacks: Any,
-    initial_messages: list,
-    tracker: Any = None,
-) -> Any:
-    from agent.loop import AgentLoop
-    return AgentLoop(config=config, callbacks=callbacks, initial_messages=initial_messages)
+    def __call__(
+        self,
+        config: AgentConfig,
+        callbacks: AgentCallbacks,
+        initial_messages: list | None,
+        tracker: object | None,
+    ) -> AgentLoop:
+        """Create the next loop."""
 
 
 class SessionController:
-    """Manages the lifecycle of a single AgentLoop for one desktop window.
-
-    Thread safety: all state mutations are guarded by _lock (RLock).
-    _lock is never held during loop.run() to avoid deadlocking callbacks.
-    """
+    """Coordinate one resumable AgentLoop for a desktop window."""
 
     def __init__(
         self,
-        config: "AgentConfig",
-        writer: EventWriter,
-        loop_factory: Callable | None = None,
+        config: AgentConfig,
+        writer: EventSink,
+        broker: QuestionBroker | None = None,
+        loop_factory: LoopFactory | None = None,
     ) -> None:
-        self._config = config
-        self._writer = writer
-        self._loop_factory = loop_factory or _default_loop_factory
+        self.config = config
+        self.writer = writer
+        self.broker = broker or QuestionBroker(writer)
+        self._loop_factory = loop_factory or self._create_loop
         self._lock = threading.RLock()
-        self._idle_event = threading.Event()
-        self._idle_event.set()
+        self._active_loop: AgentLoop | None = None
+        self._worker: threading.Thread | None = None
+        self._restore_messages: list | None = None
+        self._state = "idle"
+        self._finished_loops: set[int] = set()
+        self.callbacks = build_gui_callbacks(writer, self.broker)
+        base_on_pause = self.callbacks.on_pause
 
-        self._state = SessionState.IDLE
-        self._loop: Any | None = None
-        self._run_thread: threading.Thread | None = None
-        self._saved_messages: list = []
-        self._broker = QuestionBroker(writer)
-        self._shutdown_done = False
+        def on_pause() -> None:
+            self._set_state("paused")
+            base_on_pause()
+
+        self.callbacks.on_pause = on_pause
 
     @property
-    def state(self) -> SessionState:
+    def active_loop(self) -> AgentLoop | None:
+        """Return the loop holding the current conversation context."""
+        with self._lock:
+            return self._active_loop
+
+    @property
+    def state(self) -> str:
+        """Return the current lifecycle state."""
         with self._lock:
             return self._state
 
-    def _transition(self, new_state: SessionState) -> None:
-        allowed = _TRANSITIONS.get(self._state, set())
-        if new_state not in allowed:
-            raise ProtocolError(
-                f"invalid transition {self._state.name} → {new_state.name}"
-            )
-        self._state = new_state
-        if new_state == SessionState.IDLE:
-            self._idle_event.set()
-        else:
-            self._idle_event.clear()
-
-    def handle(self, command: dict) -> object:
-        """Dispatch a validated protocol command. Returns the result payload."""
-        cmd_type = command.get("type")
-        with self._lock:
-            if cmd_type in _IDLE_ONLY_COMMANDS and self._state != SessionState.IDLE:
-                raise ProtocolError(
-                    f"{cmd_type} requires idle state (currently {self._state.name})"
-                )
-
-        dispatch = {
+    def handle(self, command: dict[str, object]) -> object:
+        """Dispatch one already-validated sidecar command."""
+        command_type = command.get("type")
+        handlers: dict[str, Callable[[dict[str, object]], object]] = {
             "run": self._handle_run,
-            "cancel": self._handle_cancel,
             "pause": self._handle_pause,
             "resume": self._handle_resume,
-            "answer_question": self._handle_answer_question,
-            "compact": self._handle_compact,
             "clear": self._handle_clear,
+            "compact": self._handle_compact,
             "shutdown": self._handle_shutdown,
         }
-        handler = dispatch.get(cmd_type)
-        if handler:
-            return handler(command)
-        return {}
+        handler = handlers.get(command_type) if isinstance(command_type, str) else None
+        if handler is None:
+            raise ProtocolError("unsupported session command")
+        return handler(command)
 
-    # ── Command handlers ──────────────────────────────────────────────────────
-
-    def _handle_run(self, command: dict) -> dict:
-        task = command.get("task", "")
+    def wait_until_idle(self, timeout: float) -> bool:
+        """Wait for the active worker to finish without holding the state lock."""
         with self._lock:
-            if self._state == SessionState.RUNNING:
-                raise ProtocolError("agent is already running")
-            initial = list(self._saved_messages)
-            callbacks = build_gui_callbacks(self._writer, self._broker)
-            loop = self._loop_factory(
-                self._config, callbacks, initial
-            )
-            self._loop = loop
-            self._transition(SessionState.RUNNING)
-            t = threading.Thread(
-                target=self._run_agent, args=(loop, task), daemon=True
-            )
-            self._run_thread = t
-        t.start()
-        return {}
-
-    def _run_agent(self, loop: Any, task: str) -> None:
-        try:
-            loop.run(task)
-            with self._lock:
-                # Preserve messages for next turn only if this loop is still current
-                if self._loop is loop:
-                    self._saved_messages = list(loop._messages)
-                    self._transition(SessionState.IDLE)
-        except Exception as exc:
-            with self._lock:
-                self._writer.write("error", message=str(exc))
-                if self._loop is loop:
-                    self._transition(SessionState.ERROR)
-                    self._transition(SessionState.IDLE)
-        finally:
-            with self._lock:
-                if self._loop is loop:
-                    try:
-                        loop.finish()
-                    except Exception:
-                        pass
-
-    def _handle_cancel(self, command: dict) -> dict:
-        with self._lock:
-            if self._state not in (SessionState.RUNNING, SessionState.PAUSED):
-                return {}
-            self._kill_active_processes()
-            if self._loop:
-                self._loop.pause()
-            # Abandon this loop — next run creates a fresh one
-            self._loop = None
-            self._saved_messages = []
-            self._transition(SessionState.IDLE)
-        return {}
-
-    def _handle_pause(self, command: dict) -> dict:
-        with self._lock:
-            if self._state != SessionState.RUNNING:
-                return {}
-            if self._broker.has_pending():
-                return {}
-            self._kill_active_processes()
-            if self._loop:
-                self._loop.pause()
-            self._transition(SessionState.PAUSED)
-        return {}
-
-    def _handle_resume(self, command: dict) -> dict:
-        message = command.get("message", "")
-        with self._lock:
-            if self._state != SessionState.PAUSED:
-                raise ProtocolError("agent is not paused")
-            if self._loop:
-                self._loop.inject_and_resume(message)
-            self._transition(SessionState.RUNNING)
-        return {}
-
-    def _handle_answer_question(self, command: dict) -> dict:
-        question_id = command.get("question_id", "")
-        answer = command.get("answer", "")
-        self._broker.answer(question_id, answer)
-        return {}
-
-    def _handle_compact(self, command: dict) -> dict:
-        if self._loop:
-            self._loop.compact_tool.compact(force=True)
-        return {}
-
-    def _handle_clear(self, command: dict) -> dict:
-        self._saved_messages = []
-        self._loop = None
-        return {}
-
-    def _handle_shutdown(self, command: dict) -> dict:
-        self._shutdown()
-        return {}
-
-    # ── Internal helpers ──────────────────────────────────────────────────────
-
-    def _kill_active_processes(self) -> None:
-        """Kill running bash and subagents. Must be called with _lock held."""
-        if self._loop:
-            bash = getattr(self._loop.registry, "_tools", {}).get("bash")
-            if bash is not None:
-                try:
-                    bash.force_kill()
-                except Exception:
-                    pass
-        try:
-            from tools._subagent_runner import force_kill_active_subagents
-            force_kill_active_subagents()
-        except Exception:
-            pass
-
-    def _shutdown(self) -> None:
-        with self._lock:
-            if self._shutdown_done:
-                return
-            self._shutdown_done = True
-            self._broker.resolve_default()
-            if self._state in (SessionState.RUNNING, SessionState.PAUSED):
-                self._kill_active_processes()
-                if self._loop:
-                    self._loop.pause()
-                self._loop = None
-                self._saved_messages = []
-                self._state = SessionState.IDLE
-                self._idle_event.set()
-            if self._loop:
-                try:
-                    self._loop.finish()
-                except Exception:
-                    pass
+            worker = self._worker
+        if worker is None:
+            return self.state == "idle"
+        worker.join(timeout)
+        return not worker.is_alive() and self.state == "idle"
 
     def shutdown(self) -> None:
-        """Public shutdown — safe to call multiple times."""
-        self._shutdown()
+        """Stop active work and finalize the active loop once."""
+        self._handle_shutdown({"type": "shutdown"})
 
-    def wait_until_idle(self, timeout: float = 5.0) -> bool:
-        """Block until state is IDLE or STOPPING. Returns True if idle reached."""
-        return self._idle_event.wait(timeout=timeout)
+    def _handle_run(self, command: dict[str, object]) -> dict[str, str]:
+        task = command.get("task")
+        if not isinstance(task, str) or not task.strip():
+            raise ProtocolError("run task must be a non-empty string")
+        with self._lock:
+            if self._worker is not None and self._worker.is_alive():
+                raise ProtocolError("agent is already running")
+            initial_messages = self._restore_messages
+            tracker = None
+            if initial_messages is None and self._active_loop is not None:
+                initial_messages = self._active_loop._messages
+                tracker = self._active_loop.tracker
+            self._restore_messages = None
+            loop = self._loop_factory(self.config, self.callbacks, initial_messages, tracker)
+            self._active_loop = loop
+            self._state = "running"
+            self._worker = threading.Thread(target=self._run_loop, args=(loop, task), daemon=True)
+            self._worker.start()
+        self.writer.write("status", status="running")
+        return {"status": "running"}
+
+    def _handle_pause(self, _command: dict[str, object]) -> dict[str, str]:
+        with self._lock:
+            loop = self._active_loop
+            if self._state != "running" or loop is None or self.broker.has_pending:
+                return {"status": self._state}
+            self._kill_active_work(loop)
+            loop.pause()
+            self._state = "paused"
+        self.writer.write("status", status="paused")
+        return {"status": "paused"}
+
+    def _handle_resume(self, command: dict[str, object]) -> dict[str, str]:
+        message = command.get("message")
+        if not isinstance(message, str):
+            raise ProtocolError("resume message must be a string")
+        with self._lock:
+            loop = self._active_loop
+            if self._state != "paused" or loop is None:
+                raise ProtocolError("agent is not paused")
+            loop.inject_and_resume(message)
+            self._state = "running"
+        self.writer.write("status", status="running")
+        return {"status": "running"}
+
+    def _handle_clear(self, _command: dict[str, object]) -> dict[str, str]:
+        self._require_idle()
+        with self._lock:
+            self._active_loop = None
+            self._restore_messages = None
+            self._state = "idle"
+        self.writer.write("session_cleared")
+        return {"status": "idle"}
+
+    def _handle_compact(self, _command: dict[str, object]) -> dict[str, str]:
+        self._require_idle()
+        with self._lock:
+            loop = self._active_loop
+        if loop is None:
+            raise ProtocolError("no active session")
+        threading.Thread(target=self._compact_loop, args=(loop,), daemon=True).start()
+        return {"status": "compacting"}
+
+    def _handle_shutdown(self, _command: dict[str, object]) -> dict[str, str]:
+        with self._lock:
+            loop = self._active_loop
+            self._state = "stopping"
+            if loop is not None:
+                self._kill_active_work(loop)
+                loop.pause()
+                self._resolve_pending_question()
+                self._finish_loop(loop)
+            worker = self._worker
+        if worker is not None and worker.is_alive():
+            worker.join(timeout=5)
+        with self._lock:
+            self._state = "idle"
+        self.writer.write("shutdown_complete")
+        return {"status": "idle"}
+
+    def _run_loop(self, loop: AgentLoop, task: str) -> None:
+        try:
+            loop.run(task)
+        except Exception as exc:
+            self.callbacks.on_error(exc)
+        finally:
+            self._finish_loop(loop)
+            with self._lock:
+                if self._state != "stopping":
+                    self._state = "idle"
+            self.writer.write("status", status="idle")
+
+    def _compact_loop(self, loop: AgentLoop) -> None:
+        try:
+            loop.compact_tool.compact(force=True)
+        except Exception as exc:
+            self.callbacks.on_error(exc)
+
+    def _create_loop(
+        self,
+        config: AgentConfig,
+        callbacks: AgentCallbacks,
+        initial_messages: list | None,
+        tracker: object | None,
+    ) -> AgentLoop:
+        return AgentLoop(config, callbacks, initial_messages=initial_messages, _tracker=tracker)
+
+    def _require_idle(self) -> None:
+        with self._lock:
+            if self._worker is not None and self._worker.is_alive():
+                raise ProtocolError("agent is already running")
+
+    def _kill_active_work(self, loop: AgentLoop) -> None:
+        bash_tool = loop.registry._tools.get("bash")
+        if bash_tool is not None:
+            bash_tool.force_kill()
+        force_kill_active_subagents()
+
+    def _resolve_pending_question(self) -> None:
+        with self.broker._condition:
+            pending = self.broker._pending
+            if pending is None:
+                return
+            pending.answer = pending.default_answer
+            self.broker._condition.notify_all()
+
+    def _finish_loop(self, loop: AgentLoop) -> None:
+        loop_id = id(loop)
+        with self._lock:
+            if loop_id in self._finished_loops:
+                return
+            self._finished_loops.add(loop_id)
+        loop.finish()
+
+    def _set_state(self, state: str) -> None:
+        with self._lock:
+            self._state = state
