@@ -648,7 +648,7 @@ Driverless_AGI/
 │   │   └── compact/       #   compact_system, compact_user (Pi-style summariser)
 │   ├── subagents/         # Per-subagent type: <name>/main.py (BaseTool subclass) + subagent_config.yaml
 │   │   │                  #   Discovered by import via _discover_subagent_tools() in agent/subagent_tools.py
-│   │   ├── document-reader/ # long-document summarizer (tools: read, grep, write)
+│   │   ├── read-large-text/ # large-text-file summarizer, directly LLM-callable as `read_large_text` (tools: read, grep, write)
 │   │   ├── explore_files/ #   exploration agent (tools: read, grep, find)
 │   │   ├── web_research/  #   web research agent (tools: web_search, web_fetch)
 │   │   ├── memory-query/  #   wiki knowledge retrieval agent
@@ -678,7 +678,8 @@ Driverless_AGI/
 
 | Tool | What it does |
 |------|-------------|
-| `read` | Read a text file (paginated) inline. `.pdf`/`.docx`/`.xlsx`/`.pptx` are delegated to the standalone **doc-converter service** over HTTP (see [Document Conversion Service](#document-conversion-service) below) — the service must be running or `read` returns a clear error telling you to start it, no inline fallback. PDF output includes a `[PDF: name \| N pages]` header; `pages` (PDF only, e.g. `'1-5'`) filters by `<!-- Page N -->` markers. For documents exceeding the model's `reserve_tokens` budget, automatically spawns a `document-reader` subagent that produces a sectioned summary digest (per-section line ranges, token estimates, summaries, key excerpts) cached in `.dagi/hash_cache/document_summary/` — the parent receives the digest instead of truncated output and can drill into sections of interest with targeted `offset`/`limit` reads. Pass `path`, optional `offset`/`limit`, optional `pages` |
+| `read` | Read a text file (paginated) inline. `.pdf`/`.docx`/`.xlsx`/`.pptx` are delegated to the standalone **doc-converter service** over HTTP (see [Document Conversion Service](#document-conversion-service) below) — the service must be running or `read` returns a clear error telling you to start it, no inline fallback. PDF output includes a `[PDF: name \| N pages]` header; `pages` (PDF only, e.g. `'1-5'`) filters by `<!-- Page N -->` markers. Pass `path`, optional `offset`/`limit`, optional `pages` |
+| `read_large_text` | Directly LLM-callable tool (`.dagi/subagents/read-large-text/`) that reads and digests a large text file, returning a sectioned summary with key excerpts, line ranges, and token estimates. Use when a file is too long to fit in context or requires structured summarization. Pass `task` (file path + what to extract), optional `custom_instructions` |
 | `write` | Overwrite a file. Creates parent dirs. Takes `path` + `content` |
 | `edit` | Edit a file by replacing exact text (`oldText` → `newText`). The match must be unique; CRLF-safe |
 | `bash` | Run a shell command. Returns stdout + stderr + exit code. Pass `command` + optional `timeout` |
