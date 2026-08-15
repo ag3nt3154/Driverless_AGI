@@ -193,19 +193,16 @@ class TestSessionControllerPauseResume:
 
 
 class TestSessionControllerShutdown:
-    def test_shutdown_emits_shutdown_complete(self):
-        ctrl, _ = make_controller()
-        ctrl.shutdown()
-        types = [c[0][0] for c in ctrl._writer.write.call_args_list]
-        assert "shutdown_complete" in types
-
-    def test_shutdown_called_only_once(self):
+    def test_shutdown_is_idempotent(self):
         ctrl, _ = make_controller()
         ctrl.shutdown()
         ctrl.shutdown()  # second call should be safe no-op
-        done_calls = [c for c in ctrl._writer.write.call_args_list
-                      if c[0][0] == "shutdown_complete"]
-        assert len(done_calls) == 1
+        # shutdown_complete is now emitted by GuiServer, not the controller
+
+    def test_shutdown_state_is_idle(self):
+        ctrl, _ = make_controller()
+        ctrl.shutdown()
+        assert ctrl.state == SessionState.IDLE
 
 
 class TestSessionControllerClear:

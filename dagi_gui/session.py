@@ -246,7 +246,6 @@ class SessionController:
                     self._loop.finish()
                 except Exception:
                     pass
-        self._writer.write("shutdown_complete")
 
     def shutdown(self) -> None:
         """Public shutdown — safe to call multiple times."""
