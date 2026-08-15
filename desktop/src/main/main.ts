@@ -2,15 +2,16 @@
  * Electron main process.
  *
  * Responsibilities:
+ *  - Resolve the Python interpreter (env var → saved config → conda picker)
  *  - Create a hardened BrowserWindow (contextIsolation, sandbox, no nodeIntegration)
  *  - Persist window size/position via electron-window-state
  *  - Spawn and supervise the Python sidecar via PythonSupervisor
  *  - Bridge IPC: renderer → main → sidecar (commands) and sidecar → main → renderer (events)
- *  - Show a crash dialog and attempt restart on sidecar fatal
  */
 
-import { app, BrowserWindow, ipcMain, dialog } from "electron";
+import { app, BrowserWindow, ipcMain, dialog, Menu, MenuItem } from "electron";
 import path from "path";
+import fs from "fs";
 import windowStateKeeper from "electron-window-state";
 import { PythonSupervisor } from "./python-supervisor";
 import type { SidecarEvent } from "@shared/protocol";
@@ -18,23 +19,124 @@ import type { SidecarEvent } from "@shared/protocol";
 declare const MAIN_WINDOW_VITE_DEV_SERVER_URL: string;
 declare const MAIN_WINDOW_VITE_NAME: string;
 
-// ── Config ────────────────────────────────────────────────────────────────────
+// ── Constants ─────────────────────────────────────────────────────────────────
 
 const isDev = process.env.NODE_ENV !== "production";
+
+/** Repo root in dev; exe directory when packaged. */
 const projectRoot = app.isPackaged
   ? path.dirname(process.execPath)
   : path.resolve(__dirname, "../../..");
 
-function resolvePython(): string {
-  if (process.env.DAGI_PYTHON) return process.env.DAGI_PYTHON;
-  // Prefer conda env; fall back to PATH python
-  const condaEnv = process.env.CONDA_PREFIX;
-  if (condaEnv) {
-    return process.platform === "win32"
-      ? path.join(condaEnv, "python.exe")
-      : path.join(condaEnv, "bin", "python");
+// ── Config persistence ────────────────────────────────────────────────────────
+
+interface AppConfig {
+  pythonPath?: string;
+}
+
+function configPath(): string {
+  return path.join(app.getPath("userData"), "config.json");
+}
+
+function loadConfig(): AppConfig {
+  try {
+    return JSON.parse(fs.readFileSync(configPath(), "utf8")) as AppConfig;
+  } catch {
+    return {};
   }
-  return process.platform === "win32" ? "python.exe" : "python3";
+}
+
+function saveConfig(cfg: AppConfig): void {
+  fs.mkdirSync(path.dirname(configPath()), { recursive: true });
+  fs.writeFileSync(configPath(), JSON.stringify(cfg, null, 2), "utf8");
+}
+
+// ── Conda env detection ───────────────────────────────────────────────────────
+
+interface CondaEnv {
+  name: string;
+  pythonPath: string;
+}
+
+function scanCondaEnvs(): CondaEnv[] {
+  const home = process.env.USERPROFILE ?? process.env.HOME ?? "";
+  const roots = [
+    path.join(home, "miniconda3"),
+    path.join(home, "anaconda3"),
+    path.join(home, "AppData", "Local", "miniconda3"),
+    "C:\\ProgramData\\miniconda3",
+    "/opt/conda",
+    "/usr/local/miniconda3",
+  ];
+
+  const envs: CondaEnv[] = [];
+
+  for (const root of roots) {
+    const basePy = process.platform === "win32"
+      ? path.join(root, "python.exe")
+      : path.join(root, "bin", "python");
+    if (fs.existsSync(basePy)) {
+      envs.push({ name: `base (${path.basename(root)})`, pythonPath: basePy });
+    }
+
+    const envsDir = path.join(root, "envs");
+    if (!fs.existsSync(envsDir)) continue;
+    for (const name of fs.readdirSync(envsDir)) {
+      const py = process.platform === "win32"
+        ? path.join(envsDir, name, "python.exe")
+        : path.join(envsDir, name, "bin", "python");
+      if (fs.existsSync(py)) {
+        envs.push({ name, pythonPath: py });
+      }
+    }
+  }
+
+  return envs.filter((e, i) => envs.findIndex(x => x.pythonPath === e.pythonPath) === i);
+}
+
+// ── Python resolution ─────────────────────────────────────────────────────────
+
+async function showEnvPicker(envs: CondaEnv[]): Promise<string | null> {
+  const buttons = [...envs.map(e => e.name), "Browse...", "Cancel"];
+  const { response } = await dialog.showMessageBox({
+    type: "question",
+    title: "DAGI — Choose Python environment",
+    message: "Select the conda environment that has dagi_gui installed:",
+    detail: "This is saved and can be changed via File → Change Python.",
+    buttons,
+    defaultId: Math.max(0, envs.findIndex(e => e.name === "dagi")),
+    cancelId: buttons.length - 1,
+  });
+
+  if (response === buttons.length - 1) return null;
+  if (response === buttons.length - 2) {
+    const { filePaths } = await dialog.showOpenDialog({
+      title: "Select python.exe",
+      filters: [{ name: "Python", extensions: ["exe", "*"] }],
+      properties: ["openFile"],
+    });
+    return filePaths[0] ?? null;
+  }
+  return envs[response].pythonPath;
+}
+
+async function resolvePython(): Promise<string> {
+  if (process.env.DAGI_PYTHON && fs.existsSync(process.env.DAGI_PYTHON)) {
+    return process.env.DAGI_PYTHON;
+  }
+
+  const saved = loadConfig().pythonPath;
+  if (saved && fs.existsSync(saved)) return saved;
+
+  const envs = scanCondaEnvs();
+  const chosen = await showEnvPicker(envs);
+  if (!chosen) {
+    app.quit();
+    return "python";
+  }
+
+  saveConfig({ pythonPath: chosen });
+  return chosen;
 }
 
 // ── Sidecar supervisor ────────────────────────────────────────────────────────
@@ -42,15 +144,14 @@ function resolvePython(): string {
 let supervisor: PythonSupervisor | null = null;
 let mainWindow: BrowserWindow | null = null;
 
-function buildSupervisor(): PythonSupervisor {
+function buildSupervisor(pythonPath: string): PythonSupervisor {
   const sup = new PythonSupervisor({
-    pythonPath: resolvePython(),
+    pythonPath,
     cwd: projectRoot,
     maxRestarts: 3,
     baseBackoffMs: 1000,
   });
 
-  // Forward all sidecar events to the renderer
   sup.on("event", (evt: SidecarEvent) => {
     mainWindow?.webContents.send("dagi:event", evt);
   });
@@ -62,7 +163,7 @@ function buildSupervisor(): PythonSupervisor {
   sup.on("fatal", (err: Error) => {
     dialog.showErrorBox(
       "DAGI sidecar crashed",
-      `The Python agent process has crashed after multiple restart attempts.\n\n${err.message}\n\nPlease restart the application.`
+      `The Python agent process crashed after multiple restart attempts.\n\n${err.message}\n\nUse File → Change Python to reconfigure, then restart.`
     );
   });
 
@@ -72,6 +173,44 @@ function buildSupervisor(): PythonSupervisor {
   });
 
   return sup;
+}
+
+// ── Menu ──────────────────────────────────────────────────────────────────────
+
+function buildMenu(): void {
+  const menu = new Menu();
+  menu.append(new MenuItem({
+    label: "File",
+    submenu: Menu.buildFromTemplate([
+      {
+        label: "Change Python environment…",
+        click: async () => {
+          const envs = scanCondaEnvs();
+          const chosen = await showEnvPicker(envs);
+          if (!chosen) return;
+          saveConfig({ pythonPath: chosen });
+          dialog.showMessageBox({
+            type: "info",
+            message: "Python environment updated.",
+            detail: `${chosen}\n\nRestart DAGI to apply.`,
+            buttons: ["OK"],
+          });
+        },
+      },
+      { type: "separator" },
+      { role: "quit" },
+    ]),
+  }));
+  if (isDev) {
+    menu.append(new MenuItem({
+      label: "Dev",
+      submenu: Menu.buildFromTemplate([
+        { role: "reload" },
+        { role: "toggleDevTools" },
+      ]),
+    }));
+  }
+  Menu.setApplicationMenu(menu);
 }
 
 // ── Window creation ───────────────────────────────────────────────────────────
@@ -87,7 +226,7 @@ function createWindow(): BrowserWindow {
     minWidth: 640,
     minHeight: 480,
     backgroundColor: "#0d0d0d",
-    show: false, // shown after ready-to-show to avoid flash
+    show: false,
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
@@ -99,7 +238,6 @@ function createWindow(): BrowserWindow {
   });
 
   saved.manage(win);
-
   win.once("ready-to-show", () => win.show());
 
   if (MAIN_WINDOW_VITE_DEV_SERVER_URL) {
@@ -111,17 +249,13 @@ function createWindow(): BrowserWindow {
     );
   }
 
-  win.on("closed", () => {
-    mainWindow = null;
-  });
-
+  win.on("closed", () => { mainWindow = null; });
   return win;
 }
 
 // ── IPC handlers ──────────────────────────────────────────────────────────────
 
 function registerIpc(): void {
-  // Renderer → main → sidecar
   ipcMain.on("dagi:command", async (_evt, payload: unknown) => {
     if (!supervisor) return;
     try {
@@ -130,9 +264,7 @@ function registerIpc(): void {
       await supervisor.request(p["type"] as string, p);
     } catch (err) {
       mainWindow?.webContents.send("dagi:event", {
-        version: 1,
-        type: "command_error",
-        message: String(err),
+        version: 1, type: "command_error", message: String(err),
       });
     }
   });
@@ -141,21 +273,24 @@ function registerIpc(): void {
 // ── App lifecycle ─────────────────────────────────────────────────────────────
 
 app.whenReady().then(async () => {
+  buildMenu();
   registerIpc();
   mainWindow = createWindow();
 
-  supervisor = buildSupervisor();
+  const pythonPath = await resolvePython();
+  supervisor = buildSupervisor(pythonPath);
   try {
     await supervisor.start();
     mainWindow?.webContents.send("dagi:ready", {});
   } catch (err) {
-    dialog.showErrorBox("DAGI failed to start", String(err));
+    dialog.showErrorBox(
+      "DAGI failed to start",
+      `Python: ${pythonPath}\n\n${String(err)}\n\nUse File → Change Python environment to reconfigure.`
+    );
   }
 
   app.on("activate", () => {
-    if (BrowserWindow.getAllWindows().length === 0) {
-      mainWindow = createWindow();
-    }
+    if (BrowserWindow.getAllWindows().length === 0) mainWindow = createWindow();
   });
 });
 

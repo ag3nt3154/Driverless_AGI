@@ -45,6 +45,8 @@ export class PythonSupervisor extends EventEmitter {
   private _stopped = false;
   private _stdoutBuf = "";
   private _ready = false;
+  private _lastStderr: string[] = [];
+  private static readonly _MAX_STDERR_LINES = 30;
 
   constructor(opts: SupervisorOptions) {
     super();
@@ -78,7 +80,10 @@ export class PythonSupervisor extends EventEmitter {
       // Reject if process dies before ready
       this.once("crash", (err: Error) => {
         this.off("event", onReady);
-        reject(err);
+        const stderr = this._lastStderr.length
+          ? `\n\nPython stderr:\n${this._lastStderr.join("\n")}`
+          : "";
+        reject(new Error(err.message + stderr));
       });
     });
   }
@@ -156,7 +161,13 @@ export class PythonSupervisor extends EventEmitter {
 
     proc.stderr?.on("data", (chunk: Buffer) => {
       const text = chunk.toString("utf8").trimEnd();
-      if (text) this.emit("log", text);
+      if (!text) return;
+      this.emit("log", text);
+      const lines = text.split("\n");
+      this._lastStderr.push(...lines);
+      if (this._lastStderr.length > PythonSupervisor._MAX_STDERR_LINES) {
+        this._lastStderr.splice(0, this._lastStderr.length - PythonSupervisor._MAX_STDERR_LINES);
+      }
     });
 
     proc.stdout?.setEncoding("utf8");
@@ -217,10 +228,18 @@ export class PythonSupervisor extends EventEmitter {
     this.emit("crash", err);
   }
 
+  /** Last N lines of stderr — useful for crash diagnostics. */
+  get lastStderr(): string {
+    return this._lastStderr.join("\n");
+  }
+
   private _scheduleRestart(code: number | null): void {
     const { maxRestarts, baseBackoffMs } = this._opts;
     if (maxRestarts === 0 || this._restarts >= maxRestarts) {
-      this.emit("fatal", new Error(`Sidecar crashed (code=${code}); max restarts reached`));
+      const stderr = this._lastStderr.length
+        ? `\n\nPython stderr:\n${this._lastStderr.join("\n")}`
+        : "";
+      this.emit("fatal", new Error(`Sidecar crashed (code=${code}); max restarts reached${stderr}`));
       return;
     }
     const delay = baseBackoffMs * Math.pow(2, this._restarts);
