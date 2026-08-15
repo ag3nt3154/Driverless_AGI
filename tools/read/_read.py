@@ -1,10 +1,16 @@
 """Read tool — text files inline, documents via converter service."""
+from __future__ import annotations
+
 import re
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from agent.base_tool import BaseTool
 from tools._path_guard import validate_path
 from tools.read._doc_service import cache_path_for, convert_document, DocServiceError
+
+if TYPE_CHECKING:
+    from agent.loop import AgentCallbacks, AgentConfig
 
 _IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
 _BLOCKED_EXTS = _IMAGE_EXTS.copy()
@@ -59,6 +65,9 @@ class ReadTool(BaseTool):
         "(resolved from the project root) and absolute paths. "
         "Output uses `cat -n` style: each line is prefixed with its 1-indexed "
         "line number followed by a tab — the number is not part of the file content. "
+        "Files exceeding 2000 lines are automatically delegated to "
+        "read_large_text for chunked summarization. Use the optional query "
+        "parameter to focus the summary on specific content. "
         "For large-scale codebase exploration, prefer `explore_files`."
     )
     _parameters = {
@@ -84,6 +93,14 @@ class ReadTool(BaseTool):
                     "markdown to return. Omit to return all pages."
                 ),
             },
+            "query": {
+                "type": "string",
+                "description": (
+                    "Optional focus area for large-file summarization. "
+                    "When the file exceeds 2000 lines, this is passed to "
+                    "read_large_text as guidance. Ignored for small files."
+                ),
+            },
         },
         "required": ["path"],
     }
@@ -94,11 +111,15 @@ class ReadTool(BaseTool):
         allowed_roots: list[Path] | None = None,
         project_path: Path | None = None,
         service_url: str | None = None,
+        callbacks: "AgentCallbacks | None" = None,
+        config: "AgentConfig | None" = None,
     ):
         self.cwd = cwd
         self.allowed_roots = allowed_roots
         self._project_path = project_path
         self._service_url = service_url
+        self._callbacks = callbacks
+        self._config = config
 
     def run(
         self,
@@ -106,6 +127,7 @@ class ReadTool(BaseTool):
         offset: int = 1,
         limit: int = 2000,
         pages: str | None = None,
+        query: str | None = None,
     ) -> str | list:
         p = Path(path)
         if not p.is_absolute():
@@ -164,6 +186,14 @@ class ReadTool(BaseTool):
                     f"to be binary or uses an encoding other than UTF-8."
                 )
 
+        if (
+            offset == 1
+            and limit == 2000
+            and len(lines) > limit
+            and self._config is not None
+        ):
+            return self._delegate_to_read_large_text(p, len(lines), query)
+
         start = max(0, offset - 1)
         selected = lines[start : start + limit]
         numbered = "\n".join(
@@ -173,3 +203,47 @@ class ReadTool(BaseTool):
         raw_result = f"{header}\n{numbered}" if header else numbered
 
         return raw_result
+
+    def _delegate_to_read_large_text(
+        self, path: Path, total_lines: int, query: str | None
+    ) -> str:
+        import tools.subagent_api as _subagent_api
+        from tools._handoff_format import format_handoff_result, dispatch_status_result
+
+        task = f"Read the file at: {path}\nTotal lines: {total_lines}"
+
+        on_event = None
+        if self._callbacks and self._callbacks.on_subagent_event_factory:
+            on_event = self._callbacks.on_subagent_event_factory("read-large-text")
+
+        result = _subagent_api.run_subagent(
+            task=task,
+            preset="read-large-text",
+            custom_instructions=query or "",
+            project_path=self._config.project_path,
+            on_event=on_event,
+        )
+
+        signpost = (
+            f"[File too large for inline display ({total_lines} lines). "
+            f"Delegated to read_large_text. Summary below.]"
+        )
+
+        if result.is_ok:
+            unverified = result.status == "ok_unverified"
+            body = format_handoff_result(
+                str(result.handoff_path), unverified=unverified
+            )
+            return f"{signpost}\n\n{body}"
+
+        error = dispatch_status_result(
+            {
+                "status": result.status,
+                "pid": result.pid,
+                "escalation": result.escalation,
+                "message": result.escalation or "",
+            },
+            "read-large-text",
+            include_escalation=True,
+        )
+        return f"{signpost}\n\n{error}"

@@ -1,5 +1,5 @@
 import pytest
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 from tools.read import ReadTool
 from tools.read._doc_service import DocServiceError
@@ -172,3 +172,149 @@ class TestDocumentCacheDisclosure:
             result = tool.run(path="notes.docx")
 
         assert result.startswith("[notes.docx | editable: ")
+
+
+def _make_config(project_path):
+    config = MagicMock()
+    config.project_path = project_path
+    return config
+
+
+def _make_large_file(tmp_path, num_lines=2500):
+    all_lines = [f"line{i}" for i in range(1, num_lines + 1)]
+    f = tmp_path / "big.txt"
+    f.write_text("\n".join(all_lines), encoding="utf-8")
+    return f, all_lines
+
+
+def _make_ok_result(handoff_path):
+    result = MagicMock()
+    result.is_ok = True
+    result.status = "ok"
+    result.handoff_path = handoff_path
+    return result
+
+
+class TestLargeFileDelegation:
+    """ReadTool delegates files over 2000 lines to read_large_text."""
+
+    def test_large_file_delegates_to_read_large_text(self, tmp_path):
+        _make_large_file(tmp_path)
+        handoff = tmp_path / "handoff.md"
+        handoff.write_text("## Summary\nBig file summary.", encoding="utf-8")
+        config = _make_config(tmp_path)
+        tool = ReadTool(
+            cwd=tmp_path,
+            allowed_roots=[tmp_path],
+            service_url="http://localhost:8100",
+            project_path=tmp_path,
+            callbacks=None,
+            config=config,
+        )
+
+        with patch(
+            "tools.subagent_api.run_subagent",
+            return_value=_make_ok_result(handoff),
+        ) as mock_run:
+            result = tool.run(path="big.txt")
+
+        mock_run.assert_called_once()
+        assert mock_run.call_args.kwargs["preset"] == "read-large-text"
+        assert "Delegated to read_large_text" in result
+        assert "Big file summary." in result
+
+    def test_explicit_offset_skips_delegation(self, tmp_path):
+        f, all_lines = _make_large_file(tmp_path)
+        config = _make_config(tmp_path)
+        tool = ReadTool(
+            cwd=tmp_path,
+            allowed_roots=[tmp_path],
+            service_url="http://localhost:8100",
+            project_path=tmp_path,
+            callbacks=None,
+            config=config,
+        )
+
+        with patch("tools.subagent_api.run_subagent") as mock_run:
+            result = tool.run(path="big.txt", offset=5)
+
+        mock_run.assert_not_called()
+        assert "Delegated to read_large_text" not in result
+        assert "line5" in result
+
+    def test_explicit_limit_skips_delegation(self, tmp_path):
+        f, all_lines = _make_large_file(tmp_path)
+        config = _make_config(tmp_path)
+        tool = ReadTool(
+            cwd=tmp_path,
+            allowed_roots=[tmp_path],
+            service_url="http://localhost:8100",
+            project_path=tmp_path,
+            callbacks=None,
+            config=config,
+        )
+
+        with patch("tools.subagent_api.run_subagent") as mock_run:
+            result = tool.run(path="big.txt", limit=10)
+
+        mock_run.assert_not_called()
+        assert "Delegated to read_large_text" not in result
+        assert "line1\t" in result or "1\tline1" in result
+
+    def test_small_file_no_delegation(self, tmp_path):
+        f = tmp_path / "small.txt"
+        f.write_text("\n".join(f"line{i}" for i in range(1, 11)), encoding="utf-8")
+        config = _make_config(tmp_path)
+        tool = ReadTool(
+            cwd=tmp_path,
+            allowed_roots=[tmp_path],
+            service_url="http://localhost:8100",
+            project_path=tmp_path,
+            callbacks=None,
+            config=config,
+        )
+
+        with patch("tools.subagent_api.run_subagent") as mock_run:
+            result = tool.run(path="small.txt")
+
+        mock_run.assert_not_called()
+        assert "Delegated to read_large_text" not in result
+
+    def test_no_config_no_delegation(self, tmp_path):
+        _make_large_file(tmp_path)
+        tool = ReadTool(
+            cwd=tmp_path,
+            allowed_roots=[tmp_path],
+            service_url="http://localhost:8100",
+            project_path=tmp_path,
+            callbacks=None,
+            config=None,
+        )
+
+        with patch("tools.subagent_api.run_subagent") as mock_run:
+            result = tool.run(path="big.txt")
+
+        mock_run.assert_not_called()
+        assert "Delegated to read_large_text" not in result
+
+    def test_query_passed_as_custom_instructions(self, tmp_path):
+        _make_large_file(tmp_path)
+        handoff = tmp_path / "handoff.md"
+        handoff.write_text("summary", encoding="utf-8")
+        config = _make_config(tmp_path)
+        tool = ReadTool(
+            cwd=tmp_path,
+            allowed_roots=[tmp_path],
+            service_url="http://localhost:8100",
+            project_path=tmp_path,
+            callbacks=None,
+            config=config,
+        )
+
+        with patch(
+            "tools.subagent_api.run_subagent",
+            return_value=_make_ok_result(handoff),
+        ) as mock_run:
+            tool.run(path="big.txt", query="find X")
+
+        assert mock_run.call_args.kwargs["custom_instructions"] == "find X"

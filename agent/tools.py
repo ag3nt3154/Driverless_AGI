@@ -147,6 +147,8 @@ def create_tool_registry(
         allowed_roots=effective_roots,
         project_path=_proj,
         service_url=_services.get("doc_converter"),
+        callbacks=callbacks,
+        config=config,
     ))
     reg.register(GrepTool(cwd=cwd, allowed_roots=effective_roots))
     reg.register(FindTool(cwd=cwd, allowed_roots=effective_roots))
