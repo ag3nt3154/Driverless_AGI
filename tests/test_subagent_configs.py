@@ -36,7 +36,7 @@ def test_all_registered_subagents_are_found():
     names = {p.parent.name for p in _registered_subagent_config_paths()}
     assert names == {
         "cli",
-        "document-reader",
+        "read-large-text",
         "explore_files",
         "memory-add",
         "memory-query",

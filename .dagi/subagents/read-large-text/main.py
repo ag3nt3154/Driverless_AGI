@@ -1,4 +1,4 @@
-# .dagi/subagents/document-reader/main.py
+# .dagi/subagents/read-large-text/main.py
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
@@ -53,11 +53,11 @@ class SpawnDocumentReaderSubagentTool(BaseTool):
 
         on_event = None
         if self._callbacks and self._callbacks.on_subagent_event_factory:
-            on_event = self._callbacks.on_subagent_event_factory("document-reader")
+            on_event = self._callbacks.on_subagent_event_factory("read-large-text")
 
         result = _subagent_api.run_subagent(
             task=task,
-            preset="document-reader",
+            preset="read-large-text",
             custom_instructions=custom_instructions,
             project_path=self._config.project_path,
             on_event=on_event,
@@ -73,6 +73,6 @@ class SpawnDocumentReaderSubagentTool(BaseTool):
                 "escalation": result.escalation,
                 "message": result.escalation or "",
             },
-            "document-reader",
+            "read-large-text",
             include_escalation=True,
         )

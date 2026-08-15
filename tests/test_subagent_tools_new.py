@@ -44,9 +44,15 @@ def _make_runtime_args():
 
 
 class TestGenericSubagentTool:
+    # Maps a subagent directory name to its expected tool `name` when the two
+    # differ. `read-large-text` still exposes the tool as
+    # `spawn_document-reader_subagent` pending a later rename that also
+    # updates benchmarks/dagi_eval/config_dagi_eval.yaml in lockstep.
+    _TOOL_NAME_OVERRIDES = {"read-large-text": "spawn_document-reader_subagent"}
+
     @pytest.mark.parametrize("type_name", [
         "explore_files", "web_research", "memory-query",
-        "memory-add", "document-reader",
+        "memory-add", "read-large-text",
     ])
     def test_tool_has_required_attributes(self, type_name):
         cls = _load_tool_class(type_name)
@@ -56,7 +62,10 @@ class TestGenericSubagentTool:
         assert hasattr(tool, "description")
         assert hasattr(tool, "_parameters")
         assert isinstance(tool.name, str)
-        assert tool.name == f"spawn_{type_name}_subagent"
+        expected_name = self._TOOL_NAME_OVERRIDES.get(
+            type_name, f"spawn_{type_name}_subagent"
+        )
+        assert tool.name == expected_name
 
     @pytest.mark.parametrize("type_name", [
         "explore_files", "web_research",
