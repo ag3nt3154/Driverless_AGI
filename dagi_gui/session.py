@@ -10,7 +10,8 @@ from agent.loop import AgentCallbacks, AgentConfig, AgentLoop
 from tools._subagent_runner import force_kill_active_subagents
 
 from .callbacks import build_gui_callbacks
-from .interaction import EventSink, QuestionBroker
+from .interaction import QuestionBroker
+from .protocol import EventWriter as EventSink
 from .protocol import ProtocolError
 
 
