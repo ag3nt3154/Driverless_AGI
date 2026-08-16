@@ -106,3 +106,119 @@ class TestSessionLogAppend:
         log = SessionLog(seed=seed)
         assert log.seq == 1
         assert log.append(ev.TURN_END, {"turn": 1, "reason": ev.reason_completed()}).seq == 2
+
+
+def _open_turn(log: SessionLog, turn: int = 1) -> None:
+    log.append(ev.TURN_START, {"turn": turn})
+
+
+class TestTurnEnclosure:
+    def test_surface_event_outside_a_turn_is_rejected(self):
+        log = SessionLog()
+        with pytest.raises(InvariantError, match="outside an open turn"):
+            log.append(
+                ev.USER_MESSAGE,
+                {"turn": 1, "step": 1, "role": "user", "content": "hi", "source": "human"},
+                surface_op="append",
+            )
+
+    def test_surface_event_inside_a_turn_is_accepted(self):
+        log = SessionLog()
+        _open_turn(log)
+        e = log.append(
+            ev.USER_MESSAGE,
+            {"turn": 1, "step": 1, "role": "user", "content": "hi", "source": "human"},
+            surface_op="append",
+        )
+        assert e.seq == 2
+
+    def test_log_only_events_are_legal_between_turns(self):
+        """Recommendation §5.6: strict for surface, permissive for log-only.
+
+        Skill-reload and plan-mode rebuilds fire from idle TUI slash commands;
+        forcing wrapper turns around them buys nothing, because a log-only
+        event is folded latest-wins and has nothing to lose.
+        """
+        log = SessionLog()
+        log.append(ev.REQUEST_HEADER, {"header": {"system": "s"}, "reason": "initial"})
+        log.append(ev.PLAN_WRITE, {"plan": []})
+        assert log.seq == 2
+
+    def test_open_turn_reports_the_live_turn(self):
+        log = SessionLog()
+        assert log.open_turn is None
+        _open_turn(log, 4)
+        assert log.open_turn == 4
+        log.append(ev.TURN_END, {"turn": 4, "reason": ev.reason_completed()})
+        assert log.open_turn is None
+
+    def test_nested_turn_start_is_rejected(self):
+        log = SessionLog()
+        _open_turn(log, 1)
+        with pytest.raises(InvariantError, match="already open"):
+            log.append(ev.TURN_START, {"turn": 2})
+
+    def test_turn_end_without_open_turn_is_rejected(self):
+        log = SessionLog()
+        with pytest.raises(InvariantError, match="no open turn"):
+            log.append(ev.TURN_END, {"turn": 1, "reason": ev.reason_completed()})
+
+
+class TestTurnNumberDerivation:
+    def test_next_turn_is_derived_from_the_log_not_a_counter(self):
+        seed = [
+            SessionEvent(seq=1, time="t", type=ev.TURN_START, data={"turn": 7}),
+            SessionEvent(
+                seq=2, time="t", type=ev.TURN_END,
+                data={"turn": 7, "reason": {"kind": "completed"}},
+            ),
+        ]
+        log = SessionLog(seed=seed)
+        assert log.next_turn() == 8
+
+    def test_next_turn_is_one_for_a_fresh_log(self):
+        assert SessionLog().next_turn() == 1
+
+
+class TestSurfaceOpPresence:
+    def test_surface_event_without_surface_op_is_rejected(self):
+        log = SessionLog()
+        _open_turn(log)
+        with pytest.raises(InvariantError, match="requires surface_op"):
+            log.append(
+                ev.USER_MESSAGE,
+                {"turn": 1, "step": 1, "role": "user", "content": "hi", "source": "human"},
+            )
+
+    def test_log_only_event_with_surface_op_is_rejected(self):
+        log = SessionLog()
+        with pytest.raises(InvariantError, match="must not carry surface_op"):
+            log.append(ev.PLAN_WRITE, {"plan": []}, surface_op="append")
+
+
+class TestToolPairing:
+    def test_tool_result_must_share_the_step_of_its_call(self):
+        log = SessionLog()
+        _open_turn(log)
+        log.append(ev.STEP_START, {"turn": 1, "step": 1})
+        log.append(
+            ev.TOOL_CALL,
+            {"turn": 1, "step": 1, "call_id": "c1", "name": "read", "arguments": "{}"},
+        )
+        with pytest.raises(InvariantError, match="step mismatch"):
+            log.append(
+                ev.TOOL_RESULT,
+                {"turn": 1, "step": 2, "call_id": "c1", "content": "x", "meta": None},
+                surface_op="append",
+            )
+
+    def test_tool_result_without_a_call_is_rejected(self):
+        log = SessionLog()
+        _open_turn(log)
+        log.append(ev.STEP_START, {"turn": 1, "step": 1})
+        with pytest.raises(InvariantError, match="no matching tool/call"):
+            log.append(
+                ev.TOOL_RESULT,
+                {"turn": 1, "step": 1, "call_id": "ghost", "content": "x", "meta": None},
+                surface_op="append",
+            )
