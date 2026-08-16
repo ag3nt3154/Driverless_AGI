@@ -72,11 +72,30 @@ class Surface:
 
     def accept(self, event: "SessionEvent") -> None:
         """Admit a committed surface event, honouring its ``surface_op``."""
-        if event.surface_op == "append":
+        op = event.surface_op
+        if op == "append":
             self._nodes.append(event.seq)
             self._cache.append(project_event(event))
             return
-        raise ValueError(f"unsupported surface_op: {event.surface_op!r}")
+        if isinstance(op, tuple) and op[0] == "replace":
+            self._replace(event, op[1], op[2])
+            return
+        raise ValueError(f"unsupported surface_op: {op!r}")
+
+    def _replace(self, event: "SessionEvent", start: int, end: int) -> None:
+        """Shadow surface nodes ``start``..``end`` inclusive with ``event``.
+
+        The shadowed events remain in the raw log; only their surface
+        membership ends. Reuse of the provider KV cache is invalidated from
+        the first shadowed position, which is what ``generation`` records.
+        """
+        lo = self.index_of(start)
+        hi = self.index_of(end)
+        if hi < lo:
+            raise ValueError(f"replace span is inverted: {start}..{end}")
+        self._nodes[lo:hi + 1] = [event.seq]
+        self._cache[lo:hi + 1] = [project_event(event)]
+        self.generation += 1
 
     def messages(self) -> list[dict]:
         """A fresh list over the cached projections."""

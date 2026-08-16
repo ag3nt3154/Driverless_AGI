@@ -222,3 +222,72 @@ class TestToolPairing:
                 {"turn": 1, "step": 1, "call_id": "ghost", "content": "x", "meta": None},
                 surface_op="append",
             )
+
+
+class TestSurfaceIntegration:
+    def _log_with_two_surface_nodes(self) -> SessionLog:
+        log = SessionLog()
+        _open_turn(log)
+        log.append(ev.STEP_START, {"turn": 1, "step": 1})
+        log.append(
+            ev.USER_MESSAGE,
+            {"turn": 1, "step": 1, "role": "user", "content": "a", "source": "human"},
+            surface_op="append",
+        )
+        log.append(
+            ev.ASSISTANT_MESSAGE,
+            {"turn": 1, "step": 1, "message": {"role": "assistant", "content": "b"}},
+            surface_op="append",
+        )
+        return log
+
+    def test_derive_messages_reflects_the_surface(self):
+        log = self._log_with_two_surface_nodes()
+        assert [m["content"] for m in log.derive_messages()] == ["a", "b"]
+
+    def test_boundary_events_contribute_no_messages(self):
+        log = self._log_with_two_surface_nodes()
+        log.append(ev.STEP_END, {"turn": 1, "step": 1})
+        log.append(ev.PLAN_WRITE, {"plan": [{"content": "x", "status": "pending"}]})
+        assert len(log.derive_messages()) == 2
+
+    def test_replace_over_a_dead_node_is_rejected(self):
+        log = self._log_with_two_surface_nodes()
+        with pytest.raises(InvariantError, match="not a live surface node"):
+            log.append(
+                ev.USER_MESSAGE,
+                {"turn": 1, "step": 1, "role": "user", "content": "s", "source": "compact"},
+                surface_op=("replace", 99, 99),
+                source_seqs=[99],
+            )
+
+    def test_replace_must_cite_every_shadowed_node(self):
+        log = self._log_with_two_surface_nodes()
+        with pytest.raises(InvariantError, match="must cite every shadowed node"):
+            log.append(
+                ev.USER_MESSAGE,
+                {"turn": 1, "step": 1, "role": "user", "content": "s", "source": "compact"},
+                surface_op=("replace", 3, 4),
+                source_seqs=[3],  # omits node 4
+            )
+
+    def test_a_well_formed_replace_is_accepted(self):
+        log = self._log_with_two_surface_nodes()
+        log.append(
+            ev.USER_MESSAGE,
+            {"turn": 1, "step": 1, "role": "user", "content": "s", "source": "compact"},
+            surface_op=("replace", 3, 4),
+            source_seqs=[3, 4],
+        )
+        assert [m["content"] for m in log.derive_messages()] == ["s"]
+
+    def test_the_raw_log_survives_a_replace(self):
+        """Append-only means shadowed events are hidden, never deleted."""
+        log = self._log_with_two_surface_nodes()
+        log.append(
+            ev.USER_MESSAGE,
+            {"turn": 1, "step": 1, "role": "user", "content": "s", "source": "compact"},
+            surface_op=("replace", 3, 4),
+            source_seqs=[3, 4],
+        )
+        assert [e.seq for e in log.events] == [1, 2, 3, 4, 5]

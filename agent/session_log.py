@@ -17,6 +17,7 @@ from datetime import datetime, timezone
 from typing import Any, Mapping, Sequence
 
 from agent import session_events as ev
+from agent.session_surface import Surface
 
 #: How an event entered the ordered surface.
 #: ``"append"`` — added to the tail (the normal path).
@@ -127,6 +128,7 @@ class SessionLog:
         self._open_step: int | None = None
         self._max_turn: int = 0
         self._calls: dict[str, tuple[int, int]] = {}  # call_id -> (turn, step)
+        self._surface = Surface()
         for event in seed:
             self._events.append(event)
             self._seq = event.seq
@@ -174,6 +176,42 @@ class SessionLog:
             self._open_step = None
         elif event.type == ev.TOOL_CALL:
             self._calls[event.data["call_id"]] = (event.data["turn"], event.data["step"])
+        if event.surface_op is not None:
+            self._surface.accept(event)
+
+    @property
+    def surface(self) -> Surface:
+        """The ordered model-facing projection of this log."""
+        return self._surface
+
+    def derive_messages(self) -> list[dict]:
+        """The LLM message history, derived from the surface.
+
+        Does NOT include the system prompt: that lives in the request
+        envelope and is reconstructed from the latest ``request/header``.
+        """
+        return self._surface.messages()
+
+    def _check_replace(
+        self,
+        surface_op: SurfaceOp | None,
+        source_seqs: Sequence[int] | None,
+    ) -> None:
+        """Invariant 4: a replace cites exactly the nodes it shadows."""
+        if not isinstance(surface_op, tuple) or surface_op[0] != "replace":
+            return
+        _, start, end = surface_op
+        live = self._surface.nodes
+        for edge in (start, end):
+            if edge not in live:
+                raise InvariantError(f"replace edge {edge} is not a live surface node")
+        lo, hi = self._surface.index_of(start), self._surface.index_of(end)
+        shadowed = set(live[lo:hi + 1])
+        cited = set(source_seqs or ())
+        if not shadowed <= cited:
+            raise InvariantError(
+                f"replace must cite every shadowed node; missing {sorted(shadowed - cited)}"
+            )
 
     def _check_tool_pairing(self, data: Mapping[str, Any]) -> None:
         """Invariant 6: a tool/result names a tool/call from the same step."""
@@ -211,6 +249,7 @@ class SessionLog:
             raise InvariantError(f"unknown event type: {type!r}")
         _check_surface_op_presence(type, surface_op)
         self._check_boundaries(type, data)
+        self._check_replace(surface_op, source_seqs)
         snapshot = _snapshot_json(dict(data))
         event = SessionEvent(
             seq=self._seq + 1,

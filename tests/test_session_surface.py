@@ -108,3 +108,43 @@ class TestSurfaceAppend:
     def test_index_of_raises_for_an_absent_node(self):
         with pytest.raises(KeyError):
             Surface().index_of(99)
+
+
+class TestSurfaceReplace:
+    def _three_nodes(self) -> Surface:
+        s = Surface()
+        for seq, text in ((1, "a"), (2, "b"), (3, "c")):
+            s.accept(_surface_event(
+                seq, ev.USER_MESSAGE,
+                {"turn": 1, "step": 1, "role": "user", "content": text, "source": "human"},
+            ))
+        return s
+
+    def test_replace_shadows_the_span_in_place(self):
+        s = self._three_nodes()
+        s.accept(_surface_event(
+            4, ev.USER_MESSAGE,
+            {"turn": 1, "step": 2, "role": "user", "content": "summary", "source": "compact"},
+            op=("replace", 1, 2),
+        ))
+        assert [m["content"] for m in s.messages()] == ["summary", "c"]
+        assert s.nodes == (4, 3)
+
+    def test_replace_bumps_generation(self):
+        s = self._three_nodes()
+        before = s.generation
+        s.accept(_surface_event(
+            4, ev.USER_MESSAGE,
+            {"turn": 1, "step": 2, "role": "user", "content": "s", "source": "compact"},
+            op=("replace", 1, 1),
+        ))
+        assert s.generation == before + 1
+
+    def test_single_node_replace_is_allowed(self):
+        s = self._three_nodes()
+        s.accept(_surface_event(
+            4, ev.USER_MESSAGE,
+            {"turn": 1, "step": 2, "role": "user", "content": "s", "source": "compact"},
+            op=("replace", 2, 2),
+        ))
+        assert [m["content"] for m in s.messages()] == ["a", "s", "c"]
