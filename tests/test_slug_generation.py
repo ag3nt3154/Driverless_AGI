@@ -144,6 +144,10 @@ class TestSlugWiredIntoRun:
         end_choice = MagicMock()
         end_choice.message.content = f"Done. {TASK_END_FLAG}"
         end_choice.message.tool_calls = []
+        # MagicMock auto-creates any attribute; without these two the loop
+        # would copy a Mock into the assistant message, which is not JSON data.
+        end_choice.message.reasoning_content = None
+        end_choice.message.model_extra = {}
         end_response.choices = [end_choice]
         end_response.usage = SimpleNamespace(
             prompt_tokens=10, completion_tokens=5, cost=None,
@@ -191,6 +195,10 @@ class TestSlugWiredIntoRun:
         end_choice = MagicMock()
         end_choice.message.content = f"Done. {TASK_END_FLAG}"
         end_choice.message.tool_calls = []
+        # MagicMock auto-creates any attribute; without these two the loop
+        # would copy a Mock into the assistant message, which is not JSON data.
+        end_choice.message.reasoning_content = None
+        end_choice.message.model_extra = {}
         end_response.choices = [end_choice]
         end_response.usage = SimpleNamespace(
             prompt_tokens=10, completion_tokens=5, cost=None,

@@ -5,6 +5,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
+from agent import session_events as sev
 from agent.base_tool import BaseTool
 from agent.loop import (
     AgentCallbacks, AgentConfig, AgentLoop,
@@ -535,3 +536,71 @@ class TestSystemPromptRefresh:
 
         assert second_loop._messages[0]["content"] != stale_system["content"]
         assert "Updated prompt" in second_loop._messages[0]["content"]
+
+
+class TestDispatchToolCallsExtraction:
+    """_dispatch_tool_calls owns the per-tool-call loop extracted from run().
+
+    The method emits tool/call and tool/result events, which the session log
+    requires to be turn-enclosed. In production it is only ever reached from
+    inside run()'s try block, where a turn is always open; calling it
+    directly has to supply that context itself, hence `_open_turn` below.
+    """
+
+    @staticmethod
+    def _open_turn(loop) -> None:
+        loop.log.append(sev.TURN_START, {"turn": 1})
+        loop.log.append(sev.STEP_START, {"turn": 1, "step": 1})
+
+    def test_returns_none_when_no_sentinel_fires(self):
+        loop = _make_loop()
+        self._open_turn(loop)
+        loop._messages = [{"role": "system", "content": "sys"}]
+        tc = _make_tool_call("call_1", "read", '{"file_path": "a.txt"}')
+        message = SimpleNamespace(tool_calls=[tc], content=None)
+        response = _make_response(None, tool_calls=[tc])
+        loop.registry.dispatch = MagicMock(return_value="file contents")
+        loop.registry._tools = {}
+
+        result = loop._dispatch_tool_calls(message, response, [])
+
+        assert result is None
+        assert loop._messages[-1]["role"] == "tool"
+        assert loop._messages[-1]["tool_call_id"] == "call_1"
+
+    def test_deferred_system_messages_land_after_all_tool_results(self):
+        from agent.loop import RELOAD_SKILLS_SENTINEL
+
+        loop = _make_loop()
+        loop._messages = [{"role": "system", "content": "sys"}]
+        tc_a = _make_tool_call("call_a", "reload_skills")
+        tc_b = _make_tool_call("call_b", "read", '{"file_path": "a"}')
+        message = SimpleNamespace(tool_calls=[tc_a, tc_b], content=None)
+        response = _make_response(None, tool_calls=[tc_a, tc_b])
+        loop.registry._tools = {}
+        loop.registry.dispatch = MagicMock(side_effect=[RELOAD_SKILLS_SENTINEL, "ok"])
+        loop._rebuild_for_reload = MagicMock(return_value=(set(), set(), []))
+        self._open_turn(loop)
+
+        loop._dispatch_tool_calls(message, response, [])
+
+        roles = [m["role"] for m in loop._messages]
+        # Both tool results precede the deferred system notification.
+        assert roles.index("system", 1) > roles.index("tool")
+        assert roles[-1] == "system"
+
+    def test_write_handoff_sentinel_short_circuits_with_a_string(self):
+        loop = _make_loop()
+        self._open_turn(loop)
+        loop._messages = [{"role": "system", "content": "sys"}]
+        tc = _make_tool_call("call_h", "write_handoff", "{}")
+        message = SimpleNamespace(tool_calls=[tc], content=None)
+        response = _make_response(None, tool_calls=[tc])
+        loop.registry._tools = {}
+        loop.registry.dispatch = MagicMock(
+            return_value=f"{WRITE_HANDOFF_SENTINEL}handoff body"
+        )
+
+        result = loop._dispatch_tool_calls(message, response, [])
+
+        assert result == "handoff body"

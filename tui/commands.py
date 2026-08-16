@@ -168,7 +168,7 @@ class SlashCommandsMixin:
 
         def _do_compact() -> None:
             try:
-                result = loop.compact_tool.compact(force=True)
+                result = loop.compact(force=True)
             except Exception as exc:
                 self.call_from_thread(conv.append_error, f"Compact failed: {exc}")
                 return

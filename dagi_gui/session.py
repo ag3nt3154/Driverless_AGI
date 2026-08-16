@@ -213,7 +213,7 @@ class SessionController:
 
     def _compact_loop(self, loop: AgentLoop) -> None:
         try:
-            loop.compact_tool.compact(force=True)
+            loop.compact(force=True)
         except Exception as exc:
             self.callbacks.on_error(exc)
 

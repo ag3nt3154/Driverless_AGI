@@ -33,6 +33,16 @@ class CompactionResult(NamedTuple):
     summary_output_tokens: int  # completion tokens used by summarisation call
     summary_cost: float | None  # cost if reported by the API, else None
 
+    #: Content of the summary message that replaced the middle, or None when
+    #: no compaction occurred. Callers log this rather than re-deriving it.
+    summary_content: str | None = None
+    #: Index of the first replaced message in the bound list (always 1 today:
+    #: the slot after the system prompt). Recorded rather than assumed so a
+    #: future multi-header envelope does not silently break the translation.
+    head_end: int = 0
+    #: Index one past the last replaced message, in pre-mutation coordinates.
+    tail_start: int = 0
+
 
 _NO_COMPACTION = CompactionResult(
     did_compact=False, removed_count=0,
@@ -263,4 +273,7 @@ class CompactTool(BaseTool):
             summary_input_tokens=sum_in,
             summary_output_tokens=sum_out,
             summary_cost=sum_cost,
+            summary_content=summary_message["content"],
+            head_end=head_end,
+            tail_start=tail_start,
         )

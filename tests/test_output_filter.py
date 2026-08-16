@@ -172,6 +172,10 @@ class TestLoopIntegration:
 
         message = MagicMock()
         message.tool_calls = [tc]
+        # MagicMock auto-creates any attribute; without these two the loop
+        # would copy a Mock into the assistant message, which is not JSON data.
+        message.reasoning_content = None
+        message.model_extra = {}
         message.content = None
 
         usage = MagicMock()
@@ -187,6 +191,8 @@ class TestLoopIntegration:
         # Second response ends the loop cleanly
         end_msg = MagicMock()
         end_msg.tool_calls = None
+        end_msg.reasoning_content = None
+        end_msg.model_extra = {}
         end_msg.content = AWAIT_USER_FLAG
         end_response = MagicMock()
         end_response.choices = [MagicMock(message=end_msg, finish_reason="stop")]

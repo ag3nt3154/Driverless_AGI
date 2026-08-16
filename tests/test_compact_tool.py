@@ -124,6 +124,45 @@ class TestSuccessfulCompaction:
         assert "[CONTEXT SUMMARY" in messages[1]["content"]
         assert "Cumulative summary." in messages[1]["content"]
 
+    def test_result_reports_the_replaced_span(self):
+        """The loop needs the exact slice compact() replaced, to log it."""
+        messages = [
+            {"role": "system", "content": "sys"},
+            {"role": "user", "content": "hello"},
+            {"role": "assistant", "content": "hi!"},
+            {"role": "user", "content": "task A"},
+            {"role": "assistant", "content": "done A"},
+            {"role": "user", "content": "task B"},
+            {"role": "assistant", "content": "done B"},
+        ]
+        client = MagicMock()
+        client.chat.completions.create.return_value = _summary_response()
+        tool = CompactTool()
+        tool.bind(messages, _config(), client)
+
+        result = tool.compact(force=True)
+
+        assert result.did_compact
+        assert result.head_end == 1
+        assert result.tail_start > result.head_end
+        # Post-mutation, the summary sits exactly where the span began.
+        assert result.summary_content == messages[result.head_end]["content"]
+
+    def test_no_op_result_carries_a_zero_span(self):
+        """A caller must be able to branch on did_compact alone."""
+        messages = [
+            {"role": "system", "content": "sys"},
+            {"role": "user", "content": "hello"},
+        ]
+        tool = CompactTool()
+        tool.bind(messages, _config(), MagicMock())
+
+        result = tool.compact()  # below threshold, not forced
+
+        assert result.did_compact is False
+        assert (result.head_end, result.tail_start) == (0, 0)
+        assert result.summary_content is None
+
     def test_result_reports_token_usage_from_summary_call(self):
         messages = [
             {"role": "system", "content": "sys"},

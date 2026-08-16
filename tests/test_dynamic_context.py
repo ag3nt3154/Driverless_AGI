@@ -114,14 +114,16 @@ class TestDynamicContextBoardRendering:
 
 class TestDynamicContextBoardInjection:
     def test_refresh_appends_board_at_end(self, tmp_path):
+        """The board trails the request without joining the conversation."""
         loop = _make_loop(tmp_path, python_env="conda:dagi")
         initial_count = len(loop._messages)
 
         loop._refresh_dynamic_context()
 
-        assert len(loop._messages) == initial_count + 1
-        assert loop._messages[-1]["role"] == "system"
-        assert _SENTINEL in loop._messages[-1]["content"]
+        assert len(loop._messages) == initial_count
+        request = loop._build_request_messages()
+        assert request[-1]["role"] == "system"
+        assert _SENTINEL in request[-1]["content"]
 
     def test_refresh_replaces_existing_board(self, tmp_path):
         loop = _make_loop(tmp_path, python_env="conda:dagi")
@@ -131,7 +133,7 @@ class TestDynamicContextBoardInjection:
         loop._refresh_dynamic_context()
 
         board_count = sum(
-            1 for m in loop._messages
+            1 for m in loop._build_request_messages()
             if m.get("role") == "system"
             and _SENTINEL in str(m.get("content", ""))
         )
@@ -179,24 +181,25 @@ class TestDynamicContextBoardInjection:
         )
 
         loop._refresh_dynamic_context()
-        assert "[~]" in loop._messages[-1]["content"]
+        assert "[~]" in loop._build_request_messages()[-1]["content"]
 
         plan_file.write_text(
             PLAN_TEXT.replace("[~]", "[x]"), encoding="utf-8",
         )
         loop._refresh_dynamic_context()
 
-        assert "[~]" not in loop._messages[-1]["content"]
-        assert loop._messages[-1]["content"].count("[x]") == 2
+        board = loop._build_request_messages()[-1]["content"]
+        assert "[~]" not in board
+        assert board.count("[x]") == 2
 
     def test_compaction_safe_no_crash_after_pop(self, tmp_path):
         """Simulate compaction removing messages between refreshes."""
         loop = _make_loop(tmp_path, python_env="conda:dagi")
         loop._refresh_dynamic_context()
 
-        # Simulate compaction removing the board message
+        # Simulate compaction wiping the conversation
         loop._messages[:] = [loop._messages[0]]
 
-        # Should not crash — just appends fresh
+        # Should not crash — the board is rebuilt independently of _messages
         loop._refresh_dynamic_context()
-        assert _SENTINEL in loop._messages[-1]["content"]
+        assert _SENTINEL in loop._build_request_messages()[-1]["content"]

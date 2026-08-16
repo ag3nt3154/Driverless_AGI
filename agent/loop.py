@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import threading
 import time
@@ -7,7 +8,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Callable
+from typing import Any, Callable, Mapping, Sequence
 
 import httpx
 import openai
@@ -19,7 +20,10 @@ from agent import DAGI_ROOT
 from agent._git_branch import create_task_branch, get_current_branch
 from agent.prompts import load_prompt, load_main_system_prompt, load_soul
 from agent.registry import ToolRegistry
+from agent import session_events as sev
 from agent.session import SessionTracker, ToolCallRecord
+from agent.session_log import InvariantError, SessionLog, is_status_board
+from agent.session_store import append_event
 from agent.skills import Skill, SkillLoader
 from tools.compact import CompactTool, CompactionResult, _NO_COMPACTION
 from tools.update_task_status import UPDATE_TASK_STATUS_SENTINEL
@@ -338,13 +342,28 @@ class AgentLoop:
         self.system_parts: list[dict]  # populated by _assemble_system_string
 
         self._skip_slug_generation: bool = bool(initial_messages)
+        #: Derived cache of [header] + log.derive_messages(). Never mutated
+        #: directly — see _sync_messages. Created empty because _seed_from_messages
+        #: below is what actually reconstitutes a resumed conversation.
+        self._messages: list[dict] = []
+
+        # The log is the source of truth; _messages is a derived cache of it.
+        # See docs/superpowers/specs/2026-08-16-session-event-log-design.md
+        self.log = SessionLog()
+        # Wire the durability sink: every committed event is appended to a
+        # JSONL file beside the narration log produced by SessionTracker.
+        # The tracker's _path is e.g. session_2026-08-16_14-30-00.jsonl;
+        # the events file is session_2026-08-16_14-30-00.events.jsonl.
+        if hasattr(self.tracker, "_path"):
+            _events_path = self.tracker._path.with_suffix(".events.jsonl")
+            self.log.on_append = lambda event: append_event(_events_path, event)
+        #: Last rendered plan status board. Ephemeral request state — see
+        #: _refresh_dynamic_context. Empty string means "nothing rendered yet".
+        self._board: str = ""
+        self._emit_header(system, "resume" if initial_messages else "initial")
         if initial_messages:
-            # multi-turn: continue from existing conversation history, but always
-            # refresh the system prompt so updates to AGENTS.md take effect next task.
-            self._messages = list(initial_messages)
-            self._messages[0] = {"role": "system", "content": system}
-        else:
-            self._messages = [{"role": "system", "content": system}]
+            self._seed_from_messages(initial_messages)
+        self._sync_messages()
 
         self.client = openai.OpenAI(api_key=config.api_key, base_url=config.base_url)
         # Build extra_body for OpenRouter extensions (reasoning, prompt caching, provider routing).
@@ -394,14 +413,14 @@ class AgentLoop:
         self._pause_event.clear()
 
     def inject_and_resume(self, message: str) -> None:
-        self._messages.append({"role": "user", "content": message})
+        self._log_user_message("user", message, "inject")
         self._pause_event.set()
 
     def _compact_context(self) -> CompactionResult:
-        """Delegates to CompactTool.compact(). Failures are non-fatal — the session continues
+        """Delegates to compact(). Failures are non-fatal — the session continues
         with un-compacted messages rather than crashing."""
         try:
-            return self.compact_tool.compact()
+            return self.compact()
         except Exception as exc:
             self.callbacks.on_assistant_text(
                 f"[Warning: context compaction failed — {exc}. Continuing with full context.]"
@@ -500,18 +519,205 @@ class AgentLoop:
         except Exception:
             return None
 
+    def _close_turn(self, turn: int, reason: dict) -> None:
+        """Close the open turn, if one is open. Idempotent by design.
+
+        run() has several return paths; each closes its own turn explicitly,
+        and the finally-guard catches any path added later without one.
+        """
+        if self.log.open_turn is None:
+            return
+        if self.log.open_step is not None:
+            self.log.append(sev.STEP_END, {"turn": turn, "step": self.log.open_step})
+        self.log.append(sev.TURN_END, {"turn": turn, "reason": reason})
+
+    def _log_user_message(self, role: str, content, source: str) -> None:
+        """Append one user/message surface event.
+
+        `role` is durable: wiki context and skill-reload notices are
+        role="system" but ride this event type, because they are ordinary
+        model-visible conversation content. `source` is the semantic channel
+        that tells the three apart.
+
+        `step` is 0 for messages that enter the turn before its first step.
+        """
+        self.log.append(
+            sev.USER_MESSAGE,
+            {
+                "turn": self.log.open_turn,
+                "step": self.log.open_step or 0,
+                "role": role,
+                "content": content,
+                "source": source,
+            },
+            surface_op="append",
+        )
+        self._sync_messages()
+
+    def _tools_fingerprint(self) -> tuple[list[str], str]:
+        """Sorted tool names plus a stable digest of their full schemas."""
+        schemas = self.registry.get_openai_tools_list()
+        names = sorted(s["function"]["name"] for s in schemas)
+        blob = json.dumps(schemas, sort_keys=True, ensure_ascii=False)
+        return names, hashlib.sha256(blob.encode("utf-8")).hexdigest()
+
+    def _emit_header(self, system: str, reason: str) -> None:
+        """Record the request envelope. Log-only — never a surface node."""
+        names, digest = self._tools_fingerprint()
+        self.log.append(
+            sev.REQUEST_HEADER,
+            {
+                "system": system,
+                "reason": reason,
+                "model": self.config.model,
+                "tool_names": names,
+                "tools_digest": digest,
+            },
+        )
+
+    def _header_message(self) -> dict:
+        """The system message, rebuilt from the latest header event."""
+        header = self.log.latest_header()
+        if header is None:
+            raise InvariantError("no request/header has been logged")
+        return {"role": "system", "content": header["system"]}
+
+    def _build_request_messages(self) -> list[dict]:
+        """The exact message list sent to the provider.
+
+        Envelope header first, conversation next, ephemeral board last.
+        Returns a fresh list: callers (including on_api_call observers) must
+        not be able to mutate loop state through it.
+        """
+        messages = [self._header_message()]
+        messages.extend(self._messages[1:])
+        if self._board:
+            messages.append({"role": "system", "content": self._board})
+        return messages
+
+    def _log_compaction(self, result: CompactionResult) -> None:
+        """Record an in-place compaction as a surface ``replace``.
+
+        ``compact()`` mutates ``_messages`` directly; this translates that
+        mutation into the log's vocabulary. Surface position is the
+        ``_messages`` index minus one, because the surface excludes the
+        system prompt. ``tail_start - 1`` is the first *surviving* position,
+        so the last shadowed one is ``tail_start - 2``.
+        """
+        if not result.did_compact:
+            return
+        nodes = self.log.surface.nodes
+        lo, hi = result.head_end - 1, result.tail_start - 2
+        if lo < 0 or hi < lo or hi >= len(nodes):
+            raise InvariantError(
+                f"compaction span [{lo}, {hi}] is outside a surface of "
+                f"{len(nodes)} node(s)"
+            )
+        self.log.append(
+            sev.CONTEXT_COMPACTION,
+            {"summary": result.summary_content, "removed": result.removed_count},
+            surface_op=("replace", nodes[lo], nodes[hi]),
+            source_seqs=nodes[lo:hi + 1],
+        )
+        self._sync_messages()
+
+    def compact(self, force: bool = False) -> CompactionResult:
+        """Compact the context and log the resulting surface replacement.
+
+        The single funnel for compaction. ``compact_tool`` slice-assigns into
+        ``_messages`` directly; without the matching event, the very next
+        ``_sync_messages`` would overwrite that mutation from a log that never
+        heard about it. External callers (TUI, GUI) must come through here.
+        Exceptions propagate — callers that want them swallowed use
+        ``_compact_context``.
+        """
+        result = self.compact_tool.compact(force=force)
+        self._log_compaction(result)
+        return result
+
+    def _sync_messages(self) -> None:
+        """Rebuild ``_messages`` from the log, in place.
+
+        ``_messages`` is a cache of ``[header] + log.derive_messages()``, not
+        an independent structure. The slice assignment is deliberate: the
+        compact tool holds a reference to this exact list object and mutates
+        it via slice assignment (see tools/compact/_compact.py), so rebinding
+        the attribute would leave it writing into an orphan.
+        """
+        self._messages[:] = [self._header_message(), *self.log.derive_messages()]
+
+    def _seed_one(self, message: Mapping[str, Any]) -> None:
+        """Replay one resumed message as its corresponding surface event."""
+        coords = {"turn": 0, "step": 0}
+        role = message.get("role")
+        if role == "assistant":
+            self.log.append(
+                sev.ASSISTANT_MESSAGE,
+                {**coords, "message": dict(message)},
+                surface_op="append",
+            )
+            # The pairing invariant needs these, or the tool messages that
+            # follow have nothing to attach to.
+            for tc in message.get("tool_calls") or []:
+                fn = tc.get("function", {})
+                self.log.append(sev.TOOL_CALL, {
+                    **coords,
+                    "call_id": tc["id"],
+                    "name": fn.get("name", ""),
+                    "arguments": fn.get("arguments", ""),
+                })
+        elif role == "tool":
+            self.log.append(
+                sev.TOOL_RESULT,
+                {
+                    **coords,
+                    "call_id": message["tool_call_id"],
+                    "content": message.get("content"),
+                    "meta": None,
+                },
+                surface_op="append",
+            )
+        else:
+            self._log_user_message(role, message.get("content"), "seed")
+
+    def _seed_from_messages(self, messages: Sequence[Mapping[str, Any]]) -> None:
+        """Replay a resumed conversation into the log as turn-0 events.
+
+        ``_messages`` is derived from the log, so history that never enters
+        the log simply does not exist. Seeded events sit in turn 0 — "before
+        this process began" — so ``next_turn()`` still returns 1, and
+        ``session/end-seed`` closes the replay so nothing can append into it.
+
+        ``messages[0]`` is skipped: the system prompt is envelope state, and
+        it is deliberately re-assembled on resume so that an edited AGENTS.md
+        takes effect on the next task.
+        """
+        self.log.append(sev.TURN_START, {"turn": 0})
+        for message in messages[1:]:
+            self._seed_one(message)
+        self.log.append(sev.TURN_END, {"turn": 0, "reason": sev.reason_completed()})
+        self.log.append(sev.END_SEED, {"count": len(messages) - 1})
+
     def run(self, task: str) -> str:
         if task.strip().lower() == "/reload":
             added, removed, errors = self._rebuild_for_reload()
             notification = _format_reload_notification(len(self.skills), added, removed, errors)
-            self._messages.append({"role": "system", "content": notification})
+            # A surface event needs an enclosing turn, and /reload short-circuits
+            # before the normal one opens — so it gets its own.
+            _reload_turn = self.log.next_turn()
+            self.log.append(sev.TURN_START, {"turn": _reload_turn})
+            self._log_user_message("system", notification, "reload")
+            self._close_turn(_reload_turn, sev.reason_completed())
             self.callbacks.on_assistant_text(notification)
             return notification
 
+        _turn = self.log.next_turn()
+        self.log.append(sev.TURN_START, {"turn": _turn})
+
         wiki_ctx = _build_wiki_index_context(self._effective_memory_root)
         if wiki_ctx:
-            self._messages.append({"role": "system", "content": wiki_ctx})
-        self._messages.append({"role": "user", "content": task})
+            self._log_user_message("system", wiki_ctx, "wiki")
+        self._log_user_message("user", task, "human")
         self.tracker.record_user(task)
 
         # ── Auto-name session file from first user message ────────────────────
@@ -526,6 +732,7 @@ class AgentLoop:
             iteration = 0
             while True:
                 iteration += 1
+                self.log.append(sev.STEP_START, {"turn": _turn, "step": iteration})
                 self._refresh_dynamic_context()
                 self.callbacks.on_iteration(iteration)
                 self._pause_event.wait()  # blocks here when paused; instant no-op otherwise
@@ -541,11 +748,12 @@ class AgentLoop:
                 _error_retries = 0
                 _paused_on_error = False
                 while True:
-                    self.callbacks.on_api_call(list(self._messages))
+                    _request = self._build_request_messages()
+                    self.callbacks.on_api_call(list(_request))
                     try:
                         _create_kwargs = dict(
                             model=self.config.model,
-                            messages=self._messages,
+                            messages=_request,
                             tools=self.registry.get_openai_tools_list(),
                             parallel_tool_calls=False,
                             **(dict(extra_body=self._extra_body) if self._extra_body else {}),
@@ -622,6 +830,7 @@ class AgentLoop:
                             "Check your model endpoint and retry your task."
                         )
                         self.callbacks.on_error(Exception(error_msg))
+                        self._close_turn(_turn, sev.reason_error(error_msg))
                         return error_msg
                     # else: discard ghost, retry with identical context
                 # ─────────────────────────────────────────────────────────────
@@ -645,7 +854,12 @@ class AgentLoop:
                     _rc = _extract_reasoning(message)
                     if _rc:
                         _asst_msg["reasoning_content"] = _rc
-                    self._messages.append(_asst_msg)
+                    self.log.append(
+                        sev.ASSISTANT_MESSAGE,
+                        {"turn": _turn, "step": iteration, "message": _asst_msg},
+                        surface_op="append",
+                    )
+                    self._sync_messages()
                     _thinking_tok = (
                         getattr(getattr(response.usage, "completion_tokens_details", None), "reasoning_tokens", None)
                         or 0
@@ -673,18 +887,21 @@ class AgentLoop:
                         clean = result.replace(_exit_flag, "").strip()
                         self.callbacks.on_assistant_text(clean)
                         self.callbacks.on_done(clean)
+                        self._close_turn(_turn, sev.reason_completed())
                         return clean
 
                     # Task not complete — inject "continue" and keep looping
                     self.callbacks.on_assistant_text(result)
                     if self._continuation_count >= self.config.max_continuations:
                         self.callbacks.on_done(result)
+                        self._close_turn(_turn, sev.reason_max_continuations())
                         return result
                     self._continuation_count += 1
-                    self._messages.append({"role": "user", "content": CONTINUE_PROMPT})
+                    self._log_user_message("user", CONTINUE_PROMPT, "continue")
                     self.callbacks.on_continue_injected(
                         self._continuation_count, self.config.max_continuations
                     )
+                    self.log.append(sev.STEP_END, {"turn": _turn, "step": iteration})
                     continue  # next while True iteration
 
                 if message.content:
@@ -708,51 +925,17 @@ class AgentLoop:
                 }
                 if _turn_reasoning:
                     _asst_tc_msg["reasoning_content"] = _turn_reasoning
-                self._messages.append(_asst_tc_msg)
+                self.log.append(
+                    sev.ASSISTANT_MESSAGE,
+                    {"turn": _turn, "step": iteration, "message": _asst_tc_msg},
+                    surface_op="append",
+                )
+                self._sync_messages()
 
-                # Deferred system messages — appended AFTER all tool results
-                # so they don't break the assistant→tool pairing that strict
-                # providers (e.g. DeepSeek) enforce.
-                _deferred_system_msgs: list[str] = []
-
-                for tc in message.tool_calls:
-                    tool_obj = self.registry._tools.get(tc.function.name)
-                    description = tool_obj.description if tool_obj else tc.function.name
-                    self.callbacks.on_tool_start(tc.function.name, description, tc.function.arguments)
-                    self.tracker.record_tool_start(tc.function.name, description, tc.function.arguments)
-
-                    args = json.loads(tc.function.arguments)
-                    result = self.registry.dispatch(tc.function.name, args)
-                    if (
-                        isinstance(result, str)
-                        and WRITE_HANDOFF_SENTINEL in result
-                        and tc.function.name == "write_handoff"
-                    ):
-                        return self._handle_write_handoff(
-                            tc, result, description, tool_records, (message, response)
-                        )
-                    if isinstance(result, str) and result.startswith(ENTER_PLAN_MODE_SENTINEL):
-                        result = self._handle_enter_plan_mode(args)
-                    elif result == EXIT_PLAN_MODE_SENTINEL:
-                        result = self._handle_exit_plan_mode(args)
-                    elif (
-                        isinstance(result, str)
-                        and UPDATE_TASK_STATUS_SENTINEL in result
-                    ):
-                        result = self._handle_all_tasks_resolved()
-                    elif result == RELOAD_SKILLS_SENTINEL:
-                        added, removed, errors = self._rebuild_for_reload()
-                        result = _format_reload_notification(len(self.skills), added, removed, errors)
-                        _deferred_system_msgs.append(result)
-                    else:
-                        if isinstance(result, str):
-                            _switch_target = parse_switch_sentinel(result)
-                            if _switch_target is not None:
-                                result = self._handle_switch_model(_switch_target, args)
-                    self._bookkeep_tool_call(tc, result, description, tool_records)
-
-                for _sys_content in _deferred_system_msgs:
-                    self._messages.append({"role": "system", "content": _sys_content})
+                _short_circuit = self._dispatch_tool_calls(message, response, tool_records)
+                if _short_circuit is not None:
+                    self._close_turn(_turn, sev.reason_completed())
+                    return _short_circuit
 
                 self._finalize_turn(message, response, tool_records)
 
@@ -766,9 +949,78 @@ class AgentLoop:
                     self._compact_context()
                 # ─────────────────────────────────────────────────────────────
 
+                self.log.append(sev.STEP_END, {"turn": _turn, "step": iteration})
+
         except Exception as e:
+            self._close_turn(_turn, sev.reason_error(str(e), type(e).__name__))
             self.callbacks.on_error(e)
             raise
+        finally:
+            # Defensive: any exit path added later without an explicit close
+            # still leaves the log well-formed rather than half-open.
+            self._close_turn(_turn, sev.reason_error("turn closed without a reason"))
+
+    def _dispatch_tool_calls(self, message, response, tool_records) -> str | None:
+        """Dispatch every tool call in `message`, appending results to _messages.
+
+        Extracted verbatim from `run()`. Returns a non-None string only when
+        the write_handoff sentinel fired, in which case `run()` must return
+        that value immediately without a further API turn.
+
+        Deferred system messages are appended AFTER all tool results so they
+        don't break the assistant→tool pairing that strict providers
+        (e.g. DeepSeek) enforce.
+        """
+        deferred_system_msgs: list[str] = []
+
+        for tc in message.tool_calls:
+            tool_obj = self.registry._tools.get(tc.function.name)
+            description = tool_obj.description if tool_obj else tc.function.name
+            self.callbacks.on_tool_start(tc.function.name, description, tc.function.arguments)
+            self.tracker.record_tool_start(tc.function.name, description, tc.function.arguments)
+
+            # Recorded BEFORE execution: a tool/call with no tool/result is a
+            # detectable interruption, which Phase 4 crash repair depends on.
+            self.log.append(
+                sev.TOOL_CALL,
+                {
+                    "turn": self.log.open_turn,
+                    "step": self.log.open_step,
+                    "call_id": tc.id,
+                    "name": tc.function.name,
+                    "arguments": tc.function.arguments,  # raw, unparsed
+                },
+            )
+            args = json.loads(tc.function.arguments)
+            result = self.registry.dispatch(tc.function.name, args)
+            if (
+                isinstance(result, str)
+                and WRITE_HANDOFF_SENTINEL in result
+                and tc.function.name == "write_handoff"
+            ):
+                return self._handle_write_handoff(
+                    tc, result, description, tool_records, (message, response)
+                )
+            if isinstance(result, str) and result.startswith(ENTER_PLAN_MODE_SENTINEL):
+                result = self._handle_enter_plan_mode(args)
+            elif result == EXIT_PLAN_MODE_SENTINEL:
+                result = self._handle_exit_plan_mode(args)
+            elif isinstance(result, str) and UPDATE_TASK_STATUS_SENTINEL in result:
+                result = self._handle_all_tasks_resolved()
+            elif result == RELOAD_SKILLS_SENTINEL:
+                added, removed, errors = self._rebuild_for_reload()
+                result = _format_reload_notification(len(self.skills), added, removed, errors)
+                deferred_system_msgs.append(result)
+            else:
+                if isinstance(result, str):
+                    _switch_target = parse_switch_sentinel(result)
+                    if _switch_target is not None:
+                        result = self._handle_switch_model(_switch_target, args)
+            self._bookkeep_tool_call(tc, result, description, tool_records)
+
+        for _sys_content in deferred_system_msgs:
+            self._log_user_message("system", _sys_content, "reload")
+        return None
 
     def _bookkeep_tool_call(
         self,
@@ -813,9 +1065,18 @@ class AgentLoop:
             if isinstance(context_result, str)
             else context_result
         )
-        self._messages.append(
-            {"role": "tool", "tool_call_id": tc.id, "content": _tool_content}
+        self.log.append(
+            sev.TOOL_RESULT,
+            {
+                "turn": self.log.open_turn,
+                "step": self.log.open_step,
+                "call_id": tc.id,
+                "content": _tool_content,
+                "meta": None,
+            },
+            surface_op="append",
         )
+        self._sync_messages()
         return full_str
 
     def _finalize_turn(self, message, response, tool_records: list[ToolCallRecord]) -> None:
@@ -1150,25 +1411,18 @@ class AgentLoop:
         return "\n".join(parts)
 
     def _refresh_dynamic_context(self) -> None:
-        """Pop any existing board and append a fresh one at the end.
+        """Re-render the board and log it if it changed.
 
-        Called at the top of every iteration of ``run()``'s main loop.
-        Uses sentinel search (not index tracking) so it is safe across
-        compaction, which may remove or shift messages.
+        The board is *ephemeral*: it is never a member of ``_messages`` and
+        never a surface node. ``_build_request_messages`` appends it as the
+        final message of each request, so the reusable prefix through the
+        last real message stays byte-identical from step to step.
         """
-        sentinel = self._DYNAMIC_CONTEXT_SENTINEL
-        for i in range(len(self._messages) - 1, 0, -1):
-            content = self._messages[i].get("content", "")
-            if (
-                self._messages[i].get("role") == "system"
-                and isinstance(content, str)
-                and sentinel in content
-            ):
-                self._messages.pop(i)
-                break
-
         board = self._build_dynamic_context()
-        self._messages.append({"role": "system", "content": board})
+        if board == self._board:
+            return
+        self._board = board
+        self.log.append(sev.PLAN_WRITE, {"board": board})
 
     def _rebuild_for_normal_mode(self, dagi_root: Path) -> None:
         from agent.tools import create_tool_registry
@@ -1195,7 +1449,9 @@ class AgentLoop:
             bash_tool=self._injected_bash_tool,
         )
 
-        self._messages[0] = {"role": "system", "content": self._assemble_system_string(dagi_root)}
+        _system = self._assemble_system_string(dagi_root)
+        self._emit_header(_system, "change")
+        self._sync_messages()
         self.compact_tool.bind(
             self._messages, self.config, self.client,
             on_compaction=self.callbacks.on_compaction,
@@ -1226,7 +1482,9 @@ class AgentLoop:
             tracker=self.tracker,
             memory_root=self._effective_memory_root,
         )
-        self._messages[0] = {"role": "system", "content": self._assemble_system_string(dagi_root)}
+        _system = self._assemble_system_string(dagi_root)
+        self._emit_header(_system, "change")
+        self._sync_messages()
         self.compact_tool.bind(
             self._messages, self.config, self.client,
             on_compaction=self.callbacks.on_compaction,
