@@ -413,10 +413,10 @@ class AgentLoop:
         self._pause_event.set()
 
     def _compact_context(self) -> CompactionResult:
-        """Delegates to CompactTool.compact(). Failures are non-fatal — the session continues
+        """Delegates to compact(). Failures are non-fatal — the session continues
         with un-compacted messages rather than crashing."""
         try:
-            return self.compact_tool.compact()
+            return self.compact()
         except Exception as exc:
             self.callbacks.on_assistant_text(
                 f"[Warning: context compaction failed — {exc}. Continuing with full context.]"
@@ -589,6 +589,44 @@ class AgentLoop:
         if self._board:
             messages.append({"role": "system", "content": self._board})
         return messages
+
+    def _log_compaction(self, result: CompactionResult) -> None:
+        """Record an in-place compaction as a surface ``replace``.
+
+        ``compact()`` mutates ``_messages`` directly; this translates that
+        mutation into the log's vocabulary. Surface position is the
+        ``_messages`` index minus one, because the surface excludes the
+        system prompt. ``tail_start - 1`` is the first *surviving* position,
+        so the last shadowed one is ``tail_start - 2``.
+        """
+        if not result.did_compact:
+            return
+        nodes = self.log.surface.nodes
+        lo, hi = result.head_end - 1, result.tail_start - 2
+        if lo < 0 or hi < lo or hi >= len(nodes):
+            raise InvariantError(
+                f"compaction span [{lo}, {hi}] is outside a surface of "
+                f"{len(nodes)} node(s)"
+            )
+        self.log.append(
+            sev.CONTEXT_COMPACTION,
+            {"summary": result.summary_content, "removed": result.removed_count},
+            surface_op=("replace", nodes[lo], nodes[hi]),
+            source_seqs=nodes[lo:hi + 1],
+        )
+
+    def compact(self, force: bool = False) -> CompactionResult:
+        """Compact the context and log the resulting surface replacement.
+
+        The single funnel for compaction: a mutation of ``_messages`` with no
+        matching event is exactly the divergence ``_shadow_check`` exists to
+        catch, so external callers (TUI, GUI) must come through here rather
+        than reaching for ``compact_tool`` directly. Exceptions propagate —
+        callers that want them swallowed use ``_compact_context``.
+        """
+        result = self.compact_tool.compact(force=force)
+        self._log_compaction(result)
+        return result
 
     def _shadow_check(self) -> None:
         """Assert the derived surface reproduces _messages (Phase 1-2 only).

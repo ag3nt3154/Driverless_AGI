@@ -54,6 +54,10 @@ class FakeLoop:
         self.block = block
         self.fail = fail
 
+    def compact(self, force: bool = False) -> object:
+        """Mirrors AgentLoop.compact — the funnel that also logs the replace."""
+        return self.compact_tool.compact(force=force)
+
     def run(self, task: str) -> str:
         self.started.set()
         if self.fail:

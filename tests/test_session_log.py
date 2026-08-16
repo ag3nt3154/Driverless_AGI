@@ -8,9 +8,10 @@ from agent.session_log import InvariantError, SessionEvent, SessionLog
 
 
 class TestVocabulary:
-    def test_surface_types_are_exactly_three(self):
+    def test_surface_types_are_exactly_the_message_producing_four(self):
+        """A closed set: anything outside it structurally cannot cost tokens."""
         assert ev.SURFACE_EVENT_TYPES == frozenset(
-            {"user/message", "assistant/message", "tool/result"}
+            {"user/message", "assistant/message", "tool/result", "context/compaction"}
         )
 
     def test_surface_types_are_a_subset_of_known_types(self):

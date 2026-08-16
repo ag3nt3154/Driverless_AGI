@@ -40,6 +40,11 @@ def project_event(event: "SessionEvent") -> dict:
             "tool_call_id": data["call_id"],
             "content": copy.deepcopy(data["content"]),
         }
+    if event.type == ev.CONTEXT_COMPACTION:
+        # role=user, matching tools/compact/_compact.py — a system or
+        # assistant role here would break the assistant/tool pairing rule
+        # the summary is specifically designed to sidestep.
+        return {"role": "user", "content": data["summary"]}
     raise ValueError(f"{event.type} is not a surface event")
 
 

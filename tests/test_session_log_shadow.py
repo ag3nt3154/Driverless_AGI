@@ -15,6 +15,7 @@ import pytest
 from agent import session_events as ev
 from agent.loop import AgentConfig, AgentLoop
 from agent.session_log import is_status_board
+from tools.compact._compact import CompactionResult
 
 
 def _make_loop(project_path: Path, **overrides) -> AgentLoop:
@@ -423,3 +424,100 @@ class TestEphemeralBoard:
         writes = [e for e in loop.log.events if e.type == ev.PLAN_WRITE]
         assert len(writes) == 2
         assert "some-other-env" in writes[-1].data["board"]
+
+
+def _compaction(summary: str, head_end: int, tail_start: int) -> CompactionResult:
+    """A CompactionResult describing a replacement that already happened."""
+    return CompactionResult(
+        did_compact=True,
+        removed_count=tail_start - head_end,
+        summary_input_tokens=0,
+        summary_output_tokens=0,
+        summary_cost=None,
+        summary_content=summary,
+        head_end=head_end,
+        tail_start=tail_start,
+    )
+
+
+class TestCompactionEvent:
+    """Compaction shadows surface nodes; it never deletes log events."""
+
+    def _loop_with_history(self, tmp_path, exchanges: int = 6):
+        loop = _make_loop(tmp_path)
+        loop.log.append(ev.TURN_START, {"turn": 1})
+        for i in range(exchanges):
+            loop._log_user_message("user", f"question {i}", "human")
+            loop.log.append(
+                ev.ASSISTANT_MESSAGE,
+                {"message": {"role": "assistant", "content": f"answer {i}"}},
+                surface_op="append",
+            )
+        loop._messages[1:] = loop.log.derive_messages()
+        return loop
+
+    def test_compaction_replaces_the_shadowed_span(self, tmp_path):
+        loop = self._loop_with_history(tmp_path)
+        before = len(loop.log.derive_messages())
+
+        loop._log_compaction(_compaction("[CONTEXT SUMMARY] earlier chat", 1, 5))
+
+        derived = loop.log.derive_messages()
+        assert len(derived) == before - 4 + 1
+        assert derived[0] == {
+            "role": "user", "content": "[CONTEXT SUMMARY] earlier chat",
+        }
+
+    def test_compaction_bumps_the_surface_generation(self, tmp_path):
+        loop = self._loop_with_history(tmp_path)
+        assert loop.log.surface.generation == 0
+        loop._log_compaction(_compaction("s", 1, 3))
+        assert loop.log.surface.generation == 1
+
+    def test_compaction_cites_every_node_it_shadows(self, tmp_path):
+        loop = self._loop_with_history(tmp_path)
+        shadowed = list(loop.log.surface.nodes[:4])
+
+        loop._log_compaction(_compaction("s", 1, 5))
+
+        event = loop.log.events[-1]
+        assert set(shadowed) <= set(event.source_seqs)
+
+    def test_the_raw_log_keeps_the_compacted_events(self, tmp_path):
+        """Append-only: shadowed events are hidden from the surface, not lost."""
+        loop = self._loop_with_history(tmp_path)
+        before = len(loop.log.events)
+        loop._log_compaction(_compaction("s", 1, 5))
+        assert len(loop.log.events) == before + 1
+
+    def test_a_no_op_compaction_logs_nothing(self, tmp_path):
+        loop = self._loop_with_history(tmp_path)
+        before = len(loop.log.events)
+        loop._log_compaction(CompactionResult(
+            did_compact=False, removed_count=0,
+            summary_input_tokens=0, summary_output_tokens=0, summary_cost=None,
+        ))
+        assert len(loop.log.events) == before
+
+    def test_a_span_past_the_end_of_the_surface_is_rejected(self, tmp_path):
+        """Silent truncation here would corrupt the surface irrecoverably."""
+        from agent.session_log import InvariantError
+
+        loop = self._loop_with_history(tmp_path, exchanges=2)
+        with pytest.raises(InvariantError, match="outside a surface"):
+            loop._log_compaction(_compaction("s", 1, 99))
+
+    def test_a_real_compaction_keeps_the_shadow_in_step(self, tmp_path):
+        """End-to-end: CompactTool mutates _messages, the log tracks it."""
+        loop = self._loop_with_history(tmp_path)
+        loop.compact_tool.bind(loop._messages, loop.config, loop.client)
+        loop.client = MagicMock()
+        loop.compact_tool._client = loop.client
+        loop.client.chat.completions.create.return_value = SimpleNamespace(
+            choices=[SimpleNamespace(message=SimpleNamespace(content="a recap"))],
+            usage=SimpleNamespace(prompt_tokens=1, completion_tokens=1, cost=None),
+        )
+
+        loop.compact(force=True)
+
+        loop._shadow_check()

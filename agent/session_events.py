@@ -27,6 +27,10 @@ STEP_END = "step/end"
 USER_MESSAGE = "user/message"
 ASSISTANT_MESSAGE = "assistant/message"
 TOOL_RESULT = "tool/result"
+#: The summary message that replaces a compacted span. A distinct type rather
+#: than a flagged ``user/message`` so that "did the human say this?" stays a
+#: structural question rather than an inference over a data field.
+CONTEXT_COMPACTION = "context/compaction"
 
 # ── Log-only events ───────────────────────────────────────────────────────
 TOOL_CALL = "tool/call"
@@ -37,7 +41,7 @@ END_SEED = "session/end-seed"
 #: Closed set. An event type outside this set may never enter the surface,
 #: which makes it structurally impossible for bookkeeping to cost tokens.
 SURFACE_EVENT_TYPES: frozenset[str] = frozenset(
-    {USER_MESSAGE, ASSISTANT_MESSAGE, TOOL_RESULT}
+    {USER_MESSAGE, ASSISTANT_MESSAGE, TOOL_RESULT, CONTEXT_COMPACTION}
 )
 
 KNOWN_EVENT_TYPES: frozenset[str] = frozenset(
@@ -49,6 +53,7 @@ KNOWN_EVENT_TYPES: frozenset[str] = frozenset(
         USER_MESSAGE,
         ASSISTANT_MESSAGE,
         TOOL_RESULT,
+        CONTEXT_COMPACTION,
         TOOL_CALL,
         REQUEST_HEADER,
         PLAN_WRITE,
