@@ -1,6 +1,6 @@
 # AGENTS.md
 
-> Last updated: 2026-08-15 | [README](README.md) | [TODO](TODO.md)
+> Last updated: 2026-08-16 | [README](README.md) | [TODO](TODO.md)
 
 
 ---
@@ -177,7 +177,7 @@ tui.py / telegram_bot.py / main.py / dagi_gui/__main__.py
 | `.dagi/skills/memory-refresh/SKILL.md`               | Canonical memory-refresh protocol (lint sweep + triage); scripts/ has 5 lint scripts                                                                           |
 | `dagi_gui/__main__.py`                               | Electron GUI sidecar entry point; wires `AgentLoop` → `GUISession` → `EventWriter` stdout NDJSON                                                               |
 | `dagi_gui/server.py`                                 | `GUIServer`: reads NDJSON commands from stdin loop, dispatches to `AgentLoop`/session                                                                          |
-| `dagi_gui/session.py`                                | `GUISession`: one-shot task execution, question/answer flow, compact + history support                                                                          |
+| `dagi_gui/session.py`                                | `SessionController`: lifecycle (run/pause/resume/cancel/clear/compact/shutdown), `_kill_active_work` kills active bash + subagents on pause                     |
 | `dagi_gui/plan_monitor.py`                           | `PlanMonitor`: watchdog (ReadDirectoryChangesW) primary + 5s poll fallback; emits `plan_update`                                                                 |
 | `desktop/src/shared/protocol.ts`                     | Zod discriminated unions: 19 command types + 17 event types; `PROTOCOL_VERSION=1`; `parseEvent`/`serializeCommand`                                              |
 | `desktop/src/main/python-supervisor.ts`              | `PythonSupervisor extends EventEmitter`: spawns sidecar, NDJSON line-splitting, pending Map, exponential back-off restarts; injectable `spawnFn` for tests      |
@@ -186,9 +186,6 @@ tui.py / telegram_bot.py / main.py / dagi_gui/__main__.py
 
 ## Errors Log (recent)
 
-- **2026-08-02**: `AgentLoop.__init__` with `initial_messages` discarded the freshly-assembled system string — AGENTS.md updates never propagated to the next task's context window → overwrite `_messages[0]` with fresh `system` after copying `initial_messages`.
-- **2026-08-02**: `<<END_OF_RESPONSE>>` in tool results (file read or unverified subagent handoff) caused LLM to echo sentinel on next turn, breaking loop prematurely → `_escape_sentinels()` in `_bookkeep_tool_call` rewrites `<<` to `< <` before storing in `_messages`.
-- **2026-08-02**: `<<HANDOFF_WRITTEN>>` embedded in inlined handoff content falsely triggered `_handle_write_handoff` in parent loop → sentinel check now gated on `tc.function.name == "write_handoff"`.
 - **2026-07-26**: TUI displayed wrong model name — `get_model_display_name()` only read root config, missed `.dagi/config.yaml` overrides → TUI now resolves via `resolve_model_config()`.
 - **2026-07-26 (known, deferred)**: `agent/loop.py` is 1172 lines (cap: 500), `AgentLoop.run` CC is 48 (cap: 8) — spun off as standalone refactor task.
 - **2026-08-04**: Subagent refactor merged to main — `tools/subagent_api.py` public API; 9 types each with `main.py` + `subagent_config.yaml`; import-based discovery; `SpawnSubagentTool`/`SpawnCliSubagentTool` deleted; `--tools`/`--model-tier` CLI args; `agents_md` config; `DEFAULT_PYTHON_ENV` in system prompt; `run_subagent` skill; `plan`/`cli` configs fixed (were missing, caused `FileNotFoundError` on preset load).
@@ -197,6 +194,7 @@ tui.py / telegram_bot.py / main.py / dagi_gui/__main__.py
 - **2026-08-08**: DeepSeek rejected orphaned tool messages — two causes: (1) compaction safe-cut logic could split multi-tool-call groups, leaving tool-result messages without their parent assistant → safe cuts now skip positions where the tail would start with a tool message; (2) `RELOAD_SKILLS_SENTINEL` injected a system message between assistant+tool_calls and tool results → deferred system messages until after all tool results are appended.
 - **2026-08-10**: `conda run` drops stdin when used in Claude Code hook context — `json.load(sys.stdin)` always gets empty input → use `C:/Users/alexr/miniconda3/envs/dagi/python.exe` directly for hook scripts instead of `conda run -n dagi python`.
 - **2026-08-11**: Grep Python fallback (no ripgrep) had no timeout — `rglob("*")` over Google Drive mount (`memory_root`) hung indefinitely, freezing TUI spinner → added 15s wall-clock timeout to both enumeration and file-scanning phases; installed `ripgrep` via conda.
+- **2026-08-16**: `QuestionBroker.has_pending` missing `@property` — `_handle_pause` tested the bound method (always truthy), so pause never killed bash or paused loop → added `@property`; fixed stale test using `broker._pending` (old API) to use `broker._pending_id`.
 
 ## Notes & Terms
 
@@ -209,6 +207,7 @@ tui.py / telegram_bot.py / main.py / dagi_gui/__main__.py
 - **`DEFAULT_PYTHON_ENV`**: detected at `AgentLoop` startup from `CONDA_DEFAULT_ENV` or `VIRTUAL_ENV` and injected into the system prompt so DAGI knows which env to use for Python commands. Override in the project's `AGENTS.md` if a different env is needed.
 - **Windows / conda**: `EditTool`/`WriteTool` always write LF, normalize `oldText`/`newText` for CRLF safety. Use `conda run -n dagi python` for DAGI scripts; for Claude Code hooks use `envs/dagi/python.exe` directly — `conda run` drops stdin in hook context.
 - **`subagent_api` vs `_subagent_runner`**: `tools/subagent_api.py` is the public API (preset resolution, envelope, `SubagentResult`); `tools/_subagent_runner.py` is the private subprocess spawner. Never import `_subagent_runner` directly from outside `subagent_api.py`.
+- **`desktop/out/` and `desktop/node_modules/`**: both gitignored (added 2026-08-16); Electron build artifacts must not be committed — regenerate with `npm run make` in `desktop/`.
 - **Subagent discovery**: `_discover_subagent_tools()` scans `_DAGI_ROOT/.dagi/subagents/` then `cwd/.dagi/subagents/`; imports each `main.py` and instantiates the exported `BaseTool` subclass. Project types with the same name override built-in types.
 
 ## User Insights
