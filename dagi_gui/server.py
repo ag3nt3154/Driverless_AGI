@@ -30,11 +30,13 @@ class GuiServer:
         self,
         input_stream: TextIO | None = None,
         output_stream: TextIO | None = None,
+        writer: "EventWriter | None" = None,
     ) -> int:
         """Run the command loop. Returns exit code (always 0)."""
         if input_stream is None:
             input_stream = sys.stdin
-        writer = EventWriter(output_stream)
+        if writer is None:
+            writer = EventWriter(output_stream)
         writer.write("ready")
 
         for line in input_stream:
