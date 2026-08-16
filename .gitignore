@@ -204,6 +204,10 @@ models/docling_models/docling-project--docling-models/*
 .worktrees/
 .claire/
 
+# Electron build output
+desktop/out/
+desktop/node_modules/
+
 benchmarks/dagi_eval/tasks/*/hidden/data/
 benchmarks/dagi_eval/logs/
 config.yaml
