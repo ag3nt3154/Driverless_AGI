@@ -23,6 +23,7 @@ from agent.registry import ToolRegistry
 from agent import session_events as sev
 from agent.session import SessionTracker, ToolCallRecord
 from agent.session_log import InvariantError, SessionLog, is_status_board
+from agent.session_store import append_event
 from agent.skills import Skill, SkillLoader
 from tools.compact import CompactTool, CompactionResult, _NO_COMPACTION
 from tools.update_task_status import UPDATE_TASK_STATUS_SENTINEL
@@ -349,6 +350,13 @@ class AgentLoop:
         # The log is the source of truth; _messages is a derived cache of it.
         # See docs/superpowers/specs/2026-08-16-session-event-log-design.md
         self.log = SessionLog()
+        # Wire the durability sink: every committed event is appended to a
+        # JSONL file beside the narration log produced by SessionTracker.
+        # The tracker's _path is e.g. session_2026-08-16_14-30-00.jsonl;
+        # the events file is session_2026-08-16_14-30-00.events.jsonl.
+        if hasattr(self.tracker, "_path"):
+            _events_path = self.tracker._path.with_suffix(".events.jsonl")
+            self.log.on_append = lambda event: append_event(_events_path, event)
         #: Last rendered plan status board. Ephemeral request state — see
         #: _refresh_dynamic_context. Empty string means "nothing rendered yet".
         self._board: str = ""

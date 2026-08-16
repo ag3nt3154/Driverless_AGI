@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Any, Mapping, Sequence
+from typing import Any, Callable, Mapping, Sequence
 
 from agent import session_events as ev
 from agent.session_surface import Surface
@@ -145,6 +145,11 @@ class SessionLog:
         self._max_turn: int = 0
         self._calls: dict[str, tuple[int, int]] = {}  # call_id -> (turn, step)
         self._surface = Surface()
+        #: Optional durability sink, called once per committed event. Set by
+        #: AgentLoop; None in tests so the log stays a pure in-memory object.
+        #: Fires after _absorb so the sink sees a fully consistent log state.
+        #: A rejected append (failed validation) never reaches this hook.
+        self.on_append: Callable[[SessionEvent], None] | None = None
         for event in seed:
             self._events.append(event)
             self._seq = event.seq
@@ -290,4 +295,6 @@ class SessionLog:
         self._events.append(event)
         self._seq = event.seq
         self._absorb(event)
+        if self.on_append is not None:
+            self.on_append(event)
         return event
