@@ -202,6 +202,7 @@ models/docling_models/docling-project--docling-models/*
 
 # git worktrees
 .worktrees/
+.claire/
 
 benchmarks/dagi_eval/tasks/*/hidden/data/
 benchmarks/dagi_eval/logs/
