@@ -18,7 +18,7 @@ from agent.session_log import is_status_board
 from tools.compact._compact import CompactionResult
 
 
-def _make_loop(project_path: Path, **overrides) -> AgentLoop:
+def _make_loop(project_path: Path, _initial: list | None = None, **overrides) -> AgentLoop:
     config = AgentConfig(
         model="test-model",
         api_key="test-key",
@@ -36,7 +36,12 @@ def _make_loop(project_path: Path, **overrides) -> AgentLoop:
         patch("openai.OpenAI"),
         patch.object(Path, "exists", return_value=False),
     ):
-        loop = AgentLoop(config=config, _registry=fake_registry, _tracker=fake_tracker)
+        loop = AgentLoop(
+            config=config,
+            initial_messages=_initial,
+            _registry=fake_registry,
+            _tracker=fake_tracker,
+        )
     loop.tracker = fake_tracker
     loop.registry = fake_registry
     loop._skip_slug_generation = True
@@ -294,20 +299,25 @@ class TestAssistantAndToolEvents:
         assert result.surface_op == "append"
 
 
-class TestShadowEquality:
-    """The derived surface must reproduce _messages exactly, board excluded."""
+class TestDerivationHolds:
+    """What the Phase-1 shadow harness used to assert, kept as end-to-end cover.
+
+    The harness itself is gone — once _messages is *computed from* the log,
+    asserting they agree is a tautology. These exercise the same conversation
+    shapes through run() and check the derivation end to end instead.
+    """
 
     def test_text_only_conversation_matches(self, tmp_path):
-        loop = _make_loop(tmp_path, shadow_check=True)
+        loop = _make_loop(tmp_path)
         loop.client = MagicMock()
         loop.client.chat.completions.create.return_value = _text_response(
             "done <<END_OF_RESPONSE>>"
         )
         loop.run("go")
-        loop._shadow_check()
+        assert loop._messages[1:] == loop.log.derive_messages()
 
     def test_multi_step_conversation_with_tools_matches(self, tmp_path):
-        loop = _make_loop(tmp_path, shadow_check=True, max_continuations=2)
+        loop = _make_loop(tmp_path, max_continuations=2)
         loop.client = MagicMock()
         loop.client.chat.completions.create.side_effect = [
             _tool_response("read", '{"file_path": "a.txt"}', call_id="c1"),
@@ -316,10 +326,12 @@ class TestShadowEquality:
         ]
         loop.registry.dispatch = MagicMock(return_value="contents")
         loop.run("go")
-        loop._shadow_check()
+        assert [m["role"] for m in loop._messages] == [
+            "system", "user", "assistant", "tool", "assistant", "tool", "assistant",
+        ]
 
     def test_continuation_injection_matches(self, tmp_path):
-        loop = _make_loop(tmp_path, shadow_check=True, max_continuations=2)
+        loop = _make_loop(tmp_path, max_continuations=2)
         loop.client = MagicMock()
         loop.client.chat.completions.create.side_effect = [
             _text_response("thinking"),
@@ -327,24 +339,9 @@ class TestShadowEquality:
             _text_response("done <<END_OF_RESPONSE>>"),
         ]
         loop.run("go")
-        loop._shadow_check()
+        assert loop._messages[1:] == loop.log.derive_messages()
 
-    def test_the_harness_actually_detects_divergence(self, tmp_path):
-        """A check that cannot fail is worthless. Prove this one can."""
-        from agent.session_log import InvariantError
-
-        loop = _make_loop(tmp_path, shadow_check=True)
-        loop.client = MagicMock()
-        loop.client.chat.completions.create.return_value = _text_response(
-            "done <<END_OF_RESPONSE>>"
-        )
-        loop.run("go")
-        loop._messages.append({"role": "user", "content": "smuggled in"})
-
-        with pytest.raises(InvariantError, match="shadow divergence"):
-            loop._shadow_check()
-
-    def test_the_status_board_is_excluded_from_both_sides(self, tmp_path):
+    def test_the_status_board_predicate_still_identifies_a_board(self, tmp_path):
         assert is_status_board({"role": "system", "content": "## Session Context\nx"})
         assert not is_status_board({"role": "system", "content": "wiki index"})
         assert not is_status_board({"role": "user", "content": "## Session Context"})
@@ -520,4 +517,112 @@ class TestCompactionEvent:
 
         loop.compact(force=True)
 
-        loop._shadow_check()
+        assert loop._messages[1:] == loop.log.derive_messages()
+
+
+class TestDerivedMessages:
+    """Task 14: _messages is a cache of the log, not a parallel truth."""
+
+    def test_sync_reproduces_header_plus_surface(self, tmp_path):
+        loop = _make_loop(tmp_path)
+        loop.log.append(ev.TURN_START, {"turn": 1})
+        loop._log_user_message("user", "hello", "human")
+        loop._sync_messages()
+        assert loop._messages == [
+            loop._header_message(),
+            {"role": "user", "content": "hello"},
+        ]
+
+    def test_sync_preserves_list_identity_for_the_compact_binding(self, tmp_path):
+        """CompactTool.bind stores this exact list object and slice-assigns
+        into it. Rebinding the attribute would leave it writing to an orphan."""
+        loop = _make_loop(tmp_path)
+        original = loop._messages
+        loop.log.append(ev.TURN_START, {"turn": 1})
+        loop._log_user_message("user", "hello", "human")
+        loop._sync_messages()
+        assert loop._messages is original
+
+    def test_logging_a_user_message_syncs_immediately(self, tmp_path):
+        loop = _make_loop(tmp_path)
+        loop.log.append(ev.TURN_START, {"turn": 1})
+        loop._log_user_message("user", "hello", "human")
+        assert loop._messages[-1] == {"role": "user", "content": "hello"}
+
+    def test_a_full_tool_using_run_derives_the_same_history(self, tmp_path):
+        loop = _make_loop(tmp_path)
+        loop.client = MagicMock()
+        loop.client.chat.completions.create.side_effect = [
+            _tool_response("read", '{"file_path": "x"}'),
+            _text_response("done <<END_OF_RESPONSE>>"),
+        ]
+        loop.registry.dispatch = MagicMock(return_value="contents")
+        loop.run("do the thing")
+        assert loop._messages == [loop._header_message()] + loop.log.derive_messages()
+
+    def test_shadow_check_is_gone(self, tmp_path):
+        """The harness proved log == _messages; now it is a tautology."""
+        loop = _make_loop(tmp_path)
+        assert not hasattr(loop, "_shadow_check")
+
+    def test_injected_message_reaches_the_log(self, tmp_path):
+        loop = _make_loop(tmp_path)
+        loop.log.append(ev.TURN_START, {"turn": 1})
+        loop.inject_and_resume("do this instead")
+        assert loop._messages[-1] == {"role": "user", "content": "do this instead"}
+        assert loop.log.events[-1].data["source"] == "inject"
+
+    def test_reload_notice_reaches_the_log(self, tmp_path):
+        """/reload short-circuits before the normal turn, so it opens its own."""
+        loop = _make_loop(tmp_path)
+        loop._rebuild_for_reload = MagicMock(return_value=(["a"], [], []))
+
+        notice = loop.run("/reload")
+
+        assert loop._messages[-1] == {"role": "system", "content": notice}
+        assert loop.log.open_turn is None
+
+
+class TestResumeSeeding:
+    """A resumed session must not lose its history when authority flips.
+
+    _messages used to be seeded straight from initial_messages. Now that it is
+    derived, those messages have to enter the log or they simply vanish.
+    """
+
+    HISTORY = [
+        {"role": "system", "content": "old system prompt"},
+        {"role": "user", "content": "earlier question"},
+        {
+            "role": "assistant",
+            "content": None,
+            "tool_calls": [{
+                "id": "seed-1",
+                "type": "function",
+                "function": {"name": "read", "arguments": '{"file_path": "a"}'},
+            }],
+        },
+        {"role": "tool", "tool_call_id": "seed-1", "content": "file body"},
+        {"role": "assistant", "content": "earlier answer"},
+    ]
+
+    def test_resumed_history_survives_derivation(self, tmp_path):
+        loop = _make_loop(tmp_path, _initial=self.HISTORY)
+        assert loop._messages[1:] == self.HISTORY[1:]
+
+    def test_the_system_prompt_is_refreshed_not_replayed(self, tmp_path):
+        """Resuming must pick up an edited AGENTS.md, not the stale prompt."""
+        loop = _make_loop(tmp_path, _initial=self.HISTORY)
+        assert loop._messages[0]["content"] != "old system prompt"
+        assert loop._messages[0] == loop._header_message()
+
+    def test_the_seed_is_marked_closed(self, tmp_path):
+        """Later turns must not be able to append into replayed history."""
+        loop = _make_loop(tmp_path, _initial=self.HISTORY)
+        assert loop.log.events[-1].type == ev.END_SEED
+        assert loop.log.open_turn is None
+        assert loop.log.next_turn() == 1
+
+    def test_a_fresh_session_seeds_nothing(self, tmp_path):
+        loop = _make_loop(tmp_path)
+        assert [e.type for e in loop.log.events] == [ev.REQUEST_HEADER]
