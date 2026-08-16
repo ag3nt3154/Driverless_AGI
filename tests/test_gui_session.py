@@ -145,7 +145,7 @@ def test_pause_is_ignored_while_question_is_pending(tmp_path) -> None:
     controller = SessionController(AgentConfig(project_path=tmp_path), writer, broker, factory)
     controller.handle({"type": "run", "task": "first"})
     assert factory.calls[0].started.wait(1)
-    broker._pending = SimpleNamespace(question_id="q", default_answer="", answer=None)
+    broker._pending_id = "fake-question-id"
 
     controller.handle({"type": "pause"})
 

@@ -160,19 +160,20 @@ class TestBuildGuiCallbacks:
     def test_tool_start_emits_event(self):
         self.callbacks.on_tool_start("read", "Read file", '{"path":"README.md"}')
         evt = self.writer.last()
-        assert evt["type"] == "tool_start"
-        assert evt["name"] == "read"
-        assert evt["args"] == '{"path":"README.md"}'
+        assert evt["type"] == "tool_call"
+        assert evt["tool"] == "read"
+        assert evt["input"] == {"path": "README.md"}
 
     def test_tool_end_emits_event(self):
         self.callbacks.on_tool_end("read", "file content here")
         evt = self.writer.last()
-        assert evt["type"] == "tool_end"
-        assert evt["name"] == "read"
+        assert evt["type"] == "tool_result"
+        assert evt["content"] == "file content here"
+        assert evt["is_error"] is False
 
     def test_assistant_text_emits_message(self):
         self.callbacks.on_assistant_text("Hello there")
-        assert self.writer.last()["type"] == "assistant_message"
+        assert self.writer.last()["type"] == "token"
         assert self.writer.last()["text"] == "Hello there"
 
     def test_empty_assistant_text_suppressed(self):
@@ -181,7 +182,7 @@ class TestBuildGuiCallbacks:
 
     def test_reasoning_emits_message(self):
         self.callbacks.on_reasoning("thinking...")
-        assert self.writer.last()["type"] == "reasoning_message"
+        assert self.writer.last()["type"] == "thinking"
 
     def test_empty_reasoning_suppressed(self):
         self.callbacks.on_reasoning("")
@@ -190,18 +191,21 @@ class TestBuildGuiCallbacks:
     def test_token_update_emits_event(self):
         self.callbacks.on_token_update(100, 50, 0.01, 10, 5)
         evt = self.writer.last()
-        assert evt["type"] == "token_update"
-        assert evt["input"] == 100
-        assert evt["output"] == 50
+        assert evt["type"] == "cost_update"
+        assert evt["total_usd"] == 0.01
+        assert evt["session_tokens"] == 160  # 100 + 50 + 10
 
     def test_iteration_emits_event(self):
         self.callbacks.on_iteration(3)
-        assert self.writer.last()["type"] == "iteration"
-        assert self.writer.last()["count"] == 3
+        assert self.writer.last()["type"] == "turn_start"
+        assert self.writer.last()["turn"] == 3
 
     def test_done_emits_turn_done(self):
         self.callbacks.on_done("task complete")
-        assert self.writer.last()["type"] == "turn_done"
+        types = self.writer.types()
+        assert "turn_end" in types
+        assert "task_complete" in types
+        assert self.writer.last()["result"] == "task complete"
 
     def test_error_emits_event(self):
         self.callbacks.on_error(RuntimeError("boom"))
@@ -209,65 +213,56 @@ class TestBuildGuiCallbacks:
         assert evt["type"] == "error"
         assert "boom" in evt["message"]
 
-    def test_api_call_emits_context_update(self):
+    def test_api_call_is_noop(self):
         self.callbacks.on_api_call([{"role": "user", "content": "hi"}])
-        assert self.writer.last()["type"] == "context_update"
+        assert not self.writer.events
 
     def test_compaction_emits_event(self):
         self.callbacks.on_compaction(10, 5)
         evt = self.writer.last()
-        assert evt["type"] == "compaction"
+        assert evt["type"] == "compact"
         assert evt["kept"] == 10
         assert evt["removed"] == 5
 
-    def test_model_switch_emits_event(self):
+    def test_model_switch_is_noop(self):
         self.callbacks.on_model_switch("gpt-4", "claude-3")
-        evt = self.writer.last()
-        assert evt["type"] == "model_switch"
-        assert evt["from_model"] == "gpt-4"
-        assert evt["to_model"] == "claude-3"
+        assert not self.writer.events
 
-    def test_emote_emits_event(self):
+    def test_emote_is_noop(self):
         self.callbacks.on_emote("thinking", "🤔", False)
-        evt = self.writer.last()
-        assert evt["type"] == "emote"
-        assert evt["name"] == "thinking"
+        assert not self.writer.events
 
-    def test_pause_emits_status(self):
+    def test_pause_is_noop(self):
         self.callbacks.on_pause()
-        assert self.writer.last()["type"] == "status"
-        assert self.writer.last()["state"] == "paused"
+        assert not self.writer.events
 
-    def test_continue_injected_emits_event(self):
+    def test_continue_injected_is_noop(self):
         self.callbacks.on_continue_injected(2, 10)
-        evt = self.writer.last()
-        assert evt["type"] == "continuation"
-        assert evt["current"] == 2
+        assert not self.writer.events
 
-    def test_plan_shown_emits_event(self):
+    def test_plan_shown_is_noop(self):
         self.callbacks.on_plan_shown()
-        assert self.writer.last()["type"] == "plan_ready"
+        assert not self.writer.events
 
-    def test_stream_start_emits_event(self):
+    def test_stream_start_is_noop(self):
         self.callbacks.on_stream_start()
-        assert self.writer.last()["type"] == "stream_start"
+        assert not self.writer.events
 
-    def test_stream_end_emits_event(self):
+    def test_stream_end_is_noop(self):
         self.callbacks.on_stream_end()
-        assert self.writer.last()["type"] == "stream_end"
+        assert not self.writer.events
 
     def test_stream_delta_text(self):
         self.callbacks.on_assistant_text_delta("Hello")
         evt = self.writer.last()
-        assert evt["type"] == "stream_delta"
-        assert evt["kind"] == "assistant"
+        assert evt["type"] == "token"
         assert evt["text"] == "Hello"
 
     def test_stream_delta_reasoning(self):
         self.callbacks.on_reasoning_delta("hmm")
         evt = self.writer.last()
-        assert evt["type"] == "stream_delta"
-        assert evt["kind"] == "reasoning"
+        assert evt["type"] == "thinking"
+        assert evt["text"] == "hmm"
 
     def test_supports_pause_is_true(self):
         assert self.callbacks.supports_pause is True
@@ -280,14 +275,14 @@ class TestBuildGuiCallbacks:
         fn = self.callbacks.on_subagent_event_factory("explore_files")
         fn(json.dumps({"type": "tool_call", "name": "read", "args": "{}"}))
         evt = self.writer.last()
-        assert evt["type"] == "subagent_event"
+        assert evt["type"] == "subagent"
         assert evt["subagent_type"] == "explore_files"
 
     def test_subagent_event_relay_invalid_json(self):
         fn = self.callbacks.on_subagent_event_factory("explore_files")
         fn("not json at all")
         evt = self.writer.last()
-        assert evt["type"] == "subagent_event"
+        assert evt["type"] == "subagent"
         assert evt["subagent_type"] == "explore_files"
         assert evt["event"]["type"] == "raw"
         assert evt["event"]["content"] == "not json at all"

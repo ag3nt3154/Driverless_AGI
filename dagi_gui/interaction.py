@@ -69,6 +69,7 @@ class QuestionBroker:
             self._answer = answer
             self._lock.notify_all()
 
+    @property
     def has_pending(self) -> bool:
         with self._lock:
             return self._pending_id is not None
