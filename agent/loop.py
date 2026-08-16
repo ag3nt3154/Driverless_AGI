@@ -710,49 +710,9 @@ class AgentLoop:
                     _asst_tc_msg["reasoning_content"] = _turn_reasoning
                 self._messages.append(_asst_tc_msg)
 
-                # Deferred system messages — appended AFTER all tool results
-                # so they don't break the assistant→tool pairing that strict
-                # providers (e.g. DeepSeek) enforce.
-                _deferred_system_msgs: list[str] = []
-
-                for tc in message.tool_calls:
-                    tool_obj = self.registry._tools.get(tc.function.name)
-                    description = tool_obj.description if tool_obj else tc.function.name
-                    self.callbacks.on_tool_start(tc.function.name, description, tc.function.arguments)
-                    self.tracker.record_tool_start(tc.function.name, description, tc.function.arguments)
-
-                    args = json.loads(tc.function.arguments)
-                    result = self.registry.dispatch(tc.function.name, args)
-                    if (
-                        isinstance(result, str)
-                        and WRITE_HANDOFF_SENTINEL in result
-                        and tc.function.name == "write_handoff"
-                    ):
-                        return self._handle_write_handoff(
-                            tc, result, description, tool_records, (message, response)
-                        )
-                    if isinstance(result, str) and result.startswith(ENTER_PLAN_MODE_SENTINEL):
-                        result = self._handle_enter_plan_mode(args)
-                    elif result == EXIT_PLAN_MODE_SENTINEL:
-                        result = self._handle_exit_plan_mode(args)
-                    elif (
-                        isinstance(result, str)
-                        and UPDATE_TASK_STATUS_SENTINEL in result
-                    ):
-                        result = self._handle_all_tasks_resolved()
-                    elif result == RELOAD_SKILLS_SENTINEL:
-                        added, removed, errors = self._rebuild_for_reload()
-                        result = _format_reload_notification(len(self.skills), added, removed, errors)
-                        _deferred_system_msgs.append(result)
-                    else:
-                        if isinstance(result, str):
-                            _switch_target = parse_switch_sentinel(result)
-                            if _switch_target is not None:
-                                result = self._handle_switch_model(_switch_target, args)
-                    self._bookkeep_tool_call(tc, result, description, tool_records)
-
-                for _sys_content in _deferred_system_msgs:
-                    self._messages.append({"role": "system", "content": _sys_content})
+                _short_circuit = self._dispatch_tool_calls(message, response, tool_records)
+                if _short_circuit is not None:
+                    return _short_circuit
 
                 self._finalize_turn(message, response, tool_records)
 
@@ -769,6 +729,56 @@ class AgentLoop:
         except Exception as e:
             self.callbacks.on_error(e)
             raise
+
+    def _dispatch_tool_calls(self, message, response, tool_records) -> str | None:
+        """Dispatch every tool call in `message`, appending results to _messages.
+
+        Extracted verbatim from `run()`. Returns a non-None string only when
+        the write_handoff sentinel fired, in which case `run()` must return
+        that value immediately without a further API turn.
+
+        Deferred system messages are appended AFTER all tool results so they
+        don't break the assistant→tool pairing that strict providers
+        (e.g. DeepSeek) enforce.
+        """
+        deferred_system_msgs: list[str] = []
+
+        for tc in message.tool_calls:
+            tool_obj = self.registry._tools.get(tc.function.name)
+            description = tool_obj.description if tool_obj else tc.function.name
+            self.callbacks.on_tool_start(tc.function.name, description, tc.function.arguments)
+            self.tracker.record_tool_start(tc.function.name, description, tc.function.arguments)
+
+            args = json.loads(tc.function.arguments)
+            result = self.registry.dispatch(tc.function.name, args)
+            if (
+                isinstance(result, str)
+                and WRITE_HANDOFF_SENTINEL in result
+                and tc.function.name == "write_handoff"
+            ):
+                return self._handle_write_handoff(
+                    tc, result, description, tool_records, (message, response)
+                )
+            if isinstance(result, str) and result.startswith(ENTER_PLAN_MODE_SENTINEL):
+                result = self._handle_enter_plan_mode(args)
+            elif result == EXIT_PLAN_MODE_SENTINEL:
+                result = self._handle_exit_plan_mode(args)
+            elif isinstance(result, str) and UPDATE_TASK_STATUS_SENTINEL in result:
+                result = self._handle_all_tasks_resolved()
+            elif result == RELOAD_SKILLS_SENTINEL:
+                added, removed, errors = self._rebuild_for_reload()
+                result = _format_reload_notification(len(self.skills), added, removed, errors)
+                deferred_system_msgs.append(result)
+            else:
+                if isinstance(result, str):
+                    _switch_target = parse_switch_sentinel(result)
+                    if _switch_target is not None:
+                        result = self._handle_switch_model(_switch_target, args)
+            self._bookkeep_tool_call(tc, result, description, tool_records)
+
+        for _sys_content in deferred_system_msgs:
+            self._messages.append({"role": "system", "content": _sys_content})
+        return None
 
     def _bookkeep_tool_call(
         self,

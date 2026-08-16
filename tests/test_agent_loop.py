@@ -535,3 +535,57 @@ class TestSystemPromptRefresh:
 
         assert second_loop._messages[0]["content"] != stale_system["content"]
         assert "Updated prompt" in second_loop._messages[0]["content"]
+
+
+class TestDispatchToolCallsExtraction:
+    """_dispatch_tool_calls owns the per-tool-call loop extracted from run()."""
+
+    def test_returns_none_when_no_sentinel_fires(self):
+        loop = _make_loop()
+        loop._messages = [{"role": "system", "content": "sys"}]
+        tc = _make_tool_call("call_1", "read", '{"file_path": "a.txt"}')
+        message = SimpleNamespace(tool_calls=[tc], content=None)
+        response = _make_response(None, tool_calls=[tc])
+        loop.registry.dispatch = MagicMock(return_value="file contents")
+        loop.registry._tools = {}
+
+        result = loop._dispatch_tool_calls(message, response, [])
+
+        assert result is None
+        assert loop._messages[-1]["role"] == "tool"
+        assert loop._messages[-1]["tool_call_id"] == "call_1"
+
+    def test_deferred_system_messages_land_after_all_tool_results(self):
+        from agent.loop import RELOAD_SKILLS_SENTINEL
+
+        loop = _make_loop()
+        loop._messages = [{"role": "system", "content": "sys"}]
+        tc_a = _make_tool_call("call_a", "reload_skills")
+        tc_b = _make_tool_call("call_b", "read", '{"file_path": "a"}')
+        message = SimpleNamespace(tool_calls=[tc_a, tc_b], content=None)
+        response = _make_response(None, tool_calls=[tc_a, tc_b])
+        loop.registry._tools = {}
+        loop.registry.dispatch = MagicMock(side_effect=[RELOAD_SKILLS_SENTINEL, "ok"])
+        loop._rebuild_for_reload = MagicMock(return_value=(set(), set(), []))
+
+        loop._dispatch_tool_calls(message, response, [])
+
+        roles = [m["role"] for m in loop._messages]
+        # Both tool results precede the deferred system notification.
+        assert roles.index("system", 1) > roles.index("tool")
+        assert roles[-1] == "system"
+
+    def test_write_handoff_sentinel_short_circuits_with_a_string(self):
+        loop = _make_loop()
+        loop._messages = [{"role": "system", "content": "sys"}]
+        tc = _make_tool_call("call_h", "write_handoff", "{}")
+        message = SimpleNamespace(tool_calls=[tc], content=None)
+        response = _make_response(None, tool_calls=[tc])
+        loop.registry._tools = {}
+        loop.registry.dispatch = MagicMock(
+            return_value=f"{WRITE_HANDOFF_SENTINEL}handoff body"
+        )
+
+        result = loop._dispatch_tool_calls(message, response, [])
+
+        assert result == "handoff body"
