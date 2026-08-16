@@ -1,9 +1,15 @@
-"""Translate AgentCallbacks into GUI protocol events."""
+"""Translate AgentCallbacks into GUI protocol events.
+
+Event types emitted here MUST match the Zod discriminated union in
+desktop/src/shared/protocol.ts — the TypeScript parseEvent() silently
+drops anything with an unrecognised 'type' field.
+"""
 
 from __future__ import annotations
 
 import json
 from typing import TYPE_CHECKING, Callable
+from uuid import uuid4
 
 from agent.loop import AgentCallbacks
 
@@ -18,70 +24,86 @@ def build_gui_callbacks(
 ) -> AgentCallbacks:
     """Return AgentCallbacks wired to emit NDJSON events via writer."""
 
+    # Track tool call IDs to correlate tool_call → tool_result
+    _pending_tool_ids: dict[str, str] = {}  # tool_name → call_id
+    _iteration_count = 0
+
     def on_tool_start(name: str, desc: str, args: str) -> None:
-        writer.write("tool_start", name=name, description=desc, args=args)
+        call_id = uuid4().hex[:12]
+        _pending_tool_ids[name] = call_id
+        try:
+            input_obj = json.loads(args) if args.strip() else {}
+        except json.JSONDecodeError:
+            input_obj = {"raw": args}
+        writer.write("tool_call", tool=name, call_id=call_id, input=input_obj)
 
     def on_tool_end(name: str, result: str) -> None:
-        writer.write("tool_end", name=name, result_length=len(result))
+        call_id = _pending_tool_ids.pop(name, f"{name}-{uuid4().hex[:8]}")
+        writer.write("tool_result", call_id=call_id, content=result, is_error=False)
 
     def on_assistant_text(text: str) -> None:
         if text.strip():
-            writer.write("assistant_message", text=text)
+            writer.write("token", text=text)
 
     def on_reasoning(text: str) -> None:
         if text.strip():
-            writer.write("reasoning_message", text=text)
+            writer.write("thinking", text=text)
 
     def on_token_update(
         inp: int, out: int, cost: float | None, thinking: int = 0, cached: int = 0
     ) -> None:
         writer.write(
-            "token_update",
-            input=inp, output=out, cost=cost,
-            thinking=thinking, cached=cached,
+            "cost_update",
+            total_usd=cost or 0.0,
+            session_tokens=inp + out + thinking,
         )
 
     def on_iteration(count: int) -> None:
-        writer.write("iteration", count=count)
+        nonlocal _iteration_count
+        _iteration_count = count
+        writer.write("turn_start", turn=count)
 
     def on_done(result: str) -> None:
-        writer.write("turn_done", result=result)
+        writer.write("turn_end", final_text=result)
+        writer.write("task_complete")
 
     def on_error(exc: Exception) -> None:
         writer.write("error", message=str(exc))
 
     def on_api_call(messages: list) -> None:
-        writer.write("context_update", message_count=len(messages))
+        pass  # No TS handler; cost_update covers token info
 
     def on_compaction(kept: int, removed: int) -> None:
-        writer.write("compaction", kept=kept, removed=removed)
+        writer.write("compact", kept=kept, removed=removed)
 
     def on_model_switch(from_model: str, to_model: str) -> None:
-        writer.write("model_switch", from_model=from_model, to_model=to_model)
+        pass  # Not in TS schema yet
 
     def on_emote(name: str, display: str, is_named: bool) -> None:
-        writer.write("emote", name=name, display=display, is_named=is_named)
+        pass  # Not in TS schema yet
 
     def on_pause() -> None:
-        writer.write("status", state="paused")
+        pass  # Status handled by session controller
 
     def on_continue_injected(current: int, maximum: int) -> None:
-        writer.write("continuation", current=current, maximum=maximum)
+        pass  # Not in TS schema yet
 
     def on_plan_shown() -> None:
-        writer.write("plan_ready")
+        pass  # Not in TS schema yet
 
     def on_stream_start() -> None:
-        writer.write("stream_start")
+        pass  # Streaming deltas are sent as token/thinking
 
     def on_stream_end() -> None:
-        writer.write("stream_end")
+        pass  # turn_end covers this
 
     def on_assistant_text_delta(text: str) -> None:
-        writer.write("stream_delta", kind="assistant", text=text)
+        if text:
+            writer.write("token", text=text)
 
     def on_reasoning_delta(text: str) -> None:
-        writer.write("stream_delta", kind="reasoning", text=text)
+        if text:
+            writer.write("thinking", text=text)
 
     def on_ask_user(
         question: str, options: list, timeout: float | None
@@ -96,7 +118,7 @@ def build_gui_callbacks(
                 event = json.loads(line)
             except json.JSONDecodeError:
                 event = {"type": "raw", "content": line}
-            writer.write("subagent_event", subagent_type=subagent_type, event=event)
+            writer.write("subagent", subagent_type=subagent_type, event=event)
 
         return relay
 

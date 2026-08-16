@@ -74,15 +74,17 @@ class SessionController:
         command_type = command.get("type")
         handlers: dict[str, Callable[[dict[str, object]], object]] = {
             "run": self._handle_run,
+            "cancel": self._handle_cancel,
             "pause": self._handle_pause,
             "resume": self._handle_resume,
+            "answer_question": self._handle_answer,
             "clear": self._handle_clear,
             "compact": self._handle_compact,
             "shutdown": self._handle_shutdown,
         }
         handler = handlers.get(command_type) if isinstance(command_type, str) else None
         if handler is None:
-            raise ProtocolError("unsupported session command")
+            raise ProtocolError(f"unsupported session command: {command_type}")
         return handler(command)
 
     def wait_until_idle(self, timeout: float) -> bool:
@@ -117,6 +119,25 @@ class SessionController:
             self._worker = threading.Thread(target=self._run_loop, args=(loop, task), daemon=True)
             self._worker.start()
         self.writer.write("status", status="running")
+        return {"status": "running"}
+
+    def _handle_cancel(self, _command: dict[str, object]) -> dict[str, str]:
+        with self._lock:
+            loop = self._active_loop
+            if loop is None or self._state not in ("running", "paused"):
+                return {"status": self._state}
+            self._kill_active_work(loop)
+            loop.pause()
+            self._state = "idle"
+        self.writer.write("task_complete")
+        return {"status": "idle"}
+
+    def _handle_answer(self, command: dict[str, object]) -> dict[str, str]:
+        qid = command.get("question_id")
+        answer = command.get("answer")
+        if not isinstance(qid, str) or not isinstance(answer, str):
+            raise ProtocolError("answer_question needs question_id and answer")
+        self.broker.answer(qid, answer)
         return {"status": "running"}
 
     def _handle_pause(self, _command: dict[str, object]) -> dict[str, str]:
@@ -217,12 +238,7 @@ class SessionController:
         force_kill_active_subagents()
 
     def _resolve_pending_question(self) -> None:
-        with self.broker._condition:
-            pending = self.broker._pending
-            if pending is None:
-                return
-            pending.answer = pending.default_answer
-            self.broker._condition.notify_all()
+        self.broker.resolve_default()
 
     def _finish_loop(self, loop: AgentLoop) -> None:
         loop_id = id(loop)
