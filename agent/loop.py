@@ -19,7 +19,9 @@ from agent import DAGI_ROOT
 from agent._git_branch import create_task_branch, get_current_branch
 from agent.prompts import load_prompt, load_main_system_prompt, load_soul
 from agent.registry import ToolRegistry
+from agent import session_events as sev
 from agent.session import SessionTracker, ToolCallRecord
+from agent.session_log import SessionLog
 from agent.skills import Skill, SkillLoader
 from tools.compact import CompactTool, CompactionResult, _NO_COMPACTION
 from tools.update_task_status import UPDATE_TASK_STATUS_SENTINEL
@@ -346,6 +348,11 @@ class AgentLoop:
         else:
             self._messages = [{"role": "system", "content": system}]
 
+        # Phase 1: the event log runs alongside _messages, which stays
+        # authoritative until the Phase 2 flip. See
+        # docs/superpowers/specs/2026-08-16-session-event-log-design.md
+        self.log = SessionLog()
+
         self.client = openai.OpenAI(api_key=config.api_key, base_url=config.base_url)
         # Build extra_body for OpenRouter extensions (reasoning, prompt caching, provider routing).
         self._extra_body: dict = {}
@@ -500,6 +507,18 @@ class AgentLoop:
         except Exception:
             return None
 
+    def _close_turn(self, turn: int, reason: dict) -> None:
+        """Close the open turn, if one is open. Idempotent by design.
+
+        run() has several return paths; each closes its own turn explicitly,
+        and the finally-guard catches any path added later without one.
+        """
+        if self.log.open_turn is None:
+            return
+        if self.log.open_step is not None:
+            self.log.append(sev.STEP_END, {"turn": turn, "step": self.log.open_step})
+        self.log.append(sev.TURN_END, {"turn": turn, "reason": reason})
+
     def run(self, task: str) -> str:
         if task.strip().lower() == "/reload":
             added, removed, errors = self._rebuild_for_reload()
@@ -507,6 +526,9 @@ class AgentLoop:
             self._messages.append({"role": "system", "content": notification})
             self.callbacks.on_assistant_text(notification)
             return notification
+
+        _turn = self.log.next_turn()
+        self.log.append(sev.TURN_START, {"turn": _turn})
 
         wiki_ctx = _build_wiki_index_context(self._effective_memory_root)
         if wiki_ctx:
@@ -622,6 +644,7 @@ class AgentLoop:
                             "Check your model endpoint and retry your task."
                         )
                         self.callbacks.on_error(Exception(error_msg))
+                        self._close_turn(_turn, sev.reason_error(error_msg))
                         return error_msg
                     # else: discard ghost, retry with identical context
                 # ─────────────────────────────────────────────────────────────
@@ -673,12 +696,14 @@ class AgentLoop:
                         clean = result.replace(_exit_flag, "").strip()
                         self.callbacks.on_assistant_text(clean)
                         self.callbacks.on_done(clean)
+                        self._close_turn(_turn, sev.reason_completed())
                         return clean
 
                     # Task not complete — inject "continue" and keep looping
                     self.callbacks.on_assistant_text(result)
                     if self._continuation_count >= self.config.max_continuations:
                         self.callbacks.on_done(result)
+                        self._close_turn(_turn, sev.reason_max_continuations())
                         return result
                     self._continuation_count += 1
                     self._messages.append({"role": "user", "content": CONTINUE_PROMPT})
@@ -712,6 +737,7 @@ class AgentLoop:
 
                 _short_circuit = self._dispatch_tool_calls(message, response, tool_records)
                 if _short_circuit is not None:
+                    self._close_turn(_turn, sev.reason_completed())
                     return _short_circuit
 
                 self._finalize_turn(message, response, tool_records)
@@ -727,8 +753,13 @@ class AgentLoop:
                 # ─────────────────────────────────────────────────────────────
 
         except Exception as e:
+            self._close_turn(_turn, sev.reason_error(str(e), type(e).__name__))
             self.callbacks.on_error(e)
             raise
+        finally:
+            # Defensive: any exit path added later without an explicit close
+            # still leaves the log well-formed rather than half-open.
+            self._close_turn(_turn, sev.reason_error("turn closed without a reason"))
 
     def _dispatch_tool_calls(self, message, response, tool_records) -> str | None:
         """Dispatch every tool call in `message`, appending results to _messages.
