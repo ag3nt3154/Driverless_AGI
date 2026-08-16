@@ -168,3 +168,119 @@ class TestUserMessageEvents:
         assert sources == ["human", "continue"]
         cont = [e for e in loop.log.events if e.data.get("source") == "continue"][0]
         assert cont.data["content"] == CONTINUE_PROMPT
+
+
+def _tool_response(name: str, arguments: str, call_id: str = "c1") -> SimpleNamespace:
+    tc = SimpleNamespace(
+        id=call_id, function=SimpleNamespace(name=name, arguments=arguments)
+    )
+    return SimpleNamespace(
+        choices=[SimpleNamespace(message=SimpleNamespace(tool_calls=[tc], content=None))],
+        usage=SimpleNamespace(
+            prompt_tokens=10,
+            completion_tokens=5,
+            cost=None,
+            completion_tokens_details=None,
+            prompt_tokens_details=None,
+        ),
+    )
+
+
+class TestStepBoundaries:
+    def test_each_api_turn_is_one_bracketed_step(self, tmp_path):
+        loop = _make_loop(tmp_path, max_continuations=1)
+        loop.client = MagicMock()
+        loop.client.chat.completions.create.side_effect = [
+            _text_response("working"),
+            _text_response("done <<END_OF_RESPONSE>>"),
+        ]
+
+        loop.run("go")
+
+        starts = [e for e in loop.log.events if e.type == ev.STEP_START]
+        ends = [e for e in loop.log.events if e.type == ev.STEP_END]
+        assert [e.data["step"] for e in starts] == [1, 2]
+        assert len(ends) == len(starts)
+
+    def test_steps_are_numbered_within_their_turn(self, tmp_path):
+        loop = _make_loop(tmp_path)
+        loop.client = MagicMock()
+        loop.client.chat.completions.create.return_value = _text_response(
+            "done <<END_OF_RESPONSE>>"
+        )
+
+        loop.run("first")
+        loop.run("second")
+
+        starts = [(e.data["turn"], e.data["step"]) for e in loop.log.events
+                  if e.type == ev.STEP_START]
+        assert starts == [(1, 1), (2, 1)]
+
+
+class TestAssistantAndToolEvents:
+    def test_text_only_reply_is_logged_as_a_surface_assistant_message(self, tmp_path):
+        loop = _make_loop(tmp_path)
+        loop.client = MagicMock()
+        loop.client.chat.completions.create.return_value = _text_response(
+            "done <<END_OF_RESPONSE>>"
+        )
+
+        loop.run("go")
+
+        asst = [e for e in loop.log.events if e.type == ev.ASSISTANT_MESSAGE]
+        assert len(asst) == 1
+        assert asst[0].surface_op == "append"
+        assert asst[0].data["message"]["role"] == "assistant"
+
+    def test_tool_call_is_logged_before_dispatch_runs(self, tmp_path):
+        """Crash-safety: a call recorded before execution is detectable as
+        interrupted; an unrecorded call is indistinguishable from never-ran."""
+        seen_at_dispatch: list[list[str]] = []
+        loop = _make_loop(tmp_path)
+        loop.client = MagicMock()
+        loop.client.chat.completions.create.side_effect = [
+            _tool_response("read", '{"file_path": "a.txt"}'),
+            _text_response("done <<END_OF_RESPONSE>>"),
+        ]
+
+        def _spy(name, args):
+            seen_at_dispatch.append([e.type for e in loop.log.events])
+            return "file contents"
+
+        loop.registry.dispatch = _spy
+        loop.run("go")
+
+        assert ev.TOOL_CALL in seen_at_dispatch[0]
+        assert ev.TOOL_RESULT not in seen_at_dispatch[0]
+
+    def test_tool_call_stores_the_raw_unparsed_arguments(self, tmp_path):
+        """Re-serialising a parsed dict changes key order and whitespace,
+        which changes the token stream and therefore the cache prefix."""
+        raw = '{"file_path":   "a.txt", "offset": 1}'
+        loop = _make_loop(tmp_path)
+        loop.client = MagicMock()
+        loop.client.chat.completions.create.side_effect = [
+            _tool_response("read", raw),
+            _text_response("done <<END_OF_RESPONSE>>"),
+        ]
+        loop.registry.dispatch = MagicMock(return_value="ok")
+
+        loop.run("go")
+
+        call = [e for e in loop.log.events if e.type == ev.TOOL_CALL][0]
+        assert call.data["arguments"] == raw
+
+    def test_tool_result_pairs_with_its_call(self, tmp_path):
+        loop = _make_loop(tmp_path)
+        loop.client = MagicMock()
+        loop.client.chat.completions.create.side_effect = [
+            _tool_response("read", "{}", call_id="abc"),
+            _text_response("done <<END_OF_RESPONSE>>"),
+        ]
+        loop.registry.dispatch = MagicMock(return_value="ok")
+
+        loop.run("go")
+
+        result = [e for e in loop.log.events if e.type == ev.TOOL_RESULT][0]
+        assert result.data["call_id"] == "abc"
+        assert result.surface_op == "append"

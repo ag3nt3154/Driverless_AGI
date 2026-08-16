@@ -539,10 +539,22 @@ class TestSystemPromptRefresh:
 
 
 class TestDispatchToolCallsExtraction:
-    """_dispatch_tool_calls owns the per-tool-call loop extracted from run()."""
+    """_dispatch_tool_calls owns the per-tool-call loop extracted from run().
+
+    The method emits tool/call and tool/result events, which the session log
+    requires to be turn-enclosed. In production it is only ever reached from
+    inside run()'s try block, where a turn is always open; calling it
+    directly has to supply that context itself, hence `_open_turn` below.
+    """
+
+    @staticmethod
+    def _open_turn(loop) -> None:
+        loop.log.append(sev.TURN_START, {"turn": 1})
+        loop.log.append(sev.STEP_START, {"turn": 1, "step": 1})
 
     def test_returns_none_when_no_sentinel_fires(self):
         loop = _make_loop()
+        self._open_turn(loop)
         loop._messages = [{"role": "system", "content": "sys"}]
         tc = _make_tool_call("call_1", "read", '{"file_path": "a.txt"}')
         message = SimpleNamespace(tool_calls=[tc], content=None)
@@ -568,11 +580,7 @@ class TestDispatchToolCallsExtraction:
         loop.registry._tools = {}
         loop.registry.dispatch = MagicMock(side_effect=[RELOAD_SKILLS_SENTINEL, "ok"])
         loop._rebuild_for_reload = MagicMock(return_value=(set(), set(), []))
-        # The reload notice is a user/message surface event, which the session
-        # log requires to be turn-enclosed. In production this method is only
-        # ever reached from inside run()'s try block, so a turn is always open;
-        # calling it directly has to supply that context itself.
-        loop.log.append(sev.TURN_START, {"turn": 1})
+        self._open_turn(loop)
 
         loop._dispatch_tool_calls(message, response, [])
 
@@ -583,6 +591,7 @@ class TestDispatchToolCallsExtraction:
 
     def test_write_handoff_sentinel_short_circuits_with_a_string(self):
         loop = _make_loop()
+        self._open_turn(loop)
         loop._messages = [{"role": "system", "content": "sys"}]
         tc = _make_tool_call("call_h", "write_handoff", "{}")
         message = SimpleNamespace(tool_calls=[tc], content=None)

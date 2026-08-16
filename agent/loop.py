@@ -572,6 +572,7 @@ class AgentLoop:
             iteration = 0
             while True:
                 iteration += 1
+                self.log.append(sev.STEP_START, {"turn": _turn, "step": iteration})
                 self._refresh_dynamic_context()
                 self.callbacks.on_iteration(iteration)
                 self._pause_event.wait()  # blocks here when paused; instant no-op otherwise
@@ -693,6 +694,11 @@ class AgentLoop:
                     if _rc:
                         _asst_msg["reasoning_content"] = _rc
                     self._messages.append(_asst_msg)
+                    self.log.append(
+                        sev.ASSISTANT_MESSAGE,
+                        {"turn": _turn, "step": iteration, "message": _asst_msg},
+                        surface_op="append",
+                    )
                     _thinking_tok = (
                         getattr(getattr(response.usage, "completion_tokens_details", None), "reasoning_tokens", None)
                         or 0
@@ -735,6 +741,7 @@ class AgentLoop:
                     self.callbacks.on_continue_injected(
                         self._continuation_count, self.config.max_continuations
                     )
+                    self.log.append(sev.STEP_END, {"turn": _turn, "step": iteration})
                     continue  # next while True iteration
 
                 if message.content:
@@ -759,6 +766,11 @@ class AgentLoop:
                 if _turn_reasoning:
                     _asst_tc_msg["reasoning_content"] = _turn_reasoning
                 self._messages.append(_asst_tc_msg)
+                self.log.append(
+                    sev.ASSISTANT_MESSAGE,
+                    {"turn": _turn, "step": iteration, "message": _asst_tc_msg},
+                    surface_op="append",
+                )
 
                 _short_circuit = self._dispatch_tool_calls(message, response, tool_records)
                 if _short_circuit is not None:
@@ -776,6 +788,8 @@ class AgentLoop:
                 ):
                     self._compact_context()
                 # ─────────────────────────────────────────────────────────────
+
+                self.log.append(sev.STEP_END, {"turn": _turn, "step": iteration})
 
         except Exception as e:
             self._close_turn(_turn, sev.reason_error(str(e), type(e).__name__))
@@ -805,6 +819,18 @@ class AgentLoop:
             self.callbacks.on_tool_start(tc.function.name, description, tc.function.arguments)
             self.tracker.record_tool_start(tc.function.name, description, tc.function.arguments)
 
+            # Recorded BEFORE execution: a tool/call with no tool/result is a
+            # detectable interruption, which Phase 4 crash repair depends on.
+            self.log.append(
+                sev.TOOL_CALL,
+                {
+                    "turn": self.log.open_turn,
+                    "step": self.log.open_step,
+                    "call_id": tc.id,
+                    "name": tc.function.name,
+                    "arguments": tc.function.arguments,  # raw, unparsed
+                },
+            )
             args = json.loads(tc.function.arguments)
             result = self.registry.dispatch(tc.function.name, args)
             if (
@@ -882,6 +908,17 @@ class AgentLoop:
         )
         self._messages.append(
             {"role": "tool", "tool_call_id": tc.id, "content": _tool_content}
+        )
+        self.log.append(
+            sev.TOOL_RESULT,
+            {
+                "turn": self.log.open_turn,
+                "step": self.log.open_step,
+                "call_id": tc.id,
+                "content": _tool_content,
+                "meta": None,
+            },
+            surface_op="append",
         )
         return full_str
 
