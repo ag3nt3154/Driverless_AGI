@@ -5,6 +5,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
+from agent import session_events as sev
 from agent.base_tool import BaseTool
 from agent.loop import (
     AgentCallbacks, AgentConfig, AgentLoop,
@@ -567,6 +568,11 @@ class TestDispatchToolCallsExtraction:
         loop.registry._tools = {}
         loop.registry.dispatch = MagicMock(side_effect=[RELOAD_SKILLS_SENTINEL, "ok"])
         loop._rebuild_for_reload = MagicMock(return_value=(set(), set(), []))
+        # The reload notice is a user/message surface event, which the session
+        # log requires to be turn-enclosed. In production this method is only
+        # ever reached from inside run()'s try block, so a turn is always open;
+        # calling it directly has to supply that context itself.
+        loop.log.append(sev.TURN_START, {"turn": 1})
 
         loop._dispatch_tool_calls(message, response, [])
 

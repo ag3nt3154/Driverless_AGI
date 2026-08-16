@@ -122,3 +122,49 @@ class TestTurnBoundaries:
         assert loop.log.open_turn is None
         assert loop.log.events[-1].data["reason"]["kind"] == "error"
         assert "kaboom" in loop.log.events[-1].data["reason"]["error"]["message"]
+
+
+class TestUserMessageEvents:
+    def test_the_task_prompt_is_logged_as_a_human_user_message(self, tmp_path):
+        loop = _make_loop(tmp_path)
+        loop.client = MagicMock()
+        loop.client.chat.completions.create.return_value = _text_response(
+            "done <<END_OF_RESPONSE>>"
+        )
+
+        loop.run("build the widget")
+
+        users = [e for e in loop.log.events if e.type == ev.USER_MESSAGE]
+        assert users[0].data["role"] == "user"
+        assert users[0].data["content"] == "build the widget"
+        assert users[0].data["source"] == "human"
+        assert users[0].data["step"] == 0  # turn entry, before the first step
+
+    def test_user_messages_are_surface_events(self, tmp_path):
+        loop = _make_loop(tmp_path)
+        loop.client = MagicMock()
+        loop.client.chat.completions.create.return_value = _text_response(
+            "done <<END_OF_RESPONSE>>"
+        )
+
+        loop.run("go")
+
+        users = [e for e in loop.log.events if e.type == ev.USER_MESSAGE]
+        assert all(e.surface_op == "append" for e in users)
+
+    def test_continuation_prompt_is_logged_with_its_own_source(self, tmp_path):
+        from agent.loop import CONTINUE_PROMPT
+
+        loop = _make_loop(tmp_path, max_continuations=1)
+        loop.client = MagicMock()
+        loop.client.chat.completions.create.side_effect = [
+            _text_response("thinking out loud"),
+            _text_response("done <<END_OF_RESPONSE>>"),
+        ]
+
+        loop.run("go")
+
+        sources = [e.data["source"] for e in loop.log.events if e.type == ev.USER_MESSAGE]
+        assert sources == ["human", "continue"]
+        cont = [e for e in loop.log.events if e.data.get("source") == "continue"][0]
+        assert cont.data["content"] == CONTINUE_PROMPT

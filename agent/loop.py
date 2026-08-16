@@ -519,6 +519,28 @@ class AgentLoop:
             self.log.append(sev.STEP_END, {"turn": turn, "step": self.log.open_step})
         self.log.append(sev.TURN_END, {"turn": turn, "reason": reason})
 
+    def _log_user_message(self, role: str, content, source: str) -> None:
+        """Append one user/message surface event.
+
+        `role` is durable: wiki context and skill-reload notices are
+        role="system" but ride this event type, because they are ordinary
+        model-visible conversation content. `source` is the semantic channel
+        that tells the three apart.
+
+        `step` is 0 for messages that enter the turn before its first step.
+        """
+        self.log.append(
+            sev.USER_MESSAGE,
+            {
+                "turn": self.log.open_turn,
+                "step": self.log.open_step or 0,
+                "role": role,
+                "content": content,
+                "source": source,
+            },
+            surface_op="append",
+        )
+
     def run(self, task: str) -> str:
         if task.strip().lower() == "/reload":
             added, removed, errors = self._rebuild_for_reload()
@@ -533,7 +555,9 @@ class AgentLoop:
         wiki_ctx = _build_wiki_index_context(self._effective_memory_root)
         if wiki_ctx:
             self._messages.append({"role": "system", "content": wiki_ctx})
+            self._log_user_message("system", wiki_ctx, "wiki")
         self._messages.append({"role": "user", "content": task})
+        self._log_user_message("user", task, "human")
         self.tracker.record_user(task)
 
         # ── Auto-name session file from first user message ────────────────────
@@ -707,6 +731,7 @@ class AgentLoop:
                         return result
                     self._continuation_count += 1
                     self._messages.append({"role": "user", "content": CONTINUE_PROMPT})
+                    self._log_user_message("user", CONTINUE_PROMPT, "continue")
                     self.callbacks.on_continue_injected(
                         self._continuation_count, self.config.max_continuations
                     )
@@ -809,6 +834,7 @@ class AgentLoop:
 
         for _sys_content in deferred_system_msgs:
             self._messages.append({"role": "system", "content": _sys_content})
+            self._log_user_message("system", _sys_content, "reload")
         return None
 
     def _bookkeep_tool_call(
