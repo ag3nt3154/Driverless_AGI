@@ -190,6 +190,17 @@ function applyEvent(state: AppState, evt: SidecarEvent): AppState {
     case "compact":
       return { ...state, turns: [] };
 
+    case "status":
+      return {
+        ...state,
+        status: (evt.status === "running" || evt.status === "paused"
+          ? evt.status
+          : "idle") as AgentStatus,
+      };
+
+    case "session_cleared":
+      return { ...initialState };
+
     // Protocol/lifecycle events — no state change needed
     case "ready":
     case "ack":

@@ -64,8 +64,8 @@ def build_gui_callbacks(
         writer.write("turn_start", turn=count)
 
     def on_done(result: str) -> None:
-        writer.write("turn_end", final_text=result)
-        writer.write("task_complete")
+        writer.write("turn_end", turn=_iteration_count, final_text=result)
+        writer.write("task_complete", result=result)
 
     def on_error(exc: Exception) -> None:
         writer.write("error", message=str(exc))

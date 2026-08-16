@@ -174,7 +174,7 @@ export const ToolCallEvent = BaseEvent.extend({
 });
 export const ToolResultEvent = BaseEvent.extend({
   type: z.literal("tool_result"),
-  tool: z.string(),
+  tool: z.string().optional(),
   content: z.string(),
   call_id: z.string().optional(),
   is_error: z.boolean().optional(),
@@ -185,16 +185,19 @@ export const TurnStartEvent = BaseEvent.extend({
 });
 export const TurnEndEvent = BaseEvent.extend({
   type: z.literal("turn_end"),
-  turn: z.number(),
+  turn: z.number().optional(),
+  final_text: z.string().optional(),
   usage: z.record(z.unknown()).optional(),
 });
 export const TaskCompleteEvent = BaseEvent.extend({
   type: z.literal("task_complete"),
-  result: z.string(),
+  result: z.string().optional(),
 });
 export const CompactEvent = BaseEvent.extend({
   type: z.literal("compact"),
-  summary: z.string(),
+  summary: z.string().optional(),
+  kept: z.number().optional(),
+  removed: z.number().optional(),
 });
 export const QuestionEvent = BaseEvent.extend({
   type: z.literal("question"),
@@ -204,7 +207,9 @@ export const QuestionEvent = BaseEvent.extend({
 });
 export const SubagentEvent = BaseEvent.extend({
   type: z.literal("subagent"),
-  content: z.record(z.unknown()),
+  content: z.record(z.unknown()).optional(),
+  subagent_type: z.string().optional(),
+  event: z.record(z.unknown()).optional(),
 });
 export const PlanUpdateEvent = BaseEvent.extend({
   type: z.literal("plan_update"),
@@ -214,6 +219,13 @@ export const CostUpdateEvent = BaseEvent.extend({
   type: z.literal("cost_update"),
   total_usd: z.number(),
   session_tokens: z.number().optional(),
+});
+export const StatusEvent = BaseEvent.extend({
+  type: z.literal("status"),
+  status: z.string(),
+});
+export const SessionClearedEvent = BaseEvent.extend({
+  type: z.literal("session_cleared"),
 });
 
 export const AnyEvent = z.discriminatedUnion("type", [
@@ -234,6 +246,8 @@ export const AnyEvent = z.discriminatedUnion("type", [
   SubagentEvent,
   PlanUpdateEvent,
   CostUpdateEvent,
+  StatusEvent,
+  SessionClearedEvent,
 ]);
 
 export type SidecarEvent = z.infer<typeof AnyEvent>;
