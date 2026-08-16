@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import threading
 import time
@@ -355,6 +356,7 @@ class AgentLoop:
         # authoritative until the Phase 2 flip. See
         # docs/superpowers/specs/2026-08-16-session-event-log-design.md
         self.log = SessionLog()
+        self._emit_header(system, "resume" if initial_messages else "initial")
 
         self.client = openai.OpenAI(api_key=config.api_key, base_url=config.base_url)
         # Build extra_body for OpenRouter extensions (reasoning, prompt caching, provider routing).
@@ -543,6 +545,34 @@ class AgentLoop:
             },
             surface_op="append",
         )
+
+    def _tools_fingerprint(self) -> tuple[list[str], str]:
+        """Sorted tool names plus a stable digest of their full schemas."""
+        schemas = self.registry.get_openai_tools_list()
+        names = sorted(s["function"]["name"] for s in schemas)
+        blob = json.dumps(schemas, sort_keys=True, ensure_ascii=False)
+        return names, hashlib.sha256(blob.encode("utf-8")).hexdigest()
+
+    def _emit_header(self, system: str, reason: str) -> None:
+        """Record the request envelope. Log-only — never a surface node."""
+        names, digest = self._tools_fingerprint()
+        self.log.append(
+            sev.REQUEST_HEADER,
+            {
+                "system": system,
+                "reason": reason,
+                "model": self.config.model,
+                "tool_names": names,
+                "tools_digest": digest,
+            },
+        )
+
+    def _header_message(self) -> dict:
+        """The system message, rebuilt from the latest header event."""
+        header = self.log.latest_header()
+        if header is None:
+            raise InvariantError("no request/header has been logged")
+        return {"role": "system", "content": header["system"]}
 
     def _shadow_check(self) -> None:
         """Assert the derived surface reproduces _messages (Phase 1 only).
@@ -1321,7 +1351,9 @@ class AgentLoop:
             bash_tool=self._injected_bash_tool,
         )
 
-        self._messages[0] = {"role": "system", "content": self._assemble_system_string(dagi_root)}
+        _system = self._assemble_system_string(dagi_root)
+        self._messages[0] = {"role": "system", "content": _system}
+        self._emit_header(_system, "change")
         self.compact_tool.bind(
             self._messages, self.config, self.client,
             on_compaction=self.callbacks.on_compaction,
@@ -1352,7 +1384,9 @@ class AgentLoop:
             tracker=self.tracker,
             memory_root=self._effective_memory_root,
         )
-        self._messages[0] = {"role": "system", "content": self._assemble_system_string(dagi_root)}
+        _system = self._assemble_system_string(dagi_root)
+        self._messages[0] = {"role": "system", "content": _system}
+        self._emit_header(_system, "change")
         self.compact_tool.bind(
             self._messages, self.config, self.client,
             on_compaction=self.callbacks.on_compaction,

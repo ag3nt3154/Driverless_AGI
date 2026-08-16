@@ -291,3 +291,19 @@ class TestSurfaceIntegration:
             source_seqs=[3, 4],
         )
         assert [e.seq for e in log.events] == [1, 2, 3, 4, 5]
+
+
+class TestLatestHeader:
+    def test_returns_none_for_a_log_without_a_header(self):
+        assert SessionLog().latest_header() is None
+
+    def test_returns_the_most_recent_header(self):
+        log = SessionLog()
+        log.append(ev.REQUEST_HEADER, {"system": "old", "reason": "initial"})
+        log.append(ev.REQUEST_HEADER, {"system": "new", "reason": "change"})
+        assert log.latest_header()["system"] == "new"
+
+    def test_header_is_log_only_and_never_reaches_the_surface(self):
+        log = SessionLog()
+        log.append(ev.REQUEST_HEADER, {"system": "s", "reason": "initial"})
+        assert log.derive_messages() == []

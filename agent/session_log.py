@@ -208,6 +208,17 @@ class SessionLog:
         """
         return self._surface.messages()
 
+    def latest_header(self) -> Mapping[str, Any] | None:
+        """The most recent ``request/header`` payload, or None.
+
+        Reconstruction reads this rather than replaying every header: the
+        envelope is last-write-wins state, not an accumulating sequence.
+        """
+        for event in reversed(self._events):
+            if event.type == ev.REQUEST_HEADER:
+                return event.data
+        return None
+
     def _check_replace(
         self,
         surface_op: SurfaceOp | None,

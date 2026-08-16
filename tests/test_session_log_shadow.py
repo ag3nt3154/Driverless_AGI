@@ -56,10 +56,13 @@ def _text_response(content: str) -> SimpleNamespace:
 
 
 class TestLogConstruction:
-    def test_loop_owns_an_empty_log_at_construction(self, tmp_path):
+    def test_loop_owns_a_log_holding_only_the_initial_header(self, tmp_path):
+        """Construction logs the request envelope and nothing else — no turn
+        is open, and the envelope costs zero surface nodes."""
         loop = _make_loop(tmp_path)
-        assert loop.log.seq == 0
+        assert [e.type for e in loop.log.events] == [ev.REQUEST_HEADER]
         assert loop.log.open_turn is None
+        assert loop.log.derive_messages() == []
 
 
 class TestTurnBoundaries:
@@ -73,9 +76,12 @@ class TestTurnBoundaries:
         loop.run("do the thing")
 
         types = [e.type for e in loop.log.events]
-        assert types[0] == ev.TURN_START
+        # The initial request/header precedes the turn, so compare only the
+        # turn-bracket events themselves.
+        assert [t for t in types if t in (ev.TURN_START, ev.TURN_END)] == [
+            ev.TURN_START, ev.TURN_END
+        ]
         assert types[-1] == ev.TURN_END
-        assert types.count(ev.TURN_START) == 1
         assert loop.log.open_turn is None
 
     def test_completed_run_records_the_completed_reason(self, tmp_path):
@@ -342,3 +348,31 @@ class TestShadowEquality:
         assert is_status_board({"role": "system", "content": "## Session Context\nx"})
         assert not is_status_board({"role": "system", "content": "wiki index"})
         assert not is_status_board({"role": "user", "content": "## Session Context"})
+
+
+class TestRequestHeader:
+    def test_construction_emits_an_initial_header(self, tmp_path):
+        loop = _make_loop(tmp_path)
+        header = loop.log.latest_header()
+        assert header is not None
+        assert header["reason"] == "initial"
+        assert header["system"] == loop._messages[0]["content"]
+
+    def test_header_records_the_tool_surface(self, tmp_path):
+        loop = _make_loop(tmp_path)
+        header = loop.log.latest_header()
+        assert header["tool_names"] == sorted(header["tool_names"])
+        assert len(header["tools_digest"]) == 64
+
+    def test_header_message_reproduces_messages_zero(self, tmp_path):
+        loop = _make_loop(tmp_path)
+        assert loop._header_message() == loop._messages[0]
+
+    def test_leaving_plan_mode_emits_a_change_header(self, tmp_path):
+        loop = _make_loop(tmp_path, plan_mode=True)
+        before = len([e for e in loop.log.events if e.type == ev.REQUEST_HEADER])
+        loop._rebuild_for_normal_mode(Path(__file__).resolve().parents[1])
+        headers = [e for e in loop.log.events if e.type == ev.REQUEST_HEADER]
+        assert len(headers) == before + 1
+        assert headers[-1].data["reason"] == "change"
+        assert headers[-1].data["system"] == loop._messages[0]["content"]
