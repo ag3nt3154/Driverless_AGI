@@ -284,3 +284,61 @@ class TestAssistantAndToolEvents:
         result = [e for e in loop.log.events if e.type == ev.TOOL_RESULT][0]
         assert result.data["call_id"] == "abc"
         assert result.surface_op == "append"
+
+
+class TestShadowEquality:
+    """The derived surface must reproduce _messages exactly, board excluded."""
+
+    def test_text_only_conversation_matches(self, tmp_path):
+        loop = _make_loop(tmp_path, shadow_check=True)
+        loop.client = MagicMock()
+        loop.client.chat.completions.create.return_value = _text_response(
+            "done <<END_OF_RESPONSE>>"
+        )
+        loop.run("go")
+        loop._shadow_check()
+
+    def test_multi_step_conversation_with_tools_matches(self, tmp_path):
+        loop = _make_loop(tmp_path, shadow_check=True, max_continuations=2)
+        loop.client = MagicMock()
+        loop.client.chat.completions.create.side_effect = [
+            _tool_response("read", '{"file_path": "a.txt"}', call_id="c1"),
+            _tool_response("read", '{"file_path": "b.txt"}', call_id="c2"),
+            _text_response("done <<END_OF_RESPONSE>>"),
+        ]
+        loop.registry.dispatch = MagicMock(return_value="contents")
+        loop.run("go")
+        loop._shadow_check()
+
+    def test_continuation_injection_matches(self, tmp_path):
+        loop = _make_loop(tmp_path, shadow_check=True, max_continuations=2)
+        loop.client = MagicMock()
+        loop.client.chat.completions.create.side_effect = [
+            _text_response("thinking"),
+            _text_response("still thinking"),
+            _text_response("done <<END_OF_RESPONSE>>"),
+        ]
+        loop.run("go")
+        loop._shadow_check()
+
+    def test_the_harness_actually_detects_divergence(self, tmp_path):
+        """A check that cannot fail is worthless. Prove this one can."""
+        from agent.session_log import InvariantError
+
+        loop = _make_loop(tmp_path, shadow_check=True)
+        loop.client = MagicMock()
+        loop.client.chat.completions.create.return_value = _text_response(
+            "done <<END_OF_RESPONSE>>"
+        )
+        loop.run("go")
+        loop._messages.append({"role": "user", "content": "smuggled in"})
+
+        with pytest.raises(InvariantError, match="shadow divergence"):
+            loop._shadow_check()
+
+    def test_the_status_board_is_excluded_from_both_sides(self, tmp_path):
+        from agent.session_log import is_status_board
+
+        assert is_status_board({"role": "system", "content": "## Session Context\nx"})
+        assert not is_status_board({"role": "system", "content": "wiki index"})
+        assert not is_status_board({"role": "user", "content": "## Session Context"})

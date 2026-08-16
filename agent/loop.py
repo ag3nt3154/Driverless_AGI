@@ -21,7 +21,7 @@ from agent.prompts import load_prompt, load_main_system_prompt, load_soul
 from agent.registry import ToolRegistry
 from agent import session_events as sev
 from agent.session import SessionTracker, ToolCallRecord
-from agent.session_log import SessionLog
+from agent.session_log import InvariantError, SessionLog, is_status_board
 from agent.skills import Skill, SkillLoader
 from tools.compact import CompactTool, CompactionResult, _NO_COMPACTION
 from tools.update_task_status import UPDATE_TASK_STATUS_SENTINEL
@@ -207,6 +207,9 @@ class AgentConfig:
     # Active Python environment detected at startup (e.g. "conda:dagi" or "venv:/path")
     # Set by config_loader._detect_python_env()
     python_env: str = ""
+    # Phase-1 verification: assert the derived surface reproduces _messages
+    # after every step. Off in production — it is O(n) per step.
+    shadow_check: bool = False
 
 
 @dataclass
@@ -541,6 +544,23 @@ class AgentLoop:
             surface_op="append",
         )
 
+    def _shadow_check(self) -> None:
+        """Assert the derived surface reproduces _messages (Phase 1 only).
+
+        _messages[0] is the system prompt, which is request-envelope state
+        rather than conversation, so it is excluded. The status board is
+        excluded on both sides — see plan Deviation 1.
+        """
+        derived = [m for m in self.log.derive_messages() if not is_status_board(m)]
+        live = [m for m in self._messages[1:] if not is_status_board(m)]
+        if derived != live:
+            raise InvariantError(
+                f"shadow divergence: derived {len(derived)} message(s), "
+                f"_messages has {len(live)}\n"
+                f"  derived: {derived}\n"
+                f"  live:    {live}"
+            )
+
     def run(self, task: str) -> str:
         if task.strip().lower() == "/reload":
             added, removed, errors = self._rebuild_for_reload()
@@ -790,6 +810,8 @@ class AgentLoop:
                 # ─────────────────────────────────────────────────────────────
 
                 self.log.append(sev.STEP_END, {"turn": _turn, "step": iteration})
+                if self.config.shadow_check:
+                    self._shadow_check()
 
         except Exception as e:
             self._close_turn(_turn, sev.reason_error(str(e), type(e).__name__))

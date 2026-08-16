@@ -59,6 +59,22 @@ def _snapshot_json(value: Any) -> Any:
     raise InvariantError(f"event data is not JSON-serialisable: {type(value).__name__}")
 
 
+#: Sentinel that marks the dynamic plan status board (see
+#: ``AgentLoop._build_dynamic_context``). Task 11 removes the board from the
+#: surface; until then the shadow check excludes it from both sides.
+STATUS_BOARD_SENTINEL = "## Session Context"
+
+
+def is_status_board(message: Mapping[str, Any]) -> bool:
+    """True if ``message`` is the dynamic plan status board."""
+    content = message.get("content")
+    return (
+        message.get("role") == "system"
+        and isinstance(content, str)
+        and STATUS_BOARD_SENTINEL in content
+    )
+
+
 def _check_surface_op_presence(type: str, surface_op: SurfaceOp | None) -> None:
     """Invariant 3: surface_op is present on surface types, absent otherwise."""
     is_surface = type in ev.SURFACE_EVENT_TYPES
