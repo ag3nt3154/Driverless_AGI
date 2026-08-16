@@ -13,6 +13,10 @@ import sys
 
 
 def main() -> None:
+    # Load .env so API keys are available — must run before config_loader
+    from dotenv import load_dotenv
+    load_dotenv()
+
     # Force line-buffered stdout — MUST happen before any EventWriter is created
     sys.stdout = open(  # noqa: WPS515
         sys.stdout.fileno(),
