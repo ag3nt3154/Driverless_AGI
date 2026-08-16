@@ -23,15 +23,54 @@ declare const MAIN_WINDOW_VITE_NAME: string;
 
 const isDev = process.env.NODE_ENV !== "production";
 
-/** Repo root in dev; exe directory when packaged. */
-const projectRoot = app.isPackaged
-  ? path.dirname(process.execPath)
-  : path.resolve(__dirname, "../../..");
+/**
+ * Walk upward from `start` looking for pyproject.toml — the definitive
+ * marker that we're inside the DAGI repo.
+ */
+function findRepoRoot(start: string): string | null {
+  let dir = path.resolve(start);
+  const { root } = path.parse(dir);
+  while (dir !== root) {
+    if (fs.existsSync(path.join(dir, "pyproject.toml"))) return dir;
+    dir = path.dirname(dir);
+  }
+  return null;
+}
+
+/**
+ * Resolve the DAGI repo root.
+ *
+ * Priority:
+ *  1. DAGI_ROOT env var (explicit override)
+ *  2. Walk upward from __dirname (works in dev + portable exe inside repo)
+ *  3. Walk upward from the exe path (packaged, exe still inside repo tree)
+ *  4. Saved path from config.json
+ *  5. null → user will be prompted later
+ */
+function resolveProjectRoot(): string | null {
+  if (process.env.DAGI_ROOT && fs.existsSync(process.env.DAGI_ROOT)) {
+    return process.env.DAGI_ROOT;
+  }
+  const fromDir = findRepoRoot(__dirname);
+  if (fromDir) return fromDir;
+  if (app.isPackaged) {
+    const fromExe = findRepoRoot(path.dirname(process.execPath));
+    if (fromExe) return fromExe;
+  }
+  const saved = loadConfig().projectRoot;
+  if (saved && fs.existsSync(path.join(saved, "pyproject.toml"))) {
+    return saved;
+  }
+  return null;
+}
+
+let projectRoot: string;
 
 // ── Config persistence ────────────────────────────────────────────────────────
 
 interface AppConfig {
   pythonPath?: string;
+  projectRoot?: string;
 }
 
 function configPath(): string {
@@ -120,6 +159,25 @@ async function showEnvPicker(envs: CondaEnv[]): Promise<string | null> {
   return envs[response].pythonPath;
 }
 
+async function promptForRepoRoot(): Promise<string | null> {
+  const { filePaths } = await dialog.showOpenDialog({
+    title: "DAGI — Select project root",
+    message: "Choose the Driverless_AGI repo folder (contains pyproject.toml):",
+    properties: ["openDirectory"],
+  });
+  const chosen = filePaths[0];
+  if (!chosen) return null;
+  if (!fs.existsSync(path.join(chosen, "pyproject.toml"))) {
+    dialog.showErrorBox(
+      "Not a DAGI repo",
+      `${chosen}\n\nNo pyproject.toml found. Please select the root of your Driverless_AGI clone.`,
+    );
+    return null;
+  }
+  saveConfig({ ...loadConfig(), projectRoot: chosen });
+  return chosen;
+}
+
 async function resolvePython(): Promise<string> {
   if (process.env.DAGI_PYTHON && fs.existsSync(process.env.DAGI_PYTHON)) {
     return process.env.DAGI_PYTHON;
@@ -192,6 +250,19 @@ function buildMenu(): void {
           dialog.showMessageBox({
             type: "info",
             message: "Python environment updated.",
+            detail: `${chosen}\n\nRestart DAGI to apply.`,
+            buttons: ["OK"],
+          });
+        },
+      },
+      {
+        label: "Change project root…",
+        click: async () => {
+          const chosen = await promptForRepoRoot();
+          if (!chosen) return;
+          dialog.showMessageBox({
+            type: "info",
+            message: "Project root updated.",
             detail: `${chosen}\n\nRestart DAGI to apply.`,
             buttons: ["OK"],
           });
@@ -273,6 +344,16 @@ function registerIpc(): void {
 // ── App lifecycle ─────────────────────────────────────────────────────────────
 
 app.whenReady().then(async () => {
+  // Resolve repo root first — everything depends on it
+  const root = resolveProjectRoot();
+  if (root) {
+    projectRoot = root;
+  } else {
+    const chosen = await promptForRepoRoot();
+    if (!chosen) { app.quit(); return; }
+    projectRoot = chosen;
+  }
+
   buildMenu();
   registerIpc();
   mainWindow = createWindow();
@@ -285,7 +366,7 @@ app.whenReady().then(async () => {
   } catch (err) {
     dialog.showErrorBox(
       "DAGI failed to start",
-      `Python: ${pythonPath}\n\n${String(err)}\n\nUse File → Change Python environment to reconfigure.`
+      `Python: ${pythonPath}\nRepo: ${projectRoot}\n\n${String(err)}\n\nUse File → Change Python environment to reconfigure.`
     );
   }
 

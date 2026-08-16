@@ -156,7 +156,7 @@ export class PythonSupervisor extends EventEmitter {
     const proc = spawnFn(pythonPath, ["-m", "dagi_gui"], {
       cwd,
       stdio: ["pipe", "pipe", "pipe"],
-      env: { ...process.env, PYTHONUNBUFFERED: "1" },
+      env: { ...process.env, PYTHONUNBUFFERED: "1", PYTHONPATH: cwd },
     });
 
     proc.stderr?.on("data", (chunk: Buffer) => {
