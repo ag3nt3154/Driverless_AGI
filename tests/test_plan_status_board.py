@@ -138,8 +138,9 @@ class TestRefreshUpdatesLastMessage:
 
         loop._refresh_dynamic_context()
 
-        assert loop._messages[-1]["role"] == "system"
-        assert "## Session Context" in loop._messages[-1]["content"]
+        last = loop._build_request_messages()[-1]
+        assert last["role"] == "system"
+        assert "## Session Context" in last["content"]
 
     def test_messages_0_unchanged_after_refresh(self, tmp_path):
         plan_file = tmp_path / "plan.md"
@@ -160,7 +161,7 @@ class TestRefreshUpdatesLastMessage:
         loop = _make_loop(tmp_path, active_plan_file=str(plan_file))
 
         loop._refresh_dynamic_context()
-        assert "[~]" in loop._messages[-1]["content"]
+        assert "[~]" in loop._build_request_messages()[-1]["content"]
 
         plan_file.write_text(
             PLAN_TEXT.replace(
@@ -171,5 +172,5 @@ class TestRefreshUpdatesLastMessage:
         )
         loop._refresh_dynamic_context()
 
-        last = loop._messages[-1]["content"]
+        last = loop._build_request_messages()[-1]["content"]
         assert "[~]" not in last

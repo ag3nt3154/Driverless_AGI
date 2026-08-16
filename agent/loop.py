@@ -356,6 +356,9 @@ class AgentLoop:
         # authoritative until the Phase 2 flip. See
         # docs/superpowers/specs/2026-08-16-session-event-log-design.md
         self.log = SessionLog()
+        #: Last rendered plan status board. Ephemeral request state — see
+        #: _refresh_dynamic_context. Empty string means "nothing rendered yet".
+        self._board: str = ""
         self._emit_header(system, "resume" if initial_messages else "initial")
 
         self.client = openai.OpenAI(api_key=config.api_key, base_url=config.base_url)
@@ -574,15 +577,28 @@ class AgentLoop:
             raise InvariantError("no request/header has been logged")
         return {"role": "system", "content": header["system"]}
 
+    def _build_request_messages(self) -> list[dict]:
+        """The exact message list sent to the provider.
+
+        Envelope header first, conversation next, ephemeral board last.
+        Returns a fresh list: callers (including on_api_call observers) must
+        not be able to mutate loop state through it.
+        """
+        messages = [self._header_message()]
+        messages.extend(self._messages[1:])
+        if self._board:
+            messages.append({"role": "system", "content": self._board})
+        return messages
+
     def _shadow_check(self) -> None:
-        """Assert the derived surface reproduces _messages (Phase 1 only).
+        """Assert the derived surface reproduces _messages (Phase 1-2 only).
 
         _messages[0] is the system prompt, which is request-envelope state
-        rather than conversation, so it is excluded. The status board is
-        excluded on both sides — see plan Deviation 1.
+        rather than conversation, so it is excluded. As of Task 12 the plan
+        board is ephemeral and no longer needs excluding.
         """
-        derived = [m for m in self.log.derive_messages() if not is_status_board(m)]
-        live = [m for m in self._messages[1:] if not is_status_board(m)]
+        derived = self.log.derive_messages()
+        live = self._messages[1:]
         if derived != live:
             raise InvariantError(
                 f"shadow divergence: derived {len(derived)} message(s), "
@@ -638,11 +654,12 @@ class AgentLoop:
                 _error_retries = 0
                 _paused_on_error = False
                 while True:
-                    self.callbacks.on_api_call(list(self._messages))
+                    _request = self._build_request_messages()
+                    self.callbacks.on_api_call(list(_request))
                     try:
                         _create_kwargs = dict(
                             model=self.config.model,
-                            messages=self._messages,
+                            messages=_request,
                             tools=self.registry.get_openai_tools_list(),
                             parallel_tool_calls=False,
                             **(dict(extra_body=self._extra_body) if self._extra_body else {}),
@@ -1306,25 +1323,18 @@ class AgentLoop:
         return "\n".join(parts)
 
     def _refresh_dynamic_context(self) -> None:
-        """Pop any existing board and append a fresh one at the end.
+        """Re-render the board and log it if it changed.
 
-        Called at the top of every iteration of ``run()``'s main loop.
-        Uses sentinel search (not index tracking) so it is safe across
-        compaction, which may remove or shift messages.
+        The board is *ephemeral*: it is never a member of ``_messages`` and
+        never a surface node. ``_build_request_messages`` appends it as the
+        final message of each request, so the reusable prefix through the
+        last real message stays byte-identical from step to step.
         """
-        sentinel = self._DYNAMIC_CONTEXT_SENTINEL
-        for i in range(len(self._messages) - 1, 0, -1):
-            content = self._messages[i].get("content", "")
-            if (
-                self._messages[i].get("role") == "system"
-                and isinstance(content, str)
-                and sentinel in content
-            ):
-                self._messages.pop(i)
-                break
-
         board = self._build_dynamic_context()
-        self._messages.append({"role": "system", "content": board})
+        if board == self._board:
+            return
+        self._board = board
+        self.log.append(sev.PLAN_WRITE, {"board": board})
 
     def _rebuild_for_normal_mode(self, dagi_root: Path) -> None:
         from agent.tools import create_tool_registry
