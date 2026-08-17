@@ -114,6 +114,46 @@ class TestVersionGate:
         assert [e.seq for e in read_session(path)] == [1, 2, 3]
 
 
+class TestBranchRoundTrip:
+    def test_branch_field_survives_write_and_read(self, tmp_path):
+        path = tmp_path / "s.jsonl"
+        log = SessionLog()
+        log.append(ev.REQUEST_HEADER, {"system": "sys", "reason": "initial"})
+        log.append(ev.TURN_START, {"turn": 1})
+        log.append(ev.STEP_START, {"turn": 1, "step": 1})
+        log.append(
+            ev.BRANCH_START,
+            {"branch": "sub_1", "parent_branch": "main", "turn": 1, "step": 1},
+        )
+        log.append(ev.TURN_START, {"turn": 1}, branch="sub_1")
+        log.append(
+            ev.USER_MESSAGE,
+            {"turn": 1, "step": 0, "role": "user", "content": "sub_msg", "source": "human"},
+            surface_op="append",
+            branch="sub_1",
+        )
+        write_session(path, log.events)
+        events = read_session(path)
+        branch_events = [e for e in events if e.branch == "sub_1"]
+        assert len(branch_events) == 2
+        assert all(e.branch == "sub_1" for e in branch_events)
+
+    def test_main_branch_events_omit_branch_field_in_json(self, tmp_path):
+        path = tmp_path / "s.jsonl"
+        log = SessionLog()
+        log.append(ev.REQUEST_HEADER, {"system": "sys", "reason": "initial"})
+        log.append(ev.TURN_START, {"turn": 1})
+        write_session(path, log.events)
+        lines = path.read_text(encoding="utf-8").splitlines()
+        # Skip the header line; check all event lines
+        event_lines = lines[1:]
+        for line in event_lines:
+            if not line.strip():
+                continue
+            raw = json.loads(line)
+            assert "branch" not in raw
+
+
 class TestOnAppendHook:
     def test_on_append_fires_after_every_commit(self, tmp_path):
         path = tmp_path / "s.jsonl"
