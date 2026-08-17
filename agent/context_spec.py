@@ -156,3 +156,48 @@ def reconstruct(
 
     messages = [project_event(e) for e in all_surface_events]
     return system_msg, messages
+
+
+def _collect_turns_and_steps(
+    log: SessionLog, branch: str,
+) -> list[tuple[int, list[int]]]:
+    """Scan events for a branch and return [(turn, [steps])] in order."""
+    turn_steps: dict[int, set[int]] = {}
+    for event in log.events:
+        if event.branch != branch:
+            continue
+        if event.surface_op is None:
+            continue
+        t = event.data.get("turn")
+        s = event.data.get("step")
+        if t is not None and s is not None:
+            turn_steps.setdefault(t, set()).add(s)
+    return [(t, sorted(steps)) for t, steps in sorted(turn_steps.items())]
+
+
+def spec_for_main(log: SessionLog) -> ContextSpec:
+    """Build a ContextSpec that selects all main-branch surface events."""
+    return ContextSpec(segments=[
+        BranchSegment(branch="main", turns=_collect_turns_and_steps(log, "main")),
+    ])
+
+
+def spec_for_branch(log: SessionLog, branch: str) -> ContextSpec:
+    """Build a ContextSpec for a branch, including its full ancestor chain."""
+    if branch not in log.branches:
+        raise KeyError(f"branch {branch!r} not found in session log")
+
+    chain: list[str] = [branch]
+    current = branch
+    while current != "main":
+        parent_branch, _, _ = log.branches[current]
+        chain.append(parent_branch)
+        current = parent_branch
+    chain.reverse()  # main first
+
+    segments: list[BranchSegment] = []
+    for b in chain:
+        segments.append(
+            BranchSegment(branch=b, turns=_collect_turns_and_steps(log, b)),
+        )
+    return ContextSpec(segments=segments)
