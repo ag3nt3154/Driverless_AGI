@@ -624,6 +624,11 @@ Driverless_AGI/
 │   ├── config_loader.py   # Resolves model config from YAML
 │   │                       #   (memory_retriever.py deleted 2026-06-27; retrieval now subagent-based)
 │   ├── session.py         # SessionTracker — JSONL logs
+│   ├── session_events.py  # Event vocabulary + SESSION_FORMAT_VERSION (2)
+│   ├── session_log.py     # SessionLog — append-only tree log (branches, turn/step coords)
+│   ├── session_surface.py # Surface — ordered message projection with replace ops
+│   ├── session_store.py   # JSONL persistence (read_session / write_session / append_event)
+│   └── context_spec.py    # ContextSpec — byte-identical context reconstruction from log tree
 │   ├── prompts.py         # Loads system/user prompts from .dagi/prompts/ and .dagi/subagents/
 │   ├── skills.py          # SkillLoader — loads .dagi/skills/
 │   ├── workflows.py       # WorkflowLoader — loads .dagi/workflow/
