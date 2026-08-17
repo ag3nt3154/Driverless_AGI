@@ -15,7 +15,7 @@ from __future__ import annotations
 # Single monotonic integer. Bump only when an older runtime could no longer
 # read a new log with full semantic correctness. Incompatible logs are
 # rejected with a directional message, never migrated.
-SESSION_FORMAT_VERSION = 1
+SESSION_FORMAT_VERSION = 2
 
 # ── Boundary events (log-only) ────────────────────────────────────────────
 TURN_START = "turn/start"
