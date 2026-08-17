@@ -1,11 +1,13 @@
 """tests/test_context_spec.py — Context reconstruction from session log + spec."""
 from __future__ import annotations
 
+import copy
+import json
 import pytest
 
 from agent import session_events as ev
 from agent.session_log import SessionLog
-from agent.context_spec import BranchSegment, ContextSpec, reconstruct
+from agent.context_spec import BranchSegment, ContextSpec, reconstruct, spec_for_main, spec_for_branch
 
 
 def _populated_log() -> SessionLog:
@@ -161,3 +163,93 @@ class TestContextSpecReconstruct:
         assert "compacted summary" in contents
         assert "first" not in contents   # shadowed by compaction
         assert "second" not in contents  # shadowed by compaction
+
+
+class TestByteIdentical:
+    def test_main_context_is_byte_identical_to_direct_surface(self):
+        """reconstruct() on main must produce the same messages as derive_messages()."""
+        log = _populated_log()
+        spec = ContextSpec(segments=[
+            BranchSegment(branch="main", turns=[(1, [0, 1])]),
+        ])
+        _, messages = reconstruct(log, spec)
+        direct = log.derive_messages()
+        assert json.dumps(messages, sort_keys=True) == json.dumps(direct, sort_keys=True)
+
+    def test_subagent_prefix_is_byte_identical_to_parent_at_fork(self):
+        """The parent prefix in the subagent's context matches the parent's view at fork."""
+        log = _populated_log()
+
+        # Parent context at fork: main turns 1 steps 0+1 (all of main, including tool_result)
+        parent_at_fork = ContextSpec(segments=[
+            BranchSegment(branch="main", turns=[(1, [0, 1])]),
+        ])
+        # Subagent context: parent prefix (bounded by fork) + branch
+        sub_context = ContextSpec(segments=[
+            BranchSegment(branch="main", turns=[(1, [0, 1])]),
+            BranchSegment(branch="sub_1", turns=[(1, [0, 1])]),
+        ])
+
+        _, parent_msgs = reconstruct(log, parent_at_fork)
+        _, sub_msgs = reconstruct(log, sub_context)
+
+        # The shared prefix is the first 2 messages: user:task + assistant:calling tool
+        # (tool_result "handoff text" comes after the fork, so it's excluded from sub prefix)
+        parent_prefix = parent_msgs[:2]
+        sub_prefix = sub_msgs[:2]
+        assert json.dumps(parent_prefix, sort_keys=True) == json.dumps(sub_prefix, sort_keys=True)
+
+    def test_nested_branch_context(self):
+        """A branch can fork from another branch (nested subagents)."""
+        log = _populated_log()
+        # Add a nested branch off sub_1 at (1, 1)
+        # IMPORTANT: BRANCH_START must always be on branch="main" (the default)
+        log.append(
+            ev.BRANCH_START,
+            {"branch": "sub_1_1", "parent_branch": "sub_1", "turn": 1, "step": 1},
+        )
+        log.append(ev.TURN_START, {"turn": 1}, branch="sub_1_1")
+        log.append(
+            ev.USER_MESSAGE,
+            {"turn": 1, "step": 0, "role": "user", "content": "nested task", "source": "human"},
+            surface_op="append",
+            branch="sub_1_1",
+        )
+        log.append(ev.STEP_START, {"turn": 1, "step": 1}, branch="sub_1_1")
+        log.append(
+            ev.ASSISTANT_MESSAGE,
+            {"turn": 1, "step": 1, "message": {"role": "assistant", "content": "nested result"}},
+            surface_op="append",
+            branch="sub_1_1",
+        )
+
+        spec = ContextSpec(segments=[
+            BranchSegment(branch="main", turns=[(1, [0, 1])]),
+            BranchSegment(branch="sub_1", turns=[(1, [0, 1])]),
+            BranchSegment(branch="sub_1_1", turns=[(1, [0, 1])]),
+        ])
+        _, messages = reconstruct(log, spec)
+        contents = [m.get("content") for m in messages if m.get("content")]
+        assert contents == ["task", "calling tool", "sub instructions", "sub result", "nested task", "nested result"]
+
+
+class TestSpecBuilders:
+    def test_spec_for_main_includes_all_surface_turns_and_steps(self):
+        log = _populated_log()
+        spec = spec_for_main(log)
+        assert len(spec.segments) == 1
+        assert spec.segments[0].branch == "main"
+        # BranchSegment.__post_init__ converts lists to tuples
+        assert spec.segments[0].turns == ((1, (0, 1)),)
+
+    def test_spec_for_branch_includes_parent_prefix_and_branch(self):
+        log = _populated_log()
+        spec = spec_for_branch(log, "sub_1")
+        assert len(spec.segments) == 2
+        assert spec.segments[0].branch == "main"
+        assert spec.segments[1].branch == "sub_1"
+
+    def test_spec_for_branch_unknown_branch_raises(self):
+        log = _populated_log()
+        with pytest.raises(KeyError, match="nonexistent"):
+            spec_for_branch(log, "nonexistent")
