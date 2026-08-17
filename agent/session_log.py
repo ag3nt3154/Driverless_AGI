@@ -148,6 +148,7 @@ class SessionLog:
         self._open_step: int | None = None
         self._max_turn: int = 0
         self._calls: dict[str, tuple[int, int]] = {}  # call_id -> (turn, step)
+        self._branches: dict[str, tuple[str, int, int]] = {}  # branch_id -> (parent_branch, turn, step)
         self._surface = Surface()
         #: Optional durability sink, called once per committed event. Set by
         #: AgentLoop; None in tests so the log stays a pure in-memory object.
@@ -157,7 +158,8 @@ class SessionLog:
         for event in seed:
             self._events.append(event)
             self._seq = event.seq
-            self._absorb(event)
+            if event.branch == "main":
+                self._absorb(event)
 
     @property
     def seq(self) -> int:
@@ -187,6 +189,15 @@ class SessionLog:
         """
         return self._max_turn + 1
 
+    @property
+    def branches(self) -> dict[str, tuple[str, int, int]]:
+        """Registered branches: branch_id -> (parent_branch, fork_turn, fork_step)."""
+        return dict(self._branches)
+
+    def branch_events(self, branch: str) -> list[SessionEvent]:
+        """Return all events belonging to the given branch."""
+        return [e for e in self._events if e.branch == branch]
+
     def _absorb(self, event: SessionEvent) -> None:
         """Fold one committed event into the log's derived state."""
         if event.type == ev.TURN_START:
@@ -201,6 +212,10 @@ class SessionLog:
             self._open_step = None
         elif event.type == ev.TOOL_CALL:
             self._calls[event.data["call_id"]] = (event.data["turn"], event.data["step"])
+        elif event.type == ev.BRANCH_START:
+            self._branches[event.data["branch"]] = (
+                event.data["parent_branch"], event.data["turn"], event.data["step"],
+            )
         if event.surface_op is not None:
             self._surface.accept(event)
 
@@ -279,13 +294,19 @@ class SessionLog:
         surface_op: SurfaceOp | None = None,
         source_seqs: Sequence[int] | None = None,
         ignorable: bool = False,
+        branch: str = "main",
     ) -> SessionEvent:
         """Validate, snapshot, and commit one event. Returns the committed event."""
         if type not in ev.KNOWN_EVENT_TYPES:
             raise InvariantError(f"unknown event type: {type!r}")
         _check_surface_op_presence(type, surface_op)
-        self._check_boundaries(type, data)
-        self._check_replace(surface_op, source_seqs)
+        if branch == "main":
+            self._check_boundaries(type, data)
+            self._check_replace(surface_op, source_seqs)
+        if type == ev.BRANCH_START:
+            branch_id = data["branch"]
+            if branch_id in self._branches:
+                raise InvariantError(f"branch {branch_id!r} already exists")
         snapshot = _snapshot_json(dict(data))
         event = SessionEvent(
             seq=self._seq + 1,
@@ -295,10 +316,12 @@ class SessionLog:
             surface_op=surface_op,
             source_seqs=tuple(source_seqs) if source_seqs is not None else None,
             ignorable=ignorable,
+            branch=branch,
         )
         self._events.append(event)
         self._seq = event.seq
-        self._absorb(event)
+        if branch == "main":
+            self._absorb(event)
         if self.on_append is not None:
             self.on_append(event)
         return event

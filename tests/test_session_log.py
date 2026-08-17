@@ -337,3 +337,94 @@ class TestLatestHeader:
         log = SessionLog()
         log.append(ev.REQUEST_HEADER, {"system": "s", "reason": "initial"})
         assert log.derive_messages() == []
+
+
+class TestBranching:
+    def test_branch_start_records_the_fork_point(self):
+        log = SessionLog()
+        log.append(ev.TURN_START, {"turn": 1})
+        log.append(ev.STEP_START, {"turn": 1, "step": 1})
+        log.append(
+            ev.BRANCH_START,
+            {"branch": "sub_1", "parent_branch": "main", "turn": 1, "step": 1},
+        )
+        assert log.branches == {"sub_1": ("main", 1, 1)}
+
+    def test_branch_start_is_log_only(self):
+        log = SessionLog()
+        log.append(ev.TURN_START, {"turn": 1})
+        log.append(ev.STEP_START, {"turn": 1, "step": 1})
+        log.append(
+            ev.BRANCH_START,
+            {"branch": "sub_1", "parent_branch": "main", "turn": 1, "step": 1},
+        )
+        assert log.derive_messages() == []
+
+    def test_duplicate_branch_name_is_rejected(self):
+        log = SessionLog()
+        log.append(ev.TURN_START, {"turn": 1})
+        log.append(ev.STEP_START, {"turn": 1, "step": 1})
+        log.append(
+            ev.BRANCH_START,
+            {"branch": "sub_1", "parent_branch": "main", "turn": 1, "step": 1},
+        )
+        with pytest.raises(InvariantError, match="already exists"):
+            log.append(
+                ev.BRANCH_START,
+                {"branch": "sub_1", "parent_branch": "main", "turn": 1, "step": 1},
+            )
+
+    def test_branch_events_do_not_appear_on_main_surface(self):
+        log = SessionLog()
+        log.append(ev.REQUEST_HEADER, {"system": "sys", "reason": "initial"})
+        log.append(ev.TURN_START, {"turn": 1})
+        log.append(ev.STEP_START, {"turn": 1, "step": 1})
+        log.append(
+            ev.USER_MESSAGE,
+            {"turn": 1, "step": 1, "role": "user", "content": "main_msg", "source": "human"},
+            surface_op="append",
+        )
+        # Fork
+        log.append(
+            ev.BRANCH_START,
+            {"branch": "sub_1", "parent_branch": "main", "turn": 1, "step": 1},
+        )
+        # Branch event — note: branch param on append, no turn bracket enforcement for non-main
+        log.append(ev.TURN_START, {"turn": 1}, branch="sub_1")
+        log.append(
+            ev.USER_MESSAGE,
+            {"turn": 1, "step": 0, "role": "user", "content": "sub_msg", "source": "human"},
+            surface_op="append",
+            branch="sub_1",
+        )
+        # Main surface should only have main_msg
+        assert [m["content"] for m in log.derive_messages()] == ["main_msg"]
+
+    def test_branch_events_returns_only_events_for_that_branch(self):
+        log = SessionLog()
+        log.append(ev.TURN_START, {"turn": 1})
+        log.append(ev.STEP_START, {"turn": 1, "step": 1})
+        log.append(
+            ev.USER_MESSAGE,
+            {"turn": 1, "step": 1, "role": "user", "content": "main", "source": "human"},
+            surface_op="append",
+        )
+        log.append(
+            ev.BRANCH_START,
+            {"branch": "sub_1", "parent_branch": "main", "turn": 1, "step": 1},
+        )
+        log.append(ev.TURN_START, {"turn": 1}, branch="sub_1")
+        log.append(
+            ev.USER_MESSAGE,
+            {"turn": 1, "step": 0, "role": "user", "content": "sub", "source": "human"},
+            surface_op="append",
+            branch="sub_1",
+        )
+        branch_evts = log.branch_events("sub_1")
+        assert all(e.branch == "sub_1" for e in branch_evts)
+        assert any(e.data.get("content") == "sub" for e in branch_evts)
+        assert not any(e.data.get("content") == "main" for e in branch_evts)
+
+    def test_branch_events_for_unknown_branch_returns_empty(self):
+        log = SessionLog()
+        assert log.branch_events("nonexistent") == []
