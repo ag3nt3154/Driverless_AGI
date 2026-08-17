@@ -440,6 +440,16 @@ class TestBranching:
                 branch="sub_1",
             )
 
+    def test_branch_named_main_is_rejected(self):
+        log = SessionLog()
+        log.append(ev.TURN_START, {"turn": 1})
+        log.append(ev.STEP_START, {"turn": 1, "step": 1})
+        with pytest.raises(InvariantError, match="reserved"):
+            log.append(
+                ev.BRANCH_START,
+                {"branch": "main", "parent_branch": "main", "turn": 1, "step": 1},
+            )
+
     def test_branch_registration_survives_seed_reload(self):
         log = SessionLog()
         log.append(ev.TURN_START, {"turn": 1})

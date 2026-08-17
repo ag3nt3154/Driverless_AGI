@@ -10,7 +10,7 @@ whose parent prefix is included by the preceding segments.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any, Mapping, Sequence
 
 from agent import session_events as ev

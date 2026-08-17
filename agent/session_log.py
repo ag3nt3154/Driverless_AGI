@@ -307,6 +307,8 @@ class SessionLog:
             if branch != "main":
                 raise InvariantError("BRANCH_START must be appended on the main branch")
             branch_id = data["branch"]
+            if branch_id == "main":
+                raise InvariantError("'main' is a reserved branch name")
             if branch_id in self._branches:
                 raise InvariantError(f"branch {branch_id!r} already exists")
         snapshot = _snapshot_json(dict(data))
