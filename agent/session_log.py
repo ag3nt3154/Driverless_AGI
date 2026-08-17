@@ -304,6 +304,8 @@ class SessionLog:
             self._check_boundaries(type, data)
             self._check_replace(surface_op, source_seqs)
         if type == ev.BRANCH_START:
+            if branch != "main":
+                raise InvariantError("BRANCH_START must be appended on the main branch")
             branch_id = data["branch"]
             if branch_id in self._branches:
                 raise InvariantError(f"branch {branch_id!r} already exists")

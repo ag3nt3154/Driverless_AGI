@@ -428,3 +428,27 @@ class TestBranching:
     def test_branch_events_for_unknown_branch_returns_empty(self):
         log = SessionLog()
         assert log.branch_events("nonexistent") == []
+
+    def test_branch_start_on_non_main_branch_is_rejected(self):
+        log = SessionLog()
+        log.append(ev.TURN_START, {"turn": 1})
+        log.append(ev.STEP_START, {"turn": 1, "step": 1})
+        with pytest.raises(InvariantError, match="must be appended on the main branch"):
+            log.append(
+                ev.BRANCH_START,
+                {"branch": "sub_1", "parent_branch": "main", "turn": 1, "step": 1},
+                branch="sub_1",
+            )
+
+    def test_branch_registration_survives_seed_reload(self):
+        log = SessionLog()
+        log.append(ev.TURN_START, {"turn": 1})
+        log.append(ev.STEP_START, {"turn": 1, "step": 1})
+        log.append(
+            ev.BRANCH_START,
+            {"branch": "sub_1", "parent_branch": "main", "turn": 1, "step": 1},
+        )
+        log.append(ev.TURN_END, {"turn": 1, "reason": ev.reason_completed()})
+
+        reloaded = SessionLog(seed=log.events)
+        assert reloaded.branches == {"sub_1": ("main", 1, 1)}
