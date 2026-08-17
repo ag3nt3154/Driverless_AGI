@@ -95,6 +95,7 @@ class SessionEvent:
     surface_op: SurfaceOp | None = None
     source_seqs: tuple[int, ...] | None = None
     ignorable: bool = False
+    branch: str = "main"
 
     def to_json(self) -> dict:
         """Serialise for JSONL persistence. Absent optionals are omitted."""
@@ -114,6 +115,8 @@ class SessionEvent:
             raw["source_seqs"] = list(self.source_seqs)
         if self.ignorable:
             raw["ignorable"] = True
+        if self.branch != "main":
+            raw["branch"] = self.branch
         return raw
 
     @classmethod
@@ -131,6 +134,7 @@ class SessionEvent:
             surface_op=op,
             source_seqs=tuple(seqs) if seqs is not None else None,
             ignorable=bool(raw.get("ignorable", False)),
+            branch=raw.get("branch", "main"),
         )
 
 

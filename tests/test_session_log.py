@@ -78,6 +78,31 @@ class TestSessionEvent:
         with pytest.raises(Exception):
             e.seq = 2
 
+    def test_branch_defaults_to_main(self):
+        e = SessionEvent(seq=1, time="t", type=ev.TURN_START, data={"turn": 1})
+        assert e.branch == "main"
+
+    def test_branch_is_preserved_through_json_round_trip(self):
+        e = SessionEvent(
+            seq=1, time="t", type=ev.TURN_START,
+            data={"turn": 1}, branch="sub_abc",
+        )
+        restored = SessionEvent.from_json(e.to_json())
+        assert restored.branch == "sub_abc"
+
+    def test_branch_main_is_omitted_from_json(self):
+        e = SessionEvent(seq=1, time="t", type=ev.TURN_START, data={"turn": 1})
+        raw = e.to_json()
+        assert "branch" not in raw
+
+    def test_non_main_branch_is_present_in_json(self):
+        e = SessionEvent(
+            seq=1, time="t", type=ev.TURN_START,
+            data={"turn": 1}, branch="sub_abc",
+        )
+        raw = e.to_json()
+        assert raw["branch"] == "sub_abc"
+
 
 class TestSessionLogAppend:
     def test_seq_starts_at_one_and_is_contiguous(self):
