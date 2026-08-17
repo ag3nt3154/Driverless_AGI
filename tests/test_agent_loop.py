@@ -604,3 +604,28 @@ class TestDispatchToolCallsExtraction:
         result = loop._dispatch_tool_calls(message, response, [])
 
         assert result == "handoff body"
+
+
+class TestSessionLogWiring:
+    """AgentLoop passes its session log to the tool registry."""
+
+    def test_subagent_tools_receive_session_log(self, tmp_path):
+        """Subagent tools discovered during AgentLoop init receive the log."""
+        from unittest.mock import patch
+
+        config = AgentConfig(
+            api_key="test-key",
+            project_path=tmp_path,
+        )
+
+        captured_kwargs: dict = {}
+
+        def spy_discover(*args, **kwargs):
+            captured_kwargs.update(kwargs)
+            return []
+
+        with patch("agent.tools._discover_subagent_tools", side_effect=spy_discover):
+            loop = AgentLoop(config=config)
+
+        assert "session_log" in captured_kwargs
+        assert captured_kwargs["session_log"] is loop.log
