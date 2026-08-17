@@ -135,9 +135,12 @@ def run_subagent(
     handoffs_dir.mkdir(parents=True, exist_ok=True)
     handoff_path = handoffs_dir / f"{subagent_type}_{subagent_id}.md"
 
-    # Log branch/start on parent log if a turn is open
     branch_id: str | None = None
-    if parent_log is not None and parent_log.open_turn is not None:
+    if (
+        parent_log is not None
+        and parent_log.open_turn is not None
+        and parent_log.open_step is not None
+    ):
         branch_id = f"{subagent_type}_{subagent_id}"
         parent_log.append(
             sev.BRANCH_START,

@@ -354,6 +354,31 @@ class TestBranchStartLogging:
         assert len(branch_events) == 0
         assert result.branch_id is None
 
+    @patch("tools.subagent_api._runner.run_subagent")
+    def test_no_branch_when_turn_open_but_no_step(self, mock_runner):
+        """No branch/start logged if turn is open but no step has started yet.
+
+        open_step is None in this state; emitting {"step": None} would violate
+        the spec that step is int.
+        """
+        mock_runner.return_value = {
+            "status": "ok",
+            "handoff": str(Path("fake.md")),
+        }
+        log = SessionLog()
+        log.append(sev.TURN_START, {"turn": 1})  # turn open, no step started
+
+        with patch("tools.subagent_api.Path.write_text"):
+            with patch("tools.subagent_api.Path.read_text", return_value="handoff"):
+                result = run_subagent(
+                    task="test",
+                    prompt="do stuff",
+                    parent_log=log,
+                )
+        branch_events = [e for e in log.events if e.type == sev.BRANCH_START]
+        assert len(branch_events) == 0
+        assert result.branch_id is None
+
 
 class TestResumeSubagentByPid:
     def test_resume_returns_result(self):
