@@ -13,14 +13,18 @@ import os
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable
+from typing import TYPE_CHECKING, Callable
 from uuid import uuid4
 
 import yaml
 
 from agent import DAGI_ROOT as _DAGI_ROOT
+from agent import session_events as sev
 from tools import _subagent_runner as _runner
 from tools._task_envelope import wrap_envelope
+
+if TYPE_CHECKING:
+    from agent.session_log import SessionLog
 
 
 @dataclass
@@ -31,6 +35,7 @@ class SubagentResult:
     session_log_path: Path | None
     pid: int | None
     escalation: str | None
+    branch_id: str | None = None
 
     @property
     def is_ok(self) -> bool:
@@ -97,6 +102,7 @@ def run_subagent(
     handoff_spec: str = "",
     project_path: Path | None = None,
     on_event: Callable[[str], None] | None = None,
+    parent_log: "SessionLog | None" = None,
 ) -> SubagentResult:
     """Spawn a subagent and return its result with auto-read handoff."""
     if preset is None and prompt is None:
@@ -129,6 +135,20 @@ def run_subagent(
     handoffs_dir.mkdir(parents=True, exist_ok=True)
     handoff_path = handoffs_dir / f"{subagent_type}_{subagent_id}.md"
 
+    # Log branch/start on parent log if a turn is open
+    branch_id: str | None = None
+    if parent_log is not None and parent_log.open_turn is not None:
+        branch_id = f"{subagent_type}_{subagent_id}"
+        parent_log.append(
+            sev.BRANCH_START,
+            {
+                "branch": branch_id,
+                "parent_branch": "main",
+                "turn": parent_log.open_turn,
+                "step": parent_log.open_step,
+            },
+        )
+
     # Build extra argv
     extra_argv: list[str] = []
     if tools is not None or preset is None:
@@ -158,7 +178,9 @@ def run_subagent(
     finally:
         Path(prompt_tmp).unlink(missing_ok=True)
 
-    return _build_result(raw, handoff_path)
+    result = _build_result(raw, handoff_path)
+    result.branch_id = branch_id
+    return result
 
 
 def resume_subagent_by_pid(
