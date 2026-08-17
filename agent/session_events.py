@@ -37,6 +37,7 @@ TOOL_CALL = "tool/call"
 REQUEST_HEADER = "request/header"
 PLAN_WRITE = "plan/write"
 END_SEED = "session/end-seed"
+BRANCH_START = "branch/start"
 
 #: Closed set. An event type outside this set may never enter the surface,
 #: which makes it structurally impossible for bookkeeping to cost tokens.
@@ -58,6 +59,7 @@ KNOWN_EVENT_TYPES: frozenset[str] = frozenset(
         REQUEST_HEADER,
         PLAN_WRITE,
         END_SEED,
+        BRANCH_START,
     }
 )
 

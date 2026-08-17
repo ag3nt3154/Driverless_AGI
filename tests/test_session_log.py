@@ -27,6 +27,10 @@ class TestVocabulary:
             assert t in ev.KNOWN_EVENT_TYPES
             assert t not in ev.SURFACE_EVENT_TYPES
 
+    def test_branch_start_is_known_but_not_surface(self):
+        assert ev.BRANCH_START in ev.KNOWN_EVENT_TYPES
+        assert ev.BRANCH_START not in ev.SURFACE_EVENT_TYPES
+
     def test_format_version_is_one(self):
         assert ev.SESSION_FORMAT_VERSION == 1
 
