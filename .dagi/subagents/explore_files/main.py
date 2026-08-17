@@ -10,6 +10,7 @@ from agent.base_tool import BaseTool
 if TYPE_CHECKING:
     from agent.loop import AgentCallbacks, AgentConfig
     from agent.session import SessionTracker
+    from agent.session_log import SessionLog
 
 
 class ExploreFilesTool(BaseTool):
@@ -42,10 +43,12 @@ class ExploreFilesTool(BaseTool):
         config: "AgentConfig",
         callbacks: "AgentCallbacks | None" = None,
         tracker: "SessionTracker | None" = None,
+        session_log: "SessionLog | None" = None,
     ) -> None:
         self._config = config
         self._callbacks = callbacks
         self._tracker = tracker
+        self._session_log = session_log
 
     def run(self, task: str, custom_instructions: str = "") -> str:
         from tools._handoff_format import dispatch_status_result, format_handoff_result
@@ -60,6 +63,7 @@ class ExploreFilesTool(BaseTool):
             custom_instructions=custom_instructions,
             project_path=self._config.project_path,
             on_event=on_event,
+            parent_log=self._session_log,
         )
 
         if result.is_ok:

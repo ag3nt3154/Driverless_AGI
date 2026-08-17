@@ -147,17 +147,11 @@ def _discover_subagent_tools(
                         and obj is not BaseTool
                         and obj.__module__ == mod_name
                     ):
-                        init_params = inspect.signature(obj.__init__).parameters
-                        extra = (
-                            {"session_log": session_log}
-                            if "session_log" in init_params
-                            else {}
-                        )
                         tools_by_name[type_name] = obj(
                             config=config,
                             callbacks=callbacks,
                             tracker=tracker,
-                            **extra,
+                            session_log=session_log,
                         )
                         break
             except Exception as exc:  # noqa: BLE001
