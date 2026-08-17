@@ -34,6 +34,7 @@ from tools.write import WriteTool
 if TYPE_CHECKING:
     from agent.loop import AgentCallbacks, AgentConfig
     from agent.session import SessionTracker
+    from agent.session_log import SessionLog
 
 from agent import DAGI_ROOT as _DAGI_ROOT
 
@@ -119,6 +120,7 @@ def create_tool_registry(
     tracker: "SessionTracker | None" = None,
     memory_root: Path | None = None,
     bash_tool: "object | None" = None,
+    session_log: "SessionLog | None" = None,
 ) -> ToolRegistry:
     """Build a fresh ToolRegistry with all tools bound to *cwd*.
 
@@ -183,7 +185,8 @@ def create_tool_registry(
                 "explore_files",
             }
             for spawn_tool in _discover_subagent_tools(
-                cwd=cwd, config=config, callbacks=callbacks, tracker=tracker,
+                cwd=cwd, config=config, callbacks=callbacks,
+                tracker=tracker, session_log=session_log,
             ):
                 if spawn_tool.name in _plan_mode_names:
                     try:
@@ -229,7 +232,8 @@ def create_tool_registry(
             # Auto-discover predefined subagent types from .dagi/subagents/
             # A valid type directory must contain both prompt.md and subagent_config.yaml.
             for spawn_tool in _discover_subagent_tools(
-                cwd=cwd, config=config, callbacks=callbacks, tracker=tracker,
+                cwd=cwd, config=config, callbacks=callbacks,
+                tracker=tracker, session_log=session_log,
             ):
                 try:
                     reg.register(spawn_tool)

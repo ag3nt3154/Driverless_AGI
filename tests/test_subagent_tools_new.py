@@ -168,3 +168,27 @@ class TestReviewSubagentTool:
         call_kwargs = mock_run.call_args.kwargs
         assert "/tmp/worker.md" in call_kwargs.get("custom_instructions", "") or \
                "/tmp/worker.md" in call_kwargs.get("task", "")
+
+
+class TestSessionLogThreading:
+    """session_log is threaded from create_tool_registry to subagent tools."""
+
+    def test_discover_passes_session_log(self, tmp_path):
+        """_discover_subagent_tools passes session_log to tool constructors."""
+        from agent.subagent_tools import _discover_subagent_tools
+        from agent.session_log import SessionLog
+        from unittest.mock import MagicMock
+
+        log = SessionLog()
+        config = MagicMock()
+        config.project_path = tmp_path
+
+        tools = _discover_subagent_tools(
+            cwd=tmp_path,
+            config=config,
+            callbacks=None,
+            tracker=None,
+            session_log=log,
+        )
+        for tool in tools:
+            assert getattr(tool, "_session_log", None) is log

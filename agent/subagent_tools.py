@@ -30,6 +30,7 @@ from tools.write import WriteTool
 if TYPE_CHECKING:
     from agent.loop import AgentCallbacks, AgentConfig
     from agent.session import SessionTracker
+    from agent.session_log import SessionLog
 
 from agent import DAGI_ROOT as _DAGI_ROOT
 
@@ -104,6 +105,7 @@ def _discover_subagent_tools(
     config: "AgentConfig",
     callbacks: "AgentCallbacks | None",
     tracker: "SessionTracker | None",
+    session_log: "SessionLog | None" = None,
 ) -> list["BaseTool"]:
     """Scan .dagi/subagents/ for main.py; import and instantiate each BaseTool subclass.
 
@@ -145,10 +147,17 @@ def _discover_subagent_tools(
                         and obj is not BaseTool
                         and obj.__module__ == mod_name
                     ):
+                        init_params = inspect.signature(obj.__init__).parameters
+                        extra = (
+                            {"session_log": session_log}
+                            if "session_log" in init_params
+                            else {}
+                        )
                         tools_by_name[type_name] = obj(
                             config=config,
                             callbacks=callbacks,
                             tracker=tracker,
+                            **extra,
                         )
                         break
             except Exception as exc:  # noqa: BLE001
