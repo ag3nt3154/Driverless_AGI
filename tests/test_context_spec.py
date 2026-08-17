@@ -125,3 +125,39 @@ class TestContextSpecReconstruct:
         ])
         with pytest.raises(ValueError, match="must start with"):
             reconstruct(log, spec)
+
+    def test_context_compaction_is_included(self):
+        """CONTEXT_COMPACTION has no turn/step; it must be included whenever in scope."""
+        log = SessionLog()
+        log.append(ev.REQUEST_HEADER, {"system": "sys", "reason": "initial"})
+        log.append(ev.TURN_START, {"turn": 1})
+        log.append(
+            ev.USER_MESSAGE,
+            {"turn": 1, "step": 0, "role": "user", "content": "first", "source": "human"},
+            surface_op="append",
+        )
+        log.append(ev.STEP_START, {"turn": 1, "step": 1})
+        log.append(
+            ev.ASSISTANT_MESSAGE,
+            {"turn": 1, "step": 1, "message": {"role": "assistant", "content": "second"}},
+            surface_op="append",
+        )
+        # Simulate compaction: replace the two surface nodes with a summary
+        nodes = log.surface.nodes
+        log.append(
+            ev.CONTEXT_COMPACTION,
+            {"summary": "compacted summary", "removed": 2},
+            surface_op=("replace", nodes[0], nodes[1]),
+            source_seqs=list(nodes),
+        )
+        log.append(ev.STEP_END, {"turn": 1, "step": 1})
+        log.append(ev.TURN_END, {"turn": 1, "reason": ev.reason_completed()})
+
+        spec = ContextSpec(segments=[
+            BranchSegment(branch="main", turns=[(1, [0, 1])]),
+        ])
+        _, messages = reconstruct(log, spec)
+        contents = [m.get("content") for m in messages]
+        assert "compacted summary" in contents
+        assert "first" not in contents   # shadowed by compaction
+        assert "second" not in contents  # shadowed by compaction

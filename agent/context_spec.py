@@ -22,19 +22,28 @@ from agent.session_surface import project_event
 class BranchSegment:
     """One segment of a context path.
 
-    ``turns`` is a list of ``(turn_number, [step_numbers])`` pairs.
-    Step numbers select which steps' surface events are included.
+    ``turns`` is stored as a tuple of ``(turn_number, tuple_of_steps)`` pairs.
+    Callers may pass lists for convenience; ``__post_init__`` converts them.
     Step 0 means pre-step surface events (user messages logged before
     the first step/start in that turn).
     """
     branch: str
-    turns: list[tuple[int, list[int]]]
+    turns: tuple  # tuple of (turn, tuple of steps)
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self, "turns",
+            tuple((t, tuple(steps)) for t, steps in self.turns)
+        )
 
 
 @dataclass(frozen=True, slots=True)
 class ContextSpec:
     """Path from root to the current agent's position in the log tree."""
-    segments: list[BranchSegment]
+    segments: tuple  # tuple of BranchSegment
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "segments", tuple(self.segments))
 
 
 def _collect_surface_events(
@@ -49,9 +58,20 @@ def _collect_surface_events(
     events are included: only events with ``seq <= fork_seq`` are considered,
     so events logged after the branch point (like the handoff tool_result)
     are excluded from the subagent's parent prefix.
+
+    Replace operations (e.g. CONTEXT_COMPACTION) are honoured: shadowed
+    events are excluded and the replacement event takes their surface slot.
+    CONTEXT_COMPACTION events have no turn/step, so they pass the turn/step
+    filter unconditionally (they are included whenever in scope).
     """
     turn_steps: dict[int, set[int]] = {t: set(steps) for t, steps in turns}
-    result: list[SessionEvent] = []
+
+    # First pass: simulate the surface for this branch to find which event
+    # seqs are active after all replace operations (respecting fork_seq).
+    # This is necessary so that shadowed events (replaced by compaction) are
+    # excluded and only the replacement event appears in the result.
+    sim_nodes: list[int] = []
+    event_by_seq: dict[int, SessionEvent] = {}
     for event in log.events:
         if event.branch != branch:
             continue
@@ -59,8 +79,27 @@ def _collect_surface_events(
             continue
         if fork_seq is not None and event.seq > fork_seq:
             continue
+        event_by_seq[event.seq] = event
+        op = event.surface_op
+        if op == "append":
+            sim_nodes.append(event.seq)
+        elif isinstance(op, tuple) and op[0] == "replace":
+            _, start, end = op
+            lo = sim_nodes.index(start)
+            hi = sim_nodes.index(end)
+            sim_nodes[lo:hi + 1] = [event.seq]
+
+    # Second pass: walk the active surface in order, applying turn/step filter.
+    result: list[SessionEvent] = []
+    for seq in sim_nodes:
+        event = event_by_seq[seq]
         e_turn = event.data.get("turn")
         e_step = event.data.get("step")
+        if e_turn is None:
+            # CONTEXT_COMPACTION has no turn/step; include it whenever its
+            # branch and seq are in scope.
+            result.append(event)
+            continue
         if e_turn not in turn_steps:
             continue
         allowed_steps = turn_steps[e_turn]
