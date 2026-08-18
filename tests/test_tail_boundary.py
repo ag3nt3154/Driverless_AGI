@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import pytest
 
-from tools.compact._tail_boundary import compute_tail_boundary
+from tools.compact._tail_boundary import compute_tail_boundary, estimate_tokens
 
 
 class TestComputeTailBoundary:
@@ -75,3 +75,20 @@ class TestComputeTailBoundary:
             keep_recent_tokens=1000,
         )
         assert boundary.has_middle is False
+
+
+class TestEstimateTokens:
+    def test_string_content(self):
+        msg = {"content": "a" * 40, "tool_calls": [{"function": {"arguments": "b" * 20}}]}
+        assert estimate_tokens(msg) == 15  # (40+20)/4
+
+    def test_floor_of_four(self):
+        assert estimate_tokens({"content": ""}) == 4
+
+    def test_list_content_uses_placeholder(self):
+        msg = {"content": [{"type": "image_url", "image_url": {"url": "data:image/png;base64," + "A" * 100_000}}]}
+        tokens = estimate_tokens(msg)
+        assert tokens == 200
+
+    def test_none_content(self):
+        assert estimate_tokens({"content": None}) == 4

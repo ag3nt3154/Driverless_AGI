@@ -569,8 +569,8 @@ class TestDerivedMessages:
         ]
 
     def test_sync_preserves_list_identity_for_the_compact_binding(self, tmp_path):
-        """CompactTool.bind stores this exact list object and slice-assigns
-        into it. Rebinding the attribute would leave it writing to an orphan."""
+        """AgentLoop.compact() operates on self._messages in-place.
+        Rebinding the attribute would leave it writing to an orphan."""
         loop = _make_loop(tmp_path)
         original = loop._messages
         loop.log.append(ev.TURN_START, {"turn": 1})

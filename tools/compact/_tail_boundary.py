@@ -8,6 +8,24 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+_CHARS_PER_TOKEN = 4
+_IMAGE_PLACEHOLDER_TOKENS = 200
+
+
+def estimate_tokens(msg: dict) -> int:
+    """Rough token estimate for a single message (1 token ~ 4 chars).
+
+    List-typed content (vision results with base64) uses a fixed
+    placeholder to avoid base64 inflation.
+    """
+    content = msg.get("content")
+    if isinstance(content, list):
+        return _IMAGE_PLACEHOLDER_TOKENS
+    text = str(content) if content else ""
+    for tc in msg.get("tool_calls") or []:
+        text += str(tc.get("function", {}).get("arguments", ""))
+    return max(len(text) // _CHARS_PER_TOKEN, 4)
+
 
 @dataclass(frozen=True, slots=True)
 class TailBoundary:
