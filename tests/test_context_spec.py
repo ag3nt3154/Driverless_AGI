@@ -7,7 +7,11 @@ import pytest
 
 from agent import session_events as ev
 from agent.session_log import SessionLog
-from agent.context_spec import BranchSegment, ContextSpec, reconstruct, spec_for_main, spec_for_branch
+from agent.context_spec import (
+    BranchSegment, ContextSpec, reconstruct, spec_for_main, spec_for_branch,
+    _collect_surface_events,
+)
+from agent.session_surface import project_event
 
 
 def _populated_log() -> SessionLog:
@@ -127,6 +131,206 @@ class TestContextSpecReconstruct:
         ])
         with pytest.raises(ValueError, match="must start with"):
             reconstruct(log, spec)
+
+    def test_retroactive_branch_uses_parent_cut_seq(self):
+        """A branch with parent_cut_seq reconstructs only through that earlier seq."""
+        log = SessionLog()
+        log.append(ev.REQUEST_HEADER, {"system": "sys", "reason": "initial"})
+        log.append(ev.TURN_START, {"turn": 1})
+        # step 0: user message
+        log.append(
+            ev.USER_MESSAGE,
+            {"turn": 1, "step": 0, "role": "user", "content": "first task", "source": "human"},
+            surface_op="append",
+        )
+        # step 1: assistant
+        log.append(ev.STEP_START, {"turn": 1, "step": 1})
+        log.append(
+            ev.ASSISTANT_MESSAGE,
+            {"turn": 1, "step": 1, "message": {"role": "assistant", "content": "step1 reply"}},
+            surface_op="append",
+        )
+        step1_end = log.append(ev.STEP_END, {"turn": 1, "step": 1})
+        # step 2: assistant (this should NOT be in the prefix)
+        log.append(ev.STEP_START, {"turn": 1, "step": 2})
+        log.append(
+            ev.USER_MESSAGE,
+            {"turn": 1, "step": 2, "role": "user", "content": "continue", "source": "auto"},
+            surface_op="append",
+        )
+        log.append(
+            ev.ASSISTANT_MESSAGE,
+            {"turn": 1, "step": 2, "message": {"role": "assistant", "content": "step2 reply"}},
+            surface_op="append",
+        )
+        log.append(ev.STEP_END, {"turn": 1, "step": 2})
+        # Retroactive branch: physically here but logically forked at step 1's end
+        log.append(
+            ev.BRANCH_START,
+            {
+                "branch": "compact_abc",
+                "parent_branch": "main",
+                "turn": 1,
+                "step": 1,
+                "parent_cut_seq": step1_end.seq,
+            },
+        )
+        # Branch has its own content
+        log.append(ev.TURN_START, {"turn": 1}, branch="compact_abc")
+        log.append(
+            ev.USER_MESSAGE,
+            {"turn": 1, "step": 0, "role": "user", "content": "compact task", "source": "human"},
+            surface_op="append",
+            branch="compact_abc",
+        )
+        log.append(ev.STEP_END, {"turn": 1, "step": 0}, branch="compact_abc")
+        log.append(ev.TURN_END, {"turn": 1, "reason": {"kind": "completed"}}, branch="compact_abc")
+        log.append(ev.TURN_END, {"turn": 1, "reason": {"kind": "completed"}})
+
+        spec = spec_for_branch(log, "compact_abc")
+        _, messages = reconstruct(log, spec)
+        contents = [m.get("content") for m in messages]
+        # Parent prefix through step 1 included
+        assert "first task" in contents
+        assert "step1 reply" in contents
+        # Step 2 excluded (after the logical fork)
+        assert "continue" not in contents
+        assert "step2 reply" not in contents
+        # Branch content included
+        assert "compact task" in contents
+
+    def test_branch_without_parent_cut_seq_uses_physical_seq(self):
+        """Branches without parent_cut_seq use the BRANCH_START event's own seq."""
+        log = _populated_log()  # existing helper, no parent_cut_seq
+        spec = spec_for_branch(log, "sub_1")
+        _, messages = reconstruct(log, spec)
+        contents = [m.get("content") for m in messages]
+        # Parent prefix present, handoff excluded (existing behavior)
+        assert "task" in contents
+        assert "calling tool" in contents
+        assert "handoff text" not in contents
+        assert "sub instructions" in contents
+
+    def test_retroactive_fork_honors_prior_compaction(self):
+        """A retroactive branch prefix includes prior compaction summaries,
+        not the raw events they shadowed."""
+        log = SessionLog()
+        log.append(ev.REQUEST_HEADER, {"system": "sys", "reason": "initial"})
+        log.append(ev.TURN_START, {"turn": 1})
+        # step 0 and 1: will be compacted
+        log.append(
+            ev.USER_MESSAGE,
+            {"turn": 1, "step": 0, "role": "user", "content": "old msg", "source": "human"},
+            surface_op="append",
+        )
+        log.append(ev.STEP_START, {"turn": 1, "step": 1})
+        log.append(
+            ev.ASSISTANT_MESSAGE,
+            {"turn": 1, "step": 1, "message": {"role": "assistant", "content": "old reply"}},
+            surface_op="append",
+        )
+        # Compact steps 0-1 into a summary
+        nodes = log.surface.nodes
+        log.append(
+            ev.CONTEXT_COMPACTION,
+            {"summary": "prior summary", "removed": 2},
+            surface_op=("replace", nodes[0], nodes[1]),
+            source_seqs=list(nodes),
+        )
+        # step 2: retained tail
+        log.append(ev.STEP_START, {"turn": 1, "step": 2})
+        log.append(
+            ev.USER_MESSAGE,
+            {"turn": 1, "step": 2, "role": "user", "content": "retained", "source": "auto"},
+            surface_op="append",
+        )
+        log.append(
+            ev.ASSISTANT_MESSAGE,
+            {"turn": 1, "step": 2, "message": {"role": "assistant", "content": "retained reply"}},
+            surface_op="append",
+        )
+        step2_end = log.append(ev.STEP_END, {"turn": 1, "step": 2})
+        # step 3: will not be in prefix
+        log.append(ev.STEP_START, {"turn": 1, "step": 3})
+        log.append(
+            ev.USER_MESSAGE,
+            {"turn": 1, "step": 3, "role": "user", "content": "new msg", "source": "auto"},
+            surface_op="append",
+        )
+        log.append(
+            ev.ASSISTANT_MESSAGE,
+            {"turn": 1, "step": 3, "message": {"role": "assistant", "content": "new reply"}},
+            surface_op="append",
+        )
+        log.append(ev.STEP_END, {"turn": 1, "step": 3})
+        # Retroactive branch at step 2's end
+        log.append(
+            ev.BRANCH_START,
+            {
+                "branch": "compact_v2",
+                "parent_branch": "main",
+                "turn": 1,
+                "step": 2,
+                "parent_cut_seq": step2_end.seq,
+            },
+        )
+        log.append(ev.TURN_END, {"turn": 1, "reason": {"kind": "completed"}})
+
+        # Use the fork_seq manually to verify what reconstruct would produce
+        events = _collect_surface_events(log, "main", [(1, [0, 1, 2, 3])], step2_end.seq)
+        contents = [project_event(e).get("content") for e in events]
+        assert "prior summary" in contents   # compaction summary included
+        assert "old msg" not in contents     # shadowed by compaction
+        assert "retained" in contents        # step 2 included
+        assert "new msg" not in contents     # step 3 excluded (after fork)
+
+    def test_safe_cut_rejects_mid_step_fork(self):
+        """A parent_cut_seq pointing mid-step (before tool_result) excludes
+        the incomplete step entirely from the prefix."""
+        log = SessionLog()
+        log.append(ev.REQUEST_HEADER, {"system": "sys", "reason": "initial"})
+        log.append(ev.TURN_START, {"turn": 1})
+        log.append(
+            ev.USER_MESSAGE,
+            {"turn": 1, "step": 0, "role": "user", "content": "task", "source": "human"},
+            surface_op="append",
+        )
+        log.append(ev.STEP_START, {"turn": 1, "step": 1})
+        log.append(
+            ev.ASSISTANT_MESSAGE,
+            {"turn": 1, "step": 1, "message": {"role": "assistant", "content": "calling"}},
+            surface_op="append",
+        )
+        log.append(
+            ev.TOOL_CALL,
+            {"turn": 1, "step": 1, "call_id": "c1", "name": "read", "arguments": "{}"},
+        )
+        log.append(
+            ev.TOOL_RESULT,
+            {"turn": 1, "step": 1, "call_id": "c1", "content": "file contents", "meta": None},
+            surface_op="append",
+        )
+        step1_end = log.append(ev.STEP_END, {"turn": 1, "step": 1})
+        log.append(ev.TURN_END, {"turn": 1, "reason": {"kind": "completed"}})
+
+        # Fork at STEP_END (step 1 complete) — both assistant and tool_result included
+        log.append(
+            ev.BRANCH_START,
+            {
+                "branch": "good_fork",
+                "parent_branch": "main",
+                "turn": 1,
+                "step": 1,
+                "parent_cut_seq": step1_end.seq,
+            },
+        )
+        events = _collect_surface_events(
+            log, "main", [(1, [0, 1])], step1_end.seq,
+        )
+        contents = [project_event(e).get("content") for e in events]
+        assert "task" in contents
+        assert "calling" in contents
+        assert "file contents" in contents  # tool_result included with its step
 
     def test_context_compaction_is_included(self):
         """CONTEXT_COMPACTION has no turn/step; it must be included whenever in scope."""

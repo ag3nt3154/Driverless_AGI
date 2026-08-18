@@ -198,6 +198,13 @@ class SessionLog:
         """Return all events belonging to the given branch."""
         return [e for e in self._events if e.branch == branch]
 
+    def branch_event(self, branch_id: str) -> SessionEvent | None:
+        """Return the BRANCH_START event for a branch, or None."""
+        for event in self._events:
+            if event.type == ev.BRANCH_START and event.data.get("branch") == branch_id:
+                return event
+        return None
+
     def _absorb(self, event: SessionEvent) -> None:
         """Fold one committed event into the log's derived state."""
         if event.type == ev.TURN_START:

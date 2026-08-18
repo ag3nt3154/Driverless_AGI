@@ -141,13 +141,11 @@ def reconstruct(
         fork_seq: int | None = None
         if i < len(spec.segments) - 1:
             next_branch = spec.segments[i + 1].branch
-            for evt in log.events:
-                if (
-                    evt.type == ev.BRANCH_START
-                    and evt.data.get("branch") == next_branch
-                ):
-                    fork_seq = evt.seq
-                    break
+            branch_evt = log.branch_event(next_branch)
+            if branch_evt is not None:
+                # Use parent_cut_seq for retroactive branches,
+                # fall back to the physical event seq for normal branches.
+                fork_seq = branch_evt.data.get("parent_cut_seq", branch_evt.seq)
 
         events = _collect_surface_events(
             log, segment.branch, segment.turns, fork_seq,
