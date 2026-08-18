@@ -1,6 +1,6 @@
 # AGENTS.md
 
-> Last updated: 2026-08-18 (branch-based compact cache design approved) | [README](README.md) | [TODO](TODO.md)
+> Last updated: 2026-08-18 (Task 2: request snapshot capture for compact fork context) | [README](README.md) | [TODO](TODO.md)
 
 
 ---
@@ -161,7 +161,7 @@ tui.py / telegram_bot.py / main.py / dagi_gui/__main__.py
 | ---------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `agent/loop.py`                                      | Core agent loop, system-prompt assembly, termination/compaction, WriteHandoff sentinel dispatch                                                                |
 | `agent/config_loader.py`                             | Reads `config.yaml`, merges `.dagi/config.yaml`, resolves API key, services, Telegram config                                                                   |
-| `agent/session_log.py`                               | Append-only event log with write-time invariant enforcement; `SessionLog.branches` tracks spawned subagent branches                                            |
+| `agent/session_log.py`                               | Append-only event log; `SessionLog.branches` tracks subagent branches; `branch_event(id)` returns the BRANCH_START event for a branch                         |
 | `agent/session_events.py`                            | Event vocabulary constants (`TURN_START`, `BRANCH_START`, etc.); `SESSION_FORMAT_VERSION`                                                                      |
 | `agent/subagent_tools.py`                            | `_discover_subagent_tools()` import-based discovery; `build_subagent_registry()` with `tool_names_override`                                                    |
 | `tools/subagent_api.py`                              | **Public API** — `run_subagent()` logs `branch/start` on `parent_log` before spawning; `SubagentResult.branch_id` carries generated id                        |
@@ -187,6 +187,7 @@ tui.py / telegram_bot.py / main.py / dagi_gui/__main__.py
 - **2026-08-11**: Grep Python fallback (no ripgrep) had no timeout — `rglob("*")` over Google Drive mount (`memory_root`) hung indefinitely, freezing TUI spinner → added 15s wall-clock timeout to both enumeration and file-scanning phases; installed `ripgrep` via conda.
 - **2026-08-16**: `QuestionBroker.has_pending` missing `@property` — `_handle_pause` tested the bound method (always truthy), so pause never killed bash or paused loop → added `@property`; fixed stale test using `broker._pending` (old API) to use `broker._pending_id`.
 - **2026-08-17**: Brief spec for `test_branch_id_uses_subagent_type` patched `Path.read_text` globally — broke `yaml.safe_load` in `_load_preset` → fixed by creating a real preset dir in `tmp_path` and removing the overly-broad mock.
+- **2026-08-18**: (no new errors — Task 1 & Task 2 implemented cleanly; 9/9 tests passed on first run)
 
 ## Notes & Terms
 
@@ -201,6 +202,8 @@ tui.py / telegram_bot.py / main.py / dagi_gui/__main__.py
 - **`subagent_api` vs `_subagent_runner`**: `tools/subagent_api.py` is the public API (preset resolution, envelope, `SubagentResult`); `tools/_subagent_runner.py` is the private subprocess spawner. Never import `_subagent_runner` directly from outside `subagent_api.py`.
 - **`desktop/out/` and `desktop/node_modules/`**: both gitignored (added 2026-08-16); Electron build artifacts must not be committed — regenerate with `npm run make` in `desktop/`.
 - **Subagent discovery + branch logging**: `_discover_subagent_tools()` passes `session_log` unconditionally to each tool constructor; `run()` forwards it as `parent_log` to `run_subagent()`, which logs `branch/start` before spawning. Mock `tools.subagent_api._runner.run_subagent` (not the public function) in tests so the logging code actually runs.
+- **`parent_cut_seq` on BRANCH_START**: optional field that overrides the physical event seq as the fork cut-off in `reconstruct()`. Enables retroactive branching — the BRANCH_START is appended after later events but logically forks from the earlier seq. `_collect_surface_events` filters by `seq <= fork_seq` and is unchanged.
+- **`_last_request_snapshot`**: `AgentLoop` field (dict | None) capturing `model`, `messages`, `tools`, `parallel_tool_calls`, `extra_body`, `base_url` from `_create_kwargs` right before the provider call. Updated on every retry iteration. Task 6 reads this to build the compact fork-context file.
 
 ## User Insights
 
@@ -235,4 +238,4 @@ tui.py / telegram_bot.py / main.py / dagi_gui/__main__.py
 - Parallel subagent dispatch via `background: true` + `get_subagent_result(id)` two-tool protocol.
 - Bootstrap GNHF self-review against 259 accumulated session logs.
 - TODO-013: DAGI-native `memory_recall` tool (BM25 inside agent loop, explicit tool call) still pending — Claude Code hook (passive, pre-prompt) is a complement, not a replacement.
-- Implement the approved retroactive compact-branch design in `docs/superpowers/specs/2026-08-18-compact-cache-prefix-design.md`.
+- Tasks 1 & 2 of `compact-cache-prefix` done; Tasks 3–N remain in `.superpowers/sdd/2026-08-18-compact-cache-prefix/`.
