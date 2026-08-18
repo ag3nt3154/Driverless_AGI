@@ -213,11 +213,11 @@ class TestContextSpecReconstruct:
 
     def test_retroactive_fork_honors_prior_compaction(self):
         """A retroactive branch prefix includes prior compaction summaries,
-        not the raw events they shadowed."""
+        not the raw events they shadowed, and excludes post-fork events."""
         log = SessionLog()
         log.append(ev.REQUEST_HEADER, {"system": "sys", "reason": "initial"})
         log.append(ev.TURN_START, {"turn": 1})
-        # step 0 and 1: will be compacted
+        # steps 0-1: will be compacted
         log.append(
             ev.USER_MESSAGE,
             {"turn": 1, "step": 0, "role": "user", "content": "old msg", "source": "human"},
@@ -237,7 +237,7 @@ class TestContextSpecReconstruct:
             surface_op=("replace", nodes[0], nodes[1]),
             source_seqs=list(nodes),
         )
-        # step 2: retained tail
+        # step 2: retained tail — will be inside the compact branch's prefix
         log.append(ev.STEP_START, {"turn": 1, "step": 2})
         log.append(
             ev.USER_MESSAGE,
@@ -250,7 +250,7 @@ class TestContextSpecReconstruct:
             surface_op="append",
         )
         step2_end = log.append(ev.STEP_END, {"turn": 1, "step": 2})
-        # step 3: will not be in prefix
+        # step 3: post-fork, should NOT appear in the compact branch's prefix
         log.append(ev.STEP_START, {"turn": 1, "step": 3})
         log.append(
             ev.USER_MESSAGE,
@@ -263,7 +263,7 @@ class TestContextSpecReconstruct:
             surface_op="append",
         )
         log.append(ev.STEP_END, {"turn": 1, "step": 3})
-        # Retroactive branch at step 2's end
+        # Retroactive branch at step 2's STEP_END — logically forked after step 2
         log.append(
             ev.BRANCH_START,
             {
@@ -274,19 +274,34 @@ class TestContextSpecReconstruct:
                 "parent_cut_seq": step2_end.seq,
             },
         )
+        # Branch needs at least one turn to satisfy spec_for_branch
+        log.append(ev.TURN_START, {"turn": 1}, branch="compact_v2")
+        log.append(
+            ev.USER_MESSAGE,
+            {"turn": 1, "step": 0, "role": "user", "content": "compact task", "source": "human"},
+            surface_op="append",
+            branch="compact_v2",
+        )
+        log.append(ev.TURN_END, {"turn": 1, "reason": {"kind": "completed"}}, branch="compact_v2")
         log.append(ev.TURN_END, {"turn": 1, "reason": {"kind": "completed"}})
 
-        # Use the fork_seq manually to verify what reconstruct would produce
-        events = _collect_surface_events(log, "main", [(1, [0, 1, 2, 3])], step2_end.seq)
-        contents = [project_event(e).get("content") for e in events]
-        assert "prior summary" in contents   # compaction summary included
-        assert "old msg" not in contents     # shadowed by compaction
-        assert "retained" in contents        # step 2 included
-        assert "new msg" not in contents     # step 3 excluded (after fork)
+        # Call reconstruct() through spec_for_branch — this exercises the full code path
+        spec = spec_for_branch(log, "compact_v2")
+        _, messages = reconstruct(log, spec)
+        contents = [m.get("content") for m in messages]
 
-    def test_safe_cut_rejects_mid_step_fork(self):
-        """A parent_cut_seq pointing mid-step (before tool_result) excludes
-        the incomplete step entirely from the prefix."""
+        assert "prior summary" in contents      # compaction summary included
+        assert "old msg" not in contents         # shadowed by compaction
+        assert "old reply" not in contents       # shadowed by compaction
+        assert "retained" in contents            # step 2 included (before fork)
+        assert "retained reply" in contents      # step 2 included
+        assert "new msg" not in contents         # step 3 excluded (after fork)
+        assert "new reply" not in contents       # step 3 excluded
+        assert "compact task" in contents        # branch-local content included
+
+    def test_complete_step_fork_includes_tool_result(self):
+        """Forking at a STEP_END seq includes both the assistant message and its
+        tool results from that step — the cut is inclusive."""
         log = SessionLog()
         log.append(ev.REQUEST_HEADER, {"system": "sys", "reason": "initial"})
         log.append(ev.TURN_START, {"turn": 1})
