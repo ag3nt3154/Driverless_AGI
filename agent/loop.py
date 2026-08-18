@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import hashlib
 import json
 import threading
@@ -406,6 +407,10 @@ class AgentLoop:
         self._continuation_count: int = 0
         self._last_prompt_tokens: int = 0
         self._compaction_generation: int = 0
+        #: Snapshot of the last provider request's identity fields.
+        #: Captured at the API call site, before the provider returns.
+        #: Used by compact() to build the fork-context file.
+        self._last_request_snapshot: dict | None = None
 
         # Switch to plan tier immediately when starting in user-initiated plan mode
         if config.plan_mode and config.advanced_config is not None:
@@ -850,6 +855,18 @@ class AgentLoop:
                             parallel_tool_calls=False,
                             **(dict(extra_body=self._extra_body) if self._extra_body else {}),
                         )
+                        self._last_request_snapshot = {
+                            "model": _create_kwargs["model"],
+                            "messages": copy.deepcopy(_create_kwargs["messages"]),
+                            "tools": copy.deepcopy(_create_kwargs.get("tools", [])),
+                            "parallel_tool_calls": _create_kwargs.get(
+                                "parallel_tool_calls", False,
+                            ),
+                            "extra_body": copy.deepcopy(
+                                _create_kwargs.get("extra_body", {}),
+                            ),
+                            "base_url": self.config.base_url or "",
+                        }
                         if self.config.stream:
                             _stream = self.client.chat.completions.create(
                                 stream=True,

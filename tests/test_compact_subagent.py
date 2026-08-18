@@ -154,3 +154,69 @@ class TestSubagentCompaction:
             r2 = loop.compact(force=True)
             loop.log.append(sev.TURN_END, {"turn": t2, "reason": {"kind": "completed"}})
             assert r2.generation == 2
+
+
+class TestRequestSnapshot:
+    def test_snapshot_is_none_before_any_api_call(self):
+        """_last_request_snapshot is None on a fresh loop."""
+        loop = AgentLoop(config=_config(), _registry=_make_registry())
+        assert loop._last_request_snapshot is None
+
+    def test_snapshot_contains_required_fields(self):
+        """After an API call, snapshot has model, messages, tools,
+        parallel_tool_calls, extra_body, base_url."""
+        from unittest.mock import MagicMock, patch
+        from types import SimpleNamespace
+
+        loop = AgentLoop(config=_config(), _registry=_make_registry())
+        fake_response = SimpleNamespace(
+            choices=[SimpleNamespace(
+                message=SimpleNamespace(
+                    content="done",
+                    tool_calls=None,
+                ),
+                finish_reason="stop",
+            )],
+            usage=SimpleNamespace(
+                prompt_tokens=10,
+                completion_tokens=5,
+                total_tokens=15,
+            ),
+        )
+        with patch.object(loop.client.chat.completions, "create",
+                          return_value=fake_response):
+            loop.run("hello")
+
+        snap = loop._last_request_snapshot
+        assert snap is not None
+        assert "model" in snap
+        assert "messages" in snap
+        assert "tools" in snap
+        assert "parallel_tool_calls" in snap
+        assert "extra_body" in snap
+        assert "base_url" in snap
+        assert snap["model"] == "test-model"
+
+    def test_snapshot_messages_are_deep_copied(self):
+        """Mutating _messages after capture does not affect the snapshot."""
+        from unittest.mock import patch
+        from types import SimpleNamespace
+
+        loop = AgentLoop(config=_config(), _registry=_make_registry())
+        fake_response = SimpleNamespace(
+            choices=[SimpleNamespace(
+                message=SimpleNamespace(content="done", tool_calls=None),
+                finish_reason="stop",
+            )],
+            usage=SimpleNamespace(
+                prompt_tokens=10, completion_tokens=5, total_tokens=15,
+            ),
+        )
+        with patch.object(loop.client.chat.completions, "create",
+                          return_value=fake_response):
+            loop.run("hello")
+
+        snap_msgs_before = [m.copy() for m in loop._last_request_snapshot["messages"]]
+        # Mutate _messages — snapshot should be unaffected
+        loop._messages.clear()
+        assert loop._last_request_snapshot["messages"] == snap_msgs_before
