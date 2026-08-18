@@ -252,3 +252,204 @@ def test_pipe_mode_passes_tool_names_to_registry(tmp_path, monkeypatch):
     )
 
     assert captured.get("tool_names_override") == ["read", "grep"]
+
+
+# ── TestForkedCompactMode ─────────────────────────────────────────────────────
+
+class TestForkedCompactMode:
+    def test_inherit_tier_rejects_without_fork_context(self):
+        """_resolve_inherited_model raises ValueError when fork_context is None."""
+        from tools.subagent_main import _resolve_inherited_model
+        with pytest.raises(ValueError, match="inherit.*fork.context"):
+            _resolve_inherited_model(None)
+
+    def test_inherit_tier_uses_fork_context_model(self):
+        """_resolve_inherited_model returns model and base_url from fork-context."""
+        from tools.subagent_main import _resolve_inherited_model
+        fork_ctx = {
+            "version": 1,
+            "request": {
+                "model": "anthropic/claude-sonnet-4",
+                "base_url": "https://openrouter.ai/api/v1",
+            },
+        }
+        model, base_url = _resolve_inherited_model(fork_ctx)
+        assert model == "anthropic/claude-sonnet-4"
+        assert base_url == "https://openrouter.ai/api/v1"
+
+    def test_tool_call_response_rejected(self):
+        """A tool-call response from the compact model is rejected."""
+        from types import SimpleNamespace
+        from tools.subagent_main import _validate_compact_response
+        msg = SimpleNamespace(
+            content=None,
+            tool_calls=[SimpleNamespace(id="tc1")],
+        )
+        response = SimpleNamespace(
+            choices=[SimpleNamespace(message=msg, finish_reason="tool_calls")],
+        )
+        ok, error = _validate_compact_response(response)
+        assert ok is False
+        assert "tool" in error.lower()
+
+    def test_empty_response_rejected(self):
+        """An empty response is rejected."""
+        from types import SimpleNamespace
+        from tools.subagent_main import _validate_compact_response
+        msg = SimpleNamespace(content="", tool_calls=None)
+        response = SimpleNamespace(
+            choices=[SimpleNamespace(message=msg, finish_reason="stop")],
+        )
+        ok, error = _validate_compact_response(response)
+        assert ok is False
+        assert "empty" in error.lower()
+
+    def test_truncated_response_rejected(self):
+        """A length finish reason is rejected."""
+        from types import SimpleNamespace
+        from tools.subagent_main import _validate_compact_response
+        msg = SimpleNamespace(content="partial", tool_calls=None)
+        response = SimpleNamespace(
+            choices=[SimpleNamespace(message=msg, finish_reason="length")],
+        )
+        ok, error = _validate_compact_response(response)
+        assert ok is False
+        assert "truncat" in error.lower()
+
+    def test_valid_response_accepted(self):
+        """A valid text-only stop response is accepted."""
+        from types import SimpleNamespace
+        from tools.subagent_main import _validate_compact_response
+        msg = SimpleNamespace(content="Summary of conversation.", tool_calls=None)
+        response = SimpleNamespace(
+            choices=[SimpleNamespace(message=msg, finish_reason="stop")],
+        )
+        ok, error = _validate_compact_response(response)
+        assert ok is True
+        assert error == ""
+
+    def test_compact_task_message_structure(self):
+        """The compact task message includes prompt rules and handoff spec."""
+        from tools.subagent_main import _build_compact_task_message
+        prompt = "# Compact\n\nYou are a summariser."
+        handoff_spec = "A cumulative summary."
+        msg = _build_compact_task_message(prompt, handoff_spec)
+        assert msg["role"] == "user"
+        content = msg["content"]
+        assert "You are a summariser" in content
+        assert "Summarize the entire conversation above" in content
+        assert "A cumulative summary" in content
+
+    def test_run_forked_compact_mode_writes_handoff(self, tmp_path):
+        """run_forked_compact_mode writes the assistant text as the handoff."""
+        import json
+        from types import SimpleNamespace
+        from unittest.mock import MagicMock, patch
+        from tools.subagent_main import run_forked_compact_mode
+
+        # Set up preset
+        preset_dir = tmp_path / ".dagi" / "subagents" / "compact"
+        preset_dir.mkdir(parents=True)
+        (preset_dir / "prompt.md").write_text("You are a summariser.", encoding="utf-8")
+        (preset_dir / "subagent_config.yaml").write_text(
+            "model_tier: inherit\ntools: []\n"
+            "default_handoff_spec: summary\nagents_md: []\n",
+            encoding="utf-8",
+        )
+
+        # Set up fork-context
+        fc = {
+            "version": 1,
+            "branch": {"id": "compact_t1", "parent_cut_seq": 5, "parent_surface_generation": 0},
+            "request": {
+                "model": "test/model",
+                "messages": [{"role": "system", "content": "sys"}],
+                "tools": [],
+                "parallel_tool_calls": False,
+                "extra_body": {},
+                "base_url": "https://api.test.com/v1",
+            },
+        }
+        fc_path = tmp_path / "fork_ctx.json"
+        fc_path.write_text(json.dumps(fc), encoding="utf-8")
+        handoff_path = tmp_path / "handoff.md"
+
+        fake_msg = SimpleNamespace(content="This is the summary.", tool_calls=None)
+        fake_response = SimpleNamespace(
+            choices=[SimpleNamespace(message=fake_msg, finish_reason="stop")],
+            usage=None,
+        )
+
+        mock_client = MagicMock()
+        mock_client.chat.completions.create.return_value = fake_response
+
+        with patch("tools.subagent_main.resolve_model_config") as mock_config:
+            mock_config.return_value = MagicMock(
+                api_key="sk-test", base_url="https://api.test.com/v1"
+            )
+            with patch("openai.OpenAI", return_value=mock_client):
+                run_forked_compact_mode(
+                    fork_context_path=str(fc_path),
+                    handoff_path=str(handoff_path),
+                    subagent_type="compact",
+                    project_path=str(tmp_path),
+                )
+
+        assert handoff_path.exists()
+        assert handoff_path.read_text(encoding="utf-8") == "This is the summary."
+
+    def test_run_forked_compact_mode_rejects_tool_call(self, tmp_path):
+        """run_forked_compact_mode does not write handoff on tool-call response."""
+        import json
+        from types import SimpleNamespace
+        from unittest.mock import MagicMock, patch
+        from tools.subagent_main import run_forked_compact_mode
+
+        preset_dir = tmp_path / ".dagi" / "subagents" / "compact"
+        preset_dir.mkdir(parents=True)
+        (preset_dir / "prompt.md").write_text("summarise", encoding="utf-8")
+        (preset_dir / "subagent_config.yaml").write_text(
+            "model_tier: inherit\ntools: []\ndefault_handoff_spec: s\nagents_md: []\n",
+            encoding="utf-8",
+        )
+
+        fc = {
+            "version": 1,
+            "branch": {"id": "compact_t2", "parent_cut_seq": 5, "parent_surface_generation": 0},
+            "request": {
+                "model": "test/model",
+                "messages": [{"role": "system", "content": "sys"}],
+                "tools": [],
+                "parallel_tool_calls": False,
+                "extra_body": {},
+                "base_url": "",
+            },
+        }
+        fc_path = tmp_path / "fork_ctx.json"
+        fc_path.write_text(json.dumps(fc), encoding="utf-8")
+        handoff_path = tmp_path / "handoff.md"
+
+        fake_msg = SimpleNamespace(
+            content=None,
+            tool_calls=[SimpleNamespace(id="c1")],
+        )
+        fake_response = SimpleNamespace(
+            choices=[SimpleNamespace(message=fake_msg, finish_reason="tool_calls")],
+            usage=None,
+        )
+
+        mock_client = MagicMock()
+        mock_client.chat.completions.create.return_value = fake_response
+
+        with patch("tools.subagent_main.resolve_model_config") as mock_config:
+            mock_config.return_value = MagicMock(api_key="sk-test", base_url="")
+            with patch("openai.OpenAI", return_value=mock_client):
+                run_forked_compact_mode(
+                    fork_context_path=str(fc_path),
+                    handoff_path=str(handoff_path),
+                    subagent_type="compact",
+                    project_path=str(tmp_path),
+                )
+
+        # Handoff must NOT exist — tool-call response rejected
+        assert not handoff_path.exists()

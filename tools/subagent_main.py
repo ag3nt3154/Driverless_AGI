@@ -178,6 +178,149 @@ def _build_subagent_system_prompt(subagent_type: str, project_path: Path) -> str
     return "\n\n---\n\n".join(parts)
 
 
+def _resolve_inherited_model(
+    fork_context: dict | None,
+) -> tuple[str, str]:
+    """Resolve model and base_url from a fork-context dict.
+
+    Raises ValueError if fork_context is None (inherit without context).
+    """
+    if fork_context is None:
+        raise ValueError(
+            "model_tier 'inherit' requires a fork-context file"
+        )
+    req = fork_context["request"]
+    return req["model"], req.get("base_url", "")
+
+
+def _validate_compact_response(response) -> tuple[bool, str]:
+    """Validate a compact model's response. Returns (ok, error_message)."""
+    choice = response.choices[0]
+    msg = choice.message
+    if getattr(msg, "tool_calls", None):
+        return False, "Tool-call response rejected for compact mode"
+    finish = getattr(choice, "finish_reason", "stop")
+    if finish == "length":
+        return False, "Truncated response (finish_reason=length)"
+    content = getattr(msg, "content", "") or ""
+    if not content.strip():
+        return False, "Empty response from compact model"
+    return True, ""
+
+
+def _build_compact_task_message(
+    prompt: str,
+    handoff_spec: str,
+) -> dict:
+    """Build the compact task as a single user message."""
+    content = (
+        f"{prompt}\n\n---\n\n"
+        f"Summarize the entire conversation above.\n\n"
+        f"## Output\n{handoff_spec}"
+    )
+    return {"role": "user", "content": content}
+
+
+def _compact_call_with_retry(client, create_kwargs: dict, emit_fn) -> object | None:
+    """Make the compact API call with exponential-backoff retry. Returns response or None."""
+    import openai
+    import time
+
+    max_retries = 3
+    for attempt in range(max_retries):
+        try:
+            return client.chat.completions.create(**create_kwargs)
+        except (openai.APIConnectionError, openai.APITimeoutError):
+            if attempt == max_retries - 1:
+                emit_fn({"type": "error", "message": "Exhausted retries for compact API call"})
+                return None
+            time.sleep(2 ** attempt)
+    return None
+
+
+def run_forked_compact_mode(
+    fork_context_path: str,
+    handoff_path: str,
+    subagent_type: str,
+    project_path: str | None,
+) -> None:
+    """Execute compact in forked mode: inherit prefix, single non-streaming API call."""
+    import json
+    import openai
+
+    project = Path(project_path).resolve() if project_path else Path.cwd()
+    hp = Path(handoff_path)
+    fc = json.loads(Path(fork_context_path).read_text(encoding="utf-8"))
+
+    if fc.get("version") != 1:
+        raise ValueError(f"Unsupported fork-context version: {fc.get('version')}")
+
+    req = fc["request"]
+    model = req["model"]
+    base_url = req.get("base_url", "")
+
+    # Credentials come from environment, NOT from fork-context
+    base_config = resolve_model_config(None, project_path=project)
+    client = openai.OpenAI(
+        api_key=base_config.api_key,
+        base_url=base_url or base_config.base_url,
+    )
+
+    from tools.subagent_api import _load_preset
+    prompt_text, _, _, handoff_spec, _ = _load_preset(subagent_type, project)
+
+    messages = list(req["messages"])
+    task_msg = _build_compact_task_message(prompt_text, handoff_spec)
+    messages.append(task_msg)
+
+    tools_list = req.get("tools", [])
+    extra_body = req.get("extra_body", {})
+
+    create_kwargs: dict = dict(
+        model=model,
+        messages=messages,
+        parallel_tool_calls=req.get("parallel_tool_calls", False),
+    )
+    if tools_list:
+        create_kwargs["tools"] = tools_list
+    else:
+        del create_kwargs["parallel_tool_calls"]
+    if extra_body:
+        create_kwargs["extra_body"] = extra_body
+
+    _emit = lambda evt: print(json.dumps(evt), flush=True)
+    response = _compact_call_with_retry(client, create_kwargs, _emit)
+
+    if response is None:
+        print(json.dumps({"type": "done"}), flush=True)
+        return
+
+    ok, error = _validate_compact_response(response)
+    if not ok:
+        _emit({"type": "error", "message": error})
+        print(json.dumps({"type": "done"}), flush=True)
+        return
+
+    text = response.choices[0].message.content
+    hp.parent.mkdir(parents=True, exist_ok=True)
+    hp.write_text(text, encoding="utf-8")
+
+    usage = getattr(response, "usage", None)
+    if usage:
+        cache_read = 0
+        details = getattr(usage, "prompt_tokens_details", None)
+        if details:
+            cache_read = getattr(details, "cached_tokens", 0) or 0
+        _emit({
+            "type": "usage",
+            "prompt_tokens": getattr(usage, "prompt_tokens", 0),
+            "completion_tokens": getattr(usage, "completion_tokens", 0),
+            "cache_read": cache_read,
+        })
+
+    print(json.dumps({"type": "done"}), flush=True)
+
+
 def run_subagent_pipe_mode(
     subagent_type: str,
     task_file: str,
@@ -262,7 +405,17 @@ def main() -> None:
     parser.add_argument("--tools", dest="tools", default=None,
                         help="Comma-separated tool names to override preset")
     parser.add_argument("--model-tier", dest="model_tier", default=None)
+    parser.add_argument("--fork-context", dest="fork_context", default=None)
     args = parser.parse_args()
+
+    if args.fork_context:
+        run_forked_compact_mode(
+            fork_context_path=args.fork_context,
+            handoff_path=args.handoff,
+            subagent_type=args.subagent_type,
+            project_path=args.project,
+        )
+        return
 
     run_subagent_pipe_mode(
         subagent_type=args.subagent_type,

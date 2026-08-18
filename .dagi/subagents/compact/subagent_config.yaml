@@ -1,4 +1,4 @@
-model_tier: main
+model_tier: inherit
 tools: []
 default_handoff_spec: >-
   A single cumulative summary of the conversation. Preserve every file path,
