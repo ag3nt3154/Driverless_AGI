@@ -1,0 +1,8 @@
+model_tier: main
+tools: []
+default_handoff_spec: >-
+  A single cumulative summary of the conversation. Preserve every file path,
+  tool call, result, decision, error, and resolution. End with a
+  '### Files Read/Modified' section listing every file path mentioned.
+  Output ONLY the summary — no preamble, no greeting, no trailing commentary.
+agents_md: []
