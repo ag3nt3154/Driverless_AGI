@@ -536,22 +536,38 @@ class TestCompactionEvent:
     def test_a_real_compaction_keeps_the_shadow_in_step(self, tmp_path):
         """End-to-end: subagent compaction writes a surface CONTEXT_COMPACTION event
         and the derived messages match the log projection."""
+        from pathlib import Path
         from unittest.mock import patch, MagicMock
+
         loop = self._loop_with_history(tmp_path)
         loop._last_prompt_tokens = 5_000
         loop.config.keep_recent_tokens = 1_000
 
+        # compact() guards on _last_request_snapshot being set
+        loop._last_request_snapshot = {
+            "model": "test-model",
+            "messages": [{"role": "system", "content": "You are a test agent."}],
+            "tools": [],
+            "parallel_tool_calls": False,
+            "extra_body": {},
+            "base_url": "",
+        }
+
+        handoff_path = tmp_path / "compact_test.md"
+
         mock_result = MagicMock()
         mock_result.is_ok = True
         mock_result.handoff_text = "a recap"
+        mock_result.handoff_path = handoff_path
 
         # compact() needs an open turn to log CONTEXT_COMPACTION
         t = loop.log.next_turn()
         loop.log.append(ev.TURN_START, {"turn": t})
         with patch("agent.loop.run_subagent", return_value=mock_result):
-            loop.compact(force=True)
+            result = loop.compact(force=True)
         loop.log.append(ev.TURN_END, {"turn": t, "reason": {"kind": "completed"}})
 
+        assert result.did_compact is True
         assert loop._messages[1:] == loop.log.derive_messages()
 
 

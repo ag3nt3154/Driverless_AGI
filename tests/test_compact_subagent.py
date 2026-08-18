@@ -301,17 +301,28 @@ class TestCompactOrchestration:
         assert result.did_compact is False
 
     def test_compaction_event_has_provenance(self):
-        """CONTEXT_COMPACTION event has branch and handoff fields."""
-        handoff_p = Path(".dagi/handoffs/compact_prov.md")
-        mock_result = MagicMock()
-        mock_result.is_ok = True
-        mock_result.handoff_text = "Summary."
-        mock_result.handoff_path = handoff_p
+        """CONTEXT_COMPACTION event has branch and handoff fields; the handoff
+        path contains the branch id to confirm they reference the same run."""
+        import json
+        import tempfile
 
         loop = _make_loop_with_history(_config(keep_recent_tokens=1_500))
         loop._last_request_snapshot = _SNAPSHOT
 
-        with patch("agent.loop.run_subagent", return_value=mock_result):
+        # Build a dynamic mock that reads the branch_id from the fork-context
+        # file written by compact() and returns a matching handoff path.
+        def _dynamic_run_subagent(task, preset, project_path, parent_log, extra_argv, **kwargs):
+            # extra_argv is ["--fork-context", "<path>"]
+            fc_path = extra_argv[extra_argv.index("--fork-context") + 1]
+            fork_ctx = json.loads(Path(fc_path).read_text(encoding="utf-8"))
+            branch = fork_ctx["branch"]["id"]
+            result = MagicMock()
+            result.is_ok = True
+            result.handoff_text = "Summary."
+            result.handoff_path = Path(tempfile.gettempdir()) / f"{branch}.md"
+            return result
+
+        with patch("agent.loop.run_subagent", side_effect=_dynamic_run_subagent):
             t = loop.log.next_turn()
             loop.log.append(sev.TURN_START, {"turn": t})
             loop.compact(force=True)
@@ -322,3 +333,4 @@ class TestCompactOrchestration:
         assert "branch" in cc[0].data
         assert "compact_" in cc[0].data["branch"]
         assert "handoff" in cc[0].data
+        assert cc[0].data["branch"] in cc[0].data.get("handoff", "")
