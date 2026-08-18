@@ -15,7 +15,7 @@ Plan → Act → Observe → Repeat
 3. **Observe** — It reads the tool's output
 4. **Repeat** — Until the task is complete or `max_iterations` is hit
 
-When the conversation exceeds the model's context window, **Pi-style context compaction** kicks in — the middle of the history is summarized and replaced, preserving the system prompt and recent messages. This lets the agent handle arbitrarily long tasks without crashing.
+When the conversation exceeds the model's context window, **context compaction** kicks in — the middle of the history is summarized by a dedicated `compact` subagent that inherits the parent's warm KV-cache prefix, then replaced with its summary, preserving the system prompt and recent messages. This lets the agent handle arbitrarily long tasks without crashing.
 
 Every agent response with no tool calls must end with `<<END_OF_RESPONSE>>` — this applies to greetings, answers, and completed tasks alike. If the flag is absent, the harness treats the response as accidentally truncated and injects a recovery prompt (`.dagi/prompts/main/continue.md`) as a user message to resume the loop. A safety valve (`max_continuations`, default 10, configurable in `config.yaml`) prevents runaway recovery loops. `<<TASK_END>>` is kept as a silent legacy alias.
 
@@ -455,7 +455,7 @@ Add a project-specific skill by creating `.dagi/skills/<name>/SKILL.md` in your 
 
 ### Managing Context in Long Sessions
 
-Dagi uses **Pi-style context compaction** to handle tasks that exceed the model's context window. When the conversation approaches the token limit, the middle of the history is summarized and replaced — the system prompt and recent messages are always preserved verbatim.
+Dagi uses **context compaction** to handle tasks that exceed the model's context window. When the conversation approaches the token limit, the middle of the history is summarized by a dedicated `compact` subagent (which inherits the parent's warm KV-cache prefix) and replaced with the summary — the system prompt and recent messages are always preserved verbatim.
 
 **Manual compaction** is available when you want to reclaim context before the automatic threshold:
 
@@ -622,7 +622,6 @@ Driverless_AGI/
 │   ├── tools.py           # Builds and returns the tool registry
 │   ├── loop.py            # AgentLoop, AgentConfig, AgentCallbacks
 │   ├── config_loader.py   # Resolves model config from YAML
-│   │                       #   (memory_retriever.py deleted 2026-06-27; retrieval now subagent-based)
 │   ├── session.py         # SessionTracker — JSONL logs
 │   ├── session_events.py  # Event vocabulary + SESSION_FORMAT_VERSION (2)
 │   ├── session_log.py     # SessionLog — append-only tree log (branches, turn/step coords)
@@ -694,7 +693,8 @@ Driverless_AGI/
 │   │   └── compact/       #   compact_system, compact_user (Pi-style summariser)
 │   ├── subagents/         # Per-subagent type: <name>/main.py (BaseTool subclass) + subagent_config.yaml
 │   │   │                  #   Discovered by import via _discover_subagent_tools() in agent/subagent_tools.py
-│   │   ├── read-large-text/ # large-text-file summarizer, directly LLM-callable as `read_large_text` (tools: read, grep, write)
+│   │   ├── compact/         #   context compaction summarizer (internal-only, no main.py — not model-callable)
+│   ├── read-large-text/ # large-text-file summarizer, directly LLM-callable as `read_large_text` (tools: read, grep, write)
 │   │   ├── explore_files/ #   exploration agent (tools: read, grep, find)
 │   │   ├── web_research/  #   web research agent (tools: web_search, web_fetch)
 │   │   ├── memory-query/  #   wiki knowledge retrieval agent
