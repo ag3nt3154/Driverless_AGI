@@ -1,6 +1,6 @@
 # AGENTS.md
 
-> Last updated: 2026-08-17 (Task 5 — session-log-tree feature complete) | [README](README.md) | [TODO](TODO.md)
+> Last updated: 2026-08-18 (branch-based compact cache design approved) | [README](README.md) | [TODO](TODO.md)
 
 
 ---
@@ -144,7 +144,7 @@ tui.py / telegram_bot.py / main.py / dagi_gui/__main__.py
     └── AgentLoop (agent/loop.py)
             ├── ToolRegistry (agent/registry.py)
             ├── SessionTracker (agent/session.py)
-            ├── CompactTool (tools/compact.py)
+            ├── Context compaction (AgentLoop.compact + tools/compact boundary)
             ├── SkillLoader (.dagi/skills/)
             └── AgentCallbacks → TUI via App.call_from_thread()
                              → GUI via dagi_gui/callbacks.py (EventWriter)
@@ -235,3 +235,4 @@ tui.py / telegram_bot.py / main.py / dagi_gui/__main__.py
 - Parallel subagent dispatch via `background: true` + `get_subagent_result(id)` two-tool protocol.
 - Bootstrap GNHF self-review against 259 accumulated session logs.
 - TODO-013: DAGI-native `memory_recall` tool (BM25 inside agent loop, explicit tool call) still pending — Claude Code hook (passive, pre-prompt) is a complement, not a replacement.
+- Implement the approved retroactive compact-branch design in `docs/superpowers/specs/2026-08-18-compact-cache-prefix-design.md`.
