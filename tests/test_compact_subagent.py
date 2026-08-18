@@ -311,10 +311,10 @@ class TestCompactOrchestration:
 
         # Build a dynamic mock that reads the branch_id from the fork-context
         # file written by compact() and returns a matching handoff path.
-        def _dynamic_run_subagent(task, preset, project_path, parent_log, extra_argv, **kwargs):
-            # extra_argv is ["--fork-context", "<path>"]
-            fc_path = extra_argv[extra_argv.index("--fork-context") + 1]
-            fork_ctx = json.loads(Path(fc_path).read_text(encoding="utf-8"))
+        def _dynamic_run_subagent(task, preset, project_path, parent_log, fork_context_path,
+                                   **kwargs):
+            # fork_context_path is the temp file written by compact()
+            fork_ctx = json.loads(Path(fork_context_path).read_text(encoding="utf-8"))
             branch = fork_ctx["branch"]["id"]
             result = MagicMock()
             result.is_ok = True

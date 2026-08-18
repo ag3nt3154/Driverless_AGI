@@ -778,7 +778,7 @@ class AgentLoop:
                 preset="compact",
                 project_path=self.config.project_path,
                 parent_log=None,
-                extra_argv=["--fork-context", fc_path],
+                fork_context_path=fc_path,
             )
         finally:
             Path(fc_path).unlink(missing_ok=True)

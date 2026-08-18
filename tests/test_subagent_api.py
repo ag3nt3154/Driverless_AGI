@@ -266,6 +266,38 @@ class TestRunSubagent:
         assert argv[argv.index("--fork-context") + 1] == "/tmp/fc.json"
         assert "--system-prompt-file" in argv  # internal arg still present
 
+    def test_fork_context_path_forwarded_as_argv(self, tmp_path):
+        """run_subagent(fork_context_path=...) injects --fork-context into runner's argv."""
+        preset_dir = tmp_path / ".dagi" / "subagents" / "compact"
+        preset_dir.mkdir(parents=True)
+        (preset_dir / "prompt.md").write_text("summarise", encoding="utf-8")
+        (preset_dir / "subagent_config.yaml").write_text(
+            "tools: []\nmodel_tier: inherit\ndefault_handoff_spec: summary\nagents_md: []\n",
+            encoding="utf-8",
+        )
+        fc_path = tmp_path / "fork_ctx.json"
+        fc_path.write_text('{"version":1}', encoding="utf-8")
+
+        captured: list[list[str]] = []
+
+        def capture(*_args, **kwargs):
+            captured.append(list(kwargs.get("extra_argv") or []))
+            return {"status": "ok", "handoff": ""}
+
+        with patch("tools.subagent_api._runner.run_subagent", side_effect=capture):
+            run_subagent(
+                task="",
+                preset="compact",
+                project_path=tmp_path,
+                fork_context_path=str(fc_path),
+            )
+
+        assert len(captured) == 1
+        argv = captured[0]
+        assert "--fork-context" in argv
+        assert argv[argv.index("--fork-context") + 1] == str(fc_path)
+        assert "--system-prompt-file" in argv  # internal arg still present
+
 
 class TestBranchStartLogging:
     """run_subagent() logs branch/start on parent_log before spawning."""
