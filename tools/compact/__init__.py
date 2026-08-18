@@ -1,15 +1,7 @@
-from tools.compact._compact import (
-    CompactTool,
-    CompactionResult,
-    _NO_COMPACTION,
-    _estimate_tokens,
-    _format_messages_for_summary,
-)
+from tools.compact._tail_boundary import compute_tail_boundary, TailBoundary, estimate_tokens
 
 __all__ = [
-    "CompactTool",
-    "CompactionResult",
-    "_NO_COMPACTION",
-    "_estimate_tokens",
-    "_format_messages_for_summary",
+    "compute_tail_boundary",
+    "TailBoundary",
+    "estimate_tokens",
 ]

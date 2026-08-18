@@ -2,6 +2,8 @@
 
 ## Completed
 
+- **Subagent-based context compaction (Tasks 1–7)** · `done` · `2026-08-18` — Replaced `CompactTool`'s direct LLM summarization call with a dedicated `compact` subagent that inherits the parent's warm KV-cache prefix via `spec_for_branch`. (1) `.dagi/subagents/compact/` preset (no `main.py` — internal-only, not model-callable): `subagent_config.yaml` + `prompt.md` with a 5-rule technical summarization prompt. (2) `tools/compact/_tail_boundary.py`: `TailBoundary` frozen dataclass, `compute_tail_boundary()` (step-based floor, avg-tokens-per-step heuristic), `estimate_tokens()` with a 200-token base64 placeholder to prevent list-content inflation. (3) `agent/loop.py` rewrite: `CompactionResult` local dataclass, `_NO_COMPACTION` sentinel, `_collect_steps()` walks `log.surface.nodes` (surface-aware — skips already-summarized steps), `_find_surface_index_for_step()`, `_log_compaction()` appends `CONTEXT_COMPACTION` replace op, `compact()` calls `run_subagent(preset="compact")` and logs the result, `_compact_context()` swallows exceptions. Generation counter `_compaction_generation` increments per successful compaction. (4) `tools/compact/__init__.py` updated to export new API; `_compact.py` gutted (logic moved to subagent path); `test_compact_tool.py` deleted; stale `TestCompactionSnapshot` class removed from `test_continuation.py`. (5) Integration tests in `tests/test_compact_subagent.py` (6 tests) and `tests/test_compact_integration.py` (4 tests) — surface replace-op verified, generation counter, subagent failure, surface-aware step collection. 849 tests passing. Plan: `docs/superpowers/plans/2026-08-18-hybrid-compaction-pipeline.md`.
+
 - **Session log tree — agent loop wiring (Tasks 1–5)** · `done` · `2026-08-17` — Wired `branch/start` event logging into the live agent loop and subagent execution path. (1) `tools/subagent_api.py`: `run_subagent()` gained `parent_log: SessionLog | None = None`; logs `branch/start` event before subprocess spawn guarded on `open_turn AND open_step`; `SubagentResult` gained `branch_id: str | None = None`. (2) `agent/subagent_tools.py` + `agent/tools.py`: `session_log` parameter threaded through `_discover_subagent_tools()` and `create_tool_registry()`. (3) `agent/loop.py`: `AgentLoop` passes `session_log=self.log` at all 3 `create_tool_registry()` call sites; `self.log` init moved earlier in `__init__` to allow this. (4) All 10 `.dagi/subagents/*/main.py` tools: accept `session_log=None`, store `self._session_log`, pass `parent_log=self._session_log` to `run_subagent()`. (5) Integration tests in `tests/test_branch_start_integration.py` verify full end-to-end path with subprocess mocked at `_runner.run_subagent`. 849 tests passing. Plan: `docs/superpowers/plans/2026-08-17-session-log-tree-agent-loop-wiring.md`.
 
 - **Session log tree + subagent context construction (Tasks 1–10)** · `done` · `2026-08-17` — 10-task implementation on `worktree-session-log-tree`. Data layer for tree-structured session logs: (1) `branch/start` event type marks fork points; (2) `SessionEvent.branch` field (default `"main"`, omitted from JSON for backward compat with format-1 logs); (3) `SessionLog` tracks branches in `_branches`, routes non-main events off the main surface, enforces BRANCH_START-on-main and `"main"`-reserved-name invariants; (4) `agent/context_spec.py` — `BranchSegment`, `ContextSpec`, `reconstruct()` with two-pass surface simulation (handles compaction replace ops and no-turn CONTEXT_COMPACTION events), `spec_for_main()` and `spec_for_branch()` builder helpers; (5) `ToolRegistry.deny()` for dispatch-time access denial (tools stay in schema for provider KV-cache preservation); (6) `SESSION_FORMAT_VERSION` bumped 1→2. 835 tests passing. Plan: `docs/superpowers/plans/2026-08-17-session-log-tree-and-subagent-context.md`.
@@ -312,8 +314,8 @@
   - **Source:** `_todo/todo_2026-06-17.md` D1
 
 - **Worker model for compaction (cheaper)** · `priority:medium` · `effort:XS`
-  - **File:** `tools/compact.py:222`
-  - `compact()` uses `config.model` (the main task model). Summarization is a low-complexity task; prefer `config.worker_config.model` if available.
+  - **File:** `.dagi/subagents/compact/subagent_config.yaml`
+  - The compact subagent preset currently uses `model_tier: main`. Summarization is a low-complexity task; change to `model_tier: worker` once a worker-tier model is configured in `config.yaml`.
   - **Source:** `_todo/todo_2026-06-16.md` B2
 
 - **Parallel subagent dispatch** · `priority:medium` · `effort:M`
@@ -345,8 +347,7 @@
 
 ### 🔵 Testing
 
-- **Tests for compaction failure recovery** · `priority:medium` · `effort:XS`
-  - Verify graceful degradation path (the 2026-06-21 fix) — mock a failing summarization call and assert session continues.
+- **Tests for compaction failure recovery** · `done` · `2026-08-18` — Covered by `tests/test_compact_subagent.py::test_compact_context_swallows_exceptions` (RuntimeError from `run_subagent` swallowed, returns `_NO_COMPACTION`) and `tests/test_compact_integration.py::test_compact_subagent_failure_leaves_surface_intact` (surface unchanged on `is_ok=False`).
   - **Source:** `_todo/todo_2026-06-20.md` E1
 
 - **Tests for `_handle_switch_model` tier transitions** · `priority:medium` · `effort:S`
@@ -392,16 +393,10 @@
   - `agent/session.py:219-224` — `cost_str` and `tools_str` are computed but never included in the `print()` call. Either include them or delete.
   - **Source:** `_todo/todo_2026-06-17.md` E3
 
-- **Base64 image data dumped into compaction summarization prompt** · `priority:low` · `effort:XS` · `images-not-yet-supported`
-  - **File:** `tools/compact.py:68-71`
-  - **Problem:** `_format_messages_for_summary()` calls `str(msg["content"])` on list-typed content (vision tool results), dumping ~32K tokens of raw base64 per image into the summarization prompt.
-  - **Fix:** Guard with `isinstance(content, list)` and replace with `[image omitted]` placeholder.
+- **Base64 image data dumped into compaction summarization prompt** · `done` · `2026-08-18` — Resolved by removing `CompactTool` and `_format_messages_for_summary()` entirely. The compact subagent receives the conversation via `spec_for_branch` (structured context spec, not a raw message dump), so base64 list-typed content is never serialized into a summarization prompt.
   - **Source:** `_todo/todo_2026-06-20.md` A2
 
-- **`_estimate_tokens` base64 inflation causes over-aggressive compaction** · `priority:low` · `effort:XS` · `images-not-yet-supported`
-  - **File:** `tools/compact.py:45-52`
-  - **Problem:** `str(content)` on list-typed content inflates token estimates by ~8K tokens per image, shortening the "recent tail" preserved during compaction.
-  - **Fix:** `isinstance(content, list)` guard — use 200 token placeholder per image.
+- **`_estimate_tokens` base64 inflation causes over-aggressive compaction** · `done` · `2026-08-18` — Fixed in `tools/compact/_tail_boundary.py::estimate_tokens()`: list-typed content (`isinstance(content, list)`) returns a 200-token placeholder instead of inflating via `str(content)`.
   - **Source:** `_todo/todo_2026-06-25.md` C1
 
 - **`session_end` JSONL record dumps full `raw_messages` with base64 images** · `priority:low` · `effort:XS` · `images-not-yet-supported`

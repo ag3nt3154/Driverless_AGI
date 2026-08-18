@@ -25,7 +25,8 @@ from agent.session import SessionTracker, ToolCallRecord
 from agent.session_log import InvariantError, SessionLog, is_status_board
 from agent.session_store import append_event
 from agent.skills import Skill, SkillLoader
-from tools.compact import CompactTool, CompactionResult, _NO_COMPACTION
+from tools.subagent_api import run_subagent
+from tools.compact._tail_boundary import compute_tail_boundary
 from tools.update_task_status import UPDATE_TASK_STATUS_SENTINEL
 from tools.plan_mode import ENTER_PLAN_MODE_SENTINEL, EXIT_PLAN_MODE_SENTINEL
 from tools.reload_skills import RELOAD_SKILLS_SENTINEL
@@ -132,6 +133,17 @@ def _format_reload_notification(
 
 
 CONTINUE_PROMPT = load_prompt("main/continue.md")
+
+
+@dataclass
+class CompactionResult:
+    did_compact: bool
+    generation: int = 0
+    summary_content: str | None = None
+    removed_count: int = 0
+
+
+_NO_COMPACTION = CompactionResult(did_compact=False)
 
 
 @dataclass
@@ -392,14 +404,8 @@ class AgentLoop:
 
         # Reset at the start of each run() call — counts "continue" injections for that task only
         self._continuation_count: int = 0
-
-        # ── Compaction tool (internal-only, not in ToolRegistry) ──────────
-        self.compact_tool = CompactTool()
-        self.compact_tool.bind(
-            self._messages, config, self.client,
-            on_compaction=self.callbacks.on_compaction,
-            on_summary=self.tracker.record_user,
-        )
+        self._last_prompt_tokens: int = 0
+        self._compaction_generation: int = 0
 
         # Switch to plan tier immediately when starting in user-initiated plan mode
         if config.plan_mode and config.advanced_config is not None:
@@ -595,55 +601,141 @@ class AgentLoop:
             messages.append({"role": "system", "content": self._board})
         return messages
 
-    def _log_compaction(self, result: CompactionResult) -> None:
-        """Record an in-place compaction as a surface ``replace``.
+    def _collect_steps(self) -> list[tuple[int, int]]:
+        """Return chronological (turn, step) pairs that are active on the surface."""
+        event_map = {e.seq: e for e in self.log.events}
+        steps: list[tuple[int, int]] = []
+        seen: set[tuple[int, int]] = set()
+        for seq in self.log.surface.nodes:
+            event = event_map.get(seq)
+            if event is None:
+                continue
+            t = event.data.get("turn")
+            s = event.data.get("step")
+            if t is not None and s is not None:
+                key = (t, s)
+                if key not in seen:
+                    seen.add(key)
+                    steps.append(key)
+        return steps
 
-        ``compact()`` mutates ``_messages`` directly; this translates that
-        mutation into the log's vocabulary. Surface position is the
-        ``_messages`` index minus one, because the surface excludes the
-        system prompt. ``tail_start - 1`` is the first *surviving* position,
-        so the last shadowed one is ``tail_start - 2``.
+    def _find_surface_index_for_step(self, target: tuple[int, int]) -> int:
+        """Return the surface node index of the first event in the given (turn, step)."""
+        t_turn, t_step = target
+        event_map = {e.seq: e for e in self.log.events}
+        for idx, seq in enumerate(self.log.surface.nodes):
+            event = event_map.get(seq)
+            if event is None:
+                continue
+            if event.data.get("turn") == t_turn and event.data.get("step") == t_step:
+                return idx
+        raise ValueError(f"step ({t_turn}, {t_step}) not found on surface")
+
+    def _log_compaction(self, result: CompactionResult, tail_first_step: tuple[int, int]) -> None:
+        """Record a subagent compaction as a surface replace.
+
+        Shadows all surface nodes before the tail's first step with a single
+        CONTEXT_COMPACTION event containing the summary.
         """
         if not result.did_compact:
             return
         nodes = self.log.surface.nodes
-        lo, hi = result.head_end - 1, result.tail_start - 2
-        if lo < 0 or hi < lo or hi >= len(nodes):
+        if not nodes:
+            return
+
+        try:
+            tail_surface_idx = self._find_surface_index_for_step(tail_first_step)
+        except ValueError:
             raise InvariantError(
-                f"compaction span [{lo}, {hi}] is outside a surface of "
+                f"tail step {tail_first_step} not found on surface — "
+                f"cannot log compaction"
+            )
+
+        lo = 0
+        hi = tail_surface_idx - 1
+
+        if hi < lo:
+            return  # nothing to shadow (tail starts at position 0)
+        if hi >= len(nodes):
+            raise InvariantError(
+                f"compaction span [{lo}, {hi}] is outside surface of "
                 f"{len(nodes)} node(s)"
             )
+
         self.log.append(
             sev.CONTEXT_COMPACTION,
-            {"summary": result.summary_content, "removed": result.removed_count},
+            {
+                "summary": result.summary_content,
+                "removed": result.removed_count,
+                "generation": result.generation,
+            },
             surface_op=("replace", nodes[lo], nodes[hi]),
             source_seqs=nodes[lo:hi + 1],
         )
         self._sync_messages()
 
     def compact(self, force: bool = False) -> CompactionResult:
-        """Compact the context and log the resulting surface replacement.
+        """Compact context by spawning a compact subagent.
 
-        The single funnel for compaction. ``compact_tool`` slice-assigns into
-        ``_messages`` directly; without the matching event, the very next
-        ``_sync_messages`` would overwrite that mutation from a log that never
-        heard about it. External callers (TUI, GUI) must come through here.
+        The subagent inherits the parent's warm KV-cache prefix via
+        spec_for_branch, summarizes the conversation middle, and returns
+        the summary as its handoff.
+
         Exceptions propagate — callers that want them swallowed use
-        ``_compact_context``.
+        _compact_context.
         """
-        result = self.compact_tool.compact(force=force)
-        self._log_compaction(result)
-        return result
+        steps = self._collect_steps()
+        if not steps:
+            return _NO_COMPACTION
+
+        boundary = compute_tail_boundary(
+            steps=steps,
+            prompt_tokens=self._last_prompt_tokens,
+            keep_recent_tokens=self.config.keep_recent_tokens,
+        )
+
+        if not boundary.has_middle and not force:
+            return _NO_COMPACTION
+
+        if not boundary.has_middle:
+            # forced but nothing to compact (e.g. only 1 step)
+            return _NO_COMPACTION
+
+        middle_end = boundary.middle_steps[-1]
+        task = (
+            f"Summarize all conversation from the beginning through "
+            f"turn {middle_end[0]} step {middle_end[1]}. "
+            f"Everything after that is the recent tail — do not include "
+            f"it in your summary."
+        )
+
+        result = run_subagent(
+            task=task,
+            preset="compact",
+            project_path=self.config.project_path,
+            parent_log=self.log,
+        )
+
+        if not result.is_ok or not result.handoff_text.strip():
+            return _NO_COMPACTION
+
+        self._compaction_generation += 1
+        summary_content = (
+            f"[CONTEXT SUMMARY — conversation compacted "
+            f"(generation {self._compaction_generation})]\n\n"
+            f"{result.handoff_text}"
+        )
+        compaction = CompactionResult(
+            did_compact=True,
+            generation=self._compaction_generation,
+            summary_content=summary_content,
+            removed_count=len(boundary.middle_steps),
+        )
+        self._log_compaction(compaction, boundary.tail_steps[0])
+        return compaction
 
     def _sync_messages(self) -> None:
-        """Rebuild ``_messages`` from the log, in place.
-
-        ``_messages`` is a cache of ``[header] + log.derive_messages()``, not
-        an independent structure. The slice assignment is deliberate: the
-        compact tool holds a reference to this exact list object and mutates
-        it via slice assignment (see tools/compact/_compact.py), so rebinding
-        the attribute would leave it writing into an orphan.
-        """
+        """Rebuild ``_messages`` from the log, in place."""
         self._messages[:] = [self._header_message(), *self.log.derive_messages()]
 
     def _seed_one(self, message: Mapping[str, Any]) -> None:
@@ -941,6 +1033,7 @@ class AgentLoop:
 
                 # ── Compaction trigger ────────────────────────────────────────
                 _prompt_tok = getattr(response.usage, "prompt_tokens", 0) or 0
+                self._last_prompt_tokens = _prompt_tok
                 if (
                     self.config.context_window > 0
                     and _prompt_tok > 0
@@ -1284,12 +1377,6 @@ class AgentLoop:
         if self.config.provider_order:
             self._extra_body["provider"] = {"order": self.config.provider_order}
 
-        self.compact_tool.bind(
-            self._messages, self.config, self.client,
-            on_compaction=self.callbacks.on_compaction,
-            on_summary=self.tracker.record_user,
-        )
-
         self._current_tier = target
         to_name = self.config.display_name or self.config.model
         self.callbacks.on_model_switch(from_name, to_name)
@@ -1317,7 +1404,7 @@ class AgentLoop:
         """Single source of truth for system-prompt assembly.
 
         Reads self.config and self.registry; also refreshes self.system_parts for
-        the UI expander. Call sites handle _messages assignment and compact_tool.bind().
+        the UI expander. Call sites handle _messages assignment via _sync_messages().
         """
         readme_path = (dagi_root / "README.md").resolve()
         prompt_text = (
@@ -1453,11 +1540,6 @@ class AgentLoop:
         _system = self._assemble_system_string(dagi_root)
         self._emit_header(_system, "change")
         self._sync_messages()
-        self.compact_tool.bind(
-            self._messages, self.config, self.client,
-            on_compaction=self.callbacks.on_compaction,
-            on_summary=self.tracker.record_user,
-        )
 
     def _rebuild_for_plan_mode(self, dagi_root: Path, plan_file: Path, interactive: bool = True) -> None:
         from agent.tools import create_tool_registry
@@ -1487,11 +1569,6 @@ class AgentLoop:
         _system = self._assemble_system_string(dagi_root)
         self._emit_header(_system, "change")
         self._sync_messages()
-        self.compact_tool.bind(
-            self._messages, self.config, self.client,
-            on_compaction=self.callbacks.on_compaction,
-            on_summary=self.tracker.record_user,
-        )
 
     def _rebuild_for_reload(self) -> tuple[set[str], set[str], list[tuple[str, str]]]:
         """Hot-reload skills from disk, rebuild registry + system prompt preserving current mode.
