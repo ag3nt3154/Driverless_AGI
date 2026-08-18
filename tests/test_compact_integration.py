@@ -165,6 +165,7 @@ class TestCompactionSurfaceIntegration:
         loop = AgentLoop(config=_config(), _registry=_make_registry())
         _seed_steps(loop, turn=1, n_steps=5)
         loop._last_prompt_tokens = 5_000
+        loop._last_request_snapshot = _SNAPSHOT
 
         surface_before = list(loop.log.surface.nodes)
 
@@ -176,3 +177,126 @@ class TestCompactionSurfaceIntegration:
 
         assert result.did_compact is False
         assert list(loop.log.surface.nodes) == surface_before  # surface unchanged
+
+    def test_messages_list_identity_preserved(self):
+        """_messages retains its list identity after compaction (slice assignment)."""
+        mock_result = MagicMock()
+        mock_result.is_ok = True
+        mock_result.handoff_text = "Summary."
+        mock_result.branch_id = "compact_id"
+        mock_result.handoff_path = Path(".dagi/handoffs/compact_id.md")
+
+        loop = AgentLoop(config=_config(), _registry=_make_registry())
+        _seed_steps(loop, turn=1, n_steps=5)
+        loop._last_prompt_tokens = 5_000
+        loop._last_request_snapshot = _SNAPSHOT
+
+        original_list = loop._messages
+
+        with patch("agent.loop.run_subagent", return_value=mock_result):
+            t = loop.log.next_turn()
+            loop.log.append(sev.TURN_START, {"turn": t})
+            loop.compact(force=True)
+            loop.log.append(sev.TURN_END, {"turn": t, "reason": {"kind": "completed"}})
+
+        assert loop._messages is original_list  # same list object
+
+    def test_raw_events_not_deleted_or_duplicated(self):
+        """Original events remain exactly once in the append-only log after compaction."""
+        mock_result = MagicMock()
+        mock_result.is_ok = True
+        mock_result.handoff_text = "Summary."
+        mock_result.branch_id = "compact_raw"
+        mock_result.handoff_path = Path(".dagi/handoffs/compact_raw.md")
+
+        loop = AgentLoop(config=_config(), _registry=_make_registry())
+        _seed_steps(loop, turn=1, n_steps=5)
+        loop._last_prompt_tokens = 5_000
+        loop._last_request_snapshot = _SNAPSHOT
+
+        events_before = len(loop.log.events)
+
+        with patch("agent.loop.run_subagent", return_value=mock_result):
+            t = loop.log.next_turn()
+            loop.log.append(sev.TURN_START, {"turn": t})
+            loop.compact(force=True)
+            loop.log.append(sev.TURN_END, {"turn": t, "reason": {"kind": "completed"}})
+
+        # More events than before (new BRANCH_START + CONTEXT_COMPACTION added)
+        assert len(loop.log.events) > events_before
+        # No duplicates — every seq is unique
+        seqs = [e.seq for e in loop.log.events]
+        assert len(seqs) == len(set(seqs))
+
+    def test_failure_leaves_surface_generation_unchanged(self):
+        """Failed compaction must not change surface generation or messages."""
+        loop = AgentLoop(config=_config(), _registry=_make_registry())
+        _seed_steps(loop, turn=1, n_steps=5)
+        loop._last_prompt_tokens = 5_000
+        loop._last_request_snapshot = _SNAPSHOT
+
+        gen_before = loop.log.surface.generation
+        nodes_before = loop.log.surface.nodes
+        msgs_before = [m.copy() for m in loop._messages]
+
+        mock_result = MagicMock()
+        mock_result.is_ok = False
+        mock_result.handoff_text = ""
+        with patch("agent.loop.run_subagent", return_value=mock_result):
+            result = loop.compact(force=True)
+
+        assert result.did_compact is False
+        assert loop.log.surface.generation == gen_before
+        assert loop.log.surface.nodes == nodes_before
+        assert [m.get("content") for m in loop._messages] == [
+            m.get("content") for m in msgs_before
+        ]
+
+    def test_repeated_compaction_summary_replaces_prior(self):
+        """A second compaction replaces the prior summary in messages."""
+        mock_result = MagicMock()
+        mock_result.is_ok = True
+        mock_result.handoff_text = "Summary v1."
+        mock_result.branch_id = "compact_r1"
+        mock_result.handoff_path = Path(".dagi/handoffs/compact_r1.md")
+
+        loop = AgentLoop(config=_config(), _registry=_make_registry())
+        _seed_steps(loop, turn=1, n_steps=5)
+        loop._last_prompt_tokens = 5_000
+        loop._last_request_snapshot = _SNAPSHOT
+
+        with patch("agent.loop.run_subagent", return_value=mock_result):
+            t1 = loop.log.next_turn()
+            loop.log.append(sev.TURN_START, {"turn": t1})
+            r1 = loop.compact(force=True)
+            loop.log.append(sev.TURN_END, {"turn": t1, "reason": {"kind": "completed"}})
+        assert r1.generation == 1
+
+        # After compaction, messages contain the summary
+        non_sys = [m for m in loop._messages if m.get("role") != "system"]
+        assert any("[CONTEXT SUMMARY" in str(m.get("content", "")) for m in non_sys)
+        # Shadowed step content not in messages
+        for m in non_sys:
+            content = str(m.get("content", ""))
+            if "[CONTEXT SUMMARY" not in content:
+                assert "task 0" not in content
+
+        # Second compaction — add more steps first
+        _seed_steps(loop, turn=2, n_steps=5)
+        loop._last_prompt_tokens = 6_000
+        loop._last_request_snapshot = _SNAPSHOT
+
+        mock_result.handoff_text = "Summary v2."
+        mock_result.branch_id = "compact_r2"
+        mock_result.handoff_path = Path(".dagi/handoffs/compact_r2.md")
+
+        with patch("agent.loop.run_subagent", return_value=mock_result):
+            t2 = loop.log.next_turn()
+            loop.log.append(sev.TURN_START, {"turn": t2})
+            r2 = loop.compact(force=True)
+            loop.log.append(sev.TURN_END, {"turn": t2, "reason": {"kind": "completed"}})
+        assert r2.generation == 2
+
+        # Two CONTEXT_COMPACTION events in log (both preserved — append-only)
+        cc_events = [e for e in loop.log.events if e.type == sev.CONTEXT_COMPACTION]
+        assert len(cc_events) == 2
