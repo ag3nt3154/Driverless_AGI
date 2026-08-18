@@ -133,6 +133,7 @@ def run_subagent(
     project_path: Path | None = None,
     on_event: Callable[[str], None] | None = None,
     parent_log: "SessionLog | None" = None,
+    extra_argv: list[str] | None = None,
 ) -> SubagentResult:
     """Spawn a subagent and return its result with auto-read handoff."""
     if preset is None and prompt is None:
@@ -182,12 +183,14 @@ def run_subagent(
             },
         )
 
-    # Build extra argv
-    extra_argv: list[str] = []
+    # Build extra argv (merge caller-supplied args with internally-built ones)
+    _extra_argv: list[str] = []
     if tools is not None or preset is None:
-        extra_argv.extend(["--tools", ",".join(eff_tools)])
+        _extra_argv.extend(["--tools", ",".join(eff_tools)])
     if eff_tier != "default":
-        extra_argv.extend(["--model-tier", eff_tier])
+        _extra_argv.extend(["--model-tier", eff_tier])
+    if extra_argv:
+        _extra_argv.extend(extra_argv)
 
     # Write effective prompt to a temp file and forward via --system-prompt-file.
     # This is the only way to deliver eff_prompt (preset or caller override) to the
@@ -197,7 +200,7 @@ def run_subagent(
     try:
         os.close(fd)
         Path(prompt_tmp).write_text(eff_prompt, encoding="utf-8")
-        extra_argv.extend(["--system-prompt-file", prompt_tmp])
+        _extra_argv.extend(["--system-prompt-file", prompt_tmp])
 
         raw = _runner.run_subagent(
             subagent_type=subagent_type,
@@ -206,7 +209,7 @@ def run_subagent(
             handoff_path=handoff_path,
             timeout=timeout,
             on_event=on_event,
-            extra_argv=extra_argv if extra_argv else None,
+            extra_argv=_extra_argv if _extra_argv else None,
         )
     finally:
         Path(prompt_tmp).unlink(missing_ok=True)
