@@ -134,7 +134,7 @@ def run_subagent(
     on_event: Callable[[str], None] | None = None,
     parent_log: "SessionLog | None" = None,
     extra_argv: list[str] | None = None,
-    fork_context_path: str | None = None,
+    fork_context_path: Path | str | None = None,
 ) -> SubagentResult:
     """Spawn a subagent and return its result with auto-read handoff."""
     if preset is None and prompt is None:
@@ -192,8 +192,9 @@ def run_subagent(
         _extra_argv.extend(["--model-tier", eff_tier])
     if extra_argv:
         _extra_argv.extend(extra_argv)
-    if fork_context_path:
-        _extra_argv.extend(["--fork-context", fork_context_path])
+    # Inject fork-context path; skip if caller already passed --fork-context in extra_argv
+    if fork_context_path is not None and "--fork-context" not in _extra_argv:
+        _extra_argv.extend(["--fork-context", str(fork_context_path)])
 
     # Write effective prompt to a temp file and forward via --system-prompt-file.
     # This is the only way to deliver eff_prompt (preset or caller override) to the
