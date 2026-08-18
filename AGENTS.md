@@ -1,6 +1,6 @@
 # AGENTS.md
 
-> Last updated: 2026-08-18 (Task 2: request snapshot capture for compact fork context) | [README](README.md) | [TODO](TODO.md)
+> Last updated: 2026-08-19 (Task 7: compact integration tests — lifecycle, atomicity, repeated compaction) | [README](README.md) | [TODO](TODO.md)
 
 
 ---
@@ -187,7 +187,8 @@ tui.py / telegram_bot.py / main.py / dagi_gui/__main__.py
 - **2026-08-11**: Grep Python fallback (no ripgrep) had no timeout — `rglob("*")` over Google Drive mount (`memory_root`) hung indefinitely, freezing TUI spinner → added 15s wall-clock timeout to both enumeration and file-scanning phases; installed `ripgrep` via conda.
 - **2026-08-16**: `QuestionBroker.has_pending` missing `@property` — `_handle_pause` tested the bound method (always truthy), so pause never killed bash or paused loop → added `@property`; fixed stale test using `broker._pending` (old API) to use `broker._pending_id`.
 - **2026-08-17**: Brief spec for `test_branch_id_uses_subagent_type` patched `Path.read_text` globally — broke `yaml.safe_load` in `_load_preset` → fixed by creating a real preset dir in `tmp_path` and removing the overly-broad mock.
-- **2026-08-18**: (no new errors — Task 1 & Task 2 implemented cleanly; 9/9 tests passed on first run)
+- **2026-08-19**: Task 6 — integration tests missing `_last_request_snapshot` (new guard in `compact()`) → added `_SNAPSHOT` fixture + `loop._last_request_snapshot = _SNAPSHOT` to 3 tests; 17/17 passed.
+- **2026-08-19**: Task 7 — added 4 new integration tests (list identity, raw-event preservation, failure atomicity, repeated compaction) to `test_compact_integration.py`; fixed missing snapshot in `test_compact_subagent_failure_leaves_surface_intact`; 8/8 pass.
 
 ## Notes & Terms
 
@@ -203,7 +204,8 @@ tui.py / telegram_bot.py / main.py / dagi_gui/__main__.py
 - **`desktop/out/` and `desktop/node_modules/`**: both gitignored (added 2026-08-16); Electron build artifacts must not be committed — regenerate with `npm run make` in `desktop/`.
 - **Subagent discovery + branch logging**: `_discover_subagent_tools()` passes `session_log` unconditionally to each tool constructor; `run()` forwards it as `parent_log` to `run_subagent()`, which logs `branch/start` before spawning. Mock `tools.subagent_api._runner.run_subagent` (not the public function) in tests so the logging code actually runs.
 - **`parent_cut_seq` on BRANCH_START**: optional field that overrides the physical event seq as the fork cut-off in `reconstruct()`. Enables retroactive branching — the BRANCH_START is appended after later events but logically forks from the earlier seq. `_collect_surface_events` filters by `seq <= fork_seq` and is unchanged.
-- **`_last_request_snapshot`**: `AgentLoop` field (dict | None) capturing `model`, `messages`, `tools`, `parallel_tool_calls`, `extra_body`, `base_url` from `_create_kwargs` right before the provider call. Updated on every retry iteration. Task 6 reads this to build the compact fork-context file.
+- **`_last_request_snapshot`**: `AgentLoop` field (dict | None) capturing `model`, `messages`, `tools`, `parallel_tool_calls`, `extra_body`, `base_url` from `_create_kwargs` right before the provider call. Updated on every retry iteration. Used by `build_fork_context()` to build the compact fork-context file.
+- **`run_forked_compact_mode()`**: `tools/subagent_main.py` entry point for `model_tier: inherit` compact. Inherits provider prefix from fork-context JSON (v1); makes a single non-streaming call; rejects tool-call/empty/truncated responses; writes assistant text directly as handoff (no `write_handoff` tool). Credentials always from env, never from fork-context. Retry logic extracted into `_compact_call_with_retry()` to stay within 100-line limit.
 
 ## User Insights
 
@@ -238,4 +240,4 @@ tui.py / telegram_bot.py / main.py / dagi_gui/__main__.py
 - Parallel subagent dispatch via `background: true` + `get_subagent_result(id)` two-tool protocol.
 - Bootstrap GNHF self-review against 259 accumulated session logs.
 - TODO-013: DAGI-native `memory_recall` tool (BM25 inside agent loop, explicit tool call) still pending — Claude Code hook (passive, pre-prompt) is a complement, not a replacement.
-- Tasks 1 & 2 of `compact-cache-prefix` done; Tasks 3–N remain in `.superpowers/sdd/2026-08-18-compact-cache-prefix/`.
+- Tasks 1–7 of `compact-cache-prefix` done; remaining tasks (8+) in `.superpowers/sdd/2026-08-18-compact-cache-prefix/`.
