@@ -32,45 +32,32 @@ def _make_registry() -> MagicMock:
     return reg
 
 
-def _make_loop_with_history(config):
-    """Create an AgentLoop with seeded conversation history."""
-    loop = AgentLoop(config=config, _registry=_make_registry())
+def _seed_steps(loop, turn: int, n_steps: int, prefix: str = "task") -> None:
+    """Append n_steps of user+assistant surface events to an existing loop."""
     log = loop.log
-
-    # Seed 5 steps across 2 turns
-    log.append(sev.TURN_START, {"turn": 1})
-    for step in range(3):
-        log.append(sev.STEP_START, {"turn": 1, "step": step})
+    log.append(sev.TURN_START, {"turn": turn})
+    for step in range(n_steps):
+        log.append(sev.STEP_START, {"turn": turn, "step": step})
         log.append(
             sev.USER_MESSAGE,
-            {"turn": 1, "step": step, "role": "user", "content": f"task {step}"},
+            {"turn": turn, "step": step, "role": "user", "content": f"{prefix} {step}"},
             surface_op="append",
         )
         log.append(
             sev.ASSISTANT_MESSAGE,
-            {"turn": 1, "step": step, "message": {"role": "assistant", "content": f"done {step}"}},
+            {"turn": turn, "step": step, "message": {"role": "assistant", "content": f"done {step}"}},
             surface_op="append",
         )
-        log.append(sev.STEP_END, {"turn": 1, "step": step})
-    log.append(sev.TURN_END, {"turn": 1, "reason": {"kind": "completed"}})
-
-    log.append(sev.TURN_START, {"turn": 2})
-    for step in range(2):
-        log.append(sev.STEP_START, {"turn": 2, "step": step})
-        log.append(
-            sev.USER_MESSAGE,
-            {"turn": 2, "step": step, "role": "user", "content": f"task2 {step}"},
-            surface_op="append",
-        )
-        log.append(
-            sev.ASSISTANT_MESSAGE,
-            {"turn": 2, "step": step, "message": {"role": "assistant", "content": f"done2 {step}"}},
-            surface_op="append",
-        )
-        log.append(sev.STEP_END, {"turn": 2, "step": step})
-    log.append(sev.TURN_END, {"turn": 2, "reason": {"kind": "completed"}})
-
+        log.append(sev.STEP_END, {"turn": turn, "step": step})
+    log.append(sev.TURN_END, {"turn": turn, "reason": {"kind": "completed"}})
     loop._sync_messages()
+
+
+def _make_loop_with_history(config):
+    """Create an AgentLoop with seeded conversation history (5 steps, 2 turns)."""
+    loop = AgentLoop(config=config, _registry=_make_registry())
+    _seed_steps(loop, turn=1, n_steps=3, prefix="task")
+    _seed_steps(loop, turn=2, n_steps=2, prefix="task2")
     loop._last_prompt_tokens = 5_000  # 5 steps × 1000/step avg
     return loop
 
@@ -154,11 +141,14 @@ class TestSubagentCompaction:
             loop.log.append(sev.TURN_END, {"turn": t1, "reason": {"kind": "completed"}})
             assert r1.generation == 1
 
-        # Second compaction — the tail from the first compaction becomes the new history
+        # Add more steps so there's a new middle for the second compaction.
+        # After first compaction the surface has 1 surviving tail step + CONTEXT_COMPACTION.
+        # Seeding 5 more steps gives 6 visible steps: avg=6000/6=1000 → keep=1 → 5 in middle.
+        _seed_steps(loop, turn=3, n_steps=5, prefix="more")
         mock_result.handoff_text = "Summary v2."
         mock_result.branch_id = "compact_b"
         with patch("agent.loop.run_subagent", return_value=mock_result):
-            loop._last_prompt_tokens = 5_000
+            loop._last_prompt_tokens = 6_000  # 6 steps × 1000/step avg
             t2 = loop.log.next_turn()
             loop.log.append(sev.TURN_START, {"turn": t2})
             r2 = loop.compact(force=True)
