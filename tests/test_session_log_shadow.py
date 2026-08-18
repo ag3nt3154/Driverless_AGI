@@ -15,7 +15,7 @@ import pytest
 from agent import session_events as ev
 from agent.loop import AgentConfig, AgentLoop
 from agent.session_log import is_status_board
-from tools.compact._compact import CompactionResult
+from agent.loop import CompactionResult
 
 
 def _make_loop(project_path: Path, _initial: list | None = None, **overrides) -> AgentLoop:
@@ -423,17 +423,13 @@ class TestEphemeralBoard:
         assert "some-other-env" in writes[-1].data["board"]
 
 
-def _compaction(summary: str, head_end: int, tail_start: int) -> CompactionResult:
+def _compaction(summary: str, removed_count: int = 4) -> CompactionResult:
     """A CompactionResult describing a replacement that already happened."""
     return CompactionResult(
         did_compact=True,
-        removed_count=tail_start - head_end,
-        summary_input_tokens=0,
-        summary_output_tokens=0,
-        summary_cost=None,
+        generation=1,
+        removed_count=removed_count,
         summary_content=summary,
-        head_end=head_end,
-        tail_start=tail_start,
     )
 
 
@@ -441,23 +437,43 @@ class TestCompactionEvent:
     """Compaction shadows surface nodes; it never deletes log events."""
 
     def _loop_with_history(self, tmp_path, exchanges: int = 6):
+        """Build a loop with `exchanges` steps on turn 1.
+
+        Each step has one user message and one assistant message on the surface.
+        Steps are indexed 0..(exchanges-1) on turn 1.
+        """
         loop = _make_loop(tmp_path)
         loop.log.append(ev.TURN_START, {"turn": 1})
         for i in range(exchanges):
+            loop.log.append(ev.STEP_START, {"turn": 1, "step": i})
             loop._log_user_message("user", f"question {i}", "human")
             loop.log.append(
                 ev.ASSISTANT_MESSAGE,
-                {"message": {"role": "assistant", "content": f"answer {i}"}},
+                {"turn": 1, "step": i, "message": {"role": "assistant", "content": f"answer {i}"}},
                 surface_op="append",
             )
-        loop._messages[1:] = loop.log.derive_messages()
+            loop.log.append(ev.STEP_END, {"turn": 1, "step": i})
+        loop.log.append(ev.TURN_END, {"turn": 1, "reason": {"kind": "completed"}})
+        loop._sync_messages()
         return loop
+
+    def _with_turn(self, loop, fn):
+        """Open a synthetic turn, call fn(), then close the turn."""
+        t = loop.log.next_turn()
+        loop.log.append(ev.TURN_START, {"turn": t})
+        try:
+            fn()
+        finally:
+            loop.log.append(ev.TURN_END, {"turn": t, "reason": {"kind": "completed"}})
 
     def test_compaction_replaces_the_shadowed_span(self, tmp_path):
         loop = self._loop_with_history(tmp_path)
         before = len(loop.log.derive_messages())
 
-        loop._log_compaction(_compaction("[CONTEXT SUMMARY] earlier chat", 1, 5))
+        # Shadow steps 0 and 1 (4 surface nodes); tail starts at step (1, 2)
+        self._with_turn(loop, lambda: loop._log_compaction(
+            _compaction("[CONTEXT SUMMARY] earlier chat", removed_count=4), (1, 2)
+        ))
 
         derived = loop.log.derive_messages()
         assert len(derived) == before - 4 + 1
@@ -468,54 +484,73 @@ class TestCompactionEvent:
     def test_compaction_bumps_the_surface_generation(self, tmp_path):
         loop = self._loop_with_history(tmp_path)
         assert loop.log.surface.generation == 0
-        loop._log_compaction(_compaction("s", 1, 3))
+        # Shadow step 0 (2 nodes); tail starts at step (1, 1)
+        self._with_turn(loop, lambda: loop._log_compaction(
+            _compaction("s", removed_count=2), (1, 1)
+        ))
         assert loop.log.surface.generation == 1
 
     def test_compaction_cites_every_node_it_shadows(self, tmp_path):
         loop = self._loop_with_history(tmp_path)
         shadowed = list(loop.log.surface.nodes[:4])
 
-        loop._log_compaction(_compaction("s", 1, 5))
+        # Shadow steps 0 and 1 (4 nodes); tail starts at step (1, 2)
+        self._with_turn(loop, lambda: loop._log_compaction(
+            _compaction("s", removed_count=4), (1, 2)
+        ))
 
-        event = loop.log.events[-1]
+        event = next(e for e in reversed(loop.log.events) if e.type == ev.CONTEXT_COMPACTION)
         assert set(shadowed) <= set(event.source_seqs)
 
     def test_the_raw_log_keeps_the_compacted_events(self, tmp_path):
         """Append-only: shadowed events are hidden from the surface, not lost."""
         loop = self._loop_with_history(tmp_path)
         before = len(loop.log.events)
-        loop._log_compaction(_compaction("s", 1, 5))
-        assert len(loop.log.events) == before + 1
+        self._with_turn(loop, lambda: loop._log_compaction(
+            _compaction("s", removed_count=4), (1, 2)
+        ))
+        # +1 for CONTEXT_COMPACTION, +2 for TURN_START/TURN_END from _with_turn
+        assert len(loop.log.events) == before + 3
 
     def test_a_no_op_compaction_logs_nothing(self, tmp_path):
         loop = self._loop_with_history(tmp_path)
         before = len(loop.log.events)
-        loop._log_compaction(CompactionResult(
-            did_compact=False, removed_count=0,
-            summary_input_tokens=0, summary_output_tokens=0, summary_cost=None,
-        ))
+        # tail_first_step is irrelevant when did_compact=False; no turn needed
+        loop._log_compaction(CompactionResult(did_compact=False), (1, 0))
         assert len(loop.log.events) == before
 
     def test_a_span_past_the_end_of_the_surface_is_rejected(self, tmp_path):
-        """Silent truncation here would corrupt the surface irrecoverably."""
+        """A step that does not exist on the surface raises InvariantError."""
         from agent.session_log import InvariantError
 
         loop = self._loop_with_history(tmp_path, exchanges=2)
-        with pytest.raises(InvariantError, match="outside a surface"):
-            loop._log_compaction(_compaction("s", 1, 99))
+        # Step (1, 99) does not exist in the log
+        t = loop.log.next_turn()
+        loop.log.append(ev.TURN_START, {"turn": t})
+        try:
+            with pytest.raises(InvariantError, match="not found on surface"):
+                loop._log_compaction(_compaction("s"), (1, 99))
+        finally:
+            loop.log.append(ev.TURN_END, {"turn": t, "reason": {"kind": "completed"}})
 
     def test_a_real_compaction_keeps_the_shadow_in_step(self, tmp_path):
-        """End-to-end: CompactTool mutates _messages, the log tracks it."""
+        """End-to-end: subagent compaction writes a surface CONTEXT_COMPACTION event
+        and the derived messages match the log projection."""
+        from unittest.mock import patch, MagicMock
         loop = self._loop_with_history(tmp_path)
-        loop.compact_tool.bind(loop._messages, loop.config, loop.client)
-        loop.client = MagicMock()
-        loop.compact_tool._client = loop.client
-        loop.client.chat.completions.create.return_value = SimpleNamespace(
-            choices=[SimpleNamespace(message=SimpleNamespace(content="a recap"))],
-            usage=SimpleNamespace(prompt_tokens=1, completion_tokens=1, cost=None),
-        )
+        loop._last_prompt_tokens = 5_000
+        loop.config.keep_recent_tokens = 1_000
 
-        loop.compact(force=True)
+        mock_result = MagicMock()
+        mock_result.is_ok = True
+        mock_result.handoff_text = "a recap"
+
+        # compact() needs an open turn to log CONTEXT_COMPACTION
+        t = loop.log.next_turn()
+        loop.log.append(ev.TURN_START, {"turn": t})
+        with patch("agent.loop.run_subagent", return_value=mock_result):
+            loop.compact(force=True)
+        loop.log.append(ev.TURN_END, {"turn": t, "reason": {"kind": "completed"}})
 
         assert loop._messages[1:] == loop.log.derive_messages()
 

@@ -362,6 +362,7 @@ class TestCompactionTrigger:
     one tool call before finishing."""
 
     def test_compaction_fires_when_prompt_tokens_exceed_budget(self):
+        from unittest.mock import patch
         tool = FakeTool(name="echo")
         registry = ToolRegistry()
         registry.register(tool)
@@ -374,13 +375,14 @@ class TestCompactionTrigger:
             ),
             _make_response(f"Done. {TASK_END_FLAG}", prompt_tokens=50),
         ]
-        loop.compact_tool = MagicMock()
 
-        loop.run("do something")
-
-        loop.compact_tool.compact.assert_called_once()
+        from agent.loop import _NO_COMPACTION
+        with patch.object(loop, "compact", return_value=_NO_COMPACTION) as mock_compact:
+            loop.run("do something")
+            mock_compact.assert_called_once()
 
     def test_compaction_does_not_fire_below_budget(self):
+        from unittest.mock import patch
         tool = FakeTool(name="echo")
         registry = ToolRegistry()
         registry.register(tool)
@@ -392,13 +394,14 @@ class TestCompactionTrigger:
             ),
             _make_response(f"Done. {TASK_END_FLAG}", prompt_tokens=50),
         ]
-        loop.compact_tool = MagicMock()
 
-        loop.run("do something")
-
-        loop.compact_tool.compact.assert_not_called()
+        from agent.loop import _NO_COMPACTION
+        with patch.object(loop, "compact", return_value=_NO_COMPACTION) as mock_compact:
+            loop.run("do something")
+            mock_compact.assert_not_called()
 
     def test_compaction_disabled_when_context_window_is_zero(self):
+        from unittest.mock import patch
         tool = FakeTool(name="echo")
         registry = ToolRegistry()
         registry.register(tool)
@@ -410,20 +413,20 @@ class TestCompactionTrigger:
             ),
             _make_response(f"Done. {TASK_END_FLAG}", prompt_tokens=50),
         ]
-        loop.compact_tool = MagicMock()
 
-        loop.run("do something")
-
-        loop.compact_tool.compact.assert_not_called()
+        from agent.loop import _NO_COMPACTION
+        with patch.object(loop, "compact", return_value=_NO_COMPACTION) as mock_compact:
+            loop.run("do something")
+            mock_compact.assert_not_called()
 
     def test_compact_context_swallows_errors_and_warns(self):
+        from unittest.mock import patch
         loop = _make_loop()
-        loop.compact_tool = MagicMock()
-        loop.compact_tool.compact.side_effect = RuntimeError("compaction blew up")
         warnings = []
         loop.callbacks = AgentCallbacks(on_assistant_text=lambda t: warnings.append(t))
 
-        result = loop._compact_context()
+        with patch.object(loop, "compact", side_effect=RuntimeError("compaction blew up")):
+            result = loop._compact_context()
 
         assert result.did_compact is False
         assert any("compaction blew up" in w for w in warnings)
