@@ -75,6 +75,36 @@ def _auto_read_handoff(path_str: str) -> str:
         return ""
 
 
+def build_fork_context(
+    branch_id: str,
+    parent_cut_seq: int,
+    parent_surface_generation: int,
+    request_snapshot: dict,
+) -> dict:
+    """Build a version-1 fork-context dict for the compact subprocess.
+
+    The result is JSON-serializable and must NOT contain API keys or
+    credentials. The child resolves credentials through its own
+    configuration/environment path.
+    """
+    return {
+        "version": 1,
+        "branch": {
+            "id": branch_id,
+            "parent_cut_seq": parent_cut_seq,
+            "parent_surface_generation": parent_surface_generation,
+        },
+        "request": {
+            "model": request_snapshot["model"],
+            "messages": request_snapshot["messages"],
+            "tools": request_snapshot.get("tools", []),
+            "parallel_tool_calls": request_snapshot.get("parallel_tool_calls", False),
+            "extra_body": request_snapshot.get("extra_body", {}),
+            "base_url": request_snapshot.get("base_url", ""),
+        },
+    }
+
+
 def _build_result(raw: dict, handoff_path: Path) -> SubagentResult:
     status = raw["status"]
     if status in ("ok", "ok_unverified"):

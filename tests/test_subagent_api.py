@@ -380,6 +380,96 @@ class TestBranchStartLogging:
         assert result.branch_id is None
 
 
+class TestBuildForkContext:
+    def test_fork_context_structure(self):
+        """build_fork_context returns version-1 format with branch and request."""
+        from tools.subagent_api import build_fork_context
+
+        ctx = build_fork_context(
+            branch_id="compact_abc",
+            parent_cut_seq=42,
+            parent_surface_generation=0,
+            request_snapshot={
+                "model": "test/model",
+                "messages": [{"role": "system", "content": "hello"}],
+                "tools": [],
+                "parallel_tool_calls": False,
+                "extra_body": {},
+                "base_url": "https://api.example.com/v1",
+            },
+        )
+        assert ctx["version"] == 1
+        assert ctx["branch"]["id"] == "compact_abc"
+        assert ctx["branch"]["parent_cut_seq"] == 42
+        assert ctx["branch"]["parent_surface_generation"] == 0
+        assert ctx["request"]["model"] == "test/model"
+        assert ctx["request"]["messages"] == [{"role": "system", "content": "hello"}]
+        assert ctx["request"]["tools"] == []
+        assert ctx["request"]["parallel_tool_calls"] is False
+
+    def test_fork_context_excludes_api_key(self):
+        """Fork-context must not contain API keys."""
+        import json
+        from tools.subagent_api import build_fork_context
+
+        ctx = build_fork_context(
+            branch_id="compact_abc",
+            parent_cut_seq=42,
+            parent_surface_generation=0,
+            request_snapshot={
+                "model": "test/model",
+                "messages": [],
+                "tools": [],
+                "parallel_tool_calls": False,
+                "extra_body": {},
+                "base_url": "https://api.example.com/v1",
+            },
+        )
+        serialized = json.dumps(ctx)
+        assert "api_key" not in serialized
+        assert "sk-" not in serialized
+
+    def test_fork_context_file_round_trips(self, tmp_path):
+        """The fork-context dict round-trips through JSON serialization."""
+        import json
+        from tools.subagent_api import build_fork_context
+
+        ctx = build_fork_context(
+            branch_id="compact_test",
+            parent_cut_seq=10,
+            parent_surface_generation=0,
+            request_snapshot={
+                "model": "m",
+                "messages": [{"role": "user", "content": "hi"}],
+                "tools": [],
+                "parallel_tool_calls": False,
+                "extra_body": {},
+                "base_url": "",
+            },
+        )
+        path = tmp_path / "fork_ctx.json"
+        path.write_text(json.dumps(ctx), encoding="utf-8")
+        loaded = json.loads(path.read_text(encoding="utf-8"))
+        assert loaded["version"] == 1
+        assert loaded["branch"]["id"] == "compact_test"
+        assert loaded["request"]["messages"] == [{"role": "user", "content": "hi"}]
+
+    def test_fork_context_defaults_for_missing_snapshot_fields(self):
+        """Missing optional snapshot fields default gracefully."""
+        from tools.subagent_api import build_fork_context
+
+        ctx = build_fork_context(
+            branch_id="compact_min",
+            parent_cut_seq=1,
+            parent_surface_generation=0,
+            request_snapshot={"model": "m", "messages": []},
+        )
+        assert ctx["request"]["tools"] == []
+        assert ctx["request"]["parallel_tool_calls"] is False
+        assert ctx["request"]["extra_body"] == {}
+        assert ctx["request"]["base_url"] == ""
+
+
 class TestResumeSubagentByPid:
     def test_resume_returns_result(self):
         """resume_subagent_by_pid wraps _runner.resume_subagent and builds result."""
