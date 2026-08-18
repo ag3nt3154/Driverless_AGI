@@ -26,7 +26,7 @@ from agent.session_log import InvariantError, SessionLog, is_status_board
 from agent.session_store import append_event
 from agent.skills import Skill, SkillLoader
 from tools.subagent_api import run_subagent
-from tools.compact._tail_boundary import compute_tail_boundary, TailBoundary
+from tools.compact._tail_boundary import compute_tail_boundary
 from tools.update_task_status import UPDATE_TASK_STATUS_SENTINEL
 from tools.plan_mode import ENTER_PLAN_MODE_SENTINEL, EXIT_PLAN_MODE_SENTINEL
 from tools.reload_skills import RELOAD_SKILLS_SENTINEL
@@ -602,14 +602,18 @@ class AgentLoop:
         return messages
 
     def _collect_steps(self) -> list[tuple[int, int]]:
-        """Return chronological list of (turn, step) pairs from the main branch log."""
+        """Return chronological (turn, step) pairs that are active on the surface."""
+        event_map = {e.seq: e for e in self.log.events}
         steps: list[tuple[int, int]] = []
         seen: set[tuple[int, int]] = set()
-        for event in self.log.events:
-            if event.branch != "main":
+        for seq in self.log.surface.nodes:
+            event = event_map.get(seq)
+            if event is None:
                 continue
-            if event.type == sev.STEP_START:
-                key = (event.data["turn"], event.data["step"])
+            t = event.data.get("turn")
+            s = event.data.get("step")
+            if t is not None and s is not None:
+                key = (t, s)
                 if key not in seen:
                     seen.add(key)
                     steps.append(key)
