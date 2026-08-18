@@ -3,6 +3,8 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
+import os
+import tempfile
 import threading
 import time
 from dataclasses import dataclass, field
@@ -26,7 +28,7 @@ from agent.session import SessionTracker, ToolCallRecord
 from agent.session_log import InvariantError, SessionLog, is_status_board
 from agent.session_store import append_event
 from agent.skills import Skill, SkillLoader
-from tools.subagent_api import run_subagent
+from tools.subagent_api import build_fork_context, run_subagent
 from tools.compact._tail_boundary import compute_tail_boundary
 from tools.update_task_status import UPDATE_TASK_STATUS_SENTINEL
 from tools.plan_mode import ENTER_PLAN_MODE_SENTINEL, EXIT_PLAN_MODE_SENTINEL
@@ -680,15 +682,20 @@ class AgentLoop:
         self._sync_messages()
 
     def compact(self, force: bool = False) -> CompactionResult:
-        """Compact context by spawning a compact subagent.
+        """Compact context via a subprocess that inherits the parent's prefix.
 
-        The subagent inherits the parent's warm KV-cache prefix via
-        spec_for_branch, summarizes the conversation middle, and returns
-        the summary as its handoff.
+        The compact subprocess receives the parent's warm KV-cache prefix
+        through a fork-context file, makes a single non-streaming API call,
+        and returns the summary as its handoff. The parent surface is only
+        mutated after validating the handoff against the recorded surface
+        generation (atomic acceptance).
 
         Exceptions propagate — callers that want them swallowed use
         _compact_context.
         """
+        if self._last_request_snapshot is None:
+            return _NO_COMPACTION
+
         steps = self._collect_steps()
         if not steps:
             return _NO_COMPACTION
@@ -698,31 +705,96 @@ class AgentLoop:
             prompt_tokens=self._last_prompt_tokens,
             keep_recent_tokens=self.config.keep_recent_tokens,
         )
-
-        if not boundary.has_middle and not force:
-            return _NO_COMPACTION
-
         if not boundary.has_middle:
-            # forced but nothing to compact (e.g. only 1 step)
             return _NO_COMPACTION
 
-        middle_end = boundary.middle_steps[-1]
-        task = (
-            f"Summarize all conversation from the beginning through "
-            f"turn {middle_end[0]} step {middle_end[1]}. "
-            f"Everything after that is the recent tail — do not include "
-            f"it in your summary."
+        # --- Resolve structural values from the log ---
+        middle_last = boundary.middle_steps[-1]
+        step_end_seq: int | None = None
+        for evt in self.log.events:
+            if (
+                evt.type == sev.STEP_END
+                and evt.branch == "main"
+                and evt.data.get("turn") == middle_last[0]
+                and evt.data.get("step") == middle_last[1]
+            ):
+                step_end_seq = evt.seq
+                break
+        if step_end_seq is None:
+            return _NO_COMPACTION  # last summarized step incomplete
+
+        nodes = self.log.surface.nodes
+        tail_first = boundary.tail_steps[0]
+        try:
+            tail_idx = self._find_surface_index_for_step(tail_first)
+        except ValueError:
+            return _NO_COMPACTION
+        if tail_idx == 0:
+            return _NO_COMPACTION  # nothing to shadow
+
+        first_summarized_seq = nodes[0]
+        last_summarized_seq = nodes[tail_idx - 1]
+        pre_gen = self.log.surface.generation
+
+        # --- Record retroactive BRANCH_START ---
+        from uuid import uuid4
+        branch_id = f"compact_{uuid4().hex[:8]}"
+        self.log.append(
+            sev.BRANCH_START,
+            {
+                "branch": branch_id,
+                "parent_branch": "main",
+                "turn": middle_last[0],
+                "step": middle_last[1],
+                "parent_cut_seq": step_end_seq,
+                "parent_surface_generation": pre_gen,
+            },
         )
 
-        result = run_subagent(
-            task=task,
-            preset="compact",
-            project_path=self.config.project_path,
-            parent_log=self.log,
+        # --- Reconstruct the inherited prefix ---
+        from agent.context_spec import reconstruct, spec_for_branch
+        spec = spec_for_branch(self.log, branch_id)
+        _header, prefix_msgs = reconstruct(self.log, spec)
+
+        fork_messages = [
+            {"role": "system", "content": _header["content"]},
+            *prefix_msgs,
+        ]
+        fork_snapshot = {**self._last_request_snapshot, "messages": fork_messages}
+        fork_ctx = build_fork_context(
+            branch_id=branch_id,
+            parent_cut_seq=step_end_seq,
+            parent_surface_generation=pre_gen,
+            request_snapshot=fork_snapshot,
         )
 
+        # --- Write fork-context and run subprocess ---
+        fd, fc_path = tempfile.mkstemp(suffix=".json", prefix="dagi_fork_ctx_")
+        os.close(fd)
+        try:
+            Path(fc_path).write_text(json.dumps(fork_ctx), encoding="utf-8")
+            result = run_subagent(
+                task="",
+                preset="compact",
+                project_path=self.config.project_path,
+                parent_log=None,
+                extra_argv=["--fork-context", fc_path],
+            )
+        finally:
+            Path(fc_path).unlink(missing_ok=True)
+
+        # --- Validate and atomically accept ---
         if not result.is_ok or not result.handoff_text.strip():
             return _NO_COMPACTION
+        if self.log.surface.generation != pre_gen:
+            return _NO_COMPACTION  # surface changed during compact
+
+        current_nodes = self.log.surface.nodes
+        if (
+            first_summarized_seq not in current_nodes
+            or last_summarized_seq not in current_nodes
+        ):
+            return _NO_COMPACTION  # replacement edges no longer live
 
         self._compaction_generation += 1
         summary_content = (
@@ -730,13 +802,29 @@ class AgentLoop:
             f"(generation {self._compaction_generation})]\n\n"
             f"{result.handoff_text}"
         )
+        removed_count = len(boundary.middle_steps)
+        source_nodes = list(current_nodes[:tail_idx])
+        self.log.append(
+            sev.CONTEXT_COMPACTION,
+            {
+                "summary": summary_content,
+                "removed": removed_count,
+                "generation": self._compaction_generation,
+                "branch": branch_id,
+                "handoff": str(result.handoff_path),
+            },
+            surface_op=("replace", first_summarized_seq, last_summarized_seq),
+            source_seqs=source_nodes,
+        )
+        self._sync_messages()
+
         compaction = CompactionResult(
             did_compact=True,
             generation=self._compaction_generation,
             summary_content=summary_content,
-            removed_count=len(boundary.middle_steps),
+            removed_count=removed_count,
         )
-        self._log_compaction(compaction, boundary.tail_steps[0])
+        self.callbacks.on_compaction(len(boundary.tail_steps), removed_count)
         return compaction
 
     def _sync_messages(self) -> None:

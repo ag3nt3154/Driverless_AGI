@@ -2,6 +2,7 @@
 """Tests for subagent-based compaction in AgentLoop."""
 from __future__ import annotations
 
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -9,6 +10,16 @@ import pytest
 from agent import session_events as sev
 from agent.loop import AgentConfig, AgentLoop, CompactionResult, _NO_COMPACTION
 from agent.session_log import SessionLog
+
+
+_SNAPSHOT = {
+    "model": "test-model",
+    "messages": [{"role": "system", "content": "You are a test agent."}],
+    "tools": [],
+    "parallel_tool_calls": False,
+    "extra_body": {},
+    "base_url": "",
+}
 
 
 def _config(**overrides):
@@ -83,10 +94,12 @@ class TestSubagentCompaction:
         mock_result = MagicMock()
         mock_result.is_ok = True
         mock_result.handoff_text = "Cumulative summary of the conversation."
+        mock_result.handoff_path = Path(".dagi/handoffs/compact_abc12345.md")
         mock_result.branch_id = "compact_abc12345"
 
         with patch("agent.loop.run_subagent", return_value=mock_result) as mock_spawn:
             loop = _make_loop_with_history(_config(keep_recent_tokens=1_500))
+            loop._last_request_snapshot = _SNAPSHOT
             # compact() appends a surface event which requires an open turn
             t = loop.log.next_turn()
             loop.log.append(sev.TURN_START, {"turn": t})
@@ -113,9 +126,11 @@ class TestSubagentCompaction:
         mock_result = MagicMock()
         mock_result.is_ok = False
         mock_result.handoff_text = ""
+        mock_result.handoff_path = Path(".dagi/handoffs/compact_fail.md")
 
         with patch("agent.loop.run_subagent", return_value=mock_result):
             loop = _make_loop_with_history(_config(keep_recent_tokens=1_500))
+            loop._last_request_snapshot = _SNAPSHOT
             result = loop.compact(force=True)
             assert result.did_compact is False
 
@@ -123,6 +138,7 @@ class TestSubagentCompaction:
         """_compact_context() swallows all exceptions from compact()."""
         with patch("agent.loop.run_subagent", side_effect=RuntimeError("network down")):
             loop = _make_loop_with_history(_config(keep_recent_tokens=1_500))
+            loop._last_request_snapshot = _SNAPSHOT
             result = loop._compact_context()
             assert result.did_compact is False
 
@@ -131,10 +147,12 @@ class TestSubagentCompaction:
         mock_result = MagicMock()
         mock_result.is_ok = True
         mock_result.handoff_text = "Summary v1."
+        mock_result.handoff_path = Path(".dagi/handoffs/compact_a.md")
         mock_result.branch_id = "compact_a"
 
         with patch("agent.loop.run_subagent", return_value=mock_result):
             loop = _make_loop_with_history(_config(keep_recent_tokens=1_500))
+            loop._last_request_snapshot = _SNAPSHOT
             t1 = loop.log.next_turn()
             loop.log.append(sev.TURN_START, {"turn": t1})
             r1 = loop.compact(force=True)
@@ -146,8 +164,10 @@ class TestSubagentCompaction:
         # Seeding 5 more steps gives 6 visible steps: avg=6000/6=1000 → keep=1 → 5 in middle.
         _seed_steps(loop, turn=3, n_steps=5, prefix="more")
         mock_result.handoff_text = "Summary v2."
+        mock_result.handoff_path = Path(".dagi/handoffs/compact_b.md")
         mock_result.branch_id = "compact_b"
         with patch("agent.loop.run_subagent", return_value=mock_result):
+            loop._last_request_snapshot = _SNAPSHOT
             loop._last_prompt_tokens = 6_000  # 6 steps × 1000/step avg
             t2 = loop.log.next_turn()
             loop.log.append(sev.TURN_START, {"turn": t2})
@@ -220,3 +240,85 @@ class TestRequestSnapshot:
         # Mutate _messages — snapshot should be unaffected
         loop._messages.clear()
         assert loop._last_request_snapshot["messages"] == snap_msgs_before
+
+
+class TestCompactOrchestration:
+    def test_no_snapshot_returns_no_compaction(self):
+        """compact() returns _NO_COMPACTION when _last_request_snapshot is None."""
+        loop = _make_loop_with_history(_config(keep_recent_tokens=1_500))
+        loop._last_request_snapshot = None
+        result = loop.compact(force=True)
+        assert result.did_compact is False
+
+    def test_compact_creates_retroactive_branch(self):
+        """compact() appends BRANCH_START with parent_cut_seq at STEP_END of last summarized step."""
+        mock_result = MagicMock()
+        mock_result.is_ok = True
+        mock_result.status = "ok"
+        mock_result.handoff_text = "Cumulative summary."
+        mock_result.handoff_path = Path(".dagi/handoffs/compact_abc.md")
+
+        loop = _make_loop_with_history(_config(keep_recent_tokens=1_500))
+        loop._last_request_snapshot = _SNAPSHOT
+
+        with patch("agent.loop.run_subagent", return_value=mock_result):
+            t = loop.log.next_turn()
+            loop.log.append(sev.TURN_START, {"turn": t})
+            loop.compact(force=True)
+            loop.log.append(sev.TURN_END, {"turn": t, "reason": {"kind": "completed"}})
+
+        branch_events = [
+            e for e in loop.log.events
+            if e.type == sev.BRANCH_START and "compact" in e.data.get("branch", "")
+        ]
+        assert len(branch_events) == 1
+        be = branch_events[0]
+        assert "parent_cut_seq" in be.data
+        cut_seq = be.data["parent_cut_seq"]
+        cut_event = next(e for e in loop.log.events if e.seq == cut_seq)
+        assert cut_event.type == sev.STEP_END
+
+    def test_stale_generation_rejects_handoff(self):
+        """If surface generation changes during compact, handoff is rejected."""
+        mock_result = MagicMock()
+        mock_result.is_ok = True
+        mock_result.handoff_text = "Summary."
+        mock_result.handoff_path = Path(".dagi/handoffs/compact_stale.md")
+
+        loop = _make_loop_with_history(_config(keep_recent_tokens=1_500))
+        loop._last_request_snapshot = _SNAPSHOT
+
+        def bump_generation(**kwargs):
+            loop.log.surface.generation += 1
+            return mock_result
+
+        with patch("agent.loop.run_subagent", side_effect=bump_generation):
+            t = loop.log.next_turn()
+            loop.log.append(sev.TURN_START, {"turn": t})
+            result = loop.compact(force=True)
+            loop.log.append(sev.TURN_END, {"turn": t, "reason": {"kind": "completed"}})
+
+        assert result.did_compact is False
+
+    def test_compaction_event_has_provenance(self):
+        """CONTEXT_COMPACTION event has branch and handoff fields."""
+        handoff_p = Path(".dagi/handoffs/compact_prov.md")
+        mock_result = MagicMock()
+        mock_result.is_ok = True
+        mock_result.handoff_text = "Summary."
+        mock_result.handoff_path = handoff_p
+
+        loop = _make_loop_with_history(_config(keep_recent_tokens=1_500))
+        loop._last_request_snapshot = _SNAPSHOT
+
+        with patch("agent.loop.run_subagent", return_value=mock_result):
+            t = loop.log.next_turn()
+            loop.log.append(sev.TURN_START, {"turn": t})
+            loop.compact(force=True)
+            loop.log.append(sev.TURN_END, {"turn": t, "reason": {"kind": "completed"}})
+
+        cc = [e for e in loop.log.events if e.type == sev.CONTEXT_COMPACTION]
+        assert len(cc) == 1
+        assert "branch" in cc[0].data
+        assert "compact_" in cc[0].data["branch"]
+        assert "handoff" in cc[0].data

@@ -2,12 +2,23 @@
 """Integration tests: subagent-based compaction with session log."""
 from __future__ import annotations
 
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
 
 from agent import session_events as sev
 from agent.loop import AgentConfig, AgentLoop, CompactionResult, _NO_COMPACTION
+
+
+_SNAPSHOT = {
+    "model": "test-model",
+    "messages": [{"role": "system", "content": "You are a test agent."}],
+    "tools": [],
+    "parallel_tool_calls": False,
+    "extra_body": {},
+    "base_url": "",
+}
 
 
 def _config(**overrides):
@@ -62,6 +73,7 @@ class TestCompactionSurfaceIntegration:
         loop = AgentLoop(config=_config(), _registry=_make_registry())
         _seed_steps(loop, turn=1, n_steps=5)
         loop._last_prompt_tokens = 5_000  # 1000/step avg → keep 1, middle 4
+        loop._last_request_snapshot = _SNAPSHOT
 
         with patch("agent.loop.run_subagent", return_value=mock_result):
             t = loop.log.next_turn()
@@ -93,6 +105,7 @@ class TestCompactionSurfaceIntegration:
         loop = AgentLoop(config=_config(), _registry=_make_registry())
         _seed_steps(loop, turn=1, n_steps=5)
         loop._last_prompt_tokens = 5_000
+        loop._last_request_snapshot = _SNAPSHOT
 
         # Before compaction: 5 steps visible
         assert len(loop._collect_steps()) == 5
@@ -120,6 +133,7 @@ class TestCompactionSurfaceIntegration:
         loop = AgentLoop(config=_config(), _registry=_make_registry())
         _seed_steps(loop, turn=1, n_steps=5)
         loop._last_prompt_tokens = 5_000
+        loop._last_request_snapshot = _SNAPSHOT
 
         with patch("agent.loop.run_subagent", return_value=mock_result):
             t1 = loop.log.next_turn()
@@ -135,6 +149,7 @@ class TestCompactionSurfaceIntegration:
         mock_result.handoff_text = "Summary v2."
         mock_result.branch_id = "compact_b"
         with patch("agent.loop.run_subagent", return_value=mock_result):
+            loop._last_request_snapshot = _SNAPSHOT
             t2 = loop.log.next_turn()
             loop.log.append(sev.TURN_START, {"turn": t2})
             r2 = loop.compact(force=True)
