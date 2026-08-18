@@ -233,6 +233,39 @@ class TestRunSubagent:
         assert len(captured) == 1
         assert "security auditor" in captured[0]
 
+    def test_extra_argv_forwarded_with_preset(self, tmp_path):
+        """Caller-supplied extra_argv is merged into runner's extra_argv alongside internal args."""
+        preset_dir = tmp_path / ".dagi" / "subagents" / "compact"
+        preset_dir.mkdir(parents=True)
+        (preset_dir / "prompt.md").write_text("You are compact.", encoding="utf-8")
+        (preset_dir / "subagent_config.yaml").write_text(
+            "model_tier: inherit\ntools: []\n", encoding="utf-8"
+        )
+        handoff_file = tmp_path / ".dagi" / "handoffs" / "compact.md"
+        handoff_file.parent.mkdir(parents=True, exist_ok=True)
+        handoff_file.write_text("done", encoding="utf-8")
+
+        raw_result = {"status": "ok", "handoff": str(handoff_file)}
+        captured_extra: list[list[str]] = []
+
+        def capture(*_args, **kwargs):
+            captured_extra.append(list(kwargs.get("extra_argv") or []))
+            return raw_result
+
+        with patch("tools.subagent_api._runner.run_subagent", side_effect=capture):
+            run_subagent(
+                task="compact this",
+                preset="compact",
+                project_path=tmp_path,
+                extra_argv=["--fork-context", "/tmp/fc.json"],
+            )
+
+        assert len(captured_extra) == 1
+        argv = captured_extra[0]
+        assert "--fork-context" in argv
+        assert argv[argv.index("--fork-context") + 1] == "/tmp/fc.json"
+        assert "--system-prompt-file" in argv  # internal arg still present
+
 
 class TestBranchStartLogging:
     """run_subagent() logs branch/start on parent_log before spawning."""

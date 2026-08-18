@@ -69,6 +69,7 @@ class TestCompactionSurfaceIntegration:
         mock_result.is_ok = True
         mock_result.handoff_text = "Summary of the conversation."
         mock_result.branch_id = "compact_test1"
+        mock_result.handoff_path = Path(".dagi/handoffs/compact_test1.md")
 
         loop = AgentLoop(config=_config(), _registry=_make_registry())
         _seed_steps(loop, turn=1, n_steps=5)
@@ -101,6 +102,7 @@ class TestCompactionSurfaceIntegration:
         mock_result.is_ok = True
         mock_result.handoff_text = "Summary v1."
         mock_result.branch_id = "compact_v1"
+        mock_result.handoff_path = Path(".dagi/handoffs/compact_v1.md")
 
         loop = AgentLoop(config=_config(), _registry=_make_registry())
         _seed_steps(loop, turn=1, n_steps=5)
@@ -129,6 +131,7 @@ class TestCompactionSurfaceIntegration:
         mock_result.is_ok = True
         mock_result.handoff_text = "Summary."
         mock_result.branch_id = "compact_a"
+        mock_result.handoff_path = Path(".dagi/handoffs/compact_a.md")
 
         loop = AgentLoop(config=_config(), _registry=_make_registry())
         _seed_steps(loop, turn=1, n_steps=5)
@@ -300,3 +303,9 @@ class TestCompactionSurfaceIntegration:
         # Two CONTEXT_COMPACTION events in log (both preserved — append-only)
         cc_events = [e for e in loop.log.events if e.type == sev.CONTEXT_COMPACTION]
         assert len(cc_events) == 2
+
+        # _messages now reflects v2 summary, not v1 — the replacement actually happened
+        non_sys2 = [m for m in loop._messages if m.get("role") != "system"]
+        all_content = " ".join(str(m.get("content", "")) for m in non_sys2)
+        assert "Summary v2." in all_content, "Second summary should be present in messages"
+        assert "Summary v1." not in all_content, "First summary should be gone from messages"
