@@ -30,6 +30,7 @@ class _SubagentState:
     task_file: Path
     subagent_type: str
     on_event: Callable[[str], None] | None
+    fork_context_path: Path | None = None
 
 
 _active: dict[int, _SubagentState] = {}
@@ -115,6 +116,8 @@ def _poll_until(
             with _active_lock:
                 _active.pop(proc.pid, None)
             state.task_file.unlink(missing_ok=True)
+            if state.fork_context_path is not None:
+                state.fork_context_path.unlink(missing_ok=True)
             try:
                 content = escalation_path.read_text(encoding="utf-8")
             except (OSError, UnicodeDecodeError) as exc:
@@ -129,6 +132,8 @@ def _poll_until(
             with _active_lock:
                 _active.pop(proc.pid, None)
             state.task_file.unlink(missing_ok=True)
+            if state.fork_context_path is not None:
+                state.fork_context_path.unlink(missing_ok=True)
             handoff_result = _handoff_result(state.handoff_path)
             if handoff_result is not None:
                 return handoff_result
@@ -208,12 +213,22 @@ def run_subagent(
         **popen_kwargs,
     )
 
+    # Track fork-context path for cleanup on terminal paths
+    fc_path: Path | None = None
+    if extra_argv:
+        try:
+            idx = extra_argv.index("--fork-context")
+            fc_path = Path(extra_argv[idx + 1])
+        except (ValueError, IndexError):
+            pass
+
     state = _SubagentState(
         proc=proc,
         handoff_path=handoff_path,
         task_file=task_file,
         subagent_type=subagent_type,
         on_event=on_event,
+        fork_context_path=fc_path,
     )
     with _active_lock:
         _active[proc.pid] = state

@@ -117,6 +117,136 @@ class TestUnverifiedHandoffDetection:
         assert result["status"] == "escalated"
 
 
+class TestForkContextCleanup:
+    def test_fork_context_path_stored_on_state(self, tmp_path):
+        """When --fork-context is in extra_argv, state.fork_context_path is set."""
+        from tools._subagent_runner import _SubagentState
+        from pathlib import Path
+
+        fc_path = tmp_path / "fork_ctx.json"
+        fc_path.write_text('{"version": 1}', encoding="utf-8")
+
+        state = _SubagentState(
+            proc=None,  # type: ignore
+            handoff_path=tmp_path / "handoff.md",
+            task_file=tmp_path / "task.txt",
+            subagent_type="compact",
+            on_event=None,
+            fork_context_path=fc_path,
+        )
+        assert state.fork_context_path == fc_path
+
+    def test_fork_context_path_none_by_default(self, tmp_path):
+        """_SubagentState.fork_context_path defaults to None."""
+        from tools._subagent_runner import _SubagentState
+
+        state = _SubagentState(
+            proc=None,  # type: ignore
+            handoff_path=tmp_path / "handoff.md",
+            task_file=tmp_path / "task.txt",
+            subagent_type="compact",
+            on_event=None,
+        )
+        assert state.fork_context_path is None
+
+    def test_fork_context_parsed_from_extra_argv(self, tmp_path):
+        """run_subagent parses --fork-context from extra_argv and stores it on state."""
+        from unittest.mock import MagicMock, patch
+        import subprocess
+        from tools import _subagent_runner as runner
+
+        fc_path = tmp_path / "fork_ctx.json"
+        fc_path.write_text('{"version": 1}', encoding="utf-8")
+        handoff_path = tmp_path / "handoff.md"
+        task_file_content = "task content"
+
+        captured_state = []
+
+        def capturing_poll_until(state, extra_seconds):
+            captured_state.append(state)
+            state.task_file.unlink(missing_ok=True)
+            return {"status": "error", "message": "no handoff"}
+
+        fake_proc = MagicMock(spec=subprocess.Popen)
+        fake_proc.stdout = iter([])
+        fake_proc.pid = 99999
+
+        with patch("tools._subagent_runner.subprocess.Popen", return_value=fake_proc):
+            with patch("tools._subagent_runner._poll_until", side_effect=capturing_poll_until):
+                with patch("tools._subagent_runner._active", {}):
+                    runner.run_subagent(
+                        subagent_type="compact",
+                        task=task_file_content,
+                        project_path=tmp_path,
+                        handoff_path=handoff_path,
+                        timeout=5.0,
+                        extra_argv=["--fork-context", str(fc_path)],
+                    )
+
+        assert len(captured_state) == 1
+        assert captured_state[0].fork_context_path == fc_path
+
+    def test_fork_context_deleted_on_terminal_exit(self, tmp_path):
+        """Fork-context file is deleted when subprocess exits (no handoff written)."""
+        from unittest.mock import MagicMock, patch
+        import subprocess
+        from tools import _subagent_runner as runner
+
+        fc_path = tmp_path / "fork_ctx.json"
+        fc_path.write_text('{"version": 1}', encoding="utf-8")
+        handoff_path = tmp_path / "handoff.md"
+
+        fake_proc = MagicMock(spec=subprocess.Popen)
+        fake_proc.stdout = iter([])
+        fake_proc.pid = 99999
+        fake_proc.poll.return_value = 1  # process exited immediately
+        fake_proc.wait.return_value = None
+
+        with patch("tools._subagent_runner.subprocess.Popen", return_value=fake_proc):
+            with patch("tools._subagent_runner._active", {}):
+                result = runner.run_subagent(
+                    subagent_type="compact",
+                    task="task",
+                    project_path=tmp_path,
+                    handoff_path=handoff_path,
+                    timeout=5.0,
+                    extra_argv=["--fork-context", str(fc_path)],
+                )
+
+        assert not fc_path.exists()
+        assert result["status"] == "error"
+
+    def test_fork_context_not_deleted_on_timeout(self, tmp_path):
+        """Fork-context file is NOT deleted on timeout (child may be resumed)."""
+        from unittest.mock import MagicMock, patch
+        import subprocess
+        from tools import _subagent_runner as runner
+
+        fc_path = tmp_path / "fork_ctx.json"
+        fc_path.write_text('{"version": 1}', encoding="utf-8")
+        handoff_path = tmp_path / "handoff.md"
+
+        fake_proc = MagicMock(spec=subprocess.Popen)
+        fake_proc.stdout = iter([])
+        fake_proc.pid = 99999
+        fake_proc.poll.return_value = None  # still running
+
+        with patch("tools._subagent_runner.subprocess.Popen", return_value=fake_proc):
+            with patch("tools._subagent_runner._active", {}):
+                with patch("time.sleep"):  # don't actually sleep
+                    result = runner.run_subagent(
+                        subagent_type="compact",
+                        task="task",
+                        project_path=tmp_path,
+                        handoff_path=handoff_path,
+                        timeout=0.001,  # immediately times out
+                        extra_argv=["--fork-context", str(fc_path)],
+                    )
+
+        assert fc_path.exists()
+        assert result["status"] == "timeout"
+
+
 class TestForceKillActiveSubagents:
     def test_force_kill_calls_kill_process_tree_on_every_active_proc(self, tmp_path, monkeypatch):
         killed_procs = []
