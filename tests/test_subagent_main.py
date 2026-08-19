@@ -663,6 +663,35 @@ def test_build_inherited_config_resolves_non_default_catalog_model(tmp_path):
     assert config.api_key == "active-key"
 
 
+def test_build_inherited_config_prefers_provider_match_over_catalog_id_collision(tmp_path):
+    """A catalog ID collision must not supply credentials for a different provider model."""
+    from tools.subagent_main import _build_inherited_config
+
+    config_dir = tmp_path / ".dagi"
+    config_dir.mkdir()
+    (config_dir / "config.yaml").write_text(
+        "models:\n"
+        "  vendor/non-default:\n"
+        "    model: vendor/wrong-model\n"
+        "    api_url: https://wrong.example/v1\n"
+        "    api_key: wrong-key\n"
+        "  inherited-active:\n"
+        "    model: vendor/non-default\n"
+        "    api_url: https://active.example/v1\n"
+        "    api_key: active-key\n",
+        encoding="utf-8",
+    )
+
+    config = _build_inherited_config(
+        {"model": "vendor/non-default", "base_url": "https://active.example/v1"},
+        tmp_path,
+    )
+
+    assert config.model_id == "inherited-active"
+    assert config.model == "vendor/non-default"
+    assert config.api_key == "active-key"
+
+
 def test_forked_v2_retries_once_with_the_exact_validation_error(tmp_path, monkeypatch):
     """An invalid final answer must get one corrective turn, never an unverified handoff."""
     import tools.subagent_main as subagent_main

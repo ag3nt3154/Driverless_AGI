@@ -281,12 +281,19 @@ def _load_required_sections(subagent_type: str, project_path: Path) -> list[str]
 def _build_inherited_config(request: dict, project_path: Path) -> AgentConfig:
     """Resolve local credentials while retaining the inherited provider request identity."""
     requested_model = str(request["model"])
+    inherited_url = str(request.get("base_url") or "")
     try:
         local_config = resolve_model_config(requested_model, project_path=project_path)
     except KeyError:
-        model_id = _find_inherited_model_id(requested_model, request.get("base_url"), project_path)
+        model_id = _find_inherited_model_id(requested_model, inherited_url, project_path)
         local_config = resolve_model_config(model_id, project_path=project_path)
-    inherited_url = str(request.get("base_url") or "")
+    if (
+        local_config.model != requested_model
+        or _normalise_provider_url(inherited_url)
+        != _normalise_provider_url(str(local_config.base_url or ""))
+    ):
+        model_id = _find_inherited_model_id(requested_model, inherited_url, project_path)
+        local_config = resolve_model_config(model_id, project_path=project_path)
     local_url = str(local_config.base_url or "")
     if not local_config.api_key:
         raise ValueError(
@@ -333,8 +340,8 @@ def _find_inherited_model_id(model: str, base_url: object, project_path: Path) -
     ]
     if len(matches) != 1:
         raise ValueError(
-            "Inherited provider credentials unavailable: active model and provider "
-            "do not match one local catalog entry"
+            "Inherited provider mismatch: local catalog has a different model or "
+            "base_url"
         )
     return matches[0]
 
