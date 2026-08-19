@@ -85,6 +85,30 @@ def test_build_fork_context_v2_allows_provider_routing_options() -> None:
     assert result["request"]["extra_body"] == request["extra_body"]
 
 
+def test_build_fork_context_v2_allows_credential_named_tool_parameters() -> None:
+    """Schema property names describe user input and are not serialized credentials."""
+    request = {
+        "tools": [{
+            "type": "function",
+            "function": {
+                "name": "login",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "token": {"type": "string"},
+                        "password": {"type": "string"},
+                    },
+                },
+            },
+        }],
+        "extra_body": {"provider": {"order": ["Parent"]}},
+    }
+
+    result = build_fork_context_v2(_fork(request), "worker", ["login"])
+
+    assert result["request"]["tools"] == request["tools"]
+
+
 def test_subagent_api_reexports_v2_builder() -> None:
     from tools.subagent_api import build_fork_context_v2 as exported
 

@@ -195,12 +195,16 @@ def test_typed_subagent_inherits_triggering_prefix_and_returns_full_handoff(tmp_
     }
     assert child_request["model"] == parent_request["model"]
     assert child_request["messages"][:-1] == parent_request["messages"]
-    assert child_request["messages"][-1] == {
-        "role": "user",
-        "content": "## Task\nmap the loop\n\n---\n\n## Output\n"
+    child_task = child_request["messages"][-1]
+    assert child_task["role"] == "user"
+    assert child_task["content"].endswith(
+        "## Task\nmap the loop\n\n---\n\n## Output\n"
         "A structured exploration report with a summary, file:line citations for every "
-        "finding, and notable caveats.",
-    }
+        "finding, and notable caveats."
+    )
+    assert "## Inherited Child Contract" in child_task["content"]
+    assert "Effective allowed tools: none" in child_task["content"]
+    assert "Do not call `write_handoff`" in child_task["content"]
     assert child_request["tools"] == parent_request["tools"]
     assert child_request["parallel_tool_calls"] is True
     assert child_request["extra_body"] == parent_request["extra_body"]

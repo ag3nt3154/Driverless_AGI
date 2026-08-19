@@ -23,6 +23,8 @@ class WtfReport:
 def parse_wtf_report(text: str) -> WtfReport:
     """Parse the exact level-two heading contract emitted by the ``/wtf`` preset."""
     headings = list(_HEADING_RE.finditer(text))
+    if headings and text[:headings[0].start()].strip():
+        raise ValueError("Unexpected preamble before first section")
     _validate_headings(headings)
     values = _extract_sections(text, headings)
 
@@ -31,6 +33,11 @@ def parse_wtf_report(text: str) -> WtfReport:
             raise ValueError(f"Missing required section: {section}")
         if not values[section]:
             raise ValueError(f"Empty section: {section}")
+    actual_order = tuple(heading["title"] for heading in headings)
+    if actual_order != _SECTION_NAMES:
+        raise ValueError(
+            f"Sections out of order: expected {', '.join(_SECTION_NAMES)}"
+        )
 
     return WtfReport(
         description=values["Description"],

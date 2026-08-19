@@ -554,7 +554,8 @@ def test_forked_v2_uses_inherited_prefix_and_request_options(tmp_path, monkeypat
     assert captured["loop"]["config"].base_url == request["base_url"]
     assert loop._extra_body == request["extra_body"]
     assert loop._parallel_tool_calls is True
-    assert loop.run_calls == ["child task"]
+    assert len(loop.run_calls) == 1
+    assert loop.run_calls[0].endswith("child task")
     assert handoff_path.read_text(encoding="utf-8") == "completed report"
     assert loop.finish_calls == 1
 
@@ -583,9 +584,83 @@ def test_forked_v2_places_resolved_preset_prompt_after_inherited_prefix(tmp_path
         system_prompt_file=str(prompt_path),
     )
 
-    assert loop.run_calls == [
-        "resolved preset instructions\n\n---\n\nchild task",
-    ]
+    task = loop.run_calls[0]
+    assert task.index("resolved preset instructions") < task.index("## Inherited Child Contract")
+    assert task.index("## Inherited Child Contract") < task.index("child task")
+    assert "Effective allowed tools: read" in task
+    assert "Error: Access blocked for tool '<name>'" in task
+    assert "Do not call `write_handoff`" in task
+    assert "return the required handoff as your final assistant text" in task
+
+
+def test_forked_v2_uses_child_allowed_tools_for_implementation_registry(
+    tmp_path, monkeypatch
+):
+    """Preset tools outside the fork allowlist must not receive implementations."""
+    import tools.subagent_main as subagent_main
+
+    context = _v2_context()
+    context["child"]["allowed_tools"] = ["read", "grep"]
+    context["request"]["tools"].append({
+        "type": "function",
+        "function": {
+            "name": "write",
+            "description": "parent write schema",
+            "parameters": {"type": "object", "properties": {}},
+        },
+    })
+    context_path, task_path, handoff_path = _write_v2_inputs(tmp_path, context)
+    captured: dict = {}
+    loop = _InheritedLoop(["completed report"])
+    monkeypatch.setattr(
+        subagent_main,
+        "resolve_model_config",
+        lambda *_a, **_k: _matching_inherited_config(subagent_main),
+    )
+    monkeypatch.setattr(
+        subagent_main,
+        "build_subagent_registry",
+        lambda **kwargs: captured.update(kwargs) or MagicMock(),
+    )
+    monkeypatch.setattr(
+        subagent_main,
+        "AgentLoop",
+        lambda **kwargs: captured.update(loop=kwargs) or loop,
+    )
+
+    subagent_main.run_forked_subagent_mode(
+        str(context_path), str(task_path), str(handoff_path), str(tmp_path)
+    )
+
+    assert captured["tool_names_override"] == ["read", "grep"]
+    assert captured["loop"]["_registry"].dispatch("write", {}) == (
+        "Error: Access blocked for tool 'write' in subagent 'worker'. Allowed tools: read"
+    )
+
+
+def test_build_inherited_config_resolves_non_default_catalog_model(tmp_path):
+    """A valid active model must use its own key instead of the catalog default's key."""
+    from tools.subagent_main import _build_inherited_config
+
+    config_dir = tmp_path / ".dagi"
+    config_dir.mkdir()
+    (config_dir / "config.yaml").write_text(
+        "models:\n"
+        "  inherited-active:\n"
+        "    model: vendor/non-default\n"
+        "    api_url: https://active.example/v1\n"
+        "    api_key: active-key\n",
+        encoding="utf-8",
+    )
+
+    config = _build_inherited_config(
+        {"model": "vendor/non-default", "base_url": "https://active.example/v1"},
+        tmp_path,
+    )
+
+    assert config.model_id == "inherited-active"
+    assert config.model == "vendor/non-default"
+    assert config.api_key == "active-key"
 
 
 def test_forked_v2_retries_once_with_the_exact_validation_error(tmp_path, monkeypatch):
@@ -606,10 +681,9 @@ def test_forked_v2_retries_once_with_the_exact_validation_error(tmp_path, monkey
         str(context_path), str(task_path), str(handoff_path), str(tmp_path)
     )
 
-    assert loop.run_calls == [
-        "child task",
-        "child task\n\nEmpty final handoff text",
-    ]
+    assert len(loop.run_calls) == 2
+    assert loop.run_calls[0].endswith("child task")
+    assert loop.run_calls[1] == f"{loop.run_calls[0]}\n\nEmpty final handoff text"
     assert handoff_path.read_text(encoding="utf-8") == "completed report"
     assert loop.finish_calls == 1
 
@@ -683,6 +757,29 @@ def test_final_handoff_validation_accepts_exact_non_empty_sections():
 
     assert ok is True
     assert error == ""
+
+
+@pytest.mark.parametrize(
+    "text, expected",
+    [
+        (
+            "intro\n\n## Findings\nobserved\n## Changes\nimplemented",
+            "Unexpected preamble before first section",
+        ),
+        (
+            "## Changes\nimplemented\n## Findings\nobserved",
+            "Sections out of order: expected ## Findings, ## Changes",
+        ),
+    ],
+)
+def test_final_handoff_validation_rejects_preamble_and_wrong_section_order(text, expected):
+    """A caller must be able to parse the configured contract without ambiguity."""
+    from tools.subagent_main import _validate_final_handoff
+
+    ok, error = _validate_final_handoff(text, ["Findings", "Changes"])
+
+    assert ok is False
+    assert error == expected
 
 
 def test_forked_v2_rejects_incompatible_local_credentials_before_agent_loop(

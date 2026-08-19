@@ -74,7 +74,10 @@ def build_fork_context_v2(
     allowed_tools: list[str],
 ) -> dict[str, Any]:
     """Build a v2 fork context without exposing credentials to a child."""
-    secret = _find_secret_field(fork.request)
+    credential_metadata = {
+        key: value for key, value in fork.request.items() if key != "tools"
+    }
+    secret = _find_secret_field(credential_metadata)
     if secret is not None:
         path, field = secret
         location = repr(field) if path == "request" else f"{path}.{field!r}"

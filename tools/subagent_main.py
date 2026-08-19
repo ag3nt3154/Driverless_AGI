@@ -21,7 +21,7 @@ load_dotenv()  # populate os.environ from .env before config_loader reads API ke
 import yaml
 
 from agent import DAGI_ROOT
-from agent.config_loader import resolve_model_config
+from agent.config_loader import load_raw_config, resolve_model_config
 from agent.inherited_registry import build_inherited_registry
 from agent.loop import AgentCallbacks, AgentConfig, AgentLoop
 from agent.prompts import load_subagent_prompt
@@ -223,6 +223,8 @@ def _validate_final_handoff(text: str, required_sections: list[str]) -> tuple[bo
     expected = [_section_heading(section) for section in required_sections]
     expected_set = set(expected)
     headings = _handoff_headings(clean)
+    if headings and clean[:headings[0][2]].strip():
+        return False, "Unexpected preamble before first section"
     seen: set[str] = set()
     for index, (marks, title, _start, end) in enumerate(headings):
         heading = f"{marks} {title}"
@@ -241,6 +243,9 @@ def _validate_final_handoff(text: str, required_sections: list[str]) -> tuple[bo
     missing = [heading for heading in expected if heading not in seen]
     if missing:
         return False, f"Missing required sections: {', '.join(missing)}"
+    actual = [f"{marks} {title}" for marks, title, _start, _end in headings]
+    if actual != expected:
+        return False, f"Sections out of order: expected {', '.join(expected)}"
     return True, ""
 
 
@@ -275,7 +280,12 @@ def _load_required_sections(subagent_type: str, project_path: Path) -> list[str]
 
 def _build_inherited_config(request: dict, project_path: Path) -> AgentConfig:
     """Resolve local credentials while retaining the inherited provider request identity."""
-    local_config = resolve_model_config(None, project_path=project_path)
+    requested_model = str(request["model"])
+    try:
+        local_config = resolve_model_config(requested_model, project_path=project_path)
+    except KeyError:
+        model_id = _find_inherited_model_id(requested_model, request.get("base_url"), project_path)
+        local_config = resolve_model_config(model_id, project_path=project_path)
     inherited_url = str(request.get("base_url") or "")
     local_url = str(local_config.base_url or "")
     if not local_config.api_key:
@@ -299,6 +309,34 @@ def _build_inherited_config(request: dict, project_path: Path) -> AgentConfig:
         worker_config=None,
         advanced_config=None,
     )
+
+
+def _find_inherited_model_id(model: str, base_url: object, project_path: Path) -> str:
+    """Find the local catalog ID matching a provider-facing model and endpoint."""
+    raw = load_raw_config()
+    project_config = project_path / ".dagi" / "config.yaml"
+    project_raw = (
+        yaml.safe_load(project_config.read_text(encoding="utf-8")) or {}
+        if project_config.exists()
+        else {}
+    )
+    catalog = {**(raw.get("models") or {}), **(project_raw.get("models") or {})}
+    requested_url = _normalise_provider_url(str(base_url or ""))
+    matches = [
+        model_id
+        for model_id, entry in catalog.items()
+        if entry.get("model") == model
+        and (
+            not requested_url
+            or _normalise_provider_url(str(entry.get("api_url") or "")) == requested_url
+        )
+    ]
+    if len(matches) != 1:
+        raise ValueError(
+            "Inherited provider credentials unavailable: active model and provider "
+            "do not match one local catalog entry"
+        )
+    return matches[0]
 
 
 def _normalise_provider_url(url: str) -> str:
@@ -339,6 +377,7 @@ def run_forked_subagent_mode(
 
     config = _build_inherited_config(request, project)
     callbacks = _build_pipe_callbacks()
+    allowed_tools = list(child.get("allowed_tools", []))
     implementation_registry = build_subagent_registry(
         subagent_type=subagent_type,
         config=config,
@@ -346,11 +385,15 @@ def run_forked_subagent_mode(
         callbacks=callbacks,
         memory_root=config.memory_root,
         handoff_path=None,
+        tool_names_override=allowed_tools,
+    )
+    effective_allowed_tools = _effective_allowed_tools(
+        allowed_tools, implementation_registry, request.get("tools", [])
     )
     registry = build_inherited_registry(
         request.get("tools", []),
         implementation_registry,
-        set(child.get("allowed_tools", [])),
+        set(effective_allowed_tools),
         subagent_type,
     )
     loop = AgentLoop(
@@ -364,11 +407,17 @@ def run_forked_subagent_mode(
     loop._extra_body = deepcopy(request.get("extra_body", {}))
     loop._parallel_tool_calls = bool(request.get("parallel_tool_calls", False))
     task = Path(task_file).read_text(encoding="utf-8")
+    prompt = ""
     if system_prompt_file:
         prompt = Path(system_prompt_file).read_text(encoding="utf-8").strip()
-        if prompt:
-            task = f"{prompt}\n\n---\n\n{task}"
     required_sections = _load_required_sections(subagent_type, project)
+    task = _build_inherited_task(
+        prompt,
+        task,
+        effective_allowed_tools,
+        subagent_type,
+        required_sections,
+    )
     try:
         text = loop.run(task)
         ok, error = _validate_final_handoff(text, required_sections)
@@ -384,6 +433,47 @@ def run_forked_subagent_mode(
     finally:
         loop.finish()
     print(json.dumps({"type": "done"}), flush=True)
+
+
+def _build_inherited_task(
+    prompt: str,
+    task: str,
+    effective_allowed_tools: list[str],
+    subagent_type: str,
+    required_sections: list[str],
+) -> str:
+    """Place the inherited execution contract between preset instructions and task."""
+    allowed = ", ".join(effective_allowed_tools) or "none"
+    sections = ", ".join(_section_heading(section) for section in required_sections)
+    output = sections or "the handoff format requested by the task"
+    contract = (
+        "## Inherited Child Contract\n"
+        f"- Effective allowed tools: {allowed}\n"
+        "- Calls to any other provider-visible tool are blocked and return "
+        f"`Error: Access blocked for tool '<name>' in subagent '{subagent_type}'. "
+        f"Allowed tools: {allowed}`. Do not retry a blocked call.\n"
+        "- Do not call `write_handoff`; it is unavailable in inherited mode.\n"
+        "- Complete the task, then return the required handoff as your final assistant text. "
+        f"Required format: {output}."
+    )
+    parts = [part for part in (prompt, contract, task) if part]
+    return "\n\n---\n\n".join(parts)
+
+
+def _effective_allowed_tools(
+    allowed_tools: list[str], implementation_registry, schemas: list[dict]
+) -> list[str]:
+    """Return authorized tools that are both implemented and provider-visible."""
+    visible_names = {
+        schema.get("function", {}).get("name")
+        for schema in schemas
+        if isinstance(schema, dict)
+    }
+    return [
+        name
+        for name in allowed_tools
+        if name in visible_names and implementation_registry.get(name) is not None
+    ]
 
 
 def _build_compact_task_message(

@@ -95,6 +95,7 @@ class _App(SlashCommandsMixin):
         self._wtf_running = False
         self._wtf_worker = None
         self.running_shown = 0
+        self.running_hidden = 0
         self.input_enabled = 0
         self._skill_map = {}
         self._workflow_map = {}
@@ -113,6 +114,9 @@ class _App(SlashCommandsMixin):
 
     def _show_running_indicator(self) -> None:
         self.running_shown += 1
+
+    def _hide_running_indicator(self) -> None:
+        self.running_hidden += 1
 
     def _enable_input(self) -> None:
         self.input_enabled += 1
@@ -255,6 +259,24 @@ def test_wtf_failure_restores_the_idle_tui_state(monkeypatch) -> None:
     assert app.sidebar.statuses == ["running", "idle"]
     assert app.prompt.disabled is False
     assert app._wtf_running is False
+
+
+def test_wtf_completion_hides_spinner_on_success_and_failure(monkeypatch, tmp_path) -> None:
+    """Every terminal path must explicitly tear down the /wtf running indicator."""
+    monkeypatch.setattr("tui.commands.threading.Thread", _Thread)
+    success = _App(
+        _Loop(
+            paused=False,
+            result=SimpleNamespace(description="done", report_path=tmp_path / "report.md"),
+        )
+    )
+    failure = _App(_Loop(paused=False, error=RuntimeError("failed")))
+
+    success._cmd_wtf(None)
+    failure._cmd_wtf(None)
+
+    assert success.running_hidden == 1
+    assert failure.running_hidden == 1
 
 
 def test_help_lists_wtf() -> None:

@@ -239,6 +239,7 @@ class SlashCommandsMixin:
     def _restore_wtf_ui(self, previous_status: str) -> None:
         self._wtf_running = False
         self._wtf_worker = None
+        self._hide_running_indicator()
         self.query_one(Sidebar).set_status(previous_status)
         self._enable_input()
 

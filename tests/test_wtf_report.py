@@ -106,6 +106,30 @@ def test_parse_wtf_report_rejects_duplicate_headings():
         parse_wtf_report(text)
 
 
+@pytest.mark.parametrize(
+    "text, expected",
+    [
+        (
+            "diagnostic preamble\n\n"
+            "## Description\nObserved behavior.\n\n"
+            "## Error Report\nRelevant exception.\n\n"
+            "## Suggested Fix\nA focused repair.",
+            "Unexpected preamble before first section",
+        ),
+        (
+            "## Error Report\nRelevant exception.\n\n"
+            "## Description\nObserved behavior.\n\n"
+            "## Suggested Fix\nA focused repair.",
+            "Sections out of order",
+        ),
+    ],
+)
+def test_parse_wtf_report_rejects_preamble_and_wrong_section_order(text, expected):
+    """The parent accepts only the exact report sequence promised by the preset."""
+    with pytest.raises(ValueError, match=expected):
+        parse_wtf_report(text)
+
+
 def test_parse_wtf_report_preserves_internal_body_text_and_trims_blank_edges():
     """The parent must retain diagnostics exactly enough for a useful follow-up."""
     report = parse_wtf_report(
