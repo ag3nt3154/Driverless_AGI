@@ -11,6 +11,16 @@ _FALLBACK_TIMEOUT = 15  # seconds — wall-clock cap for the Python fallback
 _HIDDEN_WHITELIST = {'.dagi', '.index.md'}
 
 
+def _is_visible(parts: tuple[str, ...]) -> bool:
+    """Everything under .dagi/ is visible; other dotfile dirs are hidden."""
+    if parts[0] == ".dagi":
+        return True
+    return not any(
+        p.startswith(".") and p not in _HIDDEN_WHITELIST
+        for p in parts
+    )
+
+
 class GrepTool(BaseTool):
     name = "grep"
     description = (
@@ -69,10 +79,7 @@ class GrepTool(BaseTool):
                 yield p
                 continue
             parts = p.relative_to(search_path).parts
-            if parts[0] == ".dagi" or not any(
-                part.startswith(".") and part not in _HIDDEN_WHITELIST
-                for part in parts
-            ):
+            if _is_visible(parts):
                 yield p
 
     def _search_one(
@@ -84,7 +91,10 @@ class GrepTool(BaseTool):
     ) -> list[str]:
         # ── Try ripgrep first ─────────────────────────────────────────────
         try:
-            cmd = ["rg", "--line-number", "--no-heading", "--color=never"]
+            cmd = [
+                "rg", "--line-number", "--no-heading", "--color=never",
+                "--hidden", "--no-ignore", "--glob", "!.git",
+            ]
             if literal:
                 cmd.append("--fixed-strings")
             if glob:
@@ -98,7 +108,7 @@ class GrepTool(BaseTool):
 
         # ── Python fallback ────────────────────────────────────────────────
         try:
-            flags = re.IGNORECASE if not literal else 0
+            flags = 0
             rx = re.compile(re.escape(pattern) if literal else pattern, flags)
         except re.error as e:
             return [f"Error: invalid regex pattern: {e}"]
