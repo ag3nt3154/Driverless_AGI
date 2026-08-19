@@ -1,6 +1,6 @@
 # AGENTS.md
 
-> Last updated: 2026-08-20 (inherited subagents and `/wtf` diagnostic complete) | [README](README.md) | [TODO](TODO.md)
+> Last updated: 2026-08-20 (final inherited-subagent review fixes complete) | [README](README.md) | [TODO](TODO.md)
 
 
 ---
@@ -181,8 +181,6 @@ tui.py / telegram_bot.py / main.py / dagi_gui/__main__.py
 
 ## Errors Log (recent)
 
-- **2026-08-16**: `QuestionBroker.has_pending` missing `@property` → pause handling now tests the boolean property and uses `_pending_id`.
-- **2026-08-17**: A broad `Path.read_text` mock broke YAML preset loading → tests now use a real temporary preset directory.
 - **2026-08-19**: Compact integration fixtures lacked `_last_request_snapshot` → tests now seed the snapshot before compaction.
 - **2026-08-19**: Compact failure tests lacked a snapshot and subprocess argv used the raw `extra_argv` parameter → fixed fixtures and the internal accumulator.
 - **2026-08-19**: Stable fork capture treated an active open turn with only a pause event as safe → every open turn now requires `_pause_checkpoint`.
@@ -191,6 +189,8 @@ tui.py / telegram_bot.py / main.py / dagi_gui/__main__.py
 - **2026-08-19**: Compact fork context needed subprocess wiring → `fork_context_path` now reaches the forked child without carrying credentials.
 - **2026-08-20**: Full suite still has eight pre-existing Windows/environment failures (process-kill timing and temp/fixture setup) → documented; feature suites remain green.
 - **2026-08-20**: Task 11 failure matrix found no production defect; all child failure outcomes preserve the parent surface and paused checkpoint.
+- **2026-08-20**: Final review found inherited children skipped preset instructions and wiki context → forward the preset prompt after the exact prefix and suppress dynamic injection.
+- **2026-08-20**: Final review found default-credential mixing and shallow handoff checks → fail fast on provider mismatch, recursively reject secret fields, and retry malformed handoffs once.
 
 ## Notes & Terms
 
