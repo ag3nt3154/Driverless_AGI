@@ -475,9 +475,8 @@ class AgentLoop:
                 raise RuntimeError("Cannot capture a spawn fork before a provider request")
             snapshot = copy.deepcopy(self._last_request_snapshot)
         elif mode == "stable":
-            if not self._pause_event.is_set() and self.log.open_turn is not None:
-                if not self._pause_checkpoint.is_set():
-                    raise RuntimeError("Paused loop has not reached a safe checkpoint")
+            if self.log.open_turn is not None and not self._pause_checkpoint.is_set():
+                raise RuntimeError("Open loop has not reached a safe checkpoint")
             create_kwargs = {
                 "model": self.config.model,
                 "messages": self._build_request_messages(),

@@ -5,6 +5,8 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from agent import session_events as sev
 from agent.base_tool import BaseTool
 from agent.loop import (
@@ -691,6 +693,17 @@ class TestParentForkCapture:
         loop._pause_checkpoint.set()
         assert loop.wait_for_pause_checkpoint(0) is True
         assert loop._pause_event.is_set() is False
+
+    def test_stable_open_turn_requires_safe_checkpoint_while_running(self):
+        """A live turn cannot be captured before its response bookkeeping is safe."""
+        loop = _make_loop()
+        loop.log.append(sev.TURN_START, {"turn": 1})
+        loop._log_user_message("user", "still running", "human")
+
+        with pytest.raises(RuntimeError, match="safe checkpoint"):
+            loop.capture_parent_fork("worker_unsafe", "stable")
+
+        assert loop.log.branch_event("worker_unsafe") is None
 
     def test_stable_fork_excludes_empty_step_opened_before_pause(self):
         """The pause checkpoint cannot add a phantom message to a stable child prefix."""
