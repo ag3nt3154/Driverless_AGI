@@ -11,6 +11,10 @@ class ToolRegistry:
             raise ValueError(f"Tool '{tool.name}' is already registered")
         self._tools[tool.name] = tool
 
+    def get(self, name: str) -> BaseTool | None:
+        """Return the registered tool named *name*, or ``None``."""
+        return self._tools.get(name)
+
     def get_openai_tools_list(self) -> list[dict]:
         return [t.schema() for t in self._tools.values()]
 
