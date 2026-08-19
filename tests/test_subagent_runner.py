@@ -149,6 +149,24 @@ class TestForkContextCleanup:
         )
         assert state.fork_context_path is None
 
+    def test_active_state_reports_fork_context_ownership(self, tmp_path):
+        """The API can distinguish registered runner ownership from spawn failure."""
+        from tools import _subagent_runner as runner
+
+        state, proc = _make_state(tmp_path, poll_side_effect=lambda: None)
+        context_path = tmp_path / "fork_ctx.json"
+        context_path.write_text('{"version": 2}', encoding="utf-8")
+        state.fork_context_path = context_path
+        with runner._active_lock:
+            runner._active[proc.pid] = state
+
+        try:
+            assert runner.owns_fork_context_path(context_path) is True
+            assert runner.owns_fork_context_path(tmp_path / "other.json") is False
+        finally:
+            with runner._active_lock:
+                runner._active.pop(proc.pid, None)
+
     def test_fork_context_parsed_from_extra_argv(self, tmp_path):
         """run_subagent parses --fork-context from extra_argv and stores it on state."""
         from unittest.mock import MagicMock, patch

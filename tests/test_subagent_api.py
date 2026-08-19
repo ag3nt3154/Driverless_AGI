@@ -554,6 +554,122 @@ class TestInheritedSubagentExecution:
                 fork_context_path=tmp_path / "v1.json",
             )
 
+    def test_parent_context_owns_branch_event_when_parent_log_is_supplied(self, tmp_path):
+        """Provider capture records the only branch event for an inherited execution."""
+        log = SessionLog()
+        log.append(sev.TURN_START, {"turn": 1})
+        log.append(sev.STEP_START, {"turn": 1, "step": 1})
+
+        def capture(branch_id, _mode):
+            log.append(
+                sev.BRANCH_START,
+                {
+                    "branch": branch_id,
+                    "parent_branch": "main",
+                    "turn": 1,
+                    "step": 1,
+                    "parent_cut_seq": 2,
+                    "parent_surface_generation": 0,
+                },
+            )
+            return ParentFork(branch_id, 2, 0, {"model": "parent"})
+
+        provider = ParentContextProvider(capture, lambda: 0)
+
+        def runner(*_args, **kwargs):
+            argv = kwargs["extra_argv"]
+            Path(argv[argv.index("--fork-context") + 1]).unlink()
+            return {"status": "error", "message": "expected test result"}
+
+        with patch("tools.subagent_api._runner.run_subagent", side_effect=runner):
+            result = run_subagent(
+                task="Inspect",
+                prompt="Inspect.",
+                project_path=tmp_path,
+                parent_log=log,
+                parent_context=provider,
+            )
+
+        branch_events = [event for event in log.events if event.type == sev.BRANCH_START]
+        assert len(branch_events) == 1
+        assert branch_events[0].data["branch"] == result.branch_id
+
+    def test_duplicate_fork_context_flags_are_rejected_before_spawn(self, tmp_path):
+        """Multiple fork paths cannot desynchronise argparse and runner cleanup."""
+        with patch("tools.subagent_api._runner.run_subagent") as runner:
+            with pytest.raises(ValueError, match="multiple --fork-context"):
+                run_subagent(
+                    task="Inspect",
+                    prompt="Inspect.",
+                    project_path=tmp_path,
+                    extra_argv=[
+                        "--fork-context",
+                        "first.json",
+                        "--fork-context",
+                        "second.json",
+                    ],
+                )
+
+        runner.assert_not_called()
+
+    def test_fork_context_flag_requires_a_path_before_spawn(self, tmp_path):
+        """A trailing flag produces an API error rather than a malformed child command."""
+        with patch("tools.subagent_api._runner.run_subagent") as runner:
+            with pytest.raises(ValueError, match="requires a path"):
+                run_subagent(
+                    task="Inspect",
+                    prompt="Inspect.",
+                    project_path=tmp_path,
+                    extra_argv=["--fork-context"],
+                )
+
+        runner.assert_not_called()
+
+    def test_registered_runner_retains_its_owned_fork_context_on_error(self, tmp_path):
+        """API cleanup does not race a runner that registered the inherited context."""
+        from tools import _subagent_runner
+
+        provider, _capture, _generation = self._provider({"model": "parent"})
+        registered_paths: list[Path] = []
+        registered_states = []
+
+        def registered_runner(*_args, **kwargs):
+            argv = kwargs["extra_argv"]
+            path = Path(argv[argv.index("--fork-context") + 1])
+            task_file = tmp_path / "registered-task.txt"
+            task_file.write_text("task", encoding="utf-8")
+            proc = MagicMock(pid=9100)
+            state = _subagent_runner._SubagentState(
+                proc=proc,
+                handoff_path=tmp_path / "handoff.md",
+                task_file=task_file,
+                subagent_type="custom",
+                on_event=None,
+                fork_context_path=path,
+            )
+            with _subagent_runner._active_lock:
+                _subagent_runner._active[proc.pid] = state
+            registered_paths.append(path)
+            registered_states.append(state)
+            raise RuntimeError("post-registration failure")
+
+        try:
+            with patch(
+                "tools.subagent_api._runner.run_subagent",
+                side_effect=registered_runner,
+            ):
+                with pytest.raises(RuntimeError, match="post-registration"):
+                    run_subagent(
+                        task="Inspect",
+                        prompt="Inspect.",
+                        project_path=tmp_path,
+                        parent_context=provider,
+                    )
+            assert registered_paths[0].exists()
+        finally:
+            for state in registered_states:
+                _subagent_runner._cleanup_terminal_state(state)
+
     def test_spawn_raise_cleans_api_owned_fork_context(self, tmp_path):
         """A pre-registration spawn failure cannot leak the v2 context file."""
         provider, _capture, _generation = self._provider({"model": "parent"})

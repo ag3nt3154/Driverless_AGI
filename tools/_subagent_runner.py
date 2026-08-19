@@ -37,6 +37,12 @@ _active: dict[int, _SubagentState] = {}
 _active_lock = threading.Lock()
 
 
+def owns_fork_context_path(path: Path) -> bool:
+    """Return whether a registered subagent state owns the fork-context file."""
+    with _active_lock:
+        return any(state.fork_context_path == path for state in _active.values())
+
+
 def _stream_stdout(proc: subprocess.Popen, on_event: Callable[[str], None]) -> None:
     """Read stdout lines and relay each to on_event (runs in a daemon thread)."""
     try:

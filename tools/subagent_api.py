@@ -9,9 +9,9 @@ resolution, handoff auto-read, and a structured SubagentResult.
 """
 from __future__ import annotations
 
+import json
 import os
 import tempfile
-import json
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Callable
@@ -144,13 +144,19 @@ def _write_fork_context_file(
 
 
 def _extra_fork_context_path(extra_argv: list[str] | None) -> str | None:
-    """Return a caller-supplied fork context path, if present."""
-    if not extra_argv or "--fork-context" not in extra_argv:
+    """Return the sole valid caller-supplied fork context path, if present."""
+    if not extra_argv:
         return None
-    index = extra_argv.index("--fork-context")
-    if index + 1 == len(extra_argv):
-        raise ValueError("--fork-context requires a path")
-    return extra_argv[index + 1]
+    paths: list[str] = []
+    for index, arg in enumerate(extra_argv):
+        if arg != "--fork-context":
+            continue
+        if index + 1 == len(extra_argv) or extra_argv[index + 1].startswith("--"):
+            raise ValueError("--fork-context requires a path")
+        paths.append(extra_argv[index + 1])
+    if len(paths) > 1:
+        raise ValueError("multiple --fork-context values are not allowed")
+    return paths[0] if paths else None
 
 
 def _resolve_subagent_options(
@@ -201,11 +207,45 @@ def _invoke_runner(
             extra_argv=extra_argv or None,
         )
     except Exception:
-        if inherited_context_path is not None:
+        if (
+            inherited_context_path is not None
+            and not _runner.owns_fork_context_path(inherited_context_path)
+        ):
             inherited_context_path.unlink(missing_ok=True)
         raise
     finally:
         Path(prompt_tmp).unlink(missing_ok=True)
+
+
+def _prepare_inherited_context(
+    subagent_type: str,
+    subagent_id: str,
+    parent_log: "SessionLog | None",
+    parent_context: ParentContextProvider | None,
+    fork_mode: ForkMode,
+    tools: list[str],
+) -> tuple[str | None, ParentFork | None, Path | None]:
+    """Create an inherited fork or preserve legacy parent-log branch recording."""
+    branch_id = f"{subagent_type}_{subagent_id}" if parent_context is not None else None
+    if parent_context is not None:
+        fork = parent_context.capture_fork(branch_id, fork_mode)
+        return branch_id, fork, _write_fork_context_file(fork, subagent_type, tools)
+    if (
+        parent_log is not None
+        and parent_log.open_turn is not None
+        and parent_log.open_step is not None
+    ):
+        branch_id = f"{subagent_type}_{subagent_id}"
+        parent_log.append(
+            sev.BRANCH_START,
+            {
+                "branch": branch_id,
+                "parent_branch": "main",
+                "turn": parent_log.open_turn,
+                "step": parent_log.open_step,
+            },
+        )
+    return branch_id, None, None
 
 
 def run_subagent(
@@ -256,28 +296,14 @@ def run_subagent(
     handoffs_dir.mkdir(parents=True, exist_ok=True)
     handoff_path = handoffs_dir / f"{subagent_type}_{subagent_id}.md"
 
-    branch_id = f"{subagent_type}_{subagent_id}" if parent_context is not None else None
-    if (
-        parent_log is not None
-        and parent_log.open_turn is not None
-        and parent_log.open_step is not None
-    ):
-        branch_id = branch_id or f"{subagent_type}_{subagent_id}"
-        parent_log.append(
-            sev.BRANCH_START,
-            {
-                "branch": branch_id,
-                "parent_branch": "main",
-                "turn": parent_log.open_turn,
-                "step": parent_log.open_step,
-            },
-        )
-
-    fork: ParentFork | None = None
-    inherited_context_path: Path | None = None
-    if parent_context is not None:
-        fork = parent_context.capture_fork(branch_id, fork_mode)
-        inherited_context_path = _write_fork_context_file(fork, subagent_type, eff_tools)
+    branch_id, fork, inherited_context_path = _prepare_inherited_context(
+        subagent_type,
+        subagent_id,
+        parent_log,
+        parent_context,
+        fork_mode,
+        eff_tools,
+    )
 
     # Build extra argv (merge caller-supplied args with internally-built ones)
     _extra_argv: list[str] = []
