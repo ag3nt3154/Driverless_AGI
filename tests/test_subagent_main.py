@@ -687,3 +687,43 @@ def test_main_keeps_v1_compact_dispatch_and_rejects_unknown_versions(tmp_path, m
     context_path.write_text(json.dumps(context), encoding="utf-8")
     with pytest.raises(ValueError, match="Unsupported fork-context version: 99"):
         subagent_main.main()
+
+
+def test_inherit_tier_requires_fork_context_in_main_and_pipe_mode(tmp_path, monkeypatch):
+    """A bare inherit tier must not silently become a worker subagent with write_handoff."""
+    import sys
+
+    import tools.subagent_main as subagent_main
+
+    task_path = tmp_path / "task.txt"
+    handoff_path = tmp_path / "handoff.md"
+    task_path.write_text("compact this", encoding="utf-8")
+    preset_path = tmp_path / ".dagi" / "subagents" / "compact"
+    preset_path.mkdir(parents=True)
+    (preset_path / "subagent_config.yaml").write_text(
+        "model_tier: inherit\ntools: []\n", encoding="utf-8"
+    )
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "subagent_main.py", "--subagent-type", "compact", "--task-file", str(task_path),
+            "--handoff", str(handoff_path), "--project", str(tmp_path),
+        ],
+    )
+    with pytest.raises(ValueError, match="model_tier 'inherit' requires a fork-context file"):
+        subagent_main.main()
+    monkeypatch.setattr(
+        subagent_main,
+        "resolve_model_config",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("config was resolved")),
+    )
+    with pytest.raises(ValueError, match="model_tier 'inherit' requires a fork-context file"):
+        subagent_main.run_subagent_pipe_mode(
+            subagent_type="worker",
+            task_file=str(task_path),
+            handoff=str(handoff_path),
+            project=str(tmp_path),
+            model=None,
+            model_tier_override="inherit",
+        )

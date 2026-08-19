@@ -444,8 +444,6 @@ def run_subagent_pipe_mode(
     handoff_path = Path(handoff)
     task = Path(task_file).read_text(encoding="utf-8")
 
-    base_config = resolve_model_config(model, project_path=project_path)
-
     config_yaml = (
         project_path / ".dagi" / "subagents" / subagent_type / "subagent_config.yaml"
     )
@@ -455,7 +453,10 @@ def run_subagent_pipe_mode(
     if config_yaml.exists():
         sa_cfg = yaml.safe_load(config_yaml.read_text(encoding="utf-8")) or {}
         model_tier = model_tier_override or sa_cfg.get("model_tier", "worker")
+    if model_tier == "inherit":
+        raise ValueError("model_tier 'inherit' requires a fork-context file")
 
+    base_config = resolve_model_config(model, project_path=project_path)
     typed_config = (
         _apply_advanced_config(base_config)
         if model_tier == "advanced"
@@ -537,6 +538,9 @@ def main() -> None:
         else:
             raise ValueError(f"Unsupported fork-context version: {version}")
         return
+
+    if args.model_tier == "inherit":
+        raise ValueError("model_tier 'inherit' requires a fork-context file")
 
     run_subagent_pipe_mode(
         subagent_type=args.subagent_type,
