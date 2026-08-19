@@ -506,6 +506,13 @@ def _write_v2_inputs(tmp_path, context: dict | None = None) -> tuple[Path, Path,
     return context_path, task_path, tmp_path / "handoff.md"
 
 
+def _matching_inherited_config(subagent_main):
+    return subagent_main.AgentConfig(
+        model="parent/model",
+        api_key="local-key", base_url="https://parent.example/v1"
+    )
+
+
 def test_forked_v2_uses_inherited_prefix_and_request_options(tmp_path, monkeypatch):
     """Changing inherited request identity would break the parent's warm cache prefix."""
     import tools.subagent_main as subagent_main
@@ -515,7 +522,9 @@ def test_forked_v2_uses_inherited_prefix_and_request_options(tmp_path, monkeypat
     captured: dict = {}
 
     monkeypatch.setattr(
-        subagent_main, "resolve_model_config", lambda *_a, **_k: subagent_main.AgentConfig()
+        subagent_main,
+        "resolve_model_config",
+        lambda *_a, **_k: _matching_inherited_config(subagent_main),
     )
     monkeypatch.setattr(
         subagent_main,
@@ -559,7 +568,9 @@ def test_forked_v2_places_resolved_preset_prompt_after_inherited_prefix(tmp_path
     prompt_path.write_text("resolved preset instructions", encoding="utf-8")
     loop = _InheritedLoop(["completed report"])
     monkeypatch.setattr(
-        subagent_main, "resolve_model_config", lambda *_a, **_k: subagent_main.AgentConfig()
+        subagent_main,
+        "resolve_model_config",
+        lambda *_a, **_k: _matching_inherited_config(subagent_main),
     )
     monkeypatch.setattr(subagent_main, "build_subagent_registry", lambda **_k: MagicMock())
     monkeypatch.setattr(subagent_main, "AgentLoop", lambda **_k: loop)
@@ -584,7 +595,9 @@ def test_forked_v2_retries_once_with_the_exact_validation_error(tmp_path, monkey
     context_path, task_path, handoff_path = _write_v2_inputs(tmp_path)
     loop = _InheritedLoop(["", "completed report"])
     monkeypatch.setattr(
-        subagent_main, "resolve_model_config", lambda *_a, **_k: subagent_main.AgentConfig()
+        subagent_main,
+        "resolve_model_config",
+        lambda *_a, **_k: _matching_inherited_config(subagent_main),
     )
     monkeypatch.setattr(subagent_main, "build_subagent_registry", lambda **_k: MagicMock())
     monkeypatch.setattr(subagent_main, "AgentLoop", lambda **_k: loop)
@@ -608,7 +621,9 @@ def test_forked_v2_fails_without_writing_an_unverified_handoff(tmp_path, monkeyp
     context_path, task_path, handoff_path = _write_v2_inputs(tmp_path)
     loop = _InheritedLoop(["", ""])
     monkeypatch.setattr(
-        subagent_main, "resolve_model_config", lambda *_a, **_k: subagent_main.AgentConfig()
+        subagent_main,
+        "resolve_model_config",
+        lambda *_a, **_k: _matching_inherited_config(subagent_main),
     )
     monkeypatch.setattr(subagent_main, "build_subagent_registry", lambda **_k: MagicMock())
     monkeypatch.setattr(subagent_main, "AgentLoop", lambda **_k: loop)
@@ -630,6 +645,134 @@ def test_final_handoff_validation_requires_configured_headings():
 
     assert ok is False
     assert error == "Missing required sections: ## Changes"
+
+
+@pytest.mark.parametrize(
+    "text, expected",
+    [
+        ("## Findings\n\n## Changes\nimplemented", "Empty section: ## Findings"),
+        (
+            "## Findings\nobserved\n## Changes\nimplemented\n## Changes\nagain",
+            "Duplicate section: ## Changes",
+        ),
+        (
+            "## Findings\nobserved\n## Changes\nimplemented\n## Extra\nnope",
+            "Unknown section: ## Extra",
+        ),
+        (
+            "# Findings\nobserved\n## Changes\nimplemented",
+            "Expected level-2 heading for section: Findings",
+        ),
+    ],
+)
+def test_final_handoff_validation_rejects_malformed_configured_sections(text, expected):
+    from tools.subagent_main import _validate_final_handoff
+
+    ok, error = _validate_final_handoff(text, ["Findings", "Changes"])
+
+    assert ok is False
+    assert error == expected
+
+
+def test_final_handoff_validation_accepts_exact_non_empty_sections():
+    from tools.subagent_main import _validate_final_handoff
+
+    ok, error = _validate_final_handoff(
+        "## Findings\nobserved\n## Changes\nimplemented", ["Findings", "Changes"]
+    )
+
+    assert ok is True
+    assert error == ""
+
+
+def test_forked_v2_rejects_incompatible_local_credentials_before_agent_loop(
+    tmp_path, monkeypatch
+):
+    """An inherited endpoint must never use unrelated local provider credentials."""
+    import tools.subagent_main as subagent_main
+
+    context_path, task_path, handoff_path = _write_v2_inputs(tmp_path)
+    calls: list[str] = []
+
+    monkeypatch.setattr(
+        subagent_main,
+        "resolve_model_config",
+        lambda *_a, **_k: subagent_main.AgentConfig(
+            model="parent/model",
+            api_key="local-key", base_url="https://unrelated.example/v1"
+        ),
+    )
+    monkeypatch.setattr(
+        subagent_main,
+        "AgentLoop",
+        lambda **_kwargs: calls.append("agent-loop")
+        or (_ for _ in ()).throw(AssertionError("provider call setup must be blocked")),
+    )
+
+    with pytest.raises(ValueError, match="provider.*mismatch"):
+        subagent_main.run_forked_subagent_mode(
+            str(context_path), str(task_path), str(handoff_path), str(tmp_path)
+        )
+
+    assert calls == []
+    assert not handoff_path.exists()
+
+
+def test_forked_v2_does_not_use_default_key_for_same_endpoint_other_model(
+    tmp_path, monkeypatch
+):
+    """A same-endpoint default model is not a credential match for the parent model."""
+    import tools.subagent_main as subagent_main
+
+    context_path, task_path, handoff_path = _write_v2_inputs(tmp_path)
+    monkeypatch.setattr(
+        subagent_main,
+        "resolve_model_config",
+        lambda *_a, **_k: subagent_main.AgentConfig(
+            model="default/model",
+            api_key="default-key",
+            base_url="https://parent.example/v1",
+        ),
+    )
+    monkeypatch.setattr(
+        subagent_main,
+        "AgentLoop",
+        lambda **_kwargs: (_ for _ in ()).throw(AssertionError("must not use default key")),
+    )
+
+    with pytest.raises(ValueError, match="different model"):
+        subagent_main.run_forked_subagent_mode(
+            str(context_path), str(task_path), str(handoff_path), str(tmp_path)
+        )
+
+    assert not handoff_path.exists()
+
+
+def test_forked_v2_rejects_missing_local_credentials_before_agent_loop(tmp_path, monkeypatch):
+    """An inherited child must fail before setup when no local key is available."""
+    import tools.subagent_main as subagent_main
+
+    context_path, task_path, handoff_path = _write_v2_inputs(tmp_path)
+    monkeypatch.setattr(
+        subagent_main,
+        "resolve_model_config",
+        lambda *_a, **_k: subagent_main.AgentConfig(
+            model="parent/model",
+            api_key="", base_url="https://parent.example/v1"
+        ),
+    )
+    monkeypatch.setattr(
+        subagent_main,
+        "AgentLoop",
+        lambda **_kwargs: (_ for _ in ()).throw(AssertionError("must fail before loop")),
+    )
+
+    with pytest.raises(ValueError, match="credentials unavailable"):
+        subagent_main.run_forked_subagent_mode(
+            str(context_path), str(task_path), str(handoff_path), str(tmp_path)
+        )
+
+    assert not handoff_path.exists()
 
 
 def test_system_override_keeps_the_inherited_request_prefix_byte_identical(tmp_path):

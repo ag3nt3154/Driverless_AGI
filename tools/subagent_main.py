@@ -12,6 +12,7 @@ import json
 from dataclasses import replace
 from pathlib import Path
 from typing import Optional
+from urllib.parse import urlsplit, urlunsplit
 
 from dotenv import load_dotenv
 
@@ -217,17 +218,49 @@ def _validate_final_handoff(text: str, required_sections: list[str]) -> tuple[bo
         return False, "Empty final handoff text"
     if any(flag in clean for flag in ("<<END_OF_RESPONSE>>", "<<TASK_END>>")):
         return False, "Truncated final handoff text"
-    headings = {line.strip() for line in clean.splitlines() if line.lstrip().startswith("#")}
-    missing = []
-    for section in required_sections:
-        heading = section.strip()
-        if not heading.startswith("#"):
-            heading = f"## {heading}"
-        if heading not in headings:
-            missing.append(heading)
+    if not required_sections:
+        return True, ""
+    expected = [_section_heading(section) for section in required_sections]
+    expected_set = set(expected)
+    headings = _handoff_headings(clean)
+    seen: set[str] = set()
+    for index, (marks, title, _start, end) in enumerate(headings):
+        heading = f"{marks} {title}"
+        if marks != "##":
+            if f"## {title}" in expected_set:
+                return False, f"Expected level-2 heading for section: {title}"
+            return False, f"Unknown section: {heading}"
+        if heading not in expected_set:
+            return False, f"Unknown section: {heading}"
+        if heading in seen:
+            return False, f"Duplicate section: {heading}"
+        seen.add(heading)
+        body_end = headings[index + 1][2] if index + 1 < len(headings) else len(clean)
+        if not clean[end:body_end].strip():
+            return False, f"Empty section: {heading}"
+    missing = [heading for heading in expected if heading not in seen]
     if missing:
         return False, f"Missing required sections: {', '.join(missing)}"
     return True, ""
+
+
+def _section_heading(section: str) -> str:
+    """Convert a configured section name to its exact level-two heading."""
+    clean = section.strip()
+    return clean if clean.startswith("## ") else f"## {clean.lstrip('#').strip()}"
+
+
+def _handoff_headings(text: str) -> list[tuple[str, str, int, int]]:
+    """Return Markdown heading lines and their body boundaries."""
+    headings: list[tuple[str, str, int, int]] = []
+    offset = 0
+    for line in text.splitlines(keepends=True):
+        stripped = line.strip()
+        if stripped.startswith("#"):
+            marks, _, title = stripped.partition(" ")
+            headings.append((marks, title.strip(), offset, offset + len(line)))
+        offset += len(line)
+    return headings
 
 
 def _load_required_sections(subagent_type: str, project_path: Path) -> list[str]:
@@ -243,13 +276,44 @@ def _load_required_sections(subagent_type: str, project_path: Path) -> list[str]
 def _build_inherited_config(request: dict, project_path: Path) -> AgentConfig:
     """Resolve local credentials while retaining the inherited provider request identity."""
     local_config = resolve_model_config(None, project_path=project_path)
+    inherited_url = str(request.get("base_url") or "")
+    local_url = str(local_config.base_url or "")
+    if not local_config.api_key:
+        raise ValueError(
+            "Inherited provider credentials unavailable: local provider has no API key"
+        )
+    if local_config.model != request["model"]:
+        raise ValueError(
+            "Inherited provider mismatch: local credentials are for a different model"
+        )
+    if _normalise_provider_url(inherited_url) != _normalise_provider_url(local_url):
+        raise ValueError(
+            "Inherited provider mismatch: parent base_url does not match the local "
+            "credentials provider"
+        )
     return replace(
         local_config,
         model=request["model"],
-        base_url=request.get("base_url") or local_config.base_url,
+        base_url=inherited_url or local_url,
         project_path=project_path,
         worker_config=None,
         advanced_config=None,
+    )
+
+
+def _normalise_provider_url(url: str) -> str:
+    """Normalize harmless endpoint spelling differences before comparing providers."""
+    if not url:
+        return ""
+    parsed = urlsplit(url.strip())
+    return urlunsplit(
+        (
+            parsed.scheme.casefold(),
+            parsed.netloc.casefold(),
+            parsed.path.rstrip("/"),
+            parsed.query,
+            parsed.fragment,
+        )
     )
 
 

@@ -168,8 +168,8 @@ def test_typed_subagent_inherits_triggering_prefix_and_returns_full_handoff(tmp_
             return {"status": "ok", "handoff": str(handoff_path)}
 
         local_child_config = AgentConfig(
-            model="local-model",
-            base_url="https://local.example/v1",
+            model="parent-model",
+            base_url="https://provider.example/v1",
             api_key="child-key",
             project_path=tmp_path,
             max_continuations=0,
@@ -289,8 +289,9 @@ def test_inherited_child_blocks_write_then_recovers_with_allowed_read(tmp_path: 
     fork_path.write_text(json.dumps(context), encoding="utf-8")
     task_path.write_text("Investigate the failure.", encoding="utf-8")
     config = AgentConfig(
-        model="local-model",
+        model="parent-model",
         api_key="child-key",
+        base_url="https://provider.example/v1",
         project_path=tmp_path,
         max_continuations=0,
     )

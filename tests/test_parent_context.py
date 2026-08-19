@@ -56,6 +56,35 @@ def test_build_fork_context_v2_rejects_top_level_secret(secret: str) -> None:
         build_fork_context_v2(_fork({secret: "secret"}), "worker", ["read"])
 
 
+@pytest.mark.parametrize(
+    "nested_request",
+    [
+        {"extra_body": {"headers": {"Authorization": "Bearer secret"}}},
+        {"extra_body": {"provider": {"credentials": {"api_key": "secret"}}}},
+        {"extra_body": {"auth": {"accessToken": "secret"}}},
+    ],
+)
+def test_build_fork_context_v2_rejects_nested_credential_fields(nested_request: dict) -> None:
+    with pytest.raises(ValueError, match="secret field"):
+        build_fork_context_v2(_fork(nested_request), "worker", ["read"])
+
+
+def test_build_fork_context_v2_allows_provider_routing_options() -> None:
+    request = {
+        "extra_body": {
+            "provider": {
+                "order": ["Parent"],
+                "allow_fallbacks": False,
+                "require_parameters": True,
+            }
+        }
+    }
+
+    result = build_fork_context_v2(_fork(request), "worker", ["read"])
+
+    assert result["request"]["extra_body"] == request["extra_body"]
+
+
 def test_subagent_api_reexports_v2_builder() -> None:
     from tools.subagent_api import build_fork_context_v2 as exported
 
