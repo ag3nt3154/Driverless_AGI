@@ -193,7 +193,6 @@ tui.py / telegram_bot.py / main.py / dagi_gui/__main__.py
 - **2026-08-19**: Task 7 — added 4 new integration tests (list identity, raw-event preservation, failure atomicity, repeated compaction) to `test_compact_integration.py`; fixed missing snapshot in `test_compact_subagent_failure_leaves_surface_intact`; 8/8 pass.
 - **2026-08-19**: Task 7 bug — `extra_argv.extend(["--system-prompt-file", ...])` extended the raw caller parameter (None) instead of internal `_extra_argv` accumulator → `AttributeError` on all 14 TestRunSubagent + TestBranchStartLogging tests; fixed as `_extra_argv.extend(...)`.
 - **2026-08-19**: Task 8 — compact cache-prefix feature complete; `run_subagent(fork_context_path=...)` wires `--fork-context` to subprocess; 884 tests pass.
-- **2026-08-19**: Inherited-subagents Task 1 — added version-2 parent-fork contract with deep-copy and top-level secret rejection; focused tests pass. Pytest's default temp root is permission-blocked; workspace-local `--basetemp` works.
 
 ## Notes & Terms
 

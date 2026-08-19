@@ -37,6 +37,19 @@ def test_build_fork_context_v2_deep_copies_request() -> None:
     assert result["request"]["messages"][0]["content"] == "hello"
 
 
+def test_build_fork_context_v2_result_mutation_does_not_change_inputs() -> None:
+    request = {"messages": [{"role": "user", "content": "hello"}]}
+    allowed_tools = ["read"]
+    fork = _fork(request)
+    result = build_fork_context_v2(fork, "worker", allowed_tools)
+
+    result["request"]["messages"][0]["content"] = "changed"
+    result["child"]["allowed_tools"].append("write")
+
+    assert fork.request["messages"][0]["content"] == "hello"
+    assert allowed_tools == ["read"]
+
+
 @pytest.mark.parametrize("secret", ["api_key", "authorization", "credentials"])
 def test_build_fork_context_v2_rejects_top_level_secret(secret: str) -> None:
     with pytest.raises(ValueError, match=secret):
