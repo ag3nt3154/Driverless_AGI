@@ -152,6 +152,9 @@ def test_paused_wtf_failure_preserves_checkpoint_and_parent_surface(tmp_path: Pa
     report_path = tmp_path / ".dagi" / "errors" / "wtf_branch.md"
     report_path.parent.mkdir(parents=True)
     before_messages = loop._messages
+    before_message_objects = list(loop._messages)
+    before_surface = loop.log.surface.nodes
+    before_generation = loop.log.surface.generation
     before_bytes = json.dumps(loop._messages, sort_keys=True).encode()
 
     with patch(
@@ -166,7 +169,10 @@ def test_paused_wtf_failure_preserves_checkpoint_and_parent_surface(tmp_path: Pa
             loop.run_wtf(None)
 
     assert loop._messages is before_messages
+    assert all(before is after for before, after in zip(before_message_objects, loop._messages))
     assert json.dumps(loop._messages, sort_keys=True).encode() == before_bytes
+    assert loop.log.surface.nodes == before_surface
+    assert loop.log.surface.generation == before_generation
     assert loop.log.open_turn == 2
     assert loop.log.open_step == 1
     assert loop._pause_event.is_set() is False
@@ -209,6 +215,8 @@ def test_wtf_failure_matrix_preserves_surface_without_reference(
     report_path.write_text(text, encoding="utf-8")
     before_messages = loop._messages
     before_objects = list(loop._messages)
+    before_surface = loop.log.surface.nodes
+    before_generation = loop.log.surface.generation
     before_bytes = json.dumps(loop._messages, sort_keys=True).encode()
 
     with patch(
@@ -221,6 +229,8 @@ def test_wtf_failure_matrix_preserves_surface_without_reference(
     assert loop._messages is before_messages, outcome
     assert all(before is after for before, after in zip(before_objects, loop._messages))
     assert json.dumps(loop._messages, sort_keys=True).encode() == before_bytes
+    assert loop.log.surface.nodes == before_surface
+    assert loop.log.surface.generation == before_generation
     assert not any(event.data.get("source") == "wtf" for event in loop.log.events)
 
 
@@ -228,6 +238,8 @@ def test_wtf_fork_error_preserves_surface_without_branch_reference(tmp_path: Pat
     """A fork that cannot be captured must fail before adding any child metadata."""
     loop = _loop(tmp_path)
     before_messages = loop._messages
+    before_surface = loop.log.surface.nodes
+    before_generation = loop.log.surface.generation
     before_bytes = json.dumps(loop._messages, sort_keys=True).encode()
 
     with patch("agent.wtf.run_subagent", side_effect=RuntimeError("fork failed")):
@@ -236,6 +248,8 @@ def test_wtf_fork_error_preserves_surface_without_branch_reference(tmp_path: Pat
 
     assert loop._messages is before_messages
     assert json.dumps(loop._messages, sort_keys=True).encode() == before_bytes
+    assert loop.log.surface.nodes == before_surface
+    assert loop.log.surface.generation == before_generation
     assert loop.log.branch_event("wtf_branch") is None
     assert not any(event.data.get("source") == "wtf" for event in loop.log.events)
 
