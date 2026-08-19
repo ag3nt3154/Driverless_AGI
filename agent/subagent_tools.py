@@ -31,6 +31,7 @@ if TYPE_CHECKING:
     from agent.loop import AgentCallbacks, AgentConfig
     from agent.session import SessionTracker
     from agent.session_log import SessionLog
+    from agent.parent_context import ParentContextProvider
 
 from agent import DAGI_ROOT as _DAGI_ROOT
 
@@ -106,6 +107,7 @@ def _discover_subagent_tools(
     callbacks: "AgentCallbacks | None",
     tracker: "SessionTracker | None",
     session_log: "SessionLog | None" = None,
+    parent_context: "ParentContextProvider | None" = None,
 ) -> list["BaseTool"]:
     """Scan .dagi/subagents/ for main.py; import and instantiate each BaseTool subclass.
 
@@ -152,6 +154,7 @@ def _discover_subagent_tools(
                             callbacks=callbacks,
                             tracker=tracker,
                             session_log=session_log,
+                            parent_context=parent_context,
                         )
                         break
             except Exception as exc:  # noqa: BLE001

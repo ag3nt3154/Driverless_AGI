@@ -223,6 +223,30 @@ class TestLargeFileDelegation:
         assert "Delegated to read_large_text" in result
         assert "Big file summary." in result
 
+    def test_large_file_delegation_forwards_the_exact_parent_context(self, tmp_path):
+        """Large-file delegation must inherit the same parent request context."""
+        _make_large_file(tmp_path)
+        handoff = tmp_path / "handoff.md"
+        handoff.write_text("summary", encoding="utf-8")
+        provider = object()
+        tool = ReadTool(
+            cwd=tmp_path,
+            allowed_roots=[tmp_path],
+            service_url="http://localhost:8100",
+            project_path=tmp_path,
+            callbacks=None,
+            config=_make_config(tmp_path),
+            parent_context=provider,
+        )
+
+        with patch(
+            "tools.subagent_api.run_subagent",
+            return_value=_make_ok_result(handoff),
+        ) as mock_run:
+            tool.run(path="big.txt")
+
+        assert mock_run.call_args.kwargs["parent_context"] is provider
+
     def test_explicit_offset_skips_delegation(self, tmp_path):
         f, _ = _make_large_file(tmp_path)
         config = _make_config(tmp_path)

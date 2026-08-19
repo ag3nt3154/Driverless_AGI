@@ -10,6 +10,7 @@ if TYPE_CHECKING:
     from agent.loop import AgentCallbacks, AgentConfig
     from agent.session import SessionTracker
     from agent.session_log import SessionLog
+    from agent.parent_context import ParentContextProvider
 
 
 class MemoryQueryTool(BaseTool):
@@ -51,11 +52,13 @@ class MemoryQueryTool(BaseTool):
         callbacks: "AgentCallbacks | None" = None,
         tracker: "SessionTracker | None" = None,
         session_log: "SessionLog | None" = None,
+        parent_context: "ParentContextProvider | None" = None,
     ) -> None:
         self._config = config
         self._callbacks = callbacks
         self._tracker = tracker
         self._session_log = session_log
+        self._parent_context = parent_context
 
     def run(
         self,
@@ -91,6 +94,7 @@ class MemoryQueryTool(BaseTool):
             project_path=self._config.project_path,
             on_event=on_event,
             parent_log=self._session_log,
+            parent_context=self._parent_context,
         )
 
         if result.is_ok:

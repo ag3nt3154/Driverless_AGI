@@ -11,6 +11,7 @@ from tools.read._doc_service import cache_path_for, convert_document, DocService
 
 if TYPE_CHECKING:
     from agent.loop import AgentCallbacks, AgentConfig
+    from agent.parent_context import ParentContextProvider
 
 _IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
 _BLOCKED_EXTS = _IMAGE_EXTS.copy()
@@ -115,6 +116,7 @@ class ReadTool(BaseTool):
         service_url: str | None = None,
         callbacks: "AgentCallbacks | None" = None,
         config: "AgentConfig | None" = None,
+        parent_context: "ParentContextProvider | None" = None,
     ):
         self.cwd = cwd
         self.allowed_roots = allowed_roots
@@ -122,6 +124,7 @@ class ReadTool(BaseTool):
         self._service_url = service_url
         self._callbacks = callbacks
         self._config = config
+        self._parent_context = parent_context
 
     def run(
         self,
@@ -225,6 +228,7 @@ class ReadTool(BaseTool):
             custom_instructions=query or "",
             project_path=self._config.project_path,
             on_event=on_event,
+            parent_context=self._parent_context,
         )
 
         trailer = "Summary below." if result.is_ok else "Delegation result below."

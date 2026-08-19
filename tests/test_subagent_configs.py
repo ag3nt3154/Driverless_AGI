@@ -16,6 +16,18 @@ SUBAGENTS_DIR = REPO_ROOT / ".dagi" / "subagents"
 
 # Parameter names that would indicate a path is being handed to the model.
 PATH_LIKE_PARAM_NAMES = {"handoff_file", "handoff_path", "output_file", "output_path"}
+TYPED_SUBAGENT_NAMES = {
+    "cli",
+    "explore_files",
+    "memory-add",
+    "memory-query",
+    "memory-refresh",
+    "plan",
+    "read-large-text",
+    "review",
+    "web_research",
+    "worker",
+}
 
 
 def _registered_subagent_config_paths() -> list[Path]:
@@ -34,19 +46,7 @@ def _registered_subagent_config_paths() -> list[Path]:
 def test_all_registered_subagents_are_found():
     """Sanity check that the discovery glob matches the expected registered set."""
     names = {p.parent.name for p in _registered_subagent_config_paths()}
-    assert names == {
-        "cli",
-        "compact",
-        "read-large-text",
-        "explore_files",
-        "memory-add",
-        "memory-query",
-        "memory-refresh",
-        "plan",
-        "review",
-        "web_research",
-        "worker",
-    }
+    assert names == TYPED_SUBAGENT_NAMES | {"compact"}
 
 
 def test_config_schema_has_required_keys():

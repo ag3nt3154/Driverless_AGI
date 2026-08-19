@@ -43,6 +43,24 @@ def _make_runtime_args():
     return config, callbacks, tracker
 
 
+def _run_with_minimal_arguments(tool, type_name: str) -> None:
+    """Exercise each wrapper without invoking a real subagent."""
+    if type_name == "memory-add":
+        tool.run(task="Remember this", category="knowledge")
+    elif type_name == "memory-refresh":
+        tool.run()
+    elif type_name == "worker":
+        tool.run(subtask_name="Implement it")
+    elif type_name == "review":
+        tool.run(
+            subtask_name="Review it",
+            worker_handoff_path="/tmp/worker.md",
+            unit_test_paths=["tests/test_worker.py"],
+        )
+    else:
+        tool.run(task="Do the task")
+
+
 class TestGenericSubagentTool:
     # Maps every auto-discovered subagent directory name (under
     # .dagi/subagents/, i.e. every directory with both prompt.md and
@@ -192,3 +210,64 @@ class TestSessionLogThreading:
         )
         for tool in tools:
             assert getattr(tool, "_session_log", None) is log
+
+    def test_discover_passes_parent_context_to_all_typed_tools(self, tmp_path):
+        """Every discovered live wrapper retains the loop's exact provider."""
+        from agent.subagent_tools import _discover_subagent_tools
+
+        config = MagicMock()
+        config.project_path = tmp_path
+        provider = object()
+
+        tools = _discover_subagent_tools(
+            cwd=tmp_path,
+            config=config,
+            callbacks=None,
+            tracker=None,
+            parent_context=provider,
+        )
+
+        assert tools
+        for tool in tools:
+            assert tool._parent_context is provider
+
+    @pytest.mark.parametrize("type_name", sorted(TestGenericSubagentTool._EXPECTED_TOOL_NAMES))
+    def test_typed_tools_forward_the_exact_parent_context(self, type_name):
+        """Dropping or replacing the provider would lose inherited parent state."""
+        cls = _load_tool_class(type_name)
+        config, callbacks, tracker = _make_runtime_args()
+        provider = object()
+        tool = cls(
+            config=config,
+            callbacks=callbacks,
+            tracker=tracker,
+            parent_context=provider,
+        )
+        result = MagicMock(is_ok=False, status="error", pid=None, escalation=None)
+
+        with patch("tools.subagent_api.run_subagent", return_value=result) as mock_run:
+            _run_with_minimal_arguments(tool, type_name)
+
+        assert tool._parent_context is provider
+        assert mock_run.call_args.kwargs["parent_context"] is provider
+
+    def test_parent_log_only_wrapper_calls_remain_legacy(self):
+        """Standalone callers still log through parent_log without a provider."""
+        from agent.session_log import SessionLog
+
+        cls = _load_tool_class("cli")
+        config, callbacks, tracker = _make_runtime_args()
+        log = SessionLog()
+        tool = cls(
+            config=config,
+            callbacks=callbacks,
+            tracker=tracker,
+            session_log=log,
+        )
+        result = MagicMock(is_ok=False, status="error", pid=None, escalation=None)
+
+        with patch("tools.subagent_api.run_subagent", return_value=result) as mock_run:
+            tool.run(task="Do the task")
+
+        assert mock_run.call_args.kwargs["parent_log"] is log
+        assert mock_run.call_args.kwargs["parent_context"] is None

@@ -35,6 +35,7 @@ if TYPE_CHECKING:
     from agent.loop import AgentCallbacks, AgentConfig
     from agent.session import SessionTracker
     from agent.session_log import SessionLog
+    from agent.parent_context import ParentContextProvider
 
 from agent import DAGI_ROOT as _DAGI_ROOT
 
@@ -121,6 +122,7 @@ def create_tool_registry(
     memory_root: Path | None = None,
     bash_tool: "object | None" = None,
     session_log: "SessionLog | None" = None,
+    parent_context: "ParentContextProvider | None" = None,
 ) -> ToolRegistry:
     """Build a fresh ToolRegistry with all tools bound to *cwd*.
 
@@ -151,6 +153,7 @@ def create_tool_registry(
         service_url=_services.get("doc_converter"),
         callbacks=callbacks,
         config=config,
+        parent_context=parent_context,
     ))
     reg.register(GrepTool(cwd=cwd, allowed_roots=effective_roots))
     reg.register(FindTool(cwd=cwd, allowed_roots=effective_roots))
@@ -186,7 +189,7 @@ def create_tool_registry(
             }
             for spawn_tool in _discover_subagent_tools(
                 cwd=cwd, config=config, callbacks=callbacks,
-                tracker=tracker, session_log=session_log,
+                tracker=tracker, session_log=session_log, parent_context=parent_context,
             ):
                 if spawn_tool.name in _plan_mode_names:
                     try:
@@ -233,7 +236,7 @@ def create_tool_registry(
             # A valid type directory must contain both prompt.md and subagent_config.yaml.
             for spawn_tool in _discover_subagent_tools(
                 cwd=cwd, config=config, callbacks=callbacks,
-                tracker=tracker, session_log=session_log,
+                tracker=tracker, session_log=session_log, parent_context=parent_context,
             ):
                 try:
                     reg.register(spawn_tool)

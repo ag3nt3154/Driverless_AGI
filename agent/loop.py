@@ -360,6 +360,7 @@ class AgentLoop:
                 memory_root=self._effective_memory_root,
                 bash_tool=_bash_tool,
                 session_log=self.log,
+                parent_context=self.parent_context_provider,
             )
 
         self.config = config
@@ -1723,6 +1724,7 @@ class AgentLoop:
             memory_root=self._effective_memory_root,
             bash_tool=self._injected_bash_tool,
             session_log=self.log,
+            parent_context=self.parent_context_provider,
         )
 
         _system = self._assemble_system_string(dagi_root)
@@ -1753,6 +1755,7 @@ class AgentLoop:
             tracker=self.tracker,
             memory_root=self._effective_memory_root,
             session_log=self.log,
+            parent_context=self.parent_context_provider,
         )
         _system = self._assemble_system_string(dagi_root)
         self._emit_header(_system, "change")
