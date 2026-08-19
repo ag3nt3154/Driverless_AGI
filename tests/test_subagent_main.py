@@ -1,7 +1,9 @@
 """tests/test_subagent_main.py — Unit tests for tools/subagent_main.py."""
 from __future__ import annotations
 
+import json
 from pathlib import Path
+from unittest.mock import MagicMock, patch
 
 import pytest
 import yaml
@@ -453,3 +455,235 @@ class TestForkedCompactMode:
 
         # Handoff must NOT exist — tool-call response rejected
         assert not handoff_path.exists()
+
+
+class _InheritedLoop:
+    def __init__(self, results: list[str], **kwargs) -> None:
+        self.kwargs = kwargs
+        self._results = results
+        self.run_calls: list[str] = []
+        self.finish_calls = 0
+
+    def run(self, task: str) -> str:
+        self.run_calls.append(task)
+        return self._results.pop(0)
+
+    def finish(self) -> None:
+        self.finish_calls += 1
+
+
+def _v2_context() -> dict:
+    return {
+        "version": 2,
+        "branch": {"id": "worker_abc", "parent_cut_seq": 4, "parent_surface_generation": 0},
+        "request": {
+            "model": "parent/model",
+            "messages": [
+                {"role": "system", "content": "parent system bytes"},
+                {"role": "user", "content": "parent request"},
+            ],
+            "tools": [{
+                "type": "function",
+                "function": {
+                    "name": "read",
+                    "description": "parent schema",
+                    "parameters": {"type": "object", "properties": {}},
+                },
+            }],
+            "parallel_tool_calls": True,
+            "extra_body": {"provider": {"order": ["Parent"]}},
+            "base_url": "https://parent.example/v1",
+        },
+        "child": {"type": "worker", "allowed_tools": ["read"]},
+    }
+
+
+def _write_v2_inputs(tmp_path, context: dict | None = None) -> tuple[Path, Path, Path]:
+    context_path = tmp_path / "fork.json"
+    context_path.write_text(json.dumps(context or _v2_context()), encoding="utf-8")
+    task_path = tmp_path / "task.txt"
+    task_path.write_text("child task", encoding="utf-8")
+    return context_path, task_path, tmp_path / "handoff.md"
+
+
+def test_forked_v2_uses_inherited_prefix_and_request_options(tmp_path, monkeypatch):
+    """Changing inherited request identity would break the parent's warm cache prefix."""
+    import tools.subagent_main as subagent_main
+
+    context_path, task_path, handoff_path = _write_v2_inputs(tmp_path)
+    loop = _InheritedLoop(["completed report"])
+    captured: dict = {}
+
+    monkeypatch.setattr(
+        subagent_main, "resolve_model_config", lambda *_a, **_k: subagent_main.AgentConfig()
+    )
+    monkeypatch.setattr(
+        subagent_main,
+        "build_subagent_registry",
+        lambda **kwargs: captured.update(kwargs) or MagicMock(),
+    )
+    monkeypatch.setattr(
+        subagent_main,
+        "AgentLoop",
+        lambda **kwargs: captured.update(loop=kwargs) or loop,
+    )
+
+    subagent_main.run_forked_subagent_mode(
+        str(context_path), str(task_path), str(handoff_path), str(tmp_path)
+    )
+
+    request = _v2_context()["request"]
+    assert captured["handoff_path"] is None
+    assert captured["loop"]["initial_messages"] == request["messages"]
+    assert captured["loop"]["_system_prompt_override"] == "parent system bytes"
+    assert captured["loop"]["_registry"].get_openai_tools_list() == request["tools"]
+    assert "write_handoff" not in [
+        schema["function"]["name"]
+        for schema in captured["loop"]["_registry"].get_openai_tools_list()
+    ]
+    assert captured["loop"]["config"].model == request["model"]
+    assert captured["loop"]["config"].base_url == request["base_url"]
+    assert loop._extra_body == request["extra_body"]
+    assert loop._parallel_tool_calls is True
+    assert loop.run_calls == ["child task"]
+    assert handoff_path.read_text(encoding="utf-8") == "completed report"
+    assert loop.finish_calls == 1
+
+
+def test_forked_v2_retries_once_with_the_exact_validation_error(tmp_path, monkeypatch):
+    """An invalid final answer must get one corrective turn, never an unverified handoff."""
+    import tools.subagent_main as subagent_main
+
+    context_path, task_path, handoff_path = _write_v2_inputs(tmp_path)
+    loop = _InheritedLoop(["", "completed report"])
+    monkeypatch.setattr(
+        subagent_main, "resolve_model_config", lambda *_a, **_k: subagent_main.AgentConfig()
+    )
+    monkeypatch.setattr(subagent_main, "build_subagent_registry", lambda **_k: MagicMock())
+    monkeypatch.setattr(subagent_main, "AgentLoop", lambda **_k: loop)
+
+    subagent_main.run_forked_subagent_mode(
+        str(context_path), str(task_path), str(handoff_path), str(tmp_path)
+    )
+
+    assert loop.run_calls == [
+        "child task",
+        "child task\n\nEmpty final handoff text",
+    ]
+    assert handoff_path.read_text(encoding="utf-8") == "completed report"
+    assert loop.finish_calls == 1
+
+
+def test_forked_v2_fails_without_writing_an_unverified_handoff(tmp_path, monkeypatch):
+    """Keeping a malformed response would let a parent accept an invalid child result."""
+    import tools.subagent_main as subagent_main
+
+    context_path, task_path, handoff_path = _write_v2_inputs(tmp_path)
+    loop = _InheritedLoop(["", ""])
+    monkeypatch.setattr(
+        subagent_main, "resolve_model_config", lambda *_a, **_k: subagent_main.AgentConfig()
+    )
+    monkeypatch.setattr(subagent_main, "build_subagent_registry", lambda **_k: MagicMock())
+    monkeypatch.setattr(subagent_main, "AgentLoop", lambda **_k: loop)
+
+    with pytest.raises(ValueError, match="Empty final handoff text"):
+        subagent_main.run_forked_subagent_mode(
+            str(context_path), str(task_path), str(handoff_path), str(tmp_path)
+        )
+
+    assert not handoff_path.exists()
+    assert loop.finish_calls == 1
+
+
+def test_final_handoff_validation_requires_configured_headings():
+    """Dropping a contract heading makes a handoff unusable for its caller."""
+    from tools.subagent_main import _validate_final_handoff
+
+    ok, error = _validate_final_handoff("## Findings\ncontent", ["Findings", "Changes"])
+
+    assert ok is False
+    assert error == "Missing required sections: ## Changes"
+
+
+def test_system_override_keeps_the_inherited_request_prefix_byte_identical(tmp_path):
+    """Adding local prompt text would turn a cache hit into a fresh provider request."""
+    from types import SimpleNamespace
+
+    from agent.loop import AWAIT_USER_FLAG, AgentConfig, AgentLoop
+    from agent.registry import ToolRegistry
+
+    inherited = [
+        {"role": "system", "content": "parent system bytes"},
+        {"role": "user", "content": "parent request"},
+    ]
+    response = SimpleNamespace(
+        choices=[SimpleNamespace(
+            message=SimpleNamespace(content=f"done {AWAIT_USER_FLAG}", tool_calls=[]),
+        )],
+        usage=SimpleNamespace(
+            prompt_tokens=1,
+            completion_tokens=1,
+            cost=None,
+            completion_tokens_details=None,
+            prompt_tokens_details=None,
+        ),
+    )
+    with patch("openai.OpenAI"):
+        loop = AgentLoop(
+            config=AgentConfig(api_key="test", project_path=tmp_path, system_prompt="local prompt"),
+            initial_messages=inherited,
+            _registry=ToolRegistry(),
+            _system_prompt_override=inherited[0]["content"],
+            _preserve_request_prefix=True,
+        )
+    loop._skip_slug_generation = True
+    loop.client = MagicMock()
+    loop.client.chat.completions.create.return_value = response
+
+    loop.run("child task")
+
+    assert loop.system_parts[-1]["content"] == "local prompt"
+    assert loop.client.chat.completions.create.call_args.kwargs["messages"] == [
+        *inherited,
+        {"role": "user", "content": "child task"},
+    ]
+
+
+def test_main_keeps_v1_compact_dispatch_and_rejects_unknown_versions(tmp_path, monkeypatch):
+    """Routing a v1 compact request through generic execution would change its API contract."""
+    import sys
+
+    import tools.subagent_main as subagent_main
+
+    context_path, task_path, handoff_path = _write_v2_inputs(tmp_path)
+    context = _v2_context()
+    context["version"] = 1
+    context_path.write_text(json.dumps(context), encoding="utf-8")
+    compact_calls: list[dict] = []
+    monkeypatch.setattr(
+        subagent_main,
+        "run_forked_compact_mode",
+        lambda **kwargs: compact_calls.append(kwargs),
+    )
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "subagent_main.py", "--subagent-type", "compact", "--task-file", str(task_path),
+            "--handoff", str(handoff_path), "--fork-context", str(context_path),
+        ],
+    )
+
+    subagent_main.main()
+
+    assert compact_calls == [{
+        "fork_context_path": str(context_path),
+        "handoff_path": str(handoff_path),
+        "subagent_type": "compact",
+        "project_path": None,
+    }]
+
+    context["version"] = 99
+    context_path.write_text(json.dumps(context), encoding="utf-8")
+    with pytest.raises(ValueError, match="Unsupported fork-context version: 99"):
+        subagent_main.main()

@@ -7,6 +7,7 @@ handoff report. Not intended to be run interactively.
 from __future__ import annotations
 
 import argparse
+from copy import deepcopy
 import json
 from dataclasses import replace
 from pathlib import Path
@@ -20,6 +21,7 @@ import yaml
 
 from agent import DAGI_ROOT
 from agent.config_loader import resolve_model_config
+from agent.inherited_registry import build_inherited_registry
 from agent.loop import AgentCallbacks, AgentConfig, AgentLoop
 from agent.prompts import load_subagent_prompt
 from agent.tools import build_subagent_registry
@@ -206,6 +208,113 @@ def _validate_compact_response(response) -> tuple[bool, str]:
     if not content.strip():
         return False, "Empty response from compact model"
     return True, ""
+
+
+def _validate_final_handoff(text: str, required_sections: list[str]) -> tuple[bool, str]:
+    """Validate a generic inherited subagent's final assistant response."""
+    clean = text.strip()
+    if not clean:
+        return False, "Empty final handoff text"
+    if any(flag in clean for flag in ("<<END_OF_RESPONSE>>", "<<TASK_END>>")):
+        return False, "Truncated final handoff text"
+    headings = {line.strip() for line in clean.splitlines() if line.lstrip().startswith("#")}
+    missing = []
+    for section in required_sections:
+        heading = section.strip()
+        if not heading.startswith("#"):
+            heading = f"## {heading}"
+        if heading not in headings:
+            missing.append(heading)
+    if missing:
+        return False, f"Missing required sections: {', '.join(missing)}"
+    return True, ""
+
+
+def _load_required_sections(subagent_type: str, project_path: Path) -> list[str]:
+    """Read an optional final-handoff heading contract from the child preset."""
+    for root in (project_path, DAGI_ROOT):
+        config_path = root / ".dagi" / "subagents" / subagent_type / "subagent_config.yaml"
+        if config_path.exists():
+            config = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
+            return list(config.get("required_sections", []))
+    return []
+
+
+def _build_inherited_config(request: dict, project_path: Path) -> AgentConfig:
+    """Resolve local credentials while retaining the inherited provider request identity."""
+    local_config = resolve_model_config(None, project_path=project_path)
+    return replace(
+        local_config,
+        model=request["model"],
+        base_url=request.get("base_url") or local_config.base_url,
+        project_path=project_path,
+        worker_config=None,
+        advanced_config=None,
+    )
+
+
+def run_forked_subagent_mode(
+    fork_context_path: str,
+    task_file: str,
+    handoff_path: str,
+    project_path: str | None,
+) -> None:
+    """Execute a v2 inherited child with its parent's exact provider prefix."""
+    project = Path(project_path).resolve() if project_path else Path.cwd()
+    context = json.loads(Path(fork_context_path).read_text(encoding="utf-8"))
+    if context.get("version") != 2:
+        raise ValueError(f"Unsupported fork-context version: {context.get('version')}")
+
+    request = context["request"]
+    child = context["child"]
+    subagent_type = child["type"]
+    messages = request["messages"]
+    if not messages or messages[0].get("role") != "system":
+        raise ValueError("Version-2 fork-context requires a leading system message")
+
+    config = _build_inherited_config(request, project)
+    callbacks = _build_pipe_callbacks()
+    implementation_registry = build_subagent_registry(
+        subagent_type=subagent_type,
+        config=config,
+        project_path=project,
+        callbacks=callbacks,
+        memory_root=config.memory_root,
+        handoff_path=None,
+    )
+    registry = build_inherited_registry(
+        request.get("tools", []),
+        implementation_registry,
+        set(child.get("allowed_tools", [])),
+        subagent_type,
+    )
+    loop = AgentLoop(
+        config=config,
+        callbacks=callbacks,
+        initial_messages=messages,
+        _registry=registry,
+        _system_prompt_override=messages[0].get("content", ""),
+        _preserve_request_prefix=True,
+    )
+    loop._extra_body = deepcopy(request.get("extra_body", {}))
+    loop._parallel_tool_calls = bool(request.get("parallel_tool_calls", False))
+    task = Path(task_file).read_text(encoding="utf-8")
+    required_sections = _load_required_sections(subagent_type, project)
+    try:
+        text = loop.run(task)
+        ok, error = _validate_final_handoff(text, required_sections)
+        if not ok:
+            text = loop.run(f"{task}\n\n{error}")
+            ok, error = _validate_final_handoff(text, required_sections)
+        if not ok:
+            print(json.dumps({"type": "error", "message": error}), flush=True)
+            raise ValueError(error)
+        target = Path(handoff_path)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(text, encoding="utf-8")
+    finally:
+        loop.finish()
+    print(json.dumps({"type": "done"}), flush=True)
 
 
 def _build_compact_task_message(
@@ -409,12 +518,24 @@ def main() -> None:
     args = parser.parse_args()
 
     if args.fork_context:
-        run_forked_compact_mode(
-            fork_context_path=args.fork_context,
-            handoff_path=args.handoff,
-            subagent_type=args.subagent_type,
-            project_path=args.project,
-        )
+        fork_context = json.loads(Path(args.fork_context).read_text(encoding="utf-8"))
+        version = fork_context.get("version")
+        if version == 1:
+            run_forked_compact_mode(
+                fork_context_path=args.fork_context,
+                handoff_path=args.handoff,
+                subagent_type=args.subagent_type,
+                project_path=args.project,
+            )
+        elif version == 2:
+            run_forked_subagent_mode(
+                fork_context_path=args.fork_context,
+                task_file=args.task_file,
+                handoff_path=args.handoff,
+                project_path=args.project,
+            )
+        else:
+            raise ValueError(f"Unsupported fork-context version: {version}")
         return
 
     run_subagent_pipe_mode(

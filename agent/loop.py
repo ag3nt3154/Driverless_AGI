@@ -298,12 +298,16 @@ class AgentLoop:
         _subagent_id: str | None = None,
         _tracker: "SessionTracker | None" = None,
         _bash_tool: "object | None" = None,
+        _system_prompt_override: str | None = None,
+        _preserve_request_prefix: bool = False,
     ):
         from agent.tools import create_tool_registry
         from uuid import uuid4
 
         self.callbacks = callbacks or AgentCallbacks()
         dagi_root = DAGI_ROOT
+        self._system_prompt_override = _system_prompt_override
+        self._preserve_request_prefix = _preserve_request_prefix
 
         # Stash injected bash tool so plan-mode rebuilds can restore it
         self._injected_bash_tool = _bash_tool
@@ -384,6 +388,7 @@ class AgentLoop:
         self.client = openai.OpenAI(api_key=config.api_key, base_url=config.base_url)
         # Build extra_body for OpenRouter extensions (reasoning, prompt caching, provider routing).
         self._extra_body: dict = {}
+        self._parallel_tool_calls = False
         if config.thinking and config.thinking.lower() != "none":
             self._extra_body["reasoning"] = {"effort": config.thinking.lower()}
         if config.cache_prompt:
@@ -1000,7 +1005,8 @@ class AgentLoop:
             while True:
                 iteration += 1
                 self.log.append(sev.STEP_START, {"turn": _turn, "step": iteration})
-                self._refresh_dynamic_context()
+                if not self._preserve_request_prefix:
+                    self._refresh_dynamic_context()
                 self.callbacks.on_iteration(iteration)
                 self._pause_checkpoint.set()
                 try:
@@ -1026,7 +1032,7 @@ class AgentLoop:
                             model=self.config.model,
                             messages=_request,
                             tools=self.registry.get_openai_tools_list(),
-                            parallel_tool_calls=False,
+                            parallel_tool_calls=self._parallel_tool_calls,
                             **(dict(extra_body=self._extra_body) if self._extra_body else {}),
                         )
                         self._last_request_snapshot = self._freeze_request_snapshot(_create_kwargs)
@@ -1624,6 +1630,8 @@ class AgentLoop:
         system = "\n\n---\n\n".join(sections)
         system += f"\n\n---\n\nProject root: {self.config.project_path}"
 
+        if self._system_prompt_override is not None:
+            system = self._system_prompt_override
         self._system_prefix = system
         return system
 
