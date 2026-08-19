@@ -71,7 +71,9 @@ def _append_reference(loop: "AgentLoop", invocation: str, relative_path: Path, b
     content = (
         f"{invocation}\n\nDiagnostic report: {relative_path.as_posix()}\nBranch: {branch_id}"
     )
+    header = loop._messages[0]
     loop._log_user_message("user", content, "wtf")
+    loop._messages[0] = header
 
 
 def run_wtf(loop: "AgentLoop", description: str | None) -> WtfResult:

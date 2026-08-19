@@ -55,6 +55,8 @@ def test_idle_wtf_appends_one_reference_in_a_dedicated_command_turn(tmp_path: Pa
     report_path.parent.mkdir(parents=True)
     report_path.write_text(REPORT, encoding="utf-8")
     captured: dict = {}
+    header = loop._messages[0]
+    header_bytes = json.dumps(header, sort_keys=True).encode()
 
     with patch("agent.wtf.run_subagent", side_effect=_capture_result(loop, _result(report_path), captured)):
         result = loop.run_wtf(None)
@@ -70,6 +72,8 @@ def test_idle_wtf_appends_one_reference_in_a_dedicated_command_turn(tmp_path: Pa
     assert "inherited context" in captured["task"]
     assert captured["open_turn_at_fork"] is None
     assert loop.log.open_turn is None
+    assert loop._messages[0] is header
+    assert json.dumps(loop._messages[0], sort_keys=True).encode() == header_bytes
     references = [
         event for event in loop.log.events
         if event.type == sev.USER_MESSAGE and event.data.get("source") == "wtf"
@@ -117,6 +121,8 @@ def test_paused_wtf_uses_the_open_safe_step_without_resuming_or_closing_it(tmp_p
     before_messages = [dict(message) for message in loop._messages]
     before_surface_bytes = json.dumps(loop._messages[1:], sort_keys=True).encode()
     before_message_objects = list(loop._messages[1:])
+    header = loop._messages[0]
+    header_bytes = json.dumps(header, sort_keys=True).encode()
     messages_list = loop._messages
 
     captured: dict = {}
@@ -129,6 +135,8 @@ def test_paused_wtf_uses_the_open_safe_step_without_resuming_or_closing_it(tmp_p
     assert not loop._pause_event.is_set()
     assert loop._pause_checkpoint.is_set()
     assert loop._messages is messages_list
+    assert loop._messages[0] is header
+    assert json.dumps(loop._messages[0], sort_keys=True).encode() == header_bytes
     assert loop._messages[1:-1] == before_messages[1:]
     assert json.dumps(loop._messages[1:-1], sort_keys=True).encode() == before_surface_bytes
     assert all(before is after for before, after in zip(before_message_objects, loop._messages[1:-1]))
