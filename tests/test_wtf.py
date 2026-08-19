@@ -142,6 +142,38 @@ def test_paused_wtf_uses_the_open_safe_step_without_resuming_or_closing_it(tmp_p
     assert all(before is after for before, after in zip(before_message_objects, loop._messages[1:-1]))
 
 
+def test_paused_wtf_failure_preserves_checkpoint_and_parent_surface(tmp_path: Path) -> None:
+    """A failed child must leave a paused parent ready for its normal resume path."""
+    loop = _loop(tmp_path)
+    loop.log.append(sev.TURN_START, {"turn": 2})
+    loop.log.append(sev.STEP_START, {"turn": 2, "step": 1})
+    loop.pause()
+    loop._pause_checkpoint.set()
+    report_path = tmp_path / ".dagi" / "errors" / "wtf_branch.md"
+    report_path.parent.mkdir(parents=True)
+    before_messages = loop._messages
+    before_bytes = json.dumps(loop._messages, sort_keys=True).encode()
+
+    with patch(
+        "agent.wtf.run_subagent",
+        side_effect=_capture_result(
+            loop,
+            _result(report_path, status="timeout", text=""),
+            {},
+        ),
+    ):
+        with pytest.raises(RuntimeError, match="status: timeout"):
+            loop.run_wtf(None)
+
+    assert loop._messages is before_messages
+    assert json.dumps(loop._messages, sort_keys=True).encode() == before_bytes
+    assert loop.log.open_turn == 2
+    assert loop.log.open_step == 1
+    assert loop._pause_event.is_set() is False
+    assert loop._pause_checkpoint.is_set()
+    assert not any(event.data.get("source") == "wtf" for event in loop.log.events)
+
+
 def test_wtf_rejects_missing_conversation_before_spawning(tmp_path: Path) -> None:
     """Forking a header-only session gives the child no diagnostic context."""
     config = AgentConfig(model="test", api_key="key", project_path=tmp_path)
@@ -157,25 +189,54 @@ def test_wtf_rejects_missing_conversation_before_spawning(tmp_path: Path) -> Non
 
 
 @pytest.mark.parametrize(
-    "status,text",
-    [("error", REPORT), ("stale", REPORT), ("ok", ""), ("ok", "unstructured handoff")],
+    "outcome,status,text,raises",
+    [
+        ("timeout", "timeout", "", "status: timeout"),
+        ("empty", "ok", "", "malformed"),
+        ("truncated", "ok", REPORT.split("## Suggested Fix", maxsplit=1)[0], "malformed"),
+        ("malformed", "ok", "unstructured handoff", "malformed"),
+        ("write_error", "error", REPORT, "status: error"),
+        ("stale", "stale", REPORT, "status: stale"),
+    ],
 )
-def test_wtf_rejects_bad_child_results_without_a_surface_reference(
-    tmp_path: Path, status: str, text: str,
+def test_wtf_failure_matrix_preserves_surface_without_reference(
+    tmp_path: Path, outcome: str, status: str, text: str, raises: str,
 ) -> None:
-    """Accepting an unsuccessful or blank handoff would create a false diagnostic link."""
+    """Every failed outcome must not create a false diagnostic link."""
     loop = _loop(tmp_path)
     report_path = tmp_path / ".dagi" / "errors" / "wtf_branch.md"
     report_path.parent.mkdir(parents=True)
     report_path.write_text(text, encoding="utf-8")
-    before = [dict(message) for message in loop._messages]
+    before_messages = loop._messages
+    before_objects = list(loop._messages)
+    before_bytes = json.dumps(loop._messages, sort_keys=True).encode()
 
-    with patch("agent.wtf.run_subagent", side_effect=_capture_result(loop, _result(report_path, status=status, text=text), {})):
-        with pytest.raises(RuntimeError):
+    with patch(
+        "agent.wtf.run_subagent",
+        side_effect=_capture_result(loop, _result(report_path, status=status, text=text), {}),
+    ):
+        with pytest.raises(RuntimeError, match=raises):
             loop.run_wtf(None)
 
-    assert loop._messages == before
-    assert loop.log.branch_event("wtf_branch") is not None
+    assert loop._messages is before_messages, outcome
+    assert all(before is after for before, after in zip(before_objects, loop._messages))
+    assert json.dumps(loop._messages, sort_keys=True).encode() == before_bytes
+    assert not any(event.data.get("source") == "wtf" for event in loop.log.events)
+
+
+def test_wtf_fork_error_preserves_surface_without_branch_reference(tmp_path: Path) -> None:
+    """A fork that cannot be captured must fail before adding any child metadata."""
+    loop = _loop(tmp_path)
+    before_messages = loop._messages
+    before_bytes = json.dumps(loop._messages, sort_keys=True).encode()
+
+    with patch("agent.wtf.run_subagent", side_effect=RuntimeError("fork failed")):
+        with pytest.raises(RuntimeError, match="fork failed"):
+            loop.run_wtf(None)
+
+    assert loop._messages is before_messages
+    assert json.dumps(loop._messages, sort_keys=True).encode() == before_bytes
+    assert loop.log.branch_event("wtf_branch") is None
     assert not any(event.data.get("source") == "wtf" for event in loop.log.events)
 
 

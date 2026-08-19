@@ -25,6 +25,16 @@ agent/loop.py:1-2 — test fixture citation.
 - Complete handoff body must reach the parent tool result.
 """
 
+WTF_HANDOFF = """## Description
+The diagnostic completed after a blocked attempt.
+
+## Error Report
+The child tried a disallowed write before reading the requested file.
+
+## Suggested Fix
+Keep the diagnostic tools read-only.
+"""
+
 
 class _SiblingTool(BaseTool):
     """A completed sibling call makes the parent response a multi-tool turn."""
@@ -35,6 +45,25 @@ class _SiblingTool(BaseTool):
 
     def run(self) -> str:
         return "sibling completed"
+
+
+class _AllowedReadTool(BaseTool):
+    """A real child implementation used to prove allowlisted recovery."""
+
+    name = "read"
+    description = "Read a file."
+    _parameters = {
+        "type": "object",
+        "properties": {"path": {"type": "string"}},
+        "required": ["path"],
+    }
+
+    def __init__(self) -> None:
+        self.calls: list[dict] = []
+
+    def run(self, **kwargs) -> str:
+        self.calls.append(kwargs)
+        return "allowed read content"
 
 
 def _response(
@@ -207,3 +236,94 @@ def test_typed_subagent_inherits_triggering_prefix_and_returns_full_handoff(tmp_
         + "\n\n--- Handoff content ---\n"
         + HANDOFF
     ]
+
+
+def test_inherited_child_blocks_write_then_recovers_with_allowed_read(tmp_path: Path) -> None:
+    """A blocked child call must be an ordinary tool result, not a terminal failure."""
+    child_client = MagicMock()
+    child_client.chat.completions.create.side_effect = [
+        _response(None, [_tool_call("blocked", "write", '{"path":"forbidden.txt"}')]),
+        _response(None, [_tool_call("allowed", "read", '{"path":"README.md"}')]),
+        _response(WTF_HANDOFF),
+    ]
+    read_tool = _AllowedReadTool()
+    implementation_registry = ToolRegistry()
+    implementation_registry.register(read_tool)
+    schemas = [
+        {
+            "type": "function",
+            "function": {
+                "name": "write",
+                "description": "Write a file.",
+                "parameters": {"type": "object", "properties": {"path": {"type": "string"}}},
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "read",
+                "description": "Read a file.",
+                "parameters": {"type": "object", "properties": {"path": {"type": "string"}}},
+            },
+        },
+    ]
+    context = {
+        "version": 2,
+        "branch": {"id": "wtf_1234", "parent_cut_seq": 4, "parent_surface_generation": 0},
+        "request": {
+            "model": "parent-model",
+            "messages": [
+                {"role": "system", "content": "Parent system instruction."},
+                {"role": "user", "content": "The parent observed a failure."},
+            ],
+            "tools": schemas,
+            "parallel_tool_calls": False,
+            "extra_body": {},
+            "base_url": "https://provider.example/v1",
+        },
+        "child": {"type": "wtf", "allowed_tools": ["read"]},
+    }
+    fork_path = tmp_path / "fork.json"
+    task_path = tmp_path / "task.md"
+    handoff_path = tmp_path / ".dagi" / "errors" / "wtf_1234.md"
+    fork_path.write_text(json.dumps(context), encoding="utf-8")
+    task_path.write_text("Investigate the failure.", encoding="utf-8")
+    config = AgentConfig(
+        model="local-model",
+        api_key="child-key",
+        project_path=tmp_path,
+        max_continuations=0,
+    )
+
+    with (
+        patch("openai.OpenAI", return_value=child_client),
+        patch("tools.subagent_main.resolve_model_config", return_value=config),
+        patch(
+            "tools.subagent_main.build_subagent_registry",
+            return_value=implementation_registry,
+        ),
+    ):
+        run_forked_subagent_mode(
+            str(fork_path), str(task_path), str(handoff_path), str(tmp_path)
+        )
+
+    assert handoff_path.read_text(encoding="utf-8") == WTF_HANDOFF
+    assert read_tool.calls == [{"path": "README.md"}]
+    blocked_results = [
+        message["content"]
+        for call in child_client.chat.completions.create.call_args_list
+        for message in call.kwargs["messages"]
+        if message.get("role") == "tool" and message.get("tool_call_id") == "blocked"
+    ]
+    assert blocked_results
+    assert set(blocked_results) == {
+        "Error: Access blocked for tool 'write' in subagent 'wtf'. Allowed tools: read"
+    }
+    read_results = [
+        message["content"]
+        for call in child_client.chat.completions.create.call_args_list
+        for message in call.kwargs["messages"]
+        if message.get("role") == "tool" and message.get("tool_call_id") == "allowed"
+    ]
+    assert read_results
+    assert set(read_results) == {"allowed read content"}
