@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import os
 import tempfile
+import json
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Callable
@@ -20,7 +21,7 @@ import yaml
 
 from agent import DAGI_ROOT as _DAGI_ROOT
 from agent import session_events as sev
-from agent.parent_context import build_fork_context_v2
+from agent.parent_context import ForkMode, ParentContextProvider, ParentFork, build_fork_context_v2
 from tools import _subagent_runner as _runner
 from tools._task_envelope import wrap_envelope
 
@@ -122,6 +123,91 @@ def _build_result(raw: dict, handoff_path: Path) -> SubagentResult:
     )
 
 
+def _write_fork_context_file(
+    fork: ParentFork,
+    subagent_type: str,
+    tools: list[str],
+) -> Path:
+    """Write a v2 fork context whose lifecycle transfers to the runner."""
+    fd, path_str = tempfile.mkstemp(suffix=".json", prefix="dagi_fork_context_")
+    os.close(fd)
+    path = Path(path_str)
+    try:
+        path.write_text(
+            json.dumps(build_fork_context_v2(fork, subagent_type, tools)),
+            encoding="utf-8",
+        )
+    except Exception:
+        path.unlink(missing_ok=True)
+        raise
+    return path
+
+
+def _extra_fork_context_path(extra_argv: list[str] | None) -> str | None:
+    """Return a caller-supplied fork context path, if present."""
+    if not extra_argv or "--fork-context" not in extra_argv:
+        return None
+    index = extra_argv.index("--fork-context")
+    if index + 1 == len(extra_argv):
+        raise ValueError("--fork-context requires a path")
+    return extra_argv[index + 1]
+
+
+def _resolve_subagent_options(
+    preset: str | None,
+    prompt: str | None,
+    tools: list[str] | None,
+    model_tier: str,
+    handoff_spec: str,
+    project_path: Path,
+) -> tuple[str, list[str], str, str, str]:
+    """Resolve preset defaults and explicit subagent execution options."""
+    if preset:
+        p_prompt, p_tools, p_tier, p_hs, _agents = _load_preset(preset, project_path)
+        return (
+            prompt if prompt is not None else p_prompt,
+            tools if tools is not None else p_tools,
+            model_tier if model_tier != "default" else p_tier,
+            handoff_spec or p_hs,
+            preset,
+        )
+    return prompt or "", tools or ["read", "grep", "find"], model_tier, handoff_spec, "custom"
+
+
+def _invoke_runner(
+    subagent_type: str,
+    task: str,
+    project_path: Path,
+    handoff_path: Path,
+    timeout: float,
+    on_event: Callable[[str], None] | None,
+    extra_argv: list[str],
+    prompt: str,
+    inherited_context_path: Path | None,
+) -> dict:
+    """Forward prompt and execution data, retaining cleanup before registration fails."""
+    fd, prompt_tmp = tempfile.mkstemp(suffix=".md", prefix="dagi_prompt_")
+    try:
+        os.close(fd)
+        Path(prompt_tmp).write_text(prompt, encoding="utf-8")
+        extra_argv.extend(["--system-prompt-file", prompt_tmp])
+        return _runner.run_subagent(
+            subagent_type=subagent_type,
+            task=task,
+            project_path=project_path,
+            handoff_path=handoff_path,
+            timeout=timeout,
+            on_event=on_event,
+            extra_argv=extra_argv or None,
+        )
+    except Exception:
+        if inherited_context_path is not None:
+            inherited_context_path.unlink(missing_ok=True)
+        raise
+    finally:
+        Path(prompt_tmp).unlink(missing_ok=True)
+
+
 def run_subagent(
     task: str,
     preset: str | None = None,
@@ -136,27 +222,29 @@ def run_subagent(
     parent_log: "SessionLog | None" = None,
     extra_argv: list[str] | None = None,
     fork_context_path: Path | str | None = None,
+    parent_context: ParentContextProvider | None = None,
+    fork_mode: ForkMode = "spawn",
+    handoff_dir: Path | str | None = None,
 ) -> SubagentResult:
     """Spawn a subagent and return its result with auto-read handoff."""
     if preset is None and prompt is None:
         raise ValueError("Either preset or prompt must be provided.")
+    extra_fork_context = _extra_fork_context_path(extra_argv)
+    if parent_context is not None and (
+        fork_context_path is not None or extra_fork_context is not None
+    ):
+        raise ValueError(
+            "parent_context cannot be combined with fork_context_path or --fork-context"
+        )
+    if fork_context_path is not None and extra_fork_context is not None:
+        if str(fork_context_path) != extra_fork_context:
+            raise ValueError("Conflicting fork_context_path and --fork-context values")
 
     proj = (project_path or Path.cwd()).resolve()
 
-    # Resolve from preset or explicit args
-    if preset:
-        p_prompt, p_tools, p_tier, p_hs, _agents = _load_preset(preset, proj)
-        eff_prompt = prompt if prompt is not None else p_prompt
-        eff_tools = tools if tools is not None else p_tools
-        eff_tier = model_tier if model_tier != "default" else p_tier
-        eff_hs = handoff_spec or p_hs
-        subagent_type = preset
-    else:
-        eff_prompt = prompt or ""
-        eff_tools = tools or ["read", "grep", "find"]
-        eff_tier = model_tier
-        eff_hs = handoff_spec
-        subagent_type = "custom"
+    eff_prompt, eff_tools, eff_tier, eff_hs, subagent_type = _resolve_subagent_options(
+        preset, prompt, tools, model_tier, handoff_spec, proj,
+    )
 
     # Build task envelope
     body = f"## Task\n{task}" if task else ""
@@ -164,17 +252,17 @@ def run_subagent(
 
     # Generate handoff path
     subagent_id = uuid4().hex[:8]
-    handoffs_dir = proj / ".dagi" / "handoffs"
+    handoffs_dir = Path(handoff_dir) if handoff_dir is not None else proj / ".dagi" / "handoffs"
     handoffs_dir.mkdir(parents=True, exist_ok=True)
     handoff_path = handoffs_dir / f"{subagent_type}_{subagent_id}.md"
 
-    branch_id: str | None = None
+    branch_id = f"{subagent_type}_{subagent_id}" if parent_context is not None else None
     if (
         parent_log is not None
         and parent_log.open_turn is not None
         and parent_log.open_step is not None
     ):
-        branch_id = f"{subagent_type}_{subagent_id}"
+        branch_id = branch_id or f"{subagent_type}_{subagent_id}"
         parent_log.append(
             sev.BRANCH_START,
             {
@@ -185,6 +273,12 @@ def run_subagent(
             },
         )
 
+    fork: ParentFork | None = None
+    inherited_context_path: Path | None = None
+    if parent_context is not None:
+        fork = parent_context.capture_fork(branch_id, fork_mode)
+        inherited_context_path = _write_fork_context_file(fork, subagent_type, eff_tools)
+
     # Build extra argv (merge caller-supplied args with internally-built ones)
     _extra_argv: list[str] = []
     if tools is not None or preset is None:
@@ -193,34 +287,28 @@ def run_subagent(
         _extra_argv.extend(["--model-tier", eff_tier])
     if extra_argv:
         _extra_argv.extend(extra_argv)
-    # Inject fork-context path; skip if caller already passed --fork-context in extra_argv
-    if fork_context_path is not None and "--fork-context" not in _extra_argv:
-        _extra_argv.extend(["--fork-context", str(fork_context_path)])
+    selected_fork_context = inherited_context_path or fork_context_path
+    if selected_fork_context is not None and extra_fork_context is None:
+        _extra_argv.extend(["--fork-context", str(selected_fork_context)])
 
-    # Write effective prompt to a temp file and forward via --system-prompt-file.
-    # This is the only way to deliver eff_prompt (preset or caller override) to the
-    # subprocess — subagent_main.py reads it via --system-prompt-file and bypasses
-    # load_subagent_prompt() when this arg is present.
-    fd, prompt_tmp = tempfile.mkstemp(suffix=".md", prefix="dagi_prompt_")
-    try:
-        os.close(fd)
-        Path(prompt_tmp).write_text(eff_prompt, encoding="utf-8")
-        _extra_argv.extend(["--system-prompt-file", prompt_tmp])
-
-        raw = _runner.run_subagent(
-            subagent_type=subagent_type,
-            task=enveloped,
-            project_path=proj,
-            handoff_path=handoff_path,
-            timeout=timeout,
-            on_event=on_event,
-            extra_argv=_extra_argv if _extra_argv else None,
-        )
-    finally:
-        Path(prompt_tmp).unlink(missing_ok=True)
+    raw = _invoke_runner(
+        subagent_type, enveloped, proj, handoff_path, timeout, on_event,
+        _extra_argv, eff_prompt, inherited_context_path,
+    )
 
     result = _build_result(raw, handoff_path)
     result.branch_id = branch_id
+    if fork is not None and result.is_ok:
+        if parent_context.get_surface_generation() != fork.parent_surface_generation:
+            return SubagentResult(
+                status="stale",
+                handoff_text="",
+                handoff_path=handoff_path,
+                session_log_path=result.session_log_path,
+                pid=result.pid,
+                escalation=None,
+                branch_id=branch_id,
+            )
     return result
 
 

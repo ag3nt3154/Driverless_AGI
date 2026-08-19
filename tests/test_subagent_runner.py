@@ -216,6 +216,33 @@ class TestForkContextCleanup:
         assert not fc_path.exists()
         assert result["status"] == "error"
 
+    def test_fork_context_deleted_after_successful_handoff(self, tmp_path):
+        """A terminal success releases the context file after the child has consumed it."""
+        state, proc = _make_state(tmp_path, poll_side_effect=[0])
+        fc_path = tmp_path / "fork_ctx.json"
+        fc_path.write_text('{"version": 2}', encoding="utf-8")
+        state.fork_context_path = fc_path
+        state.handoff_path.write_text("# Handoff\n\ndone\n", encoding="utf-8")
+
+        result = _poll_until(state, extra_seconds=10)
+
+        assert result["status"] == "ok"
+        assert not fc_path.exists()
+
+    def test_fork_context_deleted_after_escalation(self, tmp_path):
+        """An escalation is terminal and releases its inherited context file."""
+        state, proc = _make_state(tmp_path, poll_side_effect=lambda: None)
+        fc_path = tmp_path / "fork_ctx.json"
+        fc_path.write_text('{"version": 2}', encoding="utf-8")
+        state.fork_context_path = fc_path
+        escalation_path = tmp_path / "worker_ab12cd34_escalation.md"
+        escalation_path.write_text("# Escalation\n\n## Question\nQ\n", encoding="utf-8")
+
+        result = _poll_until(state, extra_seconds=10)
+
+        assert result["status"] == "escalated"
+        assert not fc_path.exists()
+
     def test_fork_context_not_deleted_on_timeout(self, tmp_path):
         """Fork-context file is NOT deleted on timeout (child may be resumed)."""
         from unittest.mock import MagicMock, patch
@@ -269,3 +296,22 @@ class TestForceKillActiveSubagents:
 
     def test_force_kill_returns_zero_when_no_active_subagents(self):
         assert _subagent_runner.force_kill_active_subagents() == 0
+
+    def test_force_kill_cleans_fork_context_and_removes_terminal_state(self, tmp_path, monkeypatch):
+        """Forced termination owns terminal cleanup instead of waiting for another poll."""
+        fc_path = tmp_path / "fork.json"
+        fc_path.write_text('{"version": 2}', encoding="utf-8")
+        state, proc = _make_state(tmp_path, poll_side_effect=lambda: None)
+        state.fork_context_path = fc_path
+        monkeypatch.setattr("tools._subagent_runner.kill_process_tree", lambda _proc: None)
+        with _subagent_runner._active_lock:
+            _subagent_runner._active[proc.pid] = state
+
+        try:
+            _subagent_runner.force_kill_active_subagents()
+            assert not fc_path.exists()
+            assert not state.task_file.exists()
+            assert proc.pid not in _subagent_runner._active
+        finally:
+            with _subagent_runner._active_lock:
+                _subagent_runner._active.pop(proc.pid, None)

@@ -3,10 +3,12 @@ from __future__ import annotations
 
 from pathlib import Path
 from unittest.mock import MagicMock, patch
+import json
 
 import pytest
 
 from agent import session_events as sev
+from agent.parent_context import ParentContextProvider, ParentFork
 from agent.session_log import SessionLog
 from tools.subagent_api import SubagentResult, resume_subagent_by_pid, run_subagent
 
@@ -443,6 +445,136 @@ class TestBranchStartLogging:
         branch_events = [e for e in log.events if e.type == sev.BRANCH_START]
         assert len(branch_events) == 0
         assert result.branch_id is None
+
+
+class TestInheritedSubagentExecution:
+    def _provider(
+        self,
+        request: dict,
+        generation: int = 4,
+    ) -> tuple[ParentContextProvider, MagicMock, MagicMock]:
+        capture = MagicMock(
+            side_effect=lambda branch_id, _mode: ParentFork(
+                branch_id=branch_id,
+                parent_cut_seq=12,
+                parent_surface_generation=generation,
+                request=request,
+            )
+        )
+        current_generation = MagicMock(return_value=generation)
+        return ParentContextProvider(capture, current_generation), capture, current_generation
+
+    def test_inherited_context_captures_generated_branch_and_v2_payload(self, tmp_path):
+        """A provider fork carries the exact request and effective tool allowlist."""
+        provider, capture, _generation = self._provider(
+            {"model": "parent-model", "messages": [{"role": "user", "content": "hi"}]}
+        )
+        captured_contexts: list[dict] = []
+
+        def runner(*_args, **kwargs):
+            argv = kwargs["extra_argv"]
+            fork_path = Path(argv[argv.index("--fork-context") + 1])
+            captured_contexts.append(json.loads(fork_path.read_text(encoding="utf-8")))
+            fork_path.unlink()
+            return {"status": "error", "message": "expected test result"}
+
+        with patch("tools.subagent_api._runner.run_subagent", side_effect=runner):
+            result = run_subagent(
+                task="Inspect the code",
+                prompt="You are an inspector.",
+                tools=["read", "grep"],
+                project_path=tmp_path,
+                parent_context=provider,
+            )
+
+        assert result.branch_id is not None
+        capture.assert_called_once_with(result.branch_id, "spawn")
+        assert captured_contexts == [{
+            "version": 2,
+            "branch": {
+                "id": result.branch_id,
+                "parent_cut_seq": 12,
+                "parent_surface_generation": 4,
+            },
+            "request": {
+                "model": "parent-model",
+                "messages": [{"role": "user", "content": "hi"}],
+            },
+            "child": {"type": "custom", "allowed_tools": ["read", "grep"]},
+        }]
+
+    def test_handoff_dir_controls_handoff_parent(self, tmp_path):
+        """A caller-selected handoff parent is passed through to the runner."""
+        handoff_dir = tmp_path / "wtf-handoffs"
+        observed_paths: list[Path] = []
+
+        def runner(*_args, **kwargs):
+            observed_paths.append(kwargs["handoff_path"])
+            return {"status": "error", "message": "expected test result"}
+
+        with patch("tools.subagent_api._runner.run_subagent", side_effect=runner):
+            run_subagent(
+                task="Inspect", prompt="Inspect.", project_path=tmp_path, handoff_dir=handoff_dir,
+            )
+
+        assert observed_paths[0].parent == handoff_dir
+        assert handoff_dir.is_dir()
+
+    def test_inherited_success_with_changed_generation_is_stale(self, tmp_path):
+        """A child response is rejected when its parent surface changed meanwhile."""
+        handoff = tmp_path / "handoff.md"
+        handoff.write_text("obsolete", encoding="utf-8")
+        provider, _capture, generation = self._provider({"model": "parent"})
+        generation.return_value = 5
+
+        def successful_runner(*_args, **kwargs):
+            argv = kwargs["extra_argv"]
+            Path(argv[argv.index("--fork-context") + 1]).unlink()
+            return {"status": "ok", "handoff": str(handoff)}
+
+        with patch("tools.subagent_api._runner.run_subagent", side_effect=successful_runner):
+            result = run_subagent(
+                task="Inspect", prompt="Inspect.", project_path=tmp_path, parent_context=provider,
+            )
+
+        assert result.status == "stale"
+        assert result.handoff_text == ""
+        assert result.is_ok is False
+
+    def test_parent_context_rejects_explicit_fork_context_path(self, tmp_path):
+        """A generated v2 context must not silently override a caller's v1 path."""
+        provider, _capture, _generation = self._provider({"model": "parent"})
+
+        with pytest.raises(ValueError, match="fork_context_path"):
+            run_subagent(
+                task="Inspect",
+                prompt="Inspect.",
+                project_path=tmp_path,
+                parent_context=provider,
+                fork_context_path=tmp_path / "v1.json",
+            )
+
+    def test_spawn_raise_cleans_api_owned_fork_context(self, tmp_path):
+        """A pre-registration spawn failure cannot leak the v2 context file."""
+        provider, _capture, _generation = self._provider({"model": "parent"})
+        created_paths: list[Path] = []
+
+        def raising_runner(*_args, **kwargs):
+            argv = kwargs["extra_argv"]
+            created_paths.append(Path(argv[argv.index("--fork-context") + 1]))
+            raise OSError("spawn failed")
+
+        with patch("tools.subagent_api._runner.run_subagent", side_effect=raising_runner):
+            with pytest.raises(OSError, match="spawn failed"):
+                run_subagent(
+                    task="Inspect",
+                    prompt="Inspect.",
+                    project_path=tmp_path,
+                    parent_context=provider,
+                )
+
+        assert len(created_paths) == 1
+        assert not created_paths[0].exists()
 
 
 class TestBuildForkContext:

@@ -77,6 +77,15 @@ def _handoff_result(handoff_path: Path) -> dict | None:
     return {"status": "ok", "handoff": str(handoff_path)}
 
 
+def _cleanup_terminal_state(state: _SubagentState) -> None:
+    """Release files and tracking owned by a terminal subprocess state."""
+    with _active_lock:
+        _active.pop(state.proc.pid, None)
+    state.task_file.unlink(missing_ok=True)
+    if state.fork_context_path is not None:
+        state.fork_context_path.unlink(missing_ok=True)
+
+
 def _poll_until(
     state: _SubagentState,
     extra_seconds: float,
@@ -113,11 +122,7 @@ def _poll_until(
                 # Terminate didn't reap in time; force-kill. No proc.wait() follow-up
                 # here — acceptable given process lifetime, but noted intentionally.
                 proc.kill()
-            with _active_lock:
-                _active.pop(proc.pid, None)
-            state.task_file.unlink(missing_ok=True)
-            if state.fork_context_path is not None:
-                state.fork_context_path.unlink(missing_ok=True)
+            _cleanup_terminal_state(state)
             try:
                 content = escalation_path.read_text(encoding="utf-8")
             except (OSError, UnicodeDecodeError) as exc:
@@ -129,11 +134,7 @@ def _poll_until(
 
         ret = proc.poll()
         if ret is not None:
-            with _active_lock:
-                _active.pop(proc.pid, None)
-            state.task_file.unlink(missing_ok=True)
-            if state.fork_context_path is not None:
-                state.fork_context_path.unlink(missing_ok=True)
+            _cleanup_terminal_state(state)
             handoff_result = _handoff_result(state.handoff_path)
             if handoff_result is not None:
                 return handoff_result
@@ -149,15 +150,15 @@ def _poll_until(
 def force_kill_active_subagents() -> int:
     """Force-kill every currently in-flight subagent's process tree.
 
-    Best-effort and does not mutate _active directly — _poll_until()'s own
-    exit-detection path removes each entry once it observes the process is
-    gone. Returns the number of processes killed.
+    Best-effort. Forced termination is terminal, so it also releases the
+    state-owned task and fork-context files. Returns the number of processes killed.
     """
     with _active_lock:
         states = list(_active.values())
     killed = 0
     for state in states:
         kill_process_tree(state.proc)
+        _cleanup_terminal_state(state)
         killed += 1
     return killed
 
