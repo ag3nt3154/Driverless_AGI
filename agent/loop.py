@@ -528,6 +528,12 @@ class AgentLoop:
             )
             return _NO_COMPACTION
 
+    def run_wtf(self, description: str | None) -> "WtfResult":
+        """Delegate inherited diagnostic orchestration to its focused module."""
+        from agent.wtf import run_wtf
+
+        return run_wtf(self, description)
+
     def _consume_stream(self, stream) -> "tuple[SimpleNamespace, object | None]":
         """Accumulate a chat-completions chunk stream into the same
         (message, usage) shapes the blocking path produces, firing per-delta
