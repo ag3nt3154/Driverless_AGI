@@ -993,9 +993,10 @@ class AgentLoop:
         _turn = self.log.next_turn()
         self.log.append(sev.TURN_START, {"turn": _turn})
 
-        wiki_ctx = _build_wiki_index_context(self._effective_memory_root)
-        if wiki_ctx:
-            self._log_user_message("system", wiki_ctx, "wiki")
+        if not self._preserve_request_prefix:
+            wiki_ctx = _build_wiki_index_context(self._effective_memory_root)
+            if wiki_ctx:
+                self._log_user_message("system", wiki_ctx, "wiki")
         self._log_user_message("user", task, "human")
         self.tracker.record_user(task)
 

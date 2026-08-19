@@ -550,6 +550,33 @@ def test_forked_v2_uses_inherited_prefix_and_request_options(tmp_path, monkeypat
     assert loop.finish_calls == 1
 
 
+def test_forked_v2_places_resolved_preset_prompt_after_inherited_prefix(tmp_path, monkeypatch):
+    """Inherited execution must preserve the prefix, then apply preset instructions."""
+    import tools.subagent_main as subagent_main
+
+    context_path, task_path, handoff_path = _write_v2_inputs(tmp_path)
+    prompt_path = tmp_path / "resolved-prompt.md"
+    prompt_path.write_text("resolved preset instructions", encoding="utf-8")
+    loop = _InheritedLoop(["completed report"])
+    monkeypatch.setattr(
+        subagent_main, "resolve_model_config", lambda *_a, **_k: subagent_main.AgentConfig()
+    )
+    monkeypatch.setattr(subagent_main, "build_subagent_registry", lambda **_k: MagicMock())
+    monkeypatch.setattr(subagent_main, "AgentLoop", lambda **_k: loop)
+
+    subagent_main.run_forked_subagent_mode(
+        str(context_path),
+        str(task_path),
+        str(handoff_path),
+        str(tmp_path),
+        system_prompt_file=str(prompt_path),
+    )
+
+    assert loop.run_calls == [
+        "resolved preset instructions\n\n---\n\nchild task",
+    ]
+
+
 def test_forked_v2_retries_once_with_the_exact_validation_error(tmp_path, monkeypatch):
     """An invalid final answer must get one corrective turn, never an unverified handoff."""
     import tools.subagent_main as subagent_main
@@ -643,6 +670,55 @@ def test_system_override_keeps_the_inherited_request_prefix_byte_identical(tmp_p
     loop.run("child task")
 
     assert loop.system_parts[-1]["content"] == "local prompt"
+    assert loop.client.chat.completions.create.call_args.kwargs["messages"] == [
+        *inherited,
+        {"role": "user", "content": "child task"},
+    ]
+
+
+def test_inherited_run_skips_wiki_context_between_prefix_and_child_task(tmp_path):
+    """Configured wiki context must not break the inherited cache prefix."""
+    from types import SimpleNamespace
+
+    from agent.loop import AWAIT_USER_FLAG, AgentConfig, AgentLoop
+    from agent.registry import ToolRegistry
+
+    inherited = [
+        {"role": "system", "content": "parent system bytes"},
+        {"role": "user", "content": "parent request"},
+    ]
+    response = SimpleNamespace(
+        choices=[SimpleNamespace(
+            message=SimpleNamespace(content=f"done {AWAIT_USER_FLAG}", tool_calls=[]),
+        )],
+        usage=SimpleNamespace(
+            prompt_tokens=1,
+            completion_tokens=1,
+            cost=None,
+            completion_tokens_details=None,
+            prompt_tokens_details=None,
+        ),
+    )
+    with patch("openai.OpenAI"):
+        loop = AgentLoop(
+            config=AgentConfig(
+                api_key="test",
+                project_path=tmp_path,
+                system_prompt="local prompt",
+                memory_root=tmp_path / "wiki",
+            ),
+            initial_messages=inherited,
+            _registry=ToolRegistry(),
+            _system_prompt_override=inherited[0]["content"],
+            _preserve_request_prefix=True,
+        )
+    loop._skip_slug_generation = True
+    loop.client = MagicMock()
+    loop.client.chat.completions.create.return_value = response
+
+    with patch("agent.loop._build_wiki_index_context", return_value="WIKI CONTEXT"):
+        loop.run("child task")
+
     assert loop.client.chat.completions.create.call_args.kwargs["messages"] == [
         *inherited,
         {"role": "user", "content": "child task"},

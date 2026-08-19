@@ -258,6 +258,7 @@ def run_forked_subagent_mode(
     task_file: str,
     handoff_path: str,
     project_path: str | None,
+    system_prompt_file: str | None = None,
 ) -> None:
     """Execute a v2 inherited child with its parent's exact provider prefix."""
     project = Path(project_path).resolve() if project_path else Path.cwd()
@@ -299,6 +300,10 @@ def run_forked_subagent_mode(
     loop._extra_body = deepcopy(request.get("extra_body", {}))
     loop._parallel_tool_calls = bool(request.get("parallel_tool_calls", False))
     task = Path(task_file).read_text(encoding="utf-8")
+    if system_prompt_file:
+        prompt = Path(system_prompt_file).read_text(encoding="utf-8").strip()
+        if prompt:
+            task = f"{prompt}\n\n---\n\n{task}"
     required_sections = _load_required_sections(subagent_type, project)
     try:
         text = loop.run(task)
@@ -534,6 +539,7 @@ def main() -> None:
                 task_file=args.task_file,
                 handoff_path=args.handoff,
                 project_path=args.project,
+                system_prompt_file=args.system_prompt_file,
             )
         else:
             raise ValueError(f"Unsupported fork-context version: {version}")
