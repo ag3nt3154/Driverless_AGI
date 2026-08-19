@@ -20,6 +20,7 @@ import yaml
 
 from agent import DAGI_ROOT as _DAGI_ROOT
 from agent import session_events as sev
+from agent.parent_context import build_fork_context_v2
 from tools import _subagent_runner as _runner
 from tools._task_envelope import wrap_envelope
 
