@@ -1,0 +1,14 @@
+model_tier: worker
+tools:
+  - read
+  - grep
+  - find
+required_sections:
+  - Description
+  - Error Report
+  - Suggested Fix
+default_handoff_spec: >-
+  Return exactly three non-empty level-two sections: Description, Error Report,
+  and Suggested Fix. Investigate read-only and do not apply a fix.
+agents_md:
+  - cwd

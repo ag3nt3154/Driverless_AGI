@@ -27,6 +27,7 @@ TYPED_SUBAGENT_NAMES = {
     "review",
     "web_research",
     "worker",
+    "wtf",
 }
 
 
@@ -67,3 +68,14 @@ def test_config_schema_has_required_keys():
             "parameters" not in data
         ), f"{config_path}: 'parameters' should be removed"
         assert "description" not in data, f"{config_path}: 'description' should be removed"
+
+
+def test_wtf_preset_is_read_only_and_requires_structured_sections():
+    """The diagnostic preset must not be able to apply its suggested fix."""
+    config_path = SUBAGENTS_DIR / "wtf" / "subagent_config.yaml"
+    data = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+
+    assert data["model_tier"] == "worker"
+    assert data["tools"] == ["read", "grep", "find"]
+    assert data["required_sections"] == ["Description", "Error Report", "Suggested Fix"]
+    assert data["agents_md"] == ["cwd"]
