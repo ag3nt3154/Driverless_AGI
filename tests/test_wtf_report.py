@@ -24,6 +24,19 @@ def test_parse_wtf_report_extracts_the_three_required_sections():
     )
 
 
+def test_parse_wtf_report_accepts_crlf_headings():
+    """Windows-written handoffs must retain the same strict report contract."""
+    report = parse_wtf_report(
+        "## Description\r\nObserved behavior.\r\n\r\n"
+        "## Error Report\r\nRelevant exception.\r\n\r\n"
+        "## Suggested Fix\r\nA focused repair."
+    )
+
+    assert report.description == "Observed behavior."
+    assert report.error_report == "Relevant exception."
+    assert report.suggested_fix == "A focused repair."
+
+
 @pytest.mark.parametrize("section", ["Description", "Error Report", "Suggested Fix"])
 def test_parse_wtf_report_rejects_a_missing_required_section(section):
     """A parent must never append a report that lacks one of its decision fields."""

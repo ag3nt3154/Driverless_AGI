@@ -7,7 +7,7 @@ import re
 
 _SECTION_NAMES = ("Description", "Error Report", "Suggested Fix")
 _HEADING_RE = re.compile(
-    r"^(?P<marks>#{1,6})[ \t]+(?P<title>[^\r\n]*?)[ \t]*$", re.MULTILINE
+    r"^(?P<marks>#{1,6})[ \t]+(?P<title>[^\r\n]*?)[ \t]*\r?$", re.MULTILINE
 )
 
 
