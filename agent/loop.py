@@ -24,6 +24,7 @@ from agent._git_branch import create_task_branch, get_current_branch
 from agent.prompts import load_prompt, load_main_system_prompt, load_soul
 from agent.registry import ToolRegistry
 from agent import session_events as sev
+from agent.parent_context import ForkMode, ParentContextProvider, ParentFork
 from agent.session import SessionTracker, ToolCallRecord
 from agent.session_log import InvariantError, SessionLog, is_status_board
 from agent.session_store import append_event
@@ -421,6 +422,7 @@ class AgentLoop:
         # Pause/resume: set = running (default), clear = paused
         self._pause_event = threading.Event()
         self._pause_event.set()
+        self._pause_checkpoint = threading.Event()
 
     def pause(self) -> None:
         self._pause_event.clear()
@@ -428,6 +430,87 @@ class AgentLoop:
     def inject_and_resume(self, message: str) -> None:
         self._log_user_message("user", message, "inject")
         self._pause_event.set()
+
+    @property
+    def parent_context_provider(self) -> ParentContextProvider:
+        """Expose loop-owned capture hooks to inherited-subagent callers."""
+        return ParentContextProvider(
+            capture_fork=self.capture_parent_fork,
+            get_surface_generation=lambda: self.log.surface.generation,
+        )
+
+    def wait_for_pause_checkpoint(self, timeout: float) -> bool:
+        """Wait until a paused run reaches its safe pre-request checkpoint."""
+        return self._pause_checkpoint.wait(timeout)
+
+    def _freeze_request_snapshot(self, create_kwargs: Mapping[str, Any]) -> dict[str, Any]:
+        """Copy request identity and the live surface boundary before a provider call."""
+        nodes = self.log.surface.nodes
+        return {
+            "model": create_kwargs["model"],
+            "messages": copy.deepcopy(create_kwargs["messages"]),
+            "tools": copy.deepcopy(create_kwargs.get("tools", [])),
+            "parallel_tool_calls": create_kwargs.get("parallel_tool_calls", False),
+            "extra_body": copy.deepcopy(create_kwargs.get("extra_body", {})),
+            "base_url": self.config.base_url or "",
+            "parent_cut_seq": nodes[-1] if nodes else 0,
+            "parent_surface_generation": self.log.surface.generation,
+        }
+
+    def _fork_coordinates(self) -> tuple[int, int]:
+        """Return the live step, or the most recently completed step when idle."""
+        if self.log.open_turn is not None:
+            return self.log.open_turn, self.log.open_step or 0
+        for event in reversed(self.log.events):
+            turn = event.data.get("turn")
+            step = event.data.get("step")
+            if isinstance(turn, int) and isinstance(step, int):
+                return turn, step
+        return 0, 0
+
+    def capture_parent_fork(self, branch_id: str, mode: ForkMode) -> ParentFork:
+        """Freeze a spawn or stable prefix and record its non-surface branch point."""
+        if mode == "spawn":
+            if self._last_request_snapshot is None:
+                raise RuntimeError("Cannot capture a spawn fork before a provider request")
+            snapshot = copy.deepcopy(self._last_request_snapshot)
+        elif mode == "stable":
+            if not self._pause_event.is_set() and self.log.open_turn is not None:
+                if not self._pause_checkpoint.is_set():
+                    raise RuntimeError("Paused loop has not reached a safe checkpoint")
+            create_kwargs = {
+                "model": self.config.model,
+                "messages": self._build_request_messages(),
+                "tools": self.registry.get_openai_tools_list(),
+                "parallel_tool_calls": False,
+            }
+            if self._extra_body:
+                create_kwargs["extra_body"] = self._extra_body
+            snapshot = self._freeze_request_snapshot(create_kwargs)
+        else:
+            raise ValueError(f"Unknown fork mode: {mode!r}")
+
+        request = {
+            key: copy.deepcopy(snapshot[key])
+            for key in (
+                "model", "messages", "tools", "parallel_tool_calls", "extra_body", "base_url"
+            )
+        }
+        cut_seq = snapshot["parent_cut_seq"]
+        generation = snapshot["parent_surface_generation"]
+        turn, step = self._fork_coordinates()
+        self.log.append(
+            sev.BRANCH_START,
+            {
+                "branch": branch_id,
+                "parent_branch": "main",
+                "turn": turn,
+                "step": step,
+                "parent_cut_seq": cut_seq,
+                "parent_surface_generation": generation,
+            },
+        )
+        return ParentFork(branch_id, cut_seq, generation, request)
 
     def _compact_context(self) -> CompactionResult:
         """Delegates to compact(). Failures are non-fatal — the session continues
@@ -920,7 +1003,11 @@ class AgentLoop:
                 self.log.append(sev.STEP_START, {"turn": _turn, "step": iteration})
                 self._refresh_dynamic_context()
                 self.callbacks.on_iteration(iteration)
-                self._pause_event.wait()  # blocks here when paused; instant no-op otherwise
+                self._pause_checkpoint.set()
+                try:
+                    self._pause_event.wait()  # blocks here when paused; instant no-op otherwise
+                finally:
+                    self._pause_checkpoint.clear()
 
                 # ── API call with retry ────────────────────────────────────
                 # Retries on two classes of failure:
@@ -943,18 +1030,7 @@ class AgentLoop:
                             parallel_tool_calls=False,
                             **(dict(extra_body=self._extra_body) if self._extra_body else {}),
                         )
-                        self._last_request_snapshot = {
-                            "model": _create_kwargs["model"],
-                            "messages": copy.deepcopy(_create_kwargs["messages"]),
-                            "tools": copy.deepcopy(_create_kwargs.get("tools", [])),
-                            "parallel_tool_calls": _create_kwargs.get(
-                                "parallel_tool_calls", False,
-                            ),
-                            "extra_body": copy.deepcopy(
-                                _create_kwargs.get("extra_body", {}),
-                            ),
-                            "base_url": self.config.base_url or "",
-                        }
+                        self._last_request_snapshot = self._freeze_request_snapshot(_create_kwargs)
                         if self.config.stream:
                             _stream = self.client.chat.completions.create(
                                 stream=True,

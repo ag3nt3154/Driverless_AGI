@@ -632,3 +632,79 @@ class TestSessionLogWiring:
 
         assert "session_log" in captured_kwargs
         assert captured_kwargs["session_log"] is loop.log
+
+
+class TestParentForkCapture:
+    def test_spawn_fork_uses_request_before_assistant_tool_response(self):
+        """A child spawned by a tool call must inherit the request prefix, not its response."""
+        tool = FakeTool(name="write_handoff", result=f"report {WRITE_HANDOFF_SENTINEL}")
+        registry = ToolRegistry()
+        registry.register(tool)
+        loop = _make_loop(registry=registry)
+        loop.client = MagicMock()
+        loop.client.chat.completions.create.side_effect = [
+            _make_response(None, tool_calls=[_make_tool_call("tc1", "write_handoff", "{}")]),
+        ]
+
+        loop.run("delegate this")
+        messages_before = loop._messages
+        surface_before = loop.log.surface.nodes
+        fork = loop.capture_parent_fork("worker_spawn", "spawn")
+
+        assert fork.request["messages"][1] == {"role": "user", "content": "delegate this"}
+        assert all(message.get("role") != "assistant" for message in fork.request["messages"])
+        assert fork.parent_cut_seq == surface_before[0]
+        assert fork.parent_surface_generation == 0
+        assert loop.log.surface.nodes == surface_before
+        assert loop._messages is messages_before
+        branch = loop.log.branch_event("worker_spawn")
+        assert branch is not None
+        assert branch.data["parent_branch"] == "main"
+        assert branch.data["parent_cut_seq"] == fork.parent_cut_seq
+
+    def test_stable_idle_fork_includes_last_completed_surface(self):
+        """An idle /wtf fork sees the last assistant reply, not a stale API snapshot."""
+        loop = _make_loop()
+        loop.client = MagicMock()
+        loop.client.chat.completions.create.return_value = _make_response(
+            f"Complete. {TASK_END_FLAG}"
+        )
+
+        loop.run("finish this")
+        fork = loop.capture_parent_fork("worker_idle", "stable")
+
+        assert fork.request["messages"][1:3] == [
+            {"role": "user", "content": "finish this"},
+            {"role": "assistant", "content": f"Complete. {TASK_END_FLAG}"},
+        ]
+        assert loop.log.branch_event("worker_idle") is not None
+        provider = loop.parent_context_provider
+        assert provider.get_surface_generation() == loop.log.surface.generation
+
+    def test_wait_for_pause_checkpoint_requires_the_checkpoint_not_pause_state(self):
+        """Pause observation must not accidentally resume the loop."""
+        loop = _make_loop()
+        loop.pause()
+
+        assert loop.wait_for_pause_checkpoint(0) is False
+        assert loop._pause_event.is_set() is False
+        loop._pause_checkpoint.set()
+        assert loop.wait_for_pause_checkpoint(0) is True
+        assert loop._pause_event.is_set() is False
+
+    def test_stable_fork_excludes_empty_step_opened_before_pause(self):
+        """The pause checkpoint cannot add a phantom message to a stable child prefix."""
+        loop = _make_loop()
+        loop.log.append(sev.TURN_START, {"turn": 1})
+        loop._log_user_message("user", "pause after this", "human")
+        loop.log.append(sev.STEP_START, {"turn": 1, "step": 1})
+        loop.pause()
+        loop._pause_checkpoint.set()
+
+        fork = loop.capture_parent_fork("worker_paused", "stable")
+
+        assert fork.request["messages"] == [
+            loop._header_message(),
+            {"role": "user", "content": "pause after this"},
+        ]
+        assert fork.parent_cut_seq == loop.log.surface.nodes[-1]
