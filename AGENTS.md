@@ -1,6 +1,6 @@
 # AGENTS.md
 
-> Last updated: 2026-08-19 (Task 8: compact cache prefix feature complete — fork_context_path wired end-to-end) | [README](README.md) | [TODO](TODO.md)
+> Last updated: 2026-08-20 (inherited subagents and `/wtf` diagnostic complete) | [README](README.md) | [TODO](TODO.md)
 
 
 ---
@@ -122,6 +122,8 @@ Stop and flag when:
 
 ## Architecture
 
+**Inherited subagents and `/wtf`:** `ParentContextProvider` snapshots the exact parent request prefix (model, messages, tool schemas/order, provider options, and base URL) and records a stable branch. Version-2 forked children receive that prefix plus one new task message, use an explicitly allowlisted inherited registry, and return a validated handoff; blocked tools return `Error: Access blocked for this tool`. The read-only `wtf` preset writes strict three-section reports under `.dagi/errors/`; `AgentLoop.run_wtf()` validates branch generation, path, and report structure before appending only a `/wtf` reference to the parent. TUI `/wtf [description]` runs asynchronously, waits for a pause checkpoint when needed, and displays only the report description and path.
+
 ```
 tui.py / telegram_bot.py / main.py / dagi_gui/__main__.py
     │
@@ -161,55 +163,47 @@ tui.py / telegram_bot.py / main.py / dagi_gui/__main__.py
 
 | Path                                                 | Purpose                                                                                                                                                        |
 | ---------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `agent/loop.py`                                      | Core agent loop, system-prompt assembly, termination/compaction, WriteHandoff sentinel dispatch                                                                |
+| `agent/loop.py`                                      | Core loop, parent fork capture, system-prompt assembly, termination/compaction, and handoff dispatch                                                          |
 | `agent/config_loader.py`                             | Reads `config.yaml`, merges `.dagi/config.yaml`, resolves API key, services, Telegram config                                                                   |
 | `agent/session_log.py`                               | Append-only event log; `SessionLog.branches` tracks subagent branches; `branch_event(id)` returns the BRANCH_START event for a branch                         |
 | `agent/session_events.py`                            | Event vocabulary constants (`TURN_START`, `BRANCH_START`, etc.); `SESSION_FORMAT_VERSION`                                                                      |
-| `agent/subagent_tools.py`                            | `_discover_subagent_tools()` import-based discovery; `build_subagent_registry()` with `tool_names_override`                                                    |
-| `tools/subagent_api.py`                              | **Public API** — `run_subagent()` logs `branch/start` on `parent_log` before spawning; `SubagentResult.branch_id` carries generated id                        |
+| `agent/parent_context.py`                            | Immutable parent request snapshots and version-2 fork-context serialization                                                                                    |
+| `agent/inherited_registry.py`                        | Exact-schema inherited tool wrappers and blocked-tool enforcement                                                                                             |
+| `agent/wtf.py`, `agent/wtf_report.py`                | Atomic `/wtf` orchestration and strict report parser                                                                                                           |
+| `agent/subagent_tools.py`                            | Subagent discovery and registry construction, including inherited child registries                                                                            |
+| `tools/subagent_api.py`                              | **Public API** — spawn/compact/inherited dispatch, branch metadata, handoff and fork-context lifecycle                                                        |
 | `tools/_subagent_runner.py`                          | Private pipe-based subprocess spawner; returns raw dicts; wrapped exclusively by `subagent_api.py`                                                             |
-| `tools/_handoff_format.py`                           | Shared handoff rendering and status dispatch for all subagent-spawning tools                                                                                   |
-| `tools/_task_envelope.py`                            | Universal `briefing`/`handoff_spec` envelope for subagent tasks                                                                                                |
-| `services/doc_converter/`                            | Standalone FastAPI service (port 8100); PDF→markdown via docling/ocrmypdf, Office→markdown via markitdown; own conda env                                       |
-| `tui/app.py`, `tui/streaming.py`, `tui/callbacks.py` | TUI lifecycle, StreamPreview expand/collapse, callbacks bridge                                                                                                 |
+| `tools/subagent_main.py`                             | Forked compact/inherited child entry points, credentials, allowlists, retries, and final handoff validation                                                   |
+| `tui/app.py`, `tui/commands.py`, `tui/callbacks.py`  | TUI lifecycle, slash commands including `/wtf`, StreamPreview, and callbacks bridge                                                                           |
 | `dagi_gui/server.py`                                 | `GUIServer`: reads NDJSON commands from stdin loop, dispatches to `AgentLoop`/session                                                                          |
 | `dagi_gui/session.py`                                | `SessionController`: lifecycle (run/pause/resume/cancel/clear/compact/shutdown), `_kill_active_work` kills active bash + subagents on pause                     |
 | `desktop/src/shared/protocol.ts`                     | Zod discriminated unions: 19 command types + 17 event types; `PROTOCOL_VERSION=1`; `parseEvent`/`serializeCommand`                                             |
-| `desktop/src/main/python-supervisor.ts`              | `PythonSupervisor extends EventEmitter`: spawns sidecar, NDJSON line-splitting, pending Map, exponential back-off restarts; injectable `spawnFn` for tests      |
 
 ## Errors Log (recent)
 
-- **2026-07-26**: TUI displayed wrong model name — `get_model_display_name()` only read root config, missed `.dagi/config.yaml` overrides → TUI now resolves via `resolve_model_config()`.
-- **2026-07-26 (known, deferred)**: `agent/loop.py` is 1172 lines (cap: 500), `AgentLoop.run` CC is 48 (cap: 8) — spun off as standalone refactor task.
-- **2026-08-04**: Subagent refactor merged to main — `tools/subagent_api.py` public API; 9 types each with `main.py` + `subagent_config.yaml`; import-based discovery; `SpawnSubagentTool`/`SpawnCliSubagentTool` deleted; `--tools`/`--model-tier` CLI args; `agents_md` config; `DEFAULT_PYTHON_ENV` in system prompt; `run_subagent` skill; `plan`/`cli` configs fixed (were missing, caused `FileNotFoundError` on preset load).
-- **2026-07-27**: Hashline experiment reverted — smaller models made too many errors copying opaque `LINE#HASH` anchors → restored `oldText`/`newText` edit, `cat -n` read, plain `file:line:` grep. `_hashline.py`, `edit_text/` tool, and hashline tests removed.
-- **2026-08-07**: DeepSeek thinking-mode rejected multi-tool-call batches — (1) `model_extra` fallback in `_consume_stream` / `_extract_reasoning` only checked `"reasoning"` key, missing DeepSeek's `"reasoning_content"` key; (2) interleaved format split tool_calls across multiple assistant messages, only the first carrying `reasoning_content` → fixed both key lookups; restructured to emit one assistant message with all tool_calls before the dispatch loop (standard OpenAI format).
-- **2026-08-08**: DeepSeek rejected orphaned tool messages — two causes: (1) compaction safe-cut logic could split multi-tool-call groups, leaving tool-result messages without their parent assistant → safe cuts now skip positions where the tail would start with a tool message; (2) `RELOAD_SKILLS_SENTINEL` injected a system message between assistant+tool_calls and tool results → deferred system messages until after all tool results are appended.
-- **2026-08-10**: `conda run` drops stdin when used in Claude Code hook context — `json.load(sys.stdin)` always gets empty input → use `C:/Users/alexr/miniconda3/envs/dagi/python.exe` directly for hook scripts instead of `conda run -n dagi python`.
-- **2026-08-11**: Grep Python fallback (no ripgrep) had no timeout — `rglob("*")` over Google Drive mount (`memory_root`) hung indefinitely, freezing TUI spinner → added 15s wall-clock timeout to both enumeration and file-scanning phases; installed `ripgrep` via conda.
-- **2026-08-16**: `QuestionBroker.has_pending` missing `@property` — `_handle_pause` tested the bound method (always truthy), so pause never killed bash or paused loop → added `@property`; fixed stale test using `broker._pending` (old API) to use `broker._pending_id`.
-- **2026-08-17**: Brief spec for `test_branch_id_uses_subagent_type` patched `Path.read_text` globally — broke `yaml.safe_load` in `_load_preset` → fixed by creating a real preset dir in `tmp_path` and removing the overly-broad mock.
-- **2026-08-19**: Task 6 — integration tests missing `_last_request_snapshot` (new guard in `compact()`) → added `_SNAPSHOT` fixture + `loop._last_request_snapshot = _SNAPSHOT` to 3 tests; 17/17 passed.
-- **2026-08-19**: Task 7 — added 4 new integration tests (list identity, raw-event preservation, failure atomicity, repeated compaction) to `test_compact_integration.py`; fixed missing snapshot in `test_compact_subagent_failure_leaves_surface_intact`; 8/8 pass.
-- **2026-08-19**: Task 7 bug — `extra_argv.extend(["--system-prompt-file", ...])` extended the raw caller parameter (None) instead of internal `_extra_argv` accumulator → `AttributeError` on all 14 TestRunSubagent + TestBranchStartLogging tests; fixed as `_extra_argv.extend(...)`.
-- **2026-08-19**: Task 8 — compact cache-prefix feature complete; `run_subagent(fork_context_path=...)` wires `--fork-context` to subprocess; 884 tests pass.
+- **2026-08-16**: `QuestionBroker.has_pending` missing `@property` → pause handling now tests the boolean property and uses `_pending_id`.
+- **2026-08-17**: A broad `Path.read_text` mock broke YAML preset loading → tests now use a real temporary preset directory.
+- **2026-08-19**: Compact integration fixtures lacked `_last_request_snapshot` → tests now seed the snapshot before compaction.
+- **2026-08-19**: Compact failure tests lacked a snapshot and subprocess argv used the raw `extra_argv` parameter → fixed fixtures and the internal accumulator.
+- **2026-08-19**: Stable fork capture treated an active open turn with only a pause event as safe → every open turn now requires `_pause_checkpoint`.
+- **2026-08-19**: `_sync_messages()` replaced the system-header dict during `/wtf` reference append → restore the original header object to preserve identity.
+- **2026-08-19**: Strict `/wtf` report parsing rejected CRLF headings → accept the line-ending boundary without relaxing heading validation.
+- **2026-08-19**: Compact fork context needed subprocess wiring → `fork_context_path` now reaches the forked child without carrying credentials.
+- **2026-08-20**: Full suite still has eight pre-existing Windows/environment failures (process-kill timing and temp/fixture setup) → documented; feature suites remain green.
+- **2026-08-20**: Task 11 failure matrix found no production defect; all child failure outcomes preserve the parent surface and paused checkpoint.
 
 ## Notes & Terms
 
 - **AGENTS.md** is force-injected into every session's system prompt by `_assemble_system_string()`; the file is re-read from disk on every `AgentLoop.__init__` and `_messages[0]` is always overwritten — so AGENTS.md edits made during task N are live in task N+1's context window.
 - **`<<END_OF_RESPONSE>>`**: primary exit sentinel (substring check on LLM text responses only); `_escape_sentinels()` rewrites it to `< <END_OF_RESPONSE>>` in tool results before they enter `_messages` to prevent LLM echo-back.
-- **Document conversion**: `.pdf/.docx/.xlsx/.pptx` → doc-converter service at `AgentConfig.services["doc_converter"]`, hard-fail if unreachable. PDF page selection via `pages` parameter.
 - **Subagent handoff**: WriteHandoffTool auto-injected; `<<HANDOFF_WRITTEN>>` sentinel triggers immediate return **only when `tc.function.name == "write_handoff"`** (name-gated to prevent false fire from inlined handoff content). Missing handoff → corrective re-entry → last-resort scrape + `_unverified.flag`.
-- **Memory wiki**: unified store at `G:\My Drive\black_grimoire\dagi-memory\wiki\` — four categories (projects, todos, knowledge, events), three skills (memory-add, memory-query, memory-refresh); Claude Code hook at `~/.claude/hooks/bm25_memory_recall.py` provides passive BM25 recall on every substantive prompt.
 - **`tools:` allowlist** (`config.yaml`): post-registration filter via `reg.filter_to(config.tools)`. Any tool not named here is silently stripped — including auto-discovered subagent spawn tools. When adding a new subagent type, also add its tool name to the list.
-- **`DEFAULT_PYTHON_ENV`**: detected at `AgentLoop` startup from `CONDA_DEFAULT_ENV` or `VIRTUAL_ENV` and injected into the system prompt so DAGI knows which env to use for Python commands. Override in the project's `AGENTS.md` if a different env is needed.
 - **Windows / conda**: `EditTool`/`WriteTool` always write LF, normalize `oldText`/`newText` for CRLF safety. Use `conda run -n dagi python` for DAGI scripts; for Claude Code hooks use `envs/dagi/python.exe` directly — `conda run` drops stdin in hook context.
 - **`subagent_api` vs `_subagent_runner`**: `tools/subagent_api.py` is the public API (preset resolution, envelope, `SubagentResult`); `tools/_subagent_runner.py` is the private subprocess spawner. Never import `_subagent_runner` directly from outside `subagent_api.py`.
-- **`desktop/out/` and `desktop/node_modules/`**: both gitignored (added 2026-08-16); Electron build artifacts must not be committed — regenerate with `npm run make` in `desktop/`.
-- **Subagent discovery + branch logging**: `_discover_subagent_tools()` passes `session_log` unconditionally to each tool constructor; `run()` forwards it as `parent_log` to `run_subagent()`, which logs `branch/start` before spawning. Mock `tools.subagent_api._runner.run_subagent` (not the public function) in tests so the logging code actually runs.
-- **`parent_cut_seq` on BRANCH_START**: optional field that overrides the physical event seq as the fork cut-off in `reconstruct()`. Enables retroactive branching — the BRANCH_START is appended after later events but logically forks from the earlier seq. `_collect_surface_events` filters by `seq <= fork_seq` and is unchanged.
-- **`_last_request_snapshot`**: `AgentLoop` field (dict | None) capturing `model`, `messages`, `tools`, `parallel_tool_calls`, `extra_body`, `base_url` from `_create_kwargs` right before the provider call. Updated on every retry iteration. Used by `build_fork_context()` to build the compact fork-context file.
-- **`run_forked_compact_mode()`**: `tools/subagent_main.py` entry point for `model_tier: inherit` compact. Inherits provider prefix from fork-context JSON (v1); makes a single non-streaming call; rejects tool-call/empty/truncated responses; writes assistant text directly as handoff (no `write_handoff` tool). Credentials always from env, never from fork-context. Retry logic extracted into `_compact_call_with_retry()` to stay within 100-line limit.
+- **Inherited fork v2**: `ParentContextProvider` preserves the exact request prefix; stable forks require a pause checkpoint for open turns, and every child tool call is allowlist-enforced.
+- **`/wtf` report contract**: `.dagi/errors/wtf_<branch>.md` has exactly `Description`, `Error Report`, and `Suggested Fix`; the parent stores only a path/branch reference.
+- **`_last_request_snapshot`**: `AgentLoop` captures provider request fields before each call; compact and inherited forks serialize them without credentials.
+- **`run_forked_compact_mode()`**: `tools/subagent_main.py` uses the inherited v1 prefix, resolves credentials locally, rejects invalid responses, and writes the compact handoff directly.
 
 ## User Insights
 
