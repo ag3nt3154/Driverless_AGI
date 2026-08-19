@@ -66,6 +66,8 @@ class DagiApp(SlashCommandsMixin, App[None]):
         self._model_name = self._config.display_name
         self._active_loop: AgentLoop | None = None
         self._worker: threading.Thread | None = None
+        self._wtf_worker: threading.Thread | None = None
+        self._wtf_running: bool = False
         self._pending_ask: tuple | None = None
         self._current_loop_ref: list = []
         self._skill_map: dict = {}
@@ -118,6 +120,9 @@ class DagiApp(SlashCommandsMixin, App[None]):
             ask_evt.set()
             self.query_one("#prompt", PromptInput).disabled = True
             self._show_running_indicator()
+            return
+        if raw.startswith("/") and raw.split(maxsplit=1)[0].lower() == "/wtf":
+            self._handle_slash(raw)
             return
         if (
             self._worker and self._worker.is_alive()

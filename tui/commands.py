@@ -69,6 +69,8 @@ class SlashCommandsMixin:
             self._cmd_wd(arg)
         elif cmd == "/compact":
             self._cmd_compact()
+        elif cmd == "/wtf":
+            self._cmd_wtf(arg)
         elif cmd == "/help":
             self._cmd_help()
         elif cmd == "/tools":
@@ -185,6 +187,60 @@ class SlashCommandsMixin:
                 self.call_from_thread(conv.append_info, "[dim]Nothing to compact.[/dim]")
 
         threading.Thread(target=_do_compact, daemon=True).start()
+
+    def _cmd_wtf(self, description: str | None) -> None:
+        """Run a read-only diagnostic without changing the parent loop's state."""
+        conv = self.query_one(ConversationPane)
+        loop = self._active_loop
+        if loop is None:
+            conv.append_info("[dim]Nothing to diagnose — no active conversation.[/dim]")
+            return
+        if self._wtf_running:
+            conv.append_info("[yellow]⚠ A /wtf diagnosis is already running.[/yellow]")
+            return
+        parent_is_running = bool(self._worker and self._worker.is_alive())
+        paused = parent_is_running and not loop._pause_event.is_set()
+        if parent_is_running and not paused:
+            conv.append_info("[yellow]⚠ Agent is running — press ESC to pause before /wtf.[/yellow]")
+            return
+
+        previous_status = "paused" if paused else "idle"
+        self._wtf_running = True
+        self.query_one("#prompt", PromptInput).disabled = True
+        self._show_running_indicator()
+        self.query_one(Sidebar).set_status("running")
+
+        def _do_wtf() -> None:
+            try:
+                if paused and not loop.wait_for_pause_checkpoint(timeout=5.0):
+                    raise RuntimeError("paused loop did not reach its checkpoint; try /wtf again")
+                result = loop.run_wtf(description)
+            except Exception as exc:
+                self.call_from_thread(self._finish_wtf_failure, str(exc), previous_status)
+                return
+            report_path = Path(result.report_path).resolve()
+            self.call_from_thread(
+                self._finish_wtf_success, result.description, report_path, previous_status
+            )
+
+        self._wtf_worker = threading.Thread(target=_do_wtf, daemon=True)
+        self._wtf_worker.start()
+
+    def _finish_wtf_success(self, description: str, report_path: Path, previous_status: str) -> None:
+        self.query_one(ConversationPane).append_info(
+            f"[green]✓ Diagnosis:[/green] {description}\n[dim]Report:[/dim] {report_path}"
+        )
+        self._restore_wtf_ui(previous_status)
+
+    def _finish_wtf_failure(self, error: str, previous_status: str) -> None:
+        self.query_one(ConversationPane).append_error(f"/wtf failed: {error}")
+        self._restore_wtf_ui(previous_status)
+
+    def _restore_wtf_ui(self, previous_status: str) -> None:
+        self._wtf_running = False
+        self._wtf_worker = None
+        self.query_one(Sidebar).set_status(previous_status)
+        self._enable_input()
 
     def _cmd_copy(self) -> None:
         from tui.history import CopyScreen

@@ -17,6 +17,7 @@ _SLASH_HELP = {
     "/init": "Initialise .dagi/ scaffold", "/hist": "Show recent sessions",
     "/copy": "Copy last assistant response to clipboard",
     "/plan": "Enter plan mode", "/model": "Switch model  (/model <id>)",
+    "/wtf": "Diagnose the active conversation  (/wtf [description])",
 }
 
 
