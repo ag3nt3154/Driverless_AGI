@@ -297,4 +297,12 @@ def create_tool_registry(
             reg.filter_to(config.tools)
         if config is not None and config.disabled_tools:
             reg.filter_out(config.disabled_tools)
+    # write_handoff is a lifecycle tool, not a general file-write capability.
+    # Keep it provider-visible even when config.tools restricts ordinary tools so
+    # inherited children can reuse the parent's exact schema without invalidating
+    # the warm tool-cache prefix.
+    from tools.write_handoff import WriteHandoffTool
+    thread_id = str(getattr(tracker, "thread_id", "session"))[:8]
+    handoff_path = cwd / ".dagi" / "handoffs" / f"main_{thread_id}.md"
+    reg.register(WriteHandoffTool(handoff_path=handoff_path, display_content=True))
     return reg

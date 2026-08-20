@@ -64,4 +64,17 @@ class TestConfigDrivenFilter:
     def test_tools_list_filters_registry(self):
         reg = create_tool_registry(cwd=Path("."), config=self._config(tools=["read", "grep"]))
         names = {n for n, _ in reg.list_tools()}
-        assert names == {"read", "grep"}
+        assert names == {"read", "grep", "write_handoff"}
+
+    def test_main_write_handoff_persists_and_returns_markdown(self, tmp_path):
+        cfg = self._config(tools=["read"])
+        cfg.project_path = tmp_path
+        tracker = MagicMock(thread_id="0123456789abcdef")
+        reg = create_tool_registry(cwd=tmp_path, config=cfg, tracker=tracker)
+
+        markdown = "## Result\n\nImplemented and verified."
+        result = reg.dispatch("write_handoff", {"content": markdown})
+
+        handoff = tmp_path / ".dagi" / "handoffs" / "main_01234567.md"
+        assert handoff.read_text(encoding="utf-8") == markdown
+        assert result == f"{markdown}\n\n<<HANDOFF_WRITTEN>>"

@@ -35,10 +35,13 @@ class WriteHandoffTool(BaseTool):
         "required": ["content"],
     }
 
-    def __init__(self, handoff_path: Path) -> None:
+    def __init__(self, handoff_path: Path, display_content: bool = False) -> None:
         self._handoff_path = Path(handoff_path)
+        self._display_content = display_content
 
     def run(self, content: str) -> str:
         self._handoff_path.parent.mkdir(parents=True, exist_ok=True)
         self._handoff_path.write_text(content, encoding="utf-8")
+        if self._display_content:
+            return f"{content}\n\n<<HANDOFF_WRITTEN>>"
         return "Handoff written. <<HANDOFF_WRITTEN>> Your turn ends now."
