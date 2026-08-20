@@ -702,7 +702,7 @@ Driverless_AGI/
 │   │   ├── review/        #   code review agent (review_utils.py helper; tools: read, grep, find, bash)
 │   │   ├── plan/          #   plan-writing agent
 │   │   └── cli/           #   custom subagent with caller-supplied system prompt
-│   ├── handoffs/          # Generated handoffs: main_<thread8>.md and <type>_<uuid8>.md
+│   ├── handoffs/          # Generated handoffs: main_<thread-hash12>.md and <type>_<uuid8>.md
 │   ├── skills/            # Structured guidance documents (gnhf, memory-*, create-skill, review-session, …)
 │   ├── workflow/          # User-directed workflows (.dagi/workflow/<name>/workflow.md)
 │   ├── memory/wiki/       # Topic-organized persistent wiki (infrastructure built)
@@ -741,7 +741,7 @@ Driverless_AGI/
 | `ask_user` | Pause and ask the user a clarifying question with optional choices |
 | `show_plan` | In plan mode: render the current plan document and ask the user for revisions. Returns "Plan approved" (call `exit_plan_mode`) or "Modifications requested" (revise and call `show_plan` again). In autonomous mode, auto-approves immediately |
 | `escalate_issue` | Worker/review subagent only: raise a blocking question to the main agent instead of guessing. Writes a sidecar file next to the subagent's handoff report; the main agent's subprocess poll loop detects it, terminates the subagent, and surfaces `"[worker escalated]"` / `"[review escalated]"` with the question and context — does not consume a `dagi-execute` retry attempt |
-| `write_handoff` | Always visible to the main agent and auto-injected into every subagent with a `handoff_path`. It writes `content` verbatim to a baked-in path and its sentinel immediately ends the turn, so no `END_OF_RESPONSE` is needed. Main-agent calls save `.dagi/handoffs/main_<thread8>.md` and return the full Markdown through the normal completion callback for TUI display; inherited children reuse the exact parent-visible schema but write to their assigned child path. |
+| `write_handoff` | Always visible to the main agent and auto-injected into every subagent with a `handoff_path`. It writes `content` verbatim to a baked-in path and its sentinel immediately ends the turn, so no `END_OF_RESPONSE` is needed. Main-agent calls save `.dagi/handoffs/main_<thread-hash12>.md` and render the full Markdown in the TUI; inherited children reuse the exact parent-visible schema but write to their assigned child path. The lifecycle name is reserved against project-tool collisions. |
 
 File tools (`read`, `write`, `edit`, `grep`, `find`) are sandboxed to allowed roots via `tools/_path_guard.py`. `bash` is intentionally unsandboxed.
 

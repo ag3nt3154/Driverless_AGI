@@ -190,12 +190,13 @@ tui.py / telegram_bot.py / main.py / dagi_gui/__main__.py
 - **2026-08-20**: Final review found inherited children skipped preset instructions and wiki context → forward the preset prompt after the exact prefix and suppress dynamic injection.
 - **2026-08-20**: Final review found default-credential mixing and shallow handoff checks → fail fast on provider mismatch, recursively reject secret fields, and retry malformed handoffs once.
 - **2026-08-20**: Final-assistant-text handoffs were unreliable on smaller inherited models → restore final `write_handoff`, expose its schema on the main agent, and validate the tool-written file.
+- **2026-08-20**: Main handoff content was hidden in non-verbose TUI and raw thread prefixes allowed collisions/path escape → render Markdown explicitly and use a reserved, hashed filename.
 
 ## Notes & Terms
 
 - **AGENTS.md** is force-injected into every session's system prompt by `_assemble_system_string()`; the file is re-read from disk on every `AgentLoop.__init__` and `_messages[0]` is always overwritten — so AGENTS.md edits made during task N are live in task N+1's context window.
 - **`<<END_OF_RESPONSE>>`**: primary exit sentinel (substring check on LLM text responses only); `_escape_sentinels()` rewrites it to `< <END_OF_RESPONSE>>` in tool results before they enter `_messages` to prevent LLM echo-back.
-- **Handoff termination**: Main calls save `.dagi/handoffs/main_<thread8>.md` and display full Markdown; child calls use assigned paths; only a `write_handoff` result can trigger `<<HANDOFF_WRITTEN>>` termination.
+- **Handoff termination**: Main calls save `.dagi/handoffs/main_<thread-hash12>.md` and display full Markdown; child calls use assigned paths; only a `write_handoff` result can trigger `<<HANDOFF_WRITTEN>>` termination.
 - **`tools:` allowlist** (`config.yaml`): post-registration filtering strips unnamed tools except mandatory main `write_handoff`; new subagent spawn tools must still be explicitly added.
 - **Windows / conda**: `EditTool`/`WriteTool` always write LF, normalize `oldText`/`newText` for CRLF safety. Use `conda run -n dagi python` for DAGI scripts; for Claude Code hooks use `envs/dagi/python.exe` directly — `conda run` drops stdin in hook context.
 - **`subagent_api` vs `_subagent_runner`**: `tools/subagent_api.py` is the public API (preset resolution, envelope, `SubagentResult`); `tools/_subagent_runner.py` is the private subprocess spawner. Never import `_subagent_runner` directly from outside `subagent_api.py`.
