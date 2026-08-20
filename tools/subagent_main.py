@@ -391,7 +391,7 @@ def run_forked_subagent_mode(
         project_path=project,
         callbacks=callbacks,
         memory_root=config.memory_root,
-        handoff_path=None,
+        handoff_path=Path(handoff_path),
         tool_names_override=allowed_tools,
     )
     effective_allowed_tools = _effective_allowed_tools(
@@ -426,20 +426,33 @@ def run_forked_subagent_mode(
         required_sections,
     )
     try:
-        text = loop.run(task)
-        ok, error = _validate_final_handoff(text, required_sections)
+        loop.run(task)
+        text, error = _read_inherited_handoff(Path(handoff_path), required_sections)
+        ok = not error
         if not ok:
-            text = loop.run(f"{task}\n\n{error}")
-            ok, error = _validate_final_handoff(text, required_sections)
+            loop.run(
+                f"Your handoff was not accepted: {error}. "
+                "Call `write_handoff` now with the complete corrected report."
+            )
+            text, error = _read_inherited_handoff(Path(handoff_path), required_sections)
+            ok = not error
         if not ok:
             print(json.dumps({"type": "error", "message": error}), flush=True)
             raise ValueError(error)
-        target = Path(handoff_path)
-        target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(text, encoding="utf-8")
     finally:
         loop.finish()
     print(json.dumps({"type": "done"}), flush=True)
+
+
+def _read_inherited_handoff(
+    handoff_path: Path, required_sections: list[str]
+) -> tuple[str, str]:
+    """Read and validate the report produced by the child's final tool call."""
+    if not handoff_path.exists():
+        return "", "Missing handoff file"
+    text = handoff_path.read_text(encoding="utf-8")
+    ok, error = _validate_final_handoff(text, required_sections)
+    return (text, "") if ok else (text, error)
 
 
 def _build_inherited_task(
@@ -459,9 +472,9 @@ def _build_inherited_task(
         "- Calls to any other provider-visible tool are blocked and return "
         f"`Error: Access blocked for tool '<name>' in subagent '{subagent_type}'. "
         f"Allowed tools: {allowed}`. Do not retry a blocked call.\n"
-        "- Do not call `write_handoff`; it is unavailable in inherited mode.\n"
-        "- Complete the task, then return the required handoff as your final assistant text. "
-        f"Required format: {output}."
+        "- Complete the task, then call `write_handoff` as your final action. "
+        "The tool ends your turn; do not emit `END_OF_RESPONSE` afterward.\n"
+        f"- Pass the complete report to `write_handoff`. Required format: {output}."
     )
     parts = [part for part in (prompt, contract, task) if part]
     return "\n\n---\n\n".join(parts)
@@ -476,9 +489,12 @@ def _effective_allowed_tools(
         for schema in schemas
         if isinstance(schema, dict)
     }
+    authorized = list(allowed_tools)
+    if "write_handoff" not in authorized:
+        authorized.append("write_handoff")
     return [
         name
-        for name in allowed_tools
+        for name in authorized
         if name in visible_names and implementation_registry.get(name) is not None
     ]
 

@@ -11,6 +11,7 @@ from agent.base_tool import BaseTool
 from agent.loop import AgentConfig, AgentLoop, TASK_END_FLAG
 from agent.registry import ToolRegistry
 from tools.subagent_main import run_forked_subagent_mode
+from tools.write_handoff import WriteHandoffTool
 
 
 HANDOFF = """# Exploration: inherited request
@@ -118,7 +119,13 @@ def test_typed_subagent_inherits_triggering_prefix_and_returns_full_handoff(tmp_
         ),
         _response(f"Complete. {TASK_END_FLAG}"),
     ]
-    child_client.chat.completions.create.return_value = _response(HANDOFF)
+    child_client.chat.completions.create.side_effect = [
+        _response(
+            None,
+            [_tool_call("handoff", "write_handoff", json.dumps({"content": HANDOFF}))],
+        ),
+        _response(HANDOFF),
+    ]
 
     config = AgentConfig(
         model="parent-model",
@@ -147,6 +154,9 @@ def test_typed_subagent_inherits_triggering_prefix_and_returns_full_handoff(tmp_
             )
         )
         registry.register(_SiblingTool())
+        registry.register(
+            WriteHandoffTool(tmp_path / ".dagi" / "handoffs" / "main_parent.md")
+        )
 
         def run_child(*, task: str, handoff_path: Path, extra_argv: list[str], **_kwargs) -> dict:
             fork_path = Path(extra_argv[extra_argv.index("--fork-context") + 1])
@@ -182,7 +192,7 @@ def test_typed_subagent_inherits_triggering_prefix_and_returns_full_handoff(tmp_
 
     assert child_errors == []
     parent_request = parent_client.chat.completions.create.call_args_list[0].kwargs
-    child_request = child_client.chat.completions.create.call_args.kwargs
+    child_request = child_client.chat.completions.create.call_args_list[0].kwargs
     context = captured_contexts[0]
 
     assert context["request"] == {
@@ -203,8 +213,8 @@ def test_typed_subagent_inherits_triggering_prefix_and_returns_full_handoff(tmp_
         "finding, and notable caveats."
     )
     assert "## Inherited Child Contract" in child_task["content"]
-    assert "Effective allowed tools: none" in child_task["content"]
-    assert "Do not call `write_handoff`" in child_task["content"]
+    assert "Effective allowed tools: write_handoff" in child_task["content"]
+    assert "call `write_handoff` as your final action" in child_task["content"]
     assert child_request["tools"] == parent_request["tools"]
     assert child_request["parallel_tool_calls"] is True
     assert child_request["extra_body"] == parent_request["extra_body"]
@@ -244,15 +254,21 @@ def test_typed_subagent_inherits_triggering_prefix_and_returns_full_handoff(tmp_
 
 def test_inherited_child_blocks_write_then_recovers_with_allowed_read(tmp_path: Path) -> None:
     """A blocked child call must be an ordinary tool result, not a terminal failure."""
+    handoff_path = tmp_path / ".dagi" / "errors" / "wtf_1234.md"
     child_client = MagicMock()
     child_client.chat.completions.create.side_effect = [
         _response(None, [_tool_call("blocked", "write", '{"path":"forbidden.txt"}')]),
         _response(None, [_tool_call("allowed", "read", '{"path":"README.md"}')]),
+        _response(
+            None,
+            [_tool_call("handoff", "write_handoff", json.dumps({"content": WTF_HANDOFF}))],
+        ),
         _response(WTF_HANDOFF),
     ]
     read_tool = _AllowedReadTool()
     implementation_registry = ToolRegistry()
     implementation_registry.register(read_tool)
+    implementation_registry.register(WriteHandoffTool(handoff_path))
     schemas = [
         {
             "type": "function",
@@ -270,6 +286,7 @@ def test_inherited_child_blocks_write_then_recovers_with_allowed_read(tmp_path: 
                 "parameters": {"type": "object", "properties": {"path": {"type": "string"}}},
             },
         },
+        WriteHandoffTool(handoff_path).schema(),
     ]
     context = {
         "version": 2,
@@ -289,7 +306,6 @@ def test_inherited_child_blocks_write_then_recovers_with_allowed_read(tmp_path: 
     }
     fork_path = tmp_path / "fork.json"
     task_path = tmp_path / "task.md"
-    handoff_path = tmp_path / ".dagi" / "errors" / "wtf_1234.md"
     fork_path.write_text(json.dumps(context), encoding="utf-8")
     task_path.write_text("Investigate the failure.", encoding="utf-8")
     config = AgentConfig(
@@ -314,6 +330,7 @@ def test_inherited_child_blocks_write_then_recovers_with_allowed_read(tmp_path: 
 
     assert handoff_path.read_text(encoding="utf-8") == WTF_HANDOFF
     assert read_tool.calls == [{"path": "README.md"}]
+    assert child_client.chat.completions.create.call_count == 3
     blocked_results = [
         message["content"]
         for call in child_client.chat.completions.create.call_args_list
@@ -322,7 +339,8 @@ def test_inherited_child_blocks_write_then_recovers_with_allowed_read(tmp_path: 
     ]
     assert blocked_results
     assert set(blocked_results) == {
-        "Error: Access blocked for tool 'write' in subagent 'wtf'. Allowed tools: read"
+        "Error: Access blocked for tool 'write' in subagent 'wtf'. "
+        "Allowed tools: read, write_handoff"
     }
     read_results = [
         message["content"]

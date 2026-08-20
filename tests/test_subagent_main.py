@@ -458,15 +458,19 @@ class TestForkedCompactMode:
 
 
 class _InheritedLoop:
-    def __init__(self, results: list[str], **kwargs) -> None:
+    def __init__(self, results: list[str], handoff_path: Path | None = None, **kwargs) -> None:
         self.kwargs = kwargs
         self._results = results
+        self._handoff_path = handoff_path
         self.run_calls: list[str] = []
         self.finish_calls = 0
 
     def run(self, task: str) -> str:
         self.run_calls.append(task)
-        return self._results.pop(0)
+        result = self._results.pop(0)
+        if result and self._handoff_path is not None:
+            self._handoff_path.write_text(result, encoding="utf-8")
+        return "Handoff written."
 
     def finish(self) -> None:
         self.finish_calls += 1
@@ -482,14 +486,28 @@ def _v2_context() -> dict:
                 {"role": "system", "content": "parent system bytes"},
                 {"role": "user", "content": "parent request"},
             ],
-            "tools": [{
-                "type": "function",
-                "function": {
-                    "name": "read",
-                    "description": "parent schema",
-                    "parameters": {"type": "object", "properties": {}},
+            "tools": [
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "read",
+                        "description": "parent schema",
+                        "parameters": {"type": "object", "properties": {}},
+                    },
                 },
-            }],
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "write_handoff",
+                        "description": "Submit the final handoff.",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {"content": {"type": "string"}},
+                            "required": ["content"],
+                        },
+                    },
+                },
+            ],
             "parallel_tool_calls": True,
             "extra_body": {"provider": {"order": ["Parent"]}},
             "base_url": "https://parent.example/v1",
@@ -518,7 +536,7 @@ def test_forked_v2_uses_inherited_prefix_and_request_options(tmp_path, monkeypat
     import tools.subagent_main as subagent_main
 
     context_path, task_path, handoff_path = _write_v2_inputs(tmp_path)
-    loop = _InheritedLoop(["completed report"])
+    loop = _InheritedLoop(["completed report"], handoff_path)
     captured: dict = {}
 
     monkeypatch.setattr(
@@ -542,11 +560,11 @@ def test_forked_v2_uses_inherited_prefix_and_request_options(tmp_path, monkeypat
     )
 
     request = _v2_context()["request"]
-    assert captured["handoff_path"] is None
+    assert captured["handoff_path"] == handoff_path
     assert captured["loop"]["initial_messages"] == request["messages"]
     assert captured["loop"]["_system_prompt_override"] == "parent system bytes"
     assert captured["loop"]["_registry"].get_openai_tools_list() == request["tools"]
-    assert "write_handoff" not in [
+    assert "write_handoff" in [
         schema["function"]["name"]
         for schema in captured["loop"]["_registry"].get_openai_tools_list()
     ]
@@ -567,7 +585,7 @@ def test_forked_v2_places_resolved_preset_prompt_after_inherited_prefix(tmp_path
     context_path, task_path, handoff_path = _write_v2_inputs(tmp_path)
     prompt_path = tmp_path / "resolved-prompt.md"
     prompt_path.write_text("resolved preset instructions", encoding="utf-8")
-    loop = _InheritedLoop(["completed report"])
+    loop = _InheritedLoop(["completed report"], handoff_path)
     monkeypatch.setattr(
         subagent_main,
         "resolve_model_config",
@@ -589,8 +607,8 @@ def test_forked_v2_places_resolved_preset_prompt_after_inherited_prefix(tmp_path
     assert task.index("## Inherited Child Contract") < task.index("child task")
     assert "Effective allowed tools: read" in task
     assert "Error: Access blocked for tool '<name>'" in task
-    assert "Do not call `write_handoff`" in task
-    assert "return the required handoff as your final assistant text" in task
+    assert "call `write_handoff` as your final action" in task
+    assert "do not emit `END_OF_RESPONSE` afterward" in task
 
 
 def test_forked_v2_uses_child_allowed_tools_for_implementation_registry(
@@ -611,7 +629,7 @@ def test_forked_v2_uses_child_allowed_tools_for_implementation_registry(
     })
     context_path, task_path, handoff_path = _write_v2_inputs(tmp_path, context)
     captured: dict = {}
-    loop = _InheritedLoop(["completed report"])
+    loop = _InheritedLoop(["completed report"], handoff_path)
     monkeypatch.setattr(
         subagent_main,
         "resolve_model_config",
@@ -634,7 +652,8 @@ def test_forked_v2_uses_child_allowed_tools_for_implementation_registry(
 
     assert captured["tool_names_override"] == ["read", "grep"]
     assert captured["loop"]["_registry"].dispatch("write", {}) == (
-        "Error: Access blocked for tool 'write' in subagent 'worker'. Allowed tools: read"
+        "Error: Access blocked for tool 'write' in subagent 'worker'. "
+        "Allowed tools: read, write_handoff"
     )
 
 
@@ -697,7 +716,7 @@ def test_forked_v2_retries_once_with_the_exact_validation_error(tmp_path, monkey
     import tools.subagent_main as subagent_main
 
     context_path, task_path, handoff_path = _write_v2_inputs(tmp_path)
-    loop = _InheritedLoop(["", "completed report"])
+    loop = _InheritedLoop(["", "completed report"], handoff_path)
     monkeypatch.setattr(
         subagent_main,
         "resolve_model_config",
@@ -712,7 +731,10 @@ def test_forked_v2_retries_once_with_the_exact_validation_error(tmp_path, monkey
 
     assert len(loop.run_calls) == 2
     assert loop.run_calls[0].endswith("child task")
-    assert loop.run_calls[1] == f"{loop.run_calls[0]}\n\nEmpty final handoff text"
+    assert loop.run_calls[1] == (
+        "Your handoff was not accepted: Missing handoff file. "
+        "Call `write_handoff` now with the complete corrected report."
+    )
     assert handoff_path.read_text(encoding="utf-8") == "completed report"
     assert loop.finish_calls == 1
 
@@ -722,7 +744,7 @@ def test_forked_v2_fails_without_writing_an_unverified_handoff(tmp_path, monkeyp
     import tools.subagent_main as subagent_main
 
     context_path, task_path, handoff_path = _write_v2_inputs(tmp_path)
-    loop = _InheritedLoop(["", ""])
+    loop = _InheritedLoop(["", ""], handoff_path)
     monkeypatch.setattr(
         subagent_main,
         "resolve_model_config",
@@ -731,7 +753,7 @@ def test_forked_v2_fails_without_writing_an_unverified_handoff(tmp_path, monkeyp
     monkeypatch.setattr(subagent_main, "build_subagent_registry", lambda **_k: MagicMock())
     monkeypatch.setattr(subagent_main, "AgentLoop", lambda **_k: loop)
 
-    with pytest.raises(ValueError, match="Empty final handoff text"):
+    with pytest.raises(ValueError, match="Missing handoff file"):
         subagent_main.run_forked_subagent_mode(
             str(context_path), str(task_path), str(handoff_path), str(tmp_path)
         )
