@@ -667,9 +667,8 @@ Driverless_AGI/
 │   ├── switch_model/        # Swap models mid-session
 │   ├── ask_user/            # Prompt user for clarification
 │   ├── escalate_issue/      # Worker/review subagents: sidecar-file escalation to the main agent
-│   ├── write_handoff/       # Worker/review subagents (and any type with a handoff_path): the only
-│   │                        #   way to submit a final report — writes verbatim, hard-terminates the
-│   │                        #   subagent's turn via a sentinel handled in agent/loop.py
+│   ├── write_handoff/       # Main-agent and subagent final-report tool — writes verbatim and
+│   │                        #   hard-terminates the turn via a sentinel handled in agent/loop.py
 │   ├── _task_envelope.py  # wrap_envelope() — universal ## Instructions/## Output sections appended
 │   │                        #   to every spawned subagent's task (shared helper, not a tool folder)
 │   ├── _handoff_format.py # format_handoff_result() — shared "ok"/"ok_unverified" result rendering
@@ -703,7 +702,7 @@ Driverless_AGI/
 │   │   ├── review/        #   code review agent (review_utils.py helper; tools: read, grep, find, bash)
 │   │   ├── plan/          #   plan-writing agent
 │   │   └── cli/           #   custom subagent with caller-supplied system prompt
-│   ├── handoffs/          # Generated handoff files: <type>_<uuid8>.md (content is inlined into the spawn_* tool's result automatically — see Tools table)
+│   ├── handoffs/          # Generated handoffs: main_<thread8>.md and <type>_<uuid8>.md
 │   ├── skills/            # Structured guidance documents (gnhf, memory-*, create-skill, review-session, …)
 │   ├── workflow/          # User-directed workflows (.dagi/workflow/<name>/workflow.md)
 │   ├── memory/wiki/       # Topic-organized persistent wiki (infrastructure built)
@@ -742,13 +741,15 @@ Driverless_AGI/
 | `ask_user` | Pause and ask the user a clarifying question with optional choices |
 | `show_plan` | In plan mode: render the current plan document and ask the user for revisions. Returns "Plan approved" (call `exit_plan_mode`) or "Modifications requested" (revise and call `show_plan` again). In autonomous mode, auto-approves immediately |
 | `escalate_issue` | Worker/review subagent only: raise a blocking question to the main agent instead of guessing. Writes a sidecar file next to the subagent's handoff report; the main agent's subprocess poll loop detects it, terminates the subagent, and surfaces `"[worker escalated]"` / `"[review escalated]"` with the question and context — does not consume a `dagi-execute` retry attempt |
-| `write_handoff` | Auto-injected into every subagent that has a `handoff_path` (all 9 registered types), regardless of that type's declared `tools:` list. The only way a subagent submits its final report — `content` is written verbatim to a path baked in at construction (never model-visible), and the returned sentinel hard-terminates the subagent's turn immediately (no extra continuation round-trip) |
+| `write_handoff` | Always visible to the main agent and auto-injected into every subagent with a `handoff_path`. It writes `content` verbatim to a baked-in path and its sentinel immediately ends the turn, so no `END_OF_RESPONSE` is needed. Main-agent calls save `.dagi/handoffs/main_<thread8>.md` and return the full Markdown through the normal completion callback for TUI display; inherited children reuse the exact parent-visible schema but write to their assigned child path. |
 
 File tools (`read`, `write`, `edit`, `grep`, `find`) are sandboxed to allowed roots via `tools/_path_guard.py`. `bash` is intentionally unsandboxed.
 
 Every subagent spawn tool (worker, review, explore_files, web_research, or any type discovered from `.dagi/subagents/`) reads the subagent's handoff file and inlines its full content directly into the tool's own result on success (via `tools/_handoff_format.py::format_handoff_result()`) — the main agent never has to make a separate `read` call to see what a subagent produced. `extend_subagent_timeout`'s resume path does the same. Large handoffs are still subject to the normal output-filter truncation like any other tool result.
 
 **Enforced handoff + unverified fallback:** if a subagent's turn ends without ever calling `write_handoff` — e.g. `explore_files`/`web_research`, which have no general `write` tool and previously could not comply structurally — `tools/subagent_main.py::_ensure_handoff()` gives it one corrective retry naming the tool explicitly, then, if still missing, scrapes the last assistant message into the handoff file and drops a `<stem>_unverified.flag` sidecar. `tools/_subagent_runner.py` turns that flag into result status `"ok_unverified"`, and every spawn tool renders it as a `⚠️ UNVERIFIED HANDOFF` warning banner above the (possibly informal) content, so the parent never mistakes a scrape for a deliberate report.
+
+Version-2 inherited children keep the parent's exact tool schema and order for prompt-cache reuse. `write_handoff` is the final child action; the runner validates the written file, gives a missing or malformed report one corrective tool-call turn, and then fails hard instead of accepting assistant text or creating an unverified fallback.
 
 **Parent-authored briefing/handoff_spec:** every subagent spawn tool accepts optional `briefing` (guidance: traps to avoid, prior failed-attempt context, extra constraints) and `handoff_spec` (what you want in the report) parameters. Both are composed into the subagent's task via `tools/_task_envelope.py::wrap_envelope()` — an `## Instructions` section (only if `briefing` is given) followed by an always-present `## Output` section (`handoff_spec`, or the type's `default_handoff_spec` from its `subagent_config.yaml`, or a generic fallback).
 
