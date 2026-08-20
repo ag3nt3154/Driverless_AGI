@@ -299,7 +299,13 @@ class TestWriteHandoffSentinel:
         registry.register(tool)
 
         warnings = []
-        callbacks = AgentCallbacks(on_assistant_text=lambda t: warnings.append(t))
+        done_calls = []
+        handoff_calls = []
+        callbacks = AgentCallbacks(
+            on_assistant_text=lambda t: warnings.append(t),
+            on_done=lambda result: done_calls.append(result),
+            on_handoff=lambda: handoff_calls.append(True),
+        )
 
         loop = _make_loop(registry=registry, reserve_tokens=10, project_path=tmp_path)
         loop.callbacks = callbacks
@@ -315,6 +321,8 @@ class TestWriteHandoffSentinel:
         assert any("[output filter]" in w for w in warnings)
         # Final returned/on_done value is the full, unfiltered report (JSONL/caller-facing).
         assert result == large_report
+        assert done_calls == [large_report]
+        assert handoff_calls == [True]
 
     def test_non_write_handoff_tool_containing_sentinel_does_not_short_circuit(self):
         """A tool other than write_handoff (e.g. a subagent spawn tool inlining a handoff

@@ -24,16 +24,21 @@ def build_callbacks(app: DagiApp, loop_ref: list) -> AgentCallbacks:
     preview = app.query_one(StreamPreview)
     stats = app._stats
     verbose = app._verbose
+    handoff_pending = False
 
     def on_tool_start(name, _desc, args):
         app.call_from_thread(conv.append_tool_start, name, args, verbose)
 
     def on_tool_end(name, result):
+        nonlocal handoff_pending
         stats.record_tool(name)
-        if name == "write_handoff":
-            app.call_from_thread(conv.append_assistant, result)
+        if name == "write_handoff" and handoff_pending:
             return
         app.call_from_thread(conv.append_tool_end, name, result, verbose)
+
+    def on_handoff() -> None:
+        nonlocal handoff_pending
+        handoff_pending = True
 
     def on_assistant_text(text):
         if text.strip():
@@ -150,6 +155,10 @@ def build_callbacks(app: DagiApp, loop_ref: list) -> AgentCallbacks:
         return build_subagent_relay_callback(app, subagent_type)
 
     def on_done(result: str) -> None:
+        nonlocal handoff_pending
+        if handoff_pending and result.strip():
+            app.call_from_thread(conv.append_assistant, result)
+        handoff_pending = False
         # notify() is silently skipped whenever the console window has OS focus
         # (see notifications.py), and a turn can legitimately end with empty
         # text (e.g. right after a subagent handoff). Without this line, that
@@ -164,6 +173,7 @@ def build_callbacks(app: DagiApp, loop_ref: list) -> AgentCallbacks:
         on_tool_start=on_tool_start, on_tool_end=on_tool_end,
         on_assistant_text=on_assistant_text, on_token_update=on_token_update,
         on_iteration=lambda _: None, on_done=on_done, on_error=on_error,
+        on_handoff=on_handoff,
         on_api_call=on_api_call, on_reasoning=on_reasoning,
         on_compaction=on_compaction, on_model_switch=on_model_switch,
         on_ask_user=on_ask_user, on_emote=on_emote,

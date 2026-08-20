@@ -237,6 +237,7 @@ class AgentCallbacks:
     on_token_update:   Callable[[int, int, float | None, int, int], None] = field(default=lambda i, o, c, t, ca=0: None)
     on_iteration:      Callable[[int], None]                    = field(default=lambda cur: None)
     on_done:           Callable[[str], None]                    = field(default=lambda r: None)
+    on_handoff:        Callable[[], None]                       = field(default=lambda: None)
     on_error:          Callable[[Exception], None]              = field(default=lambda e: None)
     on_api_call:       Callable[[list], None]                   = field(default=lambda msgs: None)
     on_reasoning:      Callable[[str], None]                    = field(default=lambda text: None)
@@ -1406,6 +1407,7 @@ class AgentLoop:
         message, response = message_response
         clean = result.replace(WRITE_HANDOFF_SENTINEL, "").strip()
 
+        self.callbacks.on_handoff()
         full_str = self._bookkeep_tool_call(tc, clean, description, tool_records)
         self._finalize_turn(message, response, tool_records)
 

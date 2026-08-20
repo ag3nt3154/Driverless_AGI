@@ -32,15 +32,31 @@ def _make_app():
 
 
 class TestNotifyWiring:
-    def test_write_handoff_renders_full_markdown_in_non_verbose_tui(self):
+    def test_write_handoff_renders_full_completion_not_filtered_tool_result(self):
         app = _make_app()
         callbacks = build_callbacks(app, loop_ref=[])
-        markdown = "## Result\n\nImplemented and verified."
+        filtered = "[OUTPUT TRUNCATED]"
+        full_markdown = "## Result\n\n" + ("Implemented and verified.\n" * 100)
 
-        callbacks.on_tool_end("write_handoff", markdown)
+        callbacks.on_handoff()
+        callbacks.on_tool_end("write_handoff", filtered)
+        callbacks.on_done(full_markdown)
 
-        app._conv.append_assistant.assert_called_once_with(markdown)
+        app._conv.append_assistant.assert_called_once_with(full_markdown)
         app._conv.append_tool_end.assert_not_called()
+
+    def test_failed_write_handoff_stays_visible_without_deferring_completion(self):
+        app = _make_app()
+        callbacks = build_callbacks(app, loop_ref=[])
+
+        callbacks.on_tool_end("write_handoff", "Error: cannot write handoff")
+        callbacks.on_assistant_text("Fallback response")
+        callbacks.on_done("Fallback response")
+
+        app._conv.append_tool_end.assert_called_once_with(
+            "write_handoff", "Error: cannot write handoff", False
+        )
+        app._conv.append_assistant.assert_called_once_with("Fallback response")
 
     def test_on_ask_user_fires_notify(self):
         app = _make_app()
