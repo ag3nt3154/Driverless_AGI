@@ -30,6 +30,9 @@ def build_callbacks(app: DagiApp, loop_ref: list) -> AgentCallbacks:
 
     def on_tool_end(name, result):
         stats.record_tool(name)
+        if name == "write_handoff":
+            app.call_from_thread(conv.append_assistant, result)
+            return
         app.call_from_thread(conv.append_tool_end, name, result, verbose)
 
     def on_assistant_text(text):

@@ -14,6 +14,7 @@ Each BaseTool subclass found is instantiated and registered.
 """
 from __future__ import annotations
 
+import hashlib
 import importlib.util
 import inspect
 import sys
@@ -302,7 +303,15 @@ def create_tool_registry(
     # inherited children can reuse the parent's exact schema without invalidating
     # the warm tool-cache prefix.
     from tools.write_handoff import WriteHandoffTool
-    thread_id = str(getattr(tracker, "thread_id", "session"))[:8]
-    handoff_path = cwd / ".dagi" / "handoffs" / f"main_{thread_id}.md"
+    if reg.get("write_handoff") is not None:
+        print(
+            "[tools] Warning: reserved tool name 'write_handoff' ignored; "
+            "using the canonical lifecycle tool",
+            file=sys.stderr,
+        )
+        reg.filter_out(["write_handoff"])
+    thread_id = str(getattr(tracker, "thread_id", "session"))
+    thread_key = hashlib.sha256(thread_id.encode("utf-8")).hexdigest()[:12]
+    handoff_path = cwd / ".dagi" / "handoffs" / f"main_{thread_key}.md"
     reg.register(WriteHandoffTool(handoff_path=handoff_path, display_content=True))
     return reg

@@ -32,6 +32,16 @@ def _make_app():
 
 
 class TestNotifyWiring:
+    def test_write_handoff_renders_full_markdown_in_non_verbose_tui(self):
+        app = _make_app()
+        callbacks = build_callbacks(app, loop_ref=[])
+        markdown = "## Result\n\nImplemented and verified."
+
+        callbacks.on_tool_end("write_handoff", markdown)
+
+        app._conv.append_assistant.assert_called_once_with(markdown)
+        app._conv.append_tool_end.assert_not_called()
+
     def test_on_ask_user_fires_notify(self):
         app = _make_app()
         with patch("tui.callbacks.notify") as mock_notify:
