@@ -3,8 +3,6 @@ tools:
   - read
   - grep
   - find
-  - write
-  - edit
   - bash
 default_handoff_spec: >-
   State pass/fail per acceptance criterion, test results, and any issues found
