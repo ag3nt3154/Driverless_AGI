@@ -97,9 +97,7 @@ class RunWorkerTool(BaseTool):
             {
                 "status": result.status,
                 "pid": result.pid,
-                "escalation": result.escalation,
-                "message": result.escalation or "",
+                "message": "",
             },
             "worker",
-            include_escalation=True,
         )

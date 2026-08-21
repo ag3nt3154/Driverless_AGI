@@ -44,6 +44,6 @@ class ExtendSubagentTimeoutTool(BaseTool):
             )
         return dispatch_status_result(
             {"status": result.status, "pid": result.pid,
-             "message": result.escalation or ""},
+             "message": ""},
             "subagent",
         )

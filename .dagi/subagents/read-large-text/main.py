@@ -82,9 +82,7 @@ class ReadLargeTextTool(BaseTool):
             {
                 "status": result.status,
                 "pid": result.pid,
-                "escalation": result.escalation,
-                "message": result.escalation or "",
+                "message": "",
             },
             "read-large-text",
-            include_escalation=True,
         )
