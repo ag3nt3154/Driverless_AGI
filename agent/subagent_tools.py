@@ -58,7 +58,6 @@ def _tools_from_list(
     """Instantiate tools by name for a subagent registry."""
     from tools.web_fetch import WebFetchTool
     from tools.web_search import WebSearchTool
-    from tools.escalate_issue import EscalateIssueTool
     from tools.write_handoff import WriteHandoffTool
 
     registry_map: dict[str, BaseTool] = {
@@ -72,21 +71,11 @@ def _tools_from_list(
         "web_search": WebSearchTool(),
         "web_fetch":  WebFetchTool(),
     }
-    if handoff_path is not None:
-        registry_map["escalate_issue"] = EscalateIssueTool(handoff_path=handoff_path)
     result: list[BaseTool] = []
     for name in tool_names:
         tool = registry_map.get(name)
         if tool is not None:
             result.append(tool)
-        elif name == "escalate_issue" and handoff_path is None:
-            # Not actually "unknown" — escalate_issue requires a handoff_path to
-            # construct, which this caller didn't provide.
-            print(
-                "[tools] Warning: 'escalate_issue' requires handoff_path, which "
-                "was not provided; skipping",
-                file=sys.stderr,
-            )
         else:
             print(
                 f"[tools] Warning: unknown tool name {name!r} in subagent_config.yaml",
