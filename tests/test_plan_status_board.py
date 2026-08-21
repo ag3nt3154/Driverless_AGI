@@ -47,10 +47,10 @@ PLAN_TEXT = """\
 
 ## Subtasks
 
-### Subtask 1: [x] Add escalate_issue tool
+### Subtask 1: [x] Add write_handoff tool
 **Goal:** Done.
 
-### Subtask 2: [~] Wire runner escalation detection
+### Subtask 2: [~] Wire runner handoff detection
 **Goal:** In progress.
 
 ### Subtask 3: [ ] Update plan-work-review skill
