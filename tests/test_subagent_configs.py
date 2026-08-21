@@ -17,12 +17,10 @@ SUBAGENTS_DIR = REPO_ROOT / ".dagi" / "subagents"
 # Parameter names that would indicate a path is being handed to the model.
 PATH_LIKE_PARAM_NAMES = {"handoff_file", "handoff_path", "output_file", "output_path"}
 TYPED_SUBAGENT_NAMES = {
-    "cli",
     "explore_files",
     "memory-add",
     "memory-query",
     "memory-refresh",
-    "plan",
     "read-large-text",
     "review",
     "web_research",

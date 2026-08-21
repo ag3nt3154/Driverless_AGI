@@ -54,13 +54,12 @@ result: SubagentResult = run_subagent(
 ## SubagentResult
 
 ```python
-result.status           # "ok" | "ok_unverified" | "error" | "timeout" | "escalated"
+result.status           # "ok" | "ok_unverified" | "error" | "timeout"
 result.is_ok            # True if status is "ok" or "ok_unverified"
 result.handoff_text     # Auto-read content of the handoff file (empty on non-ok status)
 result.handoff_path     # Path to the handoff file
 result.session_log_path # Path to session log (read if debugging)
 result.pid              # PID (only populated on timeout — for resume)
-result.escalation       # Escalation text (only populated on escalated)
 ```
 
 Always check `result.is_ok` before using `result.handoff_text`. On `"error"` or `"timeout"`,

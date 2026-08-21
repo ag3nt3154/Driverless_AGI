@@ -77,9 +77,7 @@ class ExploreFilesTool(BaseTool):
             {
                 "status": result.status,
                 "pid": result.pid,
-                "escalation": result.escalation,
-                "message": result.escalation or "",
+                "message": "",
             },
             "explore_files",
-            include_escalation=True,
         )

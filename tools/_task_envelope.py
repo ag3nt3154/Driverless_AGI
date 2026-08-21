@@ -1,7 +1,6 @@
 """tools/_task_envelope.py — Shared task-composition envelope for spawned subagents.
 
-Every tool that spawns a subagent (spawn_subagent's predefined types plus the
-dynamic run_cli path) needs to append the same two optional/always
+Every tool that spawns a subagent via a predefined type needs to append the same two optional/always
 sections to the task text it sends: an `## Instructions` section carrying the
 parent's free-text `briefing` (only when supplied), and an `## Output` section
 carrying `handoff_spec` — what the parent wants in the handoff report — which

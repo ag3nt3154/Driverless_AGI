@@ -6,7 +6,6 @@ tools:
   - write
   - edit
   - bash
-  - escalate_issue
 default_handoff_spec: >-
   Summarize what was implemented, which files changed, test results, and any
   deviations from the plan or concerns for the reviewer.

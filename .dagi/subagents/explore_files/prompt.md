@@ -6,7 +6,6 @@ precise file-line citations — not to explain or summarize at length.
 - `grep` — search for patterns across files
 - `find` — locate files by glob pattern
 - `bash` — run shell commands (e.g. `dir`, `tree`, `python -m pytest --collect-only`)
-- `edit` — make small, targeted edits when the task explicitly asks for a fix during exploration (e.g. a one-line typo or import correction). Do not use it to implement features or make design decisions — that is the main agent's job.
 
 ## Search strategy
 1. **Start broad** — use `find` with glob patterns and `grep` with regex to map the landscape.

@@ -77,8 +77,6 @@ class TestGenericSubagentTool:
         "memory-query": "memory_query",
         "memory-add": "memory_add",
         "memory-refresh": "memory_refresh",
-        "cli": "run_cli",
-        "plan": "write_plan",
         "review": "review_work",
         "worker": "run_worker",
     }
@@ -243,7 +241,7 @@ class TestSessionLogThreading:
             tracker=tracker,
             parent_context=provider,
         )
-        result = MagicMock(is_ok=False, status="error", pid=None, escalation=None)
+        result = MagicMock(is_ok=False, status="error", pid=None)
 
         with patch("tools.subagent_api.run_subagent", return_value=result) as mock_run:
             _run_with_minimal_arguments(tool, type_name)
@@ -251,23 +249,3 @@ class TestSessionLogThreading:
         assert tool._parent_context is provider
         assert mock_run.call_args.kwargs["parent_context"] is provider
 
-    def test_parent_log_only_wrapper_calls_remain_legacy(self):
-        """Standalone callers still log through parent_log without a provider."""
-        from agent.session_log import SessionLog
-
-        cls = _load_tool_class("cli")
-        config, callbacks, tracker = _make_runtime_args()
-        log = SessionLog()
-        tool = cls(
-            config=config,
-            callbacks=callbacks,
-            tracker=tracker,
-            session_log=log,
-        )
-        result = MagicMock(is_ok=False, status="error", pid=None, escalation=None)
-
-        with patch("tools.subagent_api.run_subagent", return_value=result) as mock_run:
-            tool.run(task="Do the task")
-
-        assert mock_run.call_args.kwargs["parent_log"] is log
-        assert mock_run.call_args.kwargs["parent_context"] is None

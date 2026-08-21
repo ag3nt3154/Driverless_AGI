@@ -76,9 +76,7 @@ class WebResearchTool(BaseTool):
             {
                 "status": result.status,
                 "pid": result.pid,
-                "escalation": result.escalation,
-                "message": result.escalation or "",
+                "message": "",
             },
             "web_research",
-            include_escalation=True,
         )

@@ -64,21 +64,17 @@ def format_handoff_result(handoff_path: str, unverified: bool = False) -> str:
 def dispatch_status_result(
     result: dict,
     error_prefix: str,
-    include_escalation: bool = False,
     include_timeout: bool = True,
 ) -> str:
     """Translate a `run_subagent`/`resume_subagent` result dict into a tool's
     return string. Shared by every subagent-spawning tool's dispatch branch.
 
-    `include_escalation` opts in to the "escalated" status (only `spawn_subagent`
-    types support escalation). `include_timeout` opts out of the "timeout" status
-    for callers that never resume (e.g. `explore_files`, `web_research`), which
-    preserves their pre-existing behaviour of falling through to the generic
-    error branch instead of exposing a resumable pid.
+    `include_timeout` opts out of the "timeout" status for callers that never
+    resume (e.g. `explore_files`, `web_research`), which preserves their
+    pre-existing behaviour of falling through to the generic error branch
+    instead of exposing a resumable pid.
     """
     status = result["status"]
-    if include_escalation and status == "escalated":
-        return f"[{error_prefix} escalated]\n\n{result['escalation']}"
     if status == "ok":
         return format_handoff_result(result["handoff"])
     if status == "ok_unverified":

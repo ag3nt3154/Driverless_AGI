@@ -96,7 +96,7 @@ def _poll_until(
     state: _SubagentState,
     extra_seconds: float,
 ) -> dict:
-    """Poll proc until it exits, escalates, or extra_seconds elapses.
+    """Poll proc until it exits or extra_seconds elapses.
 
     Returns:
         {"status": "ok",            "handoff": str}   — done, handoff written
@@ -105,39 +105,15 @@ def _poll_until(
                                                          after retry+degrade (see
                                                          tools/subagent_main.py), not a
                                                          deliberate structured report
-        {"status": "escalated",     "escalation": str} — subagent raised a blocking issue
         {"status": "timeout",       "pid": int}        — still alive, deadline expired
-        {"status": "error",         "message": str}    — exited without writing handoff,
-                                                          or escalation file unreadable
+        {"status": "error",         "message": str}    — exited without writing handoff
     """
     import time
 
     deadline = time.monotonic() + extra_seconds
     proc = state.proc
-    # Sidecar file written by tools/escalate_issue.py when a subagent needs help.
-    escalation_path = state.handoff_path.with_name(
-        state.handoff_path.stem + "_escalation.md"
-    )
 
     while True:
-        if escalation_path.exists():
-            proc.terminate()
-            try:
-                proc.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                # Terminate didn't reap in time; force-kill. No proc.wait() follow-up
-                # here — acceptable given process lifetime, but noted intentionally.
-                proc.kill()
-            _cleanup_terminal_state(state)
-            try:
-                content = escalation_path.read_text(encoding="utf-8")
-            except (OSError, UnicodeDecodeError) as exc:
-                return {
-                    "status": "error",
-                    "message": f"escalation file present but unreadable: {exc}",
-                }
-            return {"status": "escalated", "escalation": content}
-
         ret = proc.poll()
         if ret is not None:
             _cleanup_terminal_state(state)

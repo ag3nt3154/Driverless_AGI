@@ -34,7 +34,7 @@ def _loop(tmp_path: Path) -> AgentLoop:
 
 
 def _result(path: Path, *, status: str = "ok", text: str = REPORT) -> SubagentResult:
-    return SubagentResult(status, text, path, None, None, None, "wtf_branch")
+    return SubagentResult(status, text, path, None, None, "wtf_branch")
 
 
 def _capture_result(loop: AgentLoop, result: SubagentResult, captured: dict):

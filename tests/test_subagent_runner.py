@@ -24,64 +24,6 @@ def _make_state(tmp_path: Path, poll_side_effect) -> tuple[_SubagentState, Magic
     return state, proc
 
 
-class TestEscalationDetection:
-    def test_escalation_file_present_terminates_process_and_returns_escalated(self, tmp_path):
-        escalation_path = tmp_path / "worker_ab12cd34_escalation.md"
-        escalation_path.write_text(
-            "# Escalation\n\n## Question\nWhich lib?\n\n## Context\nAmbiguous.\n",
-            encoding="utf-8",
-        )
-        # Process never exits on its own — only the escalation check should end the poll.
-        state, proc = _make_state(tmp_path, poll_side_effect=lambda: None)
-
-        result = _poll_until(state, extra_seconds=10)
-
-        assert result["status"] == "escalated"
-        assert "Which lib?" in result["escalation"]
-        proc.terminate.assert_called_once()
-
-    def test_escalation_detected_even_when_process_still_alive_within_first_tick(self, tmp_path):
-        escalation_path = tmp_path / "worker_ab12cd34_escalation.md"
-        escalation_path.write_text("# Escalation\n\n## Question\nQ\n\n## Context\nC\n", encoding="utf-8")
-        state, proc = _make_state(tmp_path, poll_side_effect=lambda: None)
-
-        result = _poll_until(state, extra_seconds=1)
-
-        assert result["status"] == "escalated"
-        # Escalation must be detected before any proc.poll() call happens.
-        proc.poll.assert_not_called()
-
-    def test_terminate_timeout_falls_back_to_kill(self, tmp_path):
-        import subprocess as sp
-        escalation_path = tmp_path / "worker_ab12cd34_escalation.md"
-        escalation_path.write_text("# Escalation\n\n## Question\nQ\n\n## Context\nC\n", encoding="utf-8")
-        state, proc = _make_state(tmp_path, poll_side_effect=lambda: None)
-        proc.wait.side_effect = sp.TimeoutExpired(cmd="x", timeout=5)
-
-        result = _poll_until(state, extra_seconds=10)
-
-        assert result["status"] == "escalated"
-        proc.kill.assert_called_once()
-
-    def test_no_escalation_file_falls_through_to_normal_ok_path(self, tmp_path):
-        state, proc = _make_state(tmp_path, poll_side_effect=[None, 0])
-        state.handoff_path.write_text("# Handoff\n\ndone\n", encoding="utf-8")
-
-        result = _poll_until(state, extra_seconds=10)
-
-        assert result["status"] == "ok"
-
-    def test_malformed_escalation_file_returns_error_not_crash(self, tmp_path, monkeypatch):
-        escalation_path = tmp_path / "worker_ab12cd34_escalation.md"
-        escalation_path.write_bytes(b"\xff\xfe\x00\x01")  # invalid utf-8
-        state, proc = _make_state(tmp_path, poll_side_effect=lambda: None)
-
-        result = _poll_until(state, extra_seconds=10)
-
-        assert result["status"] == "error"
-        assert "escalation" in result["message"].lower()
-
-
 class TestUnverifiedHandoffDetection:
     def test_handoff_with_unverified_flag_returns_ok_unverified(self, tmp_path):
         state, proc = _make_state(tmp_path, poll_side_effect=[0])
@@ -102,19 +44,6 @@ class TestUnverifiedHandoffDetection:
 
         assert result["status"] == "ok"
         assert result["handoff"] == str(state.handoff_path)
-
-    def test_escalation_branch_unaffected_by_unverified_flag_logic(self, tmp_path):
-        escalation_path = tmp_path / "worker_ab12cd34_escalation.md"
-        escalation_path.write_text(
-            "# Escalation\n\n## Question\nQ\n\n## Context\nC\n", encoding="utf-8"
-        )
-        state, proc = _make_state(tmp_path, poll_side_effect=lambda: None)
-        # A stray unverified flag should not influence the escalation path at all.
-        (tmp_path / "worker_ab12cd34_unverified.flag").write_text("", encoding="utf-8")
-
-        result = _poll_until(state, extra_seconds=10)
-
-        assert result["status"] == "escalated"
 
 
 class TestForkContextCleanup:
@@ -245,20 +174,6 @@ class TestForkContextCleanup:
         result = _poll_until(state, extra_seconds=10)
 
         assert result["status"] == "ok"
-        assert not fc_path.exists()
-
-    def test_fork_context_deleted_after_escalation(self, tmp_path):
-        """An escalation is terminal and releases its inherited context file."""
-        state, proc = _make_state(tmp_path, poll_side_effect=lambda: None)
-        fc_path = tmp_path / "fork_ctx.json"
-        fc_path.write_text('{"version": 2}', encoding="utf-8")
-        state.fork_context_path = fc_path
-        escalation_path = tmp_path / "worker_ab12cd34_escalation.md"
-        escalation_path.write_text("# Escalation\n\n## Question\nQ\n", encoding="utf-8")
-
-        result = _poll_until(state, extra_seconds=10)
-
-        assert result["status"] == "escalated"
         assert not fc_path.exists()
 
     def test_fork_context_not_deleted_on_timeout(self, tmp_path):

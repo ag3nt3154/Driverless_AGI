@@ -3,8 +3,6 @@ tools:
   - read
   - grep
   - find
-  - write
-  - edit
   - bash
 default_handoff_spec: >-
   A structured exploration report with a summary, file:line citations for every

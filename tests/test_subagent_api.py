@@ -21,7 +21,6 @@ class TestSubagentResult:
             handoff_path=Path("/tmp/h.md"),
             session_log_path=Path("/tmp/log"),
             pid=None,
-            escalation=None,
         )
         assert r.status == "ok"
         assert r.handoff_text == "done"
@@ -32,7 +31,7 @@ class TestSubagentResult:
             status="ok", handoff_text="done",
             handoff_path=Path("/tmp/h.md"),
             session_log_path=Path("/tmp/log"),
-            pid=None, escalation=None,
+            pid=None,
         )
         assert r.is_ok is True
 
@@ -41,7 +40,7 @@ class TestSubagentResult:
             status="error", handoff_text="",
             handoff_path=Path("/tmp/h.md"),
             session_log_path=Path("/tmp/log"),
-            pid=None, escalation=None,
+            pid=None,
         )
         assert r.is_ok is False
 
@@ -123,20 +122,6 @@ class TestRunSubagent:
 
         assert result.status == "timeout"
         assert result.pid == 9999
-
-    def test_escalated_returns_escalation_text(self, tmp_path):
-        self._make_preset(tmp_path, "worker")
-        raw_result = {
-            "status": "escalated",
-            "escalation": "# Escalation\n\n## Question\nWhich lib?",
-        }
-        with patch("tools.subagent_api._runner.run_subagent", return_value=raw_result):
-            result = run_subagent(
-                task="Build", preset="worker", project_path=tmp_path,
-            )
-
-        assert result.status == "escalated"
-        assert "Which lib?" in result.escalation
 
     def test_requires_preset_or_prompt(self, tmp_path):
         with pytest.raises(ValueError, match="preset.*prompt"):
@@ -817,17 +802,3 @@ class TestResumeSubagentByPid:
         assert result.is_ok is False
         assert result.pid == 9999
 
-    def test_resume_escalation_status(self):
-        """resume_subagent_by_pid preserves escalation field."""
-        raw = {
-            "status": "escalated",
-            "handoff": "/tmp/h.md",
-            "escalation": "Needs review.",
-            "pid": 9999,
-        }
-        with patch("tools.subagent_api._runner.resume_subagent", return_value=raw):
-            result = resume_subagent_by_pid(9999, 120.0)
-
-        assert result.status == "escalated"
-        assert result.escalation == "Needs review."
-        assert result.pid == 9999

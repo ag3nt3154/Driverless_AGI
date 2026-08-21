@@ -115,9 +115,7 @@ class ReviewWorkTool(BaseTool):
             {
                 "status": result.status,
                 "pid": result.pid,
-                "escalation": result.escalation,
-                "message": result.escalation or "",
+                "message": "",
             },
             "review",
-            include_escalation=True,
         )

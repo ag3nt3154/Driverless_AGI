@@ -107,9 +107,7 @@ class MemoryQueryTool(BaseTool):
             {
                 "status": result.status,
                 "pid": result.pid,
-                "escalation": result.escalation,
-                "message": result.escalation or "",
+                "message": "",
             },
             "memory-query",
-            include_escalation=True,
         )

@@ -106,7 +106,6 @@ class TestReadLargeTextTool:
         mock_result.is_ok = False
         mock_result.status = "timeout"
         mock_result.pid = 1234
-        mock_result.escalation = None
 
         with patch("tools.subagent_api.run_subagent", return_value=mock_result):
             result = tool.run(task="Summarize file.txt")
