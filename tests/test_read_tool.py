@@ -405,7 +405,6 @@ class TestLargeFileDelegation:
         result_mock.is_ok = False
         result_mock.status = "timeout"
         result_mock.pid = 4321
-        result_mock.escalation = None
         tool = ReadTool(
             cwd=tmp_path,
             allowed_roots=[tmp_path],

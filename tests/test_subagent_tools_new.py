@@ -241,7 +241,7 @@ class TestSessionLogThreading:
             tracker=tracker,
             parent_context=provider,
         )
-        result = MagicMock(is_ok=False, status="error", pid=None, escalation=None)
+        result = MagicMock(is_ok=False, status="error", pid=None)
 
         with patch("tools.subagent_api.run_subagent", return_value=result) as mock_run:
             _run_with_minimal_arguments(tool, type_name)
