@@ -1,0 +1,105 @@
+# increase for flaky providers
+null_response_retries: 5  
+
+context_window: 200000
+keep_recent_tokens: 20000
+max_iterations: 20
+reserve_tokens: 16384
+
+
+
+# default_model: minimax-2.7-openrouter
+# default_model: deepseek-v4-flash-openrouter
+default_model: deepseek-v4-flash-deepseek
+# default_model: laguna-free-openrouter
+# worker_model: glm-5-turbo-openrouter       # cheaper LLM for sub-agents; omit to use default_model
+# advanced_model: deepseek-v4-pro-openrouter   # advanced LLM for planning; omit to use default_model
+
+# default_model: local_model
+# context_window: 32000
+# keep_recent_tokens: 15000
+# reserve_tokens: 10000
+# max_iterations: 20
+
+
+# Absolute path to the dagi-memory directory (wiki/raw/sources).
+# Omit to use the default: {current working directory}/dagi-memory
+memory_root: "G:\\My Drive\\black_grimoire\\dagi-memory"
+thinking: high          # none | low | medium | high — reasoning effort for models that support it
+cache_prompt: true      # send cache_prompt: true in extra_body — enables prompt caching on OpenRouter
+tools:                      # Restrict the main agent to a specific subset of tools.
+                            # Omit (or set to null) to enable all available tools.
+  # ── File tools ──────────────────────────────────────────────────────────────
+  - read                    # Read files from disk
+  - grep                    # Regex search across files
+  - find                    # Locate files by name/pattern
+  - write                   # Write (create/overwrite) files
+  - edit                    # Patch a specific region of a file
+  - copy                    # Copy files or directories
+  # ── Shell tools ─────────────────────────────────────────────────────────────
+  - bash                    # Run arbitrary shell commands
+  - tmux_bash               # Run commands in a persistent tmux session
+  # ── Planning tools ───────────────────────────────────────────────────────────
+  - enter_plan_mode         # Switch agent into plan-writing mode
+  - complete_plan           # Mark a plan step as done and continue
+  # ── Agent / subagent tools ───────────────────────────────────────────────────
+  - ask_user                # Pause and prompt the user for input
+  - spawn_worker_subagent           # Spawn a worker subagent
+  - spawn_review_subagent           # Spawn a code-review subagent
+  - spawn_web_research_subagent     # Spawn a web-research subagent
+  - spawn_explore_files_subagent    # Spawn a file-exploration subagent
+  - spawn_long-reader_subagent       # Spawn a long-file summariser subagent
+  - spawn_memory-add_subagent       # Spawn a memory-add subagent
+  - spawn_memory-query_subagent     # Spawn a memory-query subagent
+  - spawn_memory-refresh_subagent     # Spawn a memory-refresh subagent
+  - extend_subagent_timeout         # Extend timeout for an in-flight subagent
+  # ── Model tools ──────────────────────────────────────────────────────────────
+  - switch_model            # Switch between default / worker / advanced models
+  # ── Skill tools ──────────────────────────────────────────────────────────────
+  - skill                   # Load and run a skill document
+  - run_skill_script        # Execute a skill's companion script
+  - reload_skills           # Hot-reload skill definitions from disk
+  # ── Web tools ────────────────────────────────────────────────────────────────
+  - web_search              # Search the web (fallback when no config subagents)
+  - web_fetch               # Fetch a URL (fallback when no config subagents)
+  # ── UI tools ─────────────────────────────────────────────────────────────────
+  - emote                   # Update the TUI sidebar face expression
+sandbox_mode: false     # true = file tools have no path restrictions (allowed_roots=None)
+
+models:
+  claude-opus-openrouter:
+    api_key_env: OPENROUTER_API_KEY
+    api_url: https://openrouter.ai/api/v1
+    model: anthropic/claude-opus-4-6
+    name: Claude Opus 4.6 (OpenRouter)
+  deepseek-v4-pro-openrouter:
+    api_key_env: OPENROUTER_API_KEY
+    api_url: https://openrouter.ai/api/v1
+    model: deepseek/deepseek-v4-pro
+    name: Deepseek v4 Pro (OpenRouter)
+  deepseek-v4-flash-openrouter:
+    api_key_env: OPENROUTER_API_KEY
+    api_url: https://openrouter.ai/api/v1
+    model: deepseek/deepseek-v4-flash-0731
+    name: Deepseek v4 Flash(OpenRouter)
+  deepseek-v4-flash-deepseek:
+    api_key_env: DEEPSEEK_API_KEY
+    api_url: https://api.deepseek.com/v1
+    model: deepseek-v4-flash
+    name: Deepseek v4 Flash(Deepseek)
+  laguna-free-openrouter:
+    api_key_env: OPENROUTER_API_KEY
+    api_url: https://openrouter.ai/api/v1
+    model: poolside/laguna-s-2.1:free
+    name: Laguna Free (OpenRouter)
+  nemotron-ultra-free-openrouter:
+    api_key_env: OPENROUTER_API_KEY
+    api_url: https://openrouter.ai/api/v1
+    model: nvidia/nemotron-3-ultra-550b-a55b:free
+    name: Nemotron Ultra Free (OpenRouter)
+  local_model:
+    api_key_env: OPENROUTER_API_KEY
+    api_url: http://localhost:8080/v1
+    model: E4B-Gemma4-it-vl-HERE-DECKARD4-Q8_0
+    name: local_model
+
