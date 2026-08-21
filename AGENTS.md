@@ -1,6 +1,6 @@
 # AGENTS.md
 
-> Last updated: 2026-08-21 (subagent simplification Task 4: escalation removed from all callers) | [README](README.md) | [TODO](TODO.md)
+> Last updated: 2026-08-21 (subagent-simplification complete: plan/cli/escalate_issue deleted, write/edit removed from review+explore_files) | [README](README.md) | [TODO](TODO.md)
 
 
 ---
