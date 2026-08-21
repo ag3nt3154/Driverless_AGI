@@ -39,7 +39,6 @@ tools:
   - review_work
   - web_research
   - run_worker
-  - run_cli
   - extend_subagent_timeout
 
 system_prompt_preamble: |
