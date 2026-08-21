@@ -36,7 +36,6 @@ class SubagentResult:
     handoff_path: Path
     session_log_path: Path | None
     pid: int | None
-    escalation: str | None
     branch_id: str | None = None
 
     @property
@@ -119,7 +118,6 @@ def _build_result(raw: dict, handoff_path: Path) -> SubagentResult:
         handoff_path=handoff_path,
         session_log_path=None,  # resolved by caller if tracker present
         pid=raw.get("pid"),
-        escalation=raw.get("escalation"),
     )
 
 
@@ -332,7 +330,6 @@ def run_subagent(
                 handoff_path=handoff_path,
                 session_log_path=result.session_log_path,
                 pid=result.pid,
-                escalation=None,
                 branch_id=branch_id,
             )
     return result
