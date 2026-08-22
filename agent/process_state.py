@@ -26,6 +26,11 @@ class ProcessStateController:
     def snapshot(self) -> ProcessSnapshot | None:
         return self._snapshot
 
+    def set_listener(self, listener, *, emit_current: bool = False) -> None:
+        self._on_change = listener
+        if emit_current and self._snapshot is not None:
+            self._on_change(self._snapshot)
+
     def idle(self) -> ProcessSnapshot:
         return self._transition("idle")
 

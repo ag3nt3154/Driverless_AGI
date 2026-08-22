@@ -6,6 +6,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from agent.dynamic_context import build_dynamic_context
 from agent.loop import AgentConfig, AgentLoop
 
 
@@ -29,6 +30,7 @@ def _make_loop(
     fake_tracker.record_system = MagicMock()
     fake_tracker.record_user = MagicMock()
     fake_tracker.record_assistant = MagicMock()
+    fake_tracker.affect_controller = None
 
     with (
         patch("agent.loop.SessionTracker", return_value=fake_tracker),
@@ -64,6 +66,25 @@ _SENTINEL = "## Session Context"
 
 
 class TestDynamicContextBoardRendering:
+    def test_extracted_builder_preserves_existing_board_and_appends_affect(self, tmp_path):
+        plan_file = tmp_path / "plan.md"
+        plan_file.write_text(PLAN_TEXT, encoding="utf-8")
+        config = AgentConfig(
+            active_plan_file=str(plan_file),
+            python_env="conda:dagi",
+        )
+
+        board = build_dynamic_context(config, "Affect: V=+0.10 A=-0.20 D=+0.30 | emote=steady")
+
+        assert board == (
+            "## Session Context\n"
+            "Python env: conda:dagi\n"
+            f"Plan: {plan_file}\n"
+            "Active: 2. Implement\n"
+            "Status: 1.[x] 2.[~] 3.[ ]\n"
+            "Affect: V=+0.10 A=-0.20 D=+0.30 | emote=steady"
+        )
+
     def test_board_contains_sentinel(self, tmp_path):
         loop = _make_loop(tmp_path, python_env="conda:dagi")
         board = loop._build_dynamic_context()
@@ -110,6 +131,17 @@ class TestDynamicContextBoardRendering:
         board = loop._build_dynamic_context()
         assert _SENTINEL in board
         # Board should still render (even if sparse)
+
+    def test_loop_board_appends_current_affect_line(self, tmp_path):
+        loop = _make_loop(tmp_path, python_env="conda:dagi")
+        loop.tracker.affect_controller = MagicMock()
+        loop.tracker.affect_controller.context_line.return_value = (
+            "Affect: V=+0.20 A=+0.10 D=-0.10 | emote=focused"
+        )
+
+        board = loop._build_dynamic_context()
+
+        assert board.endswith("Affect: V=+0.20 A=+0.10 D=-0.10 | emote=focused")
 
 
 class TestDynamicContextBoardInjection:

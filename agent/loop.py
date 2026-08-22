@@ -21,8 +21,11 @@ from openai.types.chat.chat_completion_message_function_tool_call import (
 
 from agent import DAGI_ROOT
 from agent._git_branch import create_task_branch, get_current_branch
-from agent.affect import AffectConfig, AffectController
-from agent.expression_assets import VadLibrary
+from agent.affect import AffectConfig, AffectController, AffectRestore, AffectSnapshot
+from agent.dynamic_context import SENTINEL as DYNAMIC_CONTEXT_SENTINEL
+from agent.dynamic_context import build_dynamic_context
+from agent.expression_assets import ProcessStateLibrary, VadLibrary
+from agent.process_state import ProcessSnapshot, ProcessStateController
 from agent.prompts import load_prompt, load_main_system_prompt, load_soul
 from agent.registry import ToolRegistry
 from agent import session_events as sev
@@ -154,9 +157,12 @@ def _ensure_affect_controller(
     tracker: SessionTracker,
     config: "AgentConfig",
     dagi_root: Path,
+    callbacks: "AgentCallbacks",
+    initial_affect: AffectRestore | None,
 ) -> None:
     """Bind the root affect controller early enough for main registry construction."""
     if tracker.affect_controller is not None:
+        tracker.affect_controller.set_listener(callbacks.on_affect_changed)
         return
     affect_config = AffectConfig(
         drift_pull=config.affect_drift_pull,
@@ -166,9 +172,21 @@ def _ensure_affect_controller(
     controller = AffectController(
         _load_vad_library(dagi_root),
         config=affect_config,
+        baseline=initial_affect.baseline if initial_affect else None,
+        current=initial_affect.current if initial_affect else None,
+        current_emote_id=initial_affect.emote_id if initial_affect else None,
         record=tracker.record_affect,
+        on_change=callbacks.on_affect_changed,
     )
     tracker.bind_affect_controller(controller)
+
+
+def _load_process_library(dagi_root: Path) -> ProcessStateLibrary:
+    emotes_root = dagi_root / ".dagi" / "emotes"
+    return ProcessStateLibrary.load(
+        emotes_root / "states",
+        emotes_root / "default.md",
+    )
 
 
 @dataclass
@@ -279,13 +297,18 @@ class AgentCallbacks:
     on_reasoning:      Callable[[str], None]                    = field(default=lambda text: None)
     on_compaction:     Callable[[int, int], None]               = field(default=lambda kept, removed: None)
     on_model_switch:   Callable[[str, str], None]               = field(default=lambda f, t: None)
+    on_affect_changed: Callable[[AffectSnapshot], None] = field(
+        default=lambda snapshot: None
+    )
+    on_process_state_changed: Callable[[ProcessSnapshot], None] = field(
+        default=lambda snapshot: None
+    )
     on_ask_user:       Callable[[str, list, "float | None"], str] = field(
         default=lambda question, options, timeout: next(
             (o["label"] for o in options if o.get("recommended")),
             options[0]["label"] if options else "",
         )
     )
-    on_emote:          Callable[[str, str], None] | None         = None
     # Factory for subagent stdout relay: takes subagent_type, returns per-event callback.
     # None in headless / CLI mode — subagent output is not relayed.
     on_subagent_event_factory: Callable[[str], Callable[[str], None]] | None = None
@@ -330,6 +353,7 @@ class AgentLoop:
         config: AgentConfig,
         callbacks: AgentCallbacks | None = None,
         initial_messages: list | None = None,
+        initial_affect: AffectRestore | None = None,
         _registry: "ToolRegistry | None" = None,
         _parent_tracker: "SessionTracker | None" = None,
         _subagent_id: str | None = None,
@@ -375,8 +399,12 @@ class AgentLoop:
             # Sub-agent path: use the provided registry, skip skill loading
             self.registry = _registry
             self.skills = []
+            if self.tracker.affect_controller is not None:
+                self.tracker.affect_controller.set_listener(self.callbacks.on_affect_changed)
         else:
-            _ensure_affect_controller(self.tracker, config, dagi_root)
+            _ensure_affect_controller(
+                self.tracker, config, dagi_root, self.callbacks, initial_affect
+            )
             # ── Load skills ───────────────────────────────────────────────────
             skill_roots = [
                 dagi_root / ".dagi" / "skills",
@@ -403,6 +431,10 @@ class AgentLoop:
             )
 
         self.config = config
+        self._process = ProcessStateController(
+            _load_process_library(dagi_root),
+            on_change=self.callbacks.on_process_state_changed,
+        )
         # ── Build system prompt ───────────────────────────────────────────
         system = self._assemble_system_string(dagi_root)
         self.system_parts: list[dict]  # populated by _assemble_system_string
@@ -471,9 +503,11 @@ class AgentLoop:
 
     def pause(self) -> None:
         self._pause_event.clear()
+        self._process.paused()
 
     def inject_and_resume(self, message: str) -> None:
         self._log_user_message("user", message, "inject")
+        self._process.thinking()
         self._pause_event.set()
 
     @property
@@ -487,6 +521,30 @@ class AgentLoop:
     def wait_for_pause_checkpoint(self, timeout: float) -> bool:
         """Wait until a paused run reaches its safe pre-request checkpoint."""
         return self._pause_checkpoint.wait(timeout)
+
+    def _bind_process_listener(self) -> None:
+        self._process.set_listener(self.callbacks.on_process_state_changed)
+
+    def _api_attempt_started(self) -> None:
+        self._process.thinking()
+
+    def _tool_started(self, name: str) -> None:
+        self._process.tool_started(name)
+
+    def _tool_bookkeeping_finished(self) -> None:
+        self._process.tool_ended()
+
+    def _completed(self) -> None:
+        self._process.idle()
+
+    def _fatal_error(self) -> None:
+        self._process.error()
+
+    def _continuing_step_finished(self, turn: int, step: int) -> None:
+        self.log.append(sev.STEP_END, {"turn": turn, "step": step})
+        controller = self.tracker.affect_controller
+        if controller is not None:
+            controller.drift()
 
     def _freeze_request_snapshot(self, create_kwargs: Mapping[str, Any]) -> dict[str, Any]:
         """Copy request identity and the live surface boundary before a provider call."""
@@ -1072,6 +1130,7 @@ class AgentLoop:
                 _error_retries = 0
                 _paused_on_error = False
                 while True:
+                    self._api_attempt_started()
                     _request = self._build_request_messages()
                     self.callbacks.on_api_call(list(_request))
                     try:
@@ -1103,8 +1162,8 @@ class AgentLoop:
                                     f"[Connection error — all {_error_retries} retries failed. "
                                     "Session paused. Send a message to retry.]"
                                 )
-                                self.callbacks.on_pause()
                                 self.pause()
+                                self.callbacks.on_pause()
                                 _paused_on_error = True
                                 break
                             raise
@@ -1125,8 +1184,8 @@ class AgentLoop:
                                     f"[Server error {exc.status_code} — all {_error_retries} retries failed. "
                                     "Session paused. Send a message to retry.]"
                                 )
-                                self.callbacks.on_pause()
                                 self.pause()
+                                self.callbacks.on_pause()
                                 _paused_on_error = True
                                 break
                             raise
@@ -1154,6 +1213,7 @@ class AgentLoop:
                             f"{_null_retries} time(s) in a row. "
                             "Check your model endpoint and retry your task."
                         )
+                        self._fatal_error()
                         self.callbacks.on_error(Exception(error_msg))
                         self._close_turn(_turn, sev.reason_error(error_msg))
                         return error_msg
@@ -1211,6 +1271,7 @@ class AgentLoop:
                     if _exit_flag:
                         clean = result.replace(_exit_flag, "").strip()
                         self.callbacks.on_assistant_text(clean)
+                        self._completed()
                         self.callbacks.on_done(clean)
                         self._close_turn(_turn, sev.reason_completed())
                         return clean
@@ -1218,6 +1279,7 @@ class AgentLoop:
                     # Task not complete — inject "continue" and keep looping
                     self.callbacks.on_assistant_text(result)
                     if self._continuation_count >= self.config.max_continuations:
+                        self._completed()
                         self.callbacks.on_done(result)
                         self._close_turn(_turn, sev.reason_max_continuations())
                         return result
@@ -1226,7 +1288,7 @@ class AgentLoop:
                     self.callbacks.on_continue_injected(
                         self._continuation_count, self.config.max_continuations
                     )
-                    self.log.append(sev.STEP_END, {"turn": _turn, "step": iteration})
+                    self._continuing_step_finished(_turn, iteration)
                     continue  # next while True iteration
 
                 if message.content:
@@ -1275,10 +1337,11 @@ class AgentLoop:
                     self._compact_context()
                 # ─────────────────────────────────────────────────────────────
 
-                self.log.append(sev.STEP_END, {"turn": _turn, "step": iteration})
+                self._continuing_step_finished(_turn, iteration)
 
         except Exception as e:
             self._close_turn(_turn, sev.reason_error(str(e), type(e).__name__))
+            self._fatal_error()
             self.callbacks.on_error(e)
             raise
         finally:
@@ -1302,6 +1365,7 @@ class AgentLoop:
         for tc in message.tool_calls:
             tool_obj = self.registry._tools.get(tc.function.name)
             description = tool_obj.description if tool_obj else tc.function.name
+            self._tool_started(tc.function.name)
             self.callbacks.on_tool_start(tc.function.name, description, tc.function.arguments)
             self.tracker.record_tool_start(tc.function.name, description, tc.function.arguments)
 
@@ -1343,6 +1407,7 @@ class AgentLoop:
                     if _switch_target is not None:
                         result = self._handle_switch_model(_switch_target, args)
             self._bookkeep_tool_call(tc, result, description, tool_records)
+            self._tool_bookkeeping_finished()
 
         for _sys_content in deferred_system_msgs:
             self._log_user_message("system", _sys_content, "reload")
@@ -1447,8 +1512,10 @@ class AgentLoop:
 
         self.callbacks.on_handoff()
         full_str = self._bookkeep_tool_call(tc, clean, description, tool_records)
+        self._tool_bookkeeping_finished()
         self._finalize_turn(message, response, tool_records)
 
+        self._completed()
         self.callbacks.on_done(full_str)
         return full_str
 
@@ -1683,55 +1750,15 @@ class AgentLoop:
         self._system_prefix = system
         return system
 
-    _DYNAMIC_CONTEXT_SENTINEL = "## Session Context"
+    _DYNAMIC_CONTEXT_SENTINEL = DYNAMIC_CONTEXT_SENTINEL
 
     def _build_dynamic_context(self) -> str:
-        """Build the dynamic context board appended as the last message.
-
-        Contains mutable session state that the model should always see:
-        python env, active plan status. Kept lean — titles and markers
-        only. The model reads the plan file for full task descriptions.
-        """
-        from tools._plan_parser import parse_subtask_statuses
-
-        parts = [self._DYNAMIC_CONTEXT_SENTINEL]
-
-        if self.config.python_env:
-            parts.append(f"Python env: {self.config.python_env}")
-
-        plan_file = self.config.active_plan_file
-        if plan_file and not self.config.plan_mode:
-            parts.append(f"Plan: {plan_file}")
-            try:
-                text = Path(plan_file).read_text(encoding="utf-8")
-            except (OSError, UnicodeDecodeError):
-                text = ""
-
-            statuses = parse_subtask_statuses(text)
-            if statuses:
-                # Active = first in_progress, else first pending
-                active = next(
-                    (s for s in statuses if s["status"] == "in_progress"),
-                    next(
-                        (s for s in statuses if s["status"] == "pending"),
-                        None,
-                    ),
-                )
-                if active:
-                    idx = statuses.index(active) + 1
-                    parts.append(f"Active: {idx}. {active['name']}")
-
-                marker_map = {
-                    "pending": " ", "in_progress": "~",
-                    "complete": "x", "failed": "!",
-                }
-                status_line = " ".join(
-                    f"{i}.[{marker_map.get(s['status'], '?')}]"
-                    for i, s in enumerate(statuses, start=1)
-                )
-                parts.append(f"Status: {status_line}")
-
-        return "\n".join(parts)
+        """Build the dynamic context board appended as the last message."""
+        controller = self.tracker.affect_controller
+        affect_line = controller.context_line() if controller is not None else None
+        if not isinstance(affect_line, str):
+            affect_line = None
+        return build_dynamic_context(self.config, affect_line)
 
     def _refresh_dynamic_context(self) -> None:
         """Re-render the board and log it if it changed.

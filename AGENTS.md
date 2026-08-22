@@ -1,6 +1,6 @@
 # AGENTS.md
 
-> Last updated: 2026-08-23 (affect config validation + runtime controller binding) | [README](README.md) | [TODO](TODO.md)
+> Last updated: 2026-08-23 (affect/process lifecycle integration) | [README](README.md) | [TODO](TODO.md)
 
 
 
@@ -142,9 +142,9 @@ tui.py / telegram_bot.py / main.py / dagi_gui/__main__.py / pyside_gui/__main__.
 
 **Expression asset libraries (branch `dagi/affect-and-process-emotes`):** `agent/expression_assets.py` loads `.dagi/emotes/vad/manifest.yaml` and `.dagi/emotes/states/manifest.yaml` into immutable `ImageAsset` / `TextFallback` refs, validates asset paths stay under their channel roots, and caches warning keys so broken manifests warn once while later lookups fall back to `.dagi/emotes/default.md` (or literal `DAGI` if unreadable). `VadLibrary.resolve()` uses Euclidean distance plus hysteresis against the current id; `ProcessStateLibrary.resolve()` follows `tool:<name> -> tool -> thinking -> idle`.
 
-**Affect core (branch `dagi/affect-and-process-emotes`):** `agent/affect.py` defines immutable `AffectConfig`, `AffectVector`, `AffectRestore`, and `AffectSnapshot`, plus `AffectController`. `agent/config_loader.py` validates top-level `affect:` tuning into `AgentConfig`; `AgentLoop` binds a fallback-capable `AffectController` to the root `SessionTracker` before normal main registry construction. Normal main registries expose `adjust_affect` only when that controller is bound, while plan/subagent registries never expose it; legacy `tools/emote` remains dormant until Task 6 removes its TUI consumer.
+**Dynamic context + affect callbacks (branch `dagi/affect-and-process-emotes`):** `agent/dynamic_context.py` builds the ephemeral request board (Python env, active plan status, affect line) outside the static system prefix. `AgentLoop(initial_affect=...)` restores affect once from history, binds `on_affect_changed(AffectSnapshot)`, and normal registries expose `adjust_affect` only when a controller is bound; the legacy `tools/emote` package has been deleted.
 
-**Process-state controller (branch `dagi/affect-and-process-emotes`):** `agent/process_state.py` defines immutable `ProcessSnapshot` plus `ProcessStateController`. The controller consumes `ProcessStateLibrary.resolve(state)`, funnels all public lifecycle methods through `_transition(state)`, deduplicates exact repeat snapshots, stores before publish, and models tool flow as `idle -> thinking -> tool:<name> -> thinking` while letting explicit `paused` / `error` states persist until the next transition.
+**Process-state controller (branch `dagi/affect-and-process-emotes`):** `agent/process_state.py` defines immutable `ProcessSnapshot` plus `ProcessStateController`. `AgentLoop` publishes `on_process_state_changed(ProcessSnapshot)` through API/tool/pause/resume/error lifecycle transitions, deduplicates exact repeats, and models tool flow as `idle -> thinking -> tool:<name> -> thinking`.
 
 **Affect session persistence (branch `dagi/affect-and-process-emotes`):** Root `SessionTracker`s now own the bound affect controller, persist `affect_*` JSONL records alongside normal session events, and let child trackers reuse the root controller without replacing it. `agent/history.py` shares a private JSONL loader between raw-message restore and affect restore, selecting the latest valid affect record while preserving the original `affect_init` baseline and warning once on malformed entries.
 
@@ -153,7 +153,8 @@ tui.py / telegram_bot.py / main.py / dagi_gui/__main__.py / pyside_gui/__main__.
 
 | Path                                                 | Purpose                                                                                                                                                        |
 | ---------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `agent/loop.py`                                      | Core loop, parent fork capture, system-prompt assembly, termination/compaction, and handoff dispatch                                                          |
+| `agent/loop.py`                                      | Core loop, parent fork capture, system-prompt assembly, affect/process lifecycle, termination/compaction, and handoff dispatch                                  |
+| `agent/dynamic_context.py`                           | Builds the ephemeral request board: Python env, active plan status, and affect line without mutating the static system prefix                                  |
 | `agent/config_loader.py`                             | Reads/merges config, resolves API keys/models/services, and validates affect tuning                                                                            |
 | `agent/session_log.py`                               | Append-only event log; `SessionLog.branches` tracks subagent branches; `branch_event(id)` returns the BRANCH_START event for a branch                         |
 | `agent/wtf.py`, `agent/wtf_report.py`                | Atomic `/wtf` orchestration and strict report parser                                                                                                           |
@@ -164,8 +165,6 @@ tui.py / telegram_bot.py / main.py / dagi_gui/__main__.py / pyside_gui/__main__.
 | `tools/_subagent_runner.py`                          | Private pipe-based subprocess spawner; returns raw dicts; wrapped exclusively by `subagent_api.py`                                                             |
 | `tools/subagent_main.py`                             | Forked compact/inherited child entry points, credentials, allowlists, retries, and final handoff validation                                                   |
 | `tui/app.py`, `tui/commands.py`, `tui/callbacks.py`  | TUI lifecycle, slash commands including `/wtf`, StreamPreview, and callbacks bridge                                                                           |
-| `dagi_gui/server.py`                                 | `GUIServer`: reads NDJSON commands from stdin loop, dispatches to `AgentLoop`/session                                                                          |
-| `dagi_gui/session.py`                                | `SessionController`: lifecycle (run/pause/resume/cancel/clear/compact/shutdown), `_kill_active_work` kills active bash + subagents on pause                     |
 | `pyside_gui/app.py`                                  | `DagiMainWindow` — main window: splitter layout, agent on daemon thread, streaming dedup, pause/resume, slash commands, overlays (500-line cap)                  |
 | `pyside_gui/bridge.py`                               | `AgentBridge(QObject)` — translates `AgentCallbacks` → Qt Signals; `build_callbacks()` returns wired callbacks for thread-safe UI; owns `_stream_text` accumulator |
 | `pyside_gui/commands.py`                             | `SlashCommandHandler` — GUI slash-command dispatch, skill/workflow map loading, definition-list formatted output                                                 |
@@ -178,11 +177,11 @@ tui.py / telegram_bot.py / main.py / dagi_gui/__main__.py / pyside_gui/__main__.
 - **2026-08-20**: Main handoffs used filtered output, ambiguous failure state, and raw thread prefixes → defer full `on_done` Markdown only after confirmed termination and use a reserved, hashed filename.
 - **2026-08-21**: `test_discover_subagent_tools` and `test_subagent_configs` still fail on `dagi/subagent-simplification` branch because `plan`/`cli` deletions (Tasks 1-2) weren't reflected in those tests — pre-existing, not caused by Task 4.
 - **2026-08-22**: PySide6 6.11.2 on Python 3.14 in `dagi` conda env fails DLL load unless `os.add_dll_directory(pyside6_dir)` is called before import — Qt DLLs not on PATH via conda activation; `__main__.py` must bootstrap this before any PySide6 import.
-- **2026-08-22**: `AgentCallbacks.on_emote` type annotation says `Callable[[str, str], None]` (2 args) but actual call site in `tools/emote/_emote.py` passes 3 args `(name, display, is_named)` — annotation is stale; use 3-arg signature.
 - **2026-08-22**: pyside_gui final-review: XSS in fence lang (escape before `class=` interpolation); timeout=0 deadlock (`0.0 or None = None` → explicit `if timeout <= 0` branch); `_messages` race between main+worker threads (snapshot via `list()` before passing to `CopyPicker`).
 - **2026-08-22**: pyside_gui streaming showed `<<END_OF_RESPONSE>>` + duplicate assistant/reasoning bubbles → strip `_LOOP_SENTINELS` in `_on_stream_ended`; gate `_on_assistant_text` and `_on_reasoning` behind `_stream_had_content` flag.
 - **2026-08-22**: `_parse_frontmatter` captured literal `>-` instead of parsing YAML block scalars → added indented-continuation-line collection for `>-`/`|-`/`>`/`|` indicators in both `agent/skills.py` and `agent/workflows.py`.
-- **2026-08-22**: `pytest` temp fixtures under `C:\Users\alexr\AppData\Local\Temp\pytest-of-alexr` can fail with `PermissionError` in this workspace → pass `--basetemp .pytest-tmp` for local test runs.
+- **2026-08-23**: `--basetemp .pytest-tmp` makes git-sensitive tmp_path tests inherit the repo parent → use an out-of-repo basetemp for `test_plan_mode_branch.py`.
+- **2026-08-22**: `pytest` temp fixtures under `C:\Users\alexr\AppData\Local\Temp\pytest-of-alexr` can fail with `PermissionError` in this workspace → pass `--basetemp .pytest-tmp` except for git-sensitive tests.
 
 ## Notes & Terms
 
@@ -198,7 +197,7 @@ tui.py / telegram_bot.py / main.py / dagi_gui/__main__.py / pyside_gui/__main__.
 - **PySide6 streaming dedup**: After streaming, `AgentLoop` fires `on_reasoning` and `on_assistant_text` with the same content already shown via deltas — `app.py` gates both behind `_stream_had_content` (set in `_on_stream_ended`, cleared only in `_on_assistant_text`).
 - **Expression manifests**: `.dagi/emotes/vad/manifest.yaml` stores `emotes: [{id, file, vad}]`; `.dagi/emotes/states/manifest.yaml` stores `states: {key: file}` with required `idle`, `thinking`, and `tool`.
 - **Affect restore logs**: `affect_init` owns the baseline; history restore reuses its baseline with the latest valid `affect_*` current/emote snapshot and emits at most one warning for malformed records.
-- **Process-state dedupe**: `ProcessStateController` still resolves the requested state every call, but only publishes when the new `(state, asset)` snapshot differs from the stored one.
+- **Process-state dedupe**: `ProcessStateController` resolves the requested state every call, but only publishes when the new `(state, asset)` snapshot differs from the stored one.
 
 ## User Insights
 

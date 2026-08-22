@@ -4,10 +4,14 @@ from __future__ import annotations
 
 import json
 import threading
+from pathlib import Path
 from typing import Any
 
 import pytest
 
+from agent.affect import AffectSnapshot, AffectVector
+from agent.expression_assets import TextFallback
+from agent.process_state import ProcessSnapshot
 from dagi_gui.callbacks import build_gui_callbacks
 from dagi_gui.interaction import QuestionBroker
 from dagi_gui.protocol import EventWriter, ProtocolError
@@ -228,8 +232,21 @@ class TestBuildGuiCallbacks:
         self.callbacks.on_model_switch("gpt-4", "claude-3")
         assert not self.writer.events
 
-    def test_emote_is_noop(self):
-        self.callbacks.on_emote("thinking", "🤔", False)
+    def test_affect_is_noop(self):
+        self.callbacks.on_affect_changed(AffectSnapshot(
+            baseline=AffectVector(0.0, 0.0, 0.0),
+            current=AffectVector(0.1, 0.2, 0.3),
+            emote_id="steady",
+            asset=TextFallback(Path("default.md"), "test", "DAGI"),
+            reason="adjust",
+        ))
+        assert not self.writer.events
+
+    def test_process_state_is_noop(self):
+        self.callbacks.on_process_state_changed(ProcessSnapshot(
+            state="thinking",
+            asset=TextFallback(Path("default.md"), "test", "DAGI"),
+        ))
         assert not self.writer.events
 
     def test_pause_is_noop(self):

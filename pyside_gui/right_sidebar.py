@@ -10,6 +10,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from agent.affect import AffectSnapshot
+from agent.process_state import ProcessSnapshot
 from tui.utils import _system_breakdown
 
 
@@ -82,6 +84,9 @@ class RightSidebar(QScrollArea):
         self._buckets: dict[str, int] = {}
         self._subtasks: list[dict] = []
         self._plan_title = ""
+        self._emote_name = "default"
+        self._affect_line = "V=+0.00 A=+0.00 D=+0.00"
+        self._process_state = "idle"
 
         self.setObjectName("right-sidebar")
         self.setWidgetResizable(True)
@@ -177,15 +182,26 @@ class RightSidebar(QScrollArea):
         self._plan_title = title
         self._refresh_plan()
 
-    def update_emote(
-        self, name: str, display: str, is_named: bool
-    ) -> None:
-        text = display
-        if is_named and name:
-            text += f"\n{name}"
-        self._emote_label.setText(text)
+    def update_affect(self, snapshot: AffectSnapshot) -> None:
+        current = snapshot.current
+        self._emote_name = snapshot.emote_id
+        self._affect_line = (
+            f"V={current.valence:+.2f} A={current.arousal:+.2f} "
+            f"D={current.dominance:+.2f}"
+        )
+        self._refresh_emote()
+
+    def update_process_state(self, snapshot: ProcessSnapshot) -> None:
+        self._process_state = snapshot.state
+        self._refresh_emote()
+
+    def _refresh_emote(self) -> None:
+        self._emote_label.setText(
+            f"{self._affect_line}\n{self._emote_name}\nprocess={self._process_state}"
+        )
 
     def _refresh_all(self) -> None:
+        self._refresh_emote()
         self._refresh_status()
         self._refresh_paths()
         self._refresh_tokens()

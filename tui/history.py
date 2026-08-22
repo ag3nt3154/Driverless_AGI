@@ -6,11 +6,12 @@ from pathlib import Path
 from agent.history import (
     build_copyable_messages as _build_copy_items_data,
     build_turn_list,
+    load_affect_restore,
     load_raw_messages,
     load_sessions,
 )
 
-__all__ = ["load_sessions", "load_raw_messages", "build_turn_list"]
+__all__ = ["load_sessions", "load_raw_messages", "load_affect_restore", "build_turn_list"]
 
 
 def _build_copy_items(messages: list[dict]) -> list[dict]:

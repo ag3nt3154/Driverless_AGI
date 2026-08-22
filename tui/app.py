@@ -76,6 +76,7 @@ class DagiApp(SlashCommandsMixin, App[None]):
         self._run_start_time: float | None = None
         self._input_expanded: bool = False
         self._restore_initial_messages: list | None = None
+        self._restore_initial_affect = None
 
     def compose(self) -> ComposeResult:
         dagi_root = DAGI_ROOT
@@ -216,9 +217,18 @@ class DagiApp(SlashCommandsMixin, App[None]):
             if self._restore_initial_messages is not None:
                 initial = self._restore_initial_messages
                 self._restore_initial_messages = None
+                initial_affect = self._restore_initial_affect
+                self._restore_initial_affect = None
             else:
                 initial = self._active_loop._messages if self._active_loop else None
-            loop = AgentLoop(self._config, callbacks, initial_messages=initial, _tracker=tracker)
+                initial_affect = None
+            loop = AgentLoop(
+                self._config,
+                callbacks,
+                initial_messages=initial,
+                initial_affect=initial_affect,
+                _tracker=tracker,
+            )
             loop_ref.append(loop)
             self._active_loop = loop  # save before run so context survives any exception
             loop.run(task)
@@ -329,7 +339,7 @@ class DagiApp(SlashCommandsMixin, App[None]):
         Clears the conversation, visually replays the restored messages,
         and stashes them so the next _dispatch_agent call starts from them.
         """
-        from tui.history import load_raw_messages
+        from tui.history import load_affect_restore, load_raw_messages
         raw = load_raw_messages(path)
         if not raw:
             self.query_one(ConversationPane).append_info(
@@ -346,6 +356,7 @@ class DagiApp(SlashCommandsMixin, App[None]):
         conv.clear()
         self._render_restored_session(path, restored[1:])  # skip old system msg
         self._restore_initial_messages = restored
+        self._restore_initial_affect = load_affect_restore(path)
         conv.append_info(
             f"[green]✓ Restored {len(restored) - 1} messages from [bold]{path.name}[/bold] "
             f"— type your next message to continue[/green]"

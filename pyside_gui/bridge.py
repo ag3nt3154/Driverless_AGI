@@ -29,7 +29,8 @@ class AgentBridge(QObject):
     agent_done = Signal(str)               # result
     agent_paused = Signal()
     ask_user_requested = Signal(str, object, object)  # q, opts, timeout
-    emote_changed = Signal(str, str, bool)
+    affect_changed = Signal(object)
+    process_state_changed = Signal(object)
     continue_injected = Signal(int, int)   # cur, max
     plan_shown = Signal()
     subagent_event = Signal(str, str)      # type, json line
@@ -141,8 +142,11 @@ class AgentBridge(QObject):
         def on_plan_shown() -> None:
             self.plan_shown.emit()
 
-        def on_emote(name: str, display: str, is_named: bool) -> None:
-            self.emote_changed.emit(name, display, is_named)
+        def on_affect_changed(snapshot) -> None:
+            self.affect_changed.emit(snapshot)
+
+        def on_process_state_changed(snapshot) -> None:
+            self.process_state_changed.emit(snapshot)
 
         def on_subagent_factory(subagent_type: str) -> Callable[[str], None]:
             def on_event(line: str) -> None:
@@ -170,7 +174,8 @@ class AgentBridge(QObject):
             on_compaction=on_compaction,
             on_model_switch=on_model_switch,
             on_ask_user=on_ask_user,
-            on_emote=on_emote,
+            on_affect_changed=on_affect_changed,
+            on_process_state_changed=on_process_state_changed,
             on_subagent_event_factory=on_subagent_factory,
             on_pause=on_pause,
             supports_pause=True,

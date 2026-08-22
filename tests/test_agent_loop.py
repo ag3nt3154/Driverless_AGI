@@ -1,6 +1,7 @@
 """tests/test_agent_loop.py — Unit tests for AgentLoop tool dispatch and compaction trigger."""
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
@@ -14,6 +15,7 @@ from agent.loop import (
     AWAIT_USER_FLAG, TASK_END_FLAG, WRITE_HANDOFF_SENTINEL,
     _escape_sentinels,
 )
+from agent.affect import AffectRestore, AffectVector
 from agent.registry import ToolRegistry
 
 
@@ -57,6 +59,7 @@ def _make_loop(registry=None, **config_overrides) -> AgentLoop:
     real_registry = registry or ToolRegistry()
 
     fake_tracker = MagicMock()
+    fake_tracker.affect_controller = None
 
     with (
         patch("agent.loop.SessionTracker", return_value=fake_tracker),
@@ -661,6 +664,110 @@ class TestSessionLogWiring:
         assert isinstance(loop.tracker.affect_controller, AffectController)
         assert "adjust_affect" in names
         assert "emote" not in names
+
+    def test_initial_affect_restore_reuses_state_without_init_record(self, tmp_path):
+        """Restoring history must carry affect forward without inventing a new baseline."""
+        seen = []
+        restore = AffectRestore(
+            baseline=AffectVector(0.1, -0.2, 0.3),
+            current=AffectVector(0.2, -0.1, 0.4),
+            emote_id="steady",
+        )
+        callbacks = AgentCallbacks(on_affect_changed=seen.append)
+        config = AgentConfig(
+            api_key="test-key",
+            project_path=tmp_path,
+            system_prompt="{tools_and_skills}",
+        )
+
+        with patch("openai.OpenAI"):
+            loop = AgentLoop(config=config, callbacks=callbacks, initial_affect=restore)
+
+        affect_records = [
+            json.loads(line)
+            for line in loop.tracker._path.read_text(encoding="utf-8").splitlines()
+            if json.loads(line).get("type", "").startswith("affect_")
+        ]
+        assert [record["type"] for record in affect_records] == []
+        assert loop.tracker.affect_controller.baseline == restore.baseline
+        assert loop.tracker.affect_controller.current == restore.current
+        assert seen[-1].current == restore.current
+
+
+class TestProcessLifecycle:
+    def test_process_state_wraps_api_attempt_tool_call_and_completion(self):
+        """Process callbacks must bracket the real lifecycle, not lag behind UI callbacks."""
+        tool = FakeTool(name="echo", result="echoed!")
+        registry = ToolRegistry()
+        registry.register(tool)
+        events: list[str] = []
+        callbacks = AgentCallbacks(
+            on_process_state_changed=lambda snap: events.append(f"process:{snap.state}"),
+            on_api_call=lambda _messages: events.append("api"),
+            on_tool_start=lambda name, _desc, _args: events.append(f"tool_start:{name}"),
+            on_tool_end=lambda name, _result: events.append(f"tool_end:{name}"),
+            on_done=lambda _result: events.append("done"),
+        )
+        loop = _make_loop(registry=registry)
+        loop.callbacks = callbacks
+        loop._bind_process_listener()
+        loop.client = MagicMock()
+        loop.client.chat.completions.create.side_effect = [
+            _make_response(None, tool_calls=[_make_tool_call("tc1", "echo", "{}")]),
+            _make_response(f"Done. {TASK_END_FLAG}"),
+        ]
+
+        loop.run("do something")
+
+        assert events.index("process:thinking") < events.index("api")
+        assert events.index("process:tool:echo") < events.index("tool_start:echo")
+        assert events.index("tool_end:echo") < events.index("process:thinking", 3)
+        assert events[-2:] == ["process:idle", "done"]
+
+    def test_affect_drifts_after_step_end_only_when_loop_continues(self, tmp_path):
+        """Affect drift belongs after a completed continuing step, never on final return."""
+        tool = FakeTool(name="echo", result="echoed!")
+        registry = ToolRegistry()
+        registry.register(tool)
+        config = AgentConfig(
+            model="test-model",
+            api_key="test-key",
+            system_prompt="You are a test agent.",
+            project_path=tmp_path,
+            affect_drift_pull=0.0,
+            affect_drift_noise=0.0,
+        )
+        with (
+            patch("openai.OpenAI"),
+            patch.object(Path, "exists", return_value=False),
+        ):
+            loop = AgentLoop(config=config)
+        loop.registry = registry
+        loop._skip_slug_generation = True
+        order: list[str] = []
+        original_append = loop.log.append
+
+        def append_spy(event_type, *args, **kwargs):
+            if event_type == sev.STEP_END:
+                order.append(sev.STEP_END)
+            return original_append(event_type, *args, **kwargs)
+
+        loop.log.append = append_spy
+        loop.tracker.affect_controller.set_listener(
+            lambda snapshot: order.append(snapshot.reason),
+            emit_current=False,
+        )
+        loop.client = MagicMock()
+        loop.client.chat.completions.create.side_effect = [
+            _make_response(None, tool_calls=[_make_tool_call("tc1", "echo", "{}")]),
+            _make_response(f"Done. {TASK_END_FLAG}"),
+        ]
+
+        loop.run("do something")
+
+        assert order.count("drift") == 1
+        drift_index = order.index("drift")
+        assert order[drift_index - 1] == sev.STEP_END
 
 
 class TestParentForkCapture:

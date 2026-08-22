@@ -2,6 +2,8 @@ import json
 import pytest
 from pathlib import Path
 
+from agent.affect import AffectRestore, AffectVector
+
 
 def _write_session(tmp_path, filename, started_at, raw_messages=None):
     path = tmp_path / filename
@@ -123,3 +125,101 @@ class TestLoadRawMessagesIntegration:
         path.write_text("\n".join(json.dumps(line) for line in lines), encoding="utf-8")
 
         assert load_raw_messages(path) == raw
+
+
+class TestRestoreAffectIntegration:
+    def test_tui_restore_stashes_affect_beside_initial_messages(self, tmp_path, monkeypatch):
+        from tui.app import DagiApp
+
+        raw = [
+            {"role": "system", "content": "sys"},
+            {"role": "user", "content": "task one"},
+            {"role": "assistant", "content": "done"},
+        ]
+        restore = AffectRestore(
+            baseline=AffectVector(0.1, -0.2, 0.3),
+            current=AffectVector(0.3, -0.1, 0.2),
+            emote_id="steady",
+        )
+        path = _write_session(
+            tmp_path, "session_test.jsonl", "2026-08-01T10:00:00Z", raw_messages=raw
+        )
+        monkeypatch.setattr("tui.history.load_raw_messages", lambda _path: raw)
+        monkeypatch.setattr("tui.history.load_affect_restore", lambda _path: restore)
+
+        app = object.__new__(DagiApp)
+        app._active_loop = object()
+        app._current_loop_ref = [object()]
+        app._restore_initial_messages = None
+        app._restore_initial_affect = None
+        conv = _FakeConversation()
+        app.query_one = lambda _cls: conv
+        app._render_restored_session = lambda _path, _messages: None
+        app._enable_input = lambda: None
+
+        DagiApp._restore_session(app, path, len(raw))
+
+        assert app._active_loop is None
+        assert app._current_loop_ref == []
+        assert app._restore_initial_messages == raw
+        assert app._restore_initial_affect == restore
+
+    def test_pyside_restore_stashes_affect_beside_initial_messages(self, tmp_path, monkeypatch):
+        from pyside_gui.app import DagiMainWindow
+
+        raw = [
+            {"role": "system", "content": "sys"},
+            {"role": "user", "content": "task one"},
+        ]
+        restore = AffectRestore(
+            baseline=AffectVector(-0.1, 0.2, 0.0),
+            current=AffectVector(0.0, 0.1, 0.2),
+            emote_id="focused",
+        )
+        path = _write_session(
+            tmp_path, "session_test.jsonl", "2026-08-01T10:00:00Z", raw_messages=raw
+        )
+        monkeypatch.setattr("agent.history.load_raw_messages", lambda _path: raw)
+        monkeypatch.setattr("agent.history.load_affect_restore", lambda _path: restore)
+
+        app = DagiMainWindow.__new__(DagiMainWindow)
+        app._active_loop = object()
+        app._current_loop_ref = [object()]
+        app._restore_initial_messages = None
+        app._restore_initial_affect = None
+        app._conversation = _FakeConversation()
+        app._left_sidebar = _FakeLeftSidebar()
+        app._splitter = _FakeSplitter()
+        app._enable_input = lambda: None
+
+        DagiMainWindow._on_session_selected(app, {"path": path})
+
+        assert app._active_loop is None
+        assert app._current_loop_ref == []
+        assert app._restore_initial_messages == raw
+        assert app._restore_initial_affect == restore
+
+
+class _FakeConversation:
+    def __init__(self) -> None:
+        self.info: list[str] = []
+        self.errors: list[str] = []
+
+    def append_info(self, text: str) -> None:
+        self.info.append(text)
+
+    def append_error(self, text: str) -> None:
+        self.errors.append(text)
+
+    def clear(self) -> None:
+        pass
+
+
+class _FakeLeftSidebar:
+    def set_expanded(self, value: bool) -> None:
+        self.expanded = value
+
+
+class _FakeSplitter:
+    def setSizes(self, sizes: list[int]) -> None:
+        self.sizes = sizes

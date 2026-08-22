@@ -49,6 +49,7 @@ class DagiMainWindow(QMainWindow):
         self._run_start_time: float | None = None
         self._spinner_idx = 0
         self._restore_initial_messages: list | None = None
+        self._restore_initial_affect = None
         self._pending_ask: object = None  # threading.Event; answer sink below
         self._pending_ask_container: list | None = None
         self._compose_mode = False
@@ -197,7 +198,8 @@ class DagiMainWindow(QMainWindow):
         b.agent_done.connect(self._on_agent_done)
         b.agent_paused.connect(self._on_agent_paused)
         b.ask_user_requested.connect(self._on_ask_user)
-        b.emote_changed.connect(self._right_sidebar.update_emote)
+        b.affect_changed.connect(self._right_sidebar.update_affect)
+        b.process_state_changed.connect(self._right_sidebar.update_process_state)
         b.continue_injected.connect(
             lambda c, m: self._conversation.append_info(
                 f"No exit flag — continue prompt injected ({c}/{m})"
@@ -289,10 +291,17 @@ class DagiMainWindow(QMainWindow):
             tracker = self._active_loop.tracker if self._active_loop else None
             if self._restore_initial_messages is not None:
                 initial, self._restore_initial_messages = self._restore_initial_messages, None
+                initial_affect, self._restore_initial_affect = self._restore_initial_affect, None
             else:
                 initial = self._active_loop._messages if self._active_loop else None
+                initial_affect = None
             loop = AgentLoop(
-                self._config, callbacks, initial_messages=initial, _tracker=tracker)
+                self._config,
+                callbacks,
+                initial_messages=initial,
+                initial_affect=initial_affect,
+                _tracker=tracker,
+            )
             loop_ref.append(loop)
             self._active_loop = loop
             self._cmd_handler.set_active_loop(loop)
@@ -403,7 +412,7 @@ class DagiMainWindow(QMainWindow):
 
     @Slot(object)
     def _on_session_selected(self, session_data: dict) -> None:
-        from agent.history import load_raw_messages
+        from agent.history import load_affect_restore, load_raw_messages
         path = Path(session_data["path"])
         raw = load_raw_messages(path)
         if not raw:
@@ -413,6 +422,7 @@ class DagiMainWindow(QMainWindow):
         self._current_loop_ref = []
         self._conversation.clear()
         self._restore_initial_messages = raw
+        self._restore_initial_affect = load_affect_restore(path)
         msg = f"Restored {len(raw) - 1} messages from {path.name} — type your next message to continue"
         self._conversation.append_info(msg)
         self._left_sidebar.set_expanded(False)

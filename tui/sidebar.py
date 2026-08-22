@@ -7,9 +7,20 @@ from rich.table import Table
 from rich.text import Text
 from textual.widget import Widget
 
-from tools.emote import pad_to_lines
+from agent.affect import AffectSnapshot
+from agent.process_state import ProcessSnapshot
 
 from .utils import _system_breakdown
+
+
+def _pad_to_lines(text: str, n: int = 5) -> str:
+    lines = text.splitlines()
+    pad = n - len(lines)
+    if pad <= 0:
+        return text
+    top = pad // 2
+    bottom = pad - top
+    return "\n".join([""] * top + lines + [""] * bottom)
 
 def _path_tail(path: Path | str, max_chars: int = 36) -> str:
     """Return the rightmost portion of a path string, prefixed with … when truncated."""
@@ -47,8 +58,9 @@ class Sidebar(Widget):
         self._memory_root = memory_root
         self._subtasks: list[dict] = []
         self._plan_title: str = ""
-        self._emote_display: str = self._resolve_emote("default")
+        self._emote_display: str = _pad_to_lines("V=+0.00 A=+0.00 D=+0.00")
         self._emote_name: str = "default"
+        self._process_state: str = "idle"
 
     def set_status(self, status: str) -> None:
         self._status = status
@@ -76,19 +88,20 @@ class Sidebar(Widget):
         self._plan_title = title
         self.refresh()
 
-    def _resolve_emote(self, text: str) -> str:
-        """If *text* matches a .md emote file, return its content; else return *text* as-is."""
-        path = self._dagi_root / ".dagi" / "emotes" / f"{text}.md"
-        try:
-            raw = path.read_text(encoding="utf-8")
-        except OSError:
-            raw = text
-        return pad_to_lines(raw)
+    def update_affect(self, snapshot: AffectSnapshot) -> None:
+        current = snapshot.current
+        self._emote_name = snapshot.emote_id
+        self._emote_display = _pad_to_lines(
+            f"V={current.valence:+.2f} A={current.arousal:+.2f} "
+            f"D={current.dominance:+.2f}\nprocess={self._process_state}"
+        )
+        self.refresh()
 
-    def update_emote(self, name: str, display_text: str, is_named: bool = True) -> None:
-        """Set the emote name and display text (already resolved by EmoteTool)."""
-        self._emote_name = name if is_named else ""
-        self._emote_display = display_text
+    def update_process_state(self, snapshot: ProcessSnapshot) -> None:
+        self._process_state = snapshot.state
+        self._emote_display = _pad_to_lines(
+            f"{self._emote_display.strip().splitlines()[0]}\nprocess={self._process_state}"
+        )
         self.refresh()
 
     def render(self):
