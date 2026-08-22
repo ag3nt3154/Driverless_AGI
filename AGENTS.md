@@ -1,6 +1,6 @@
 # AGENTS.md
 
-> Last updated: 2026-08-22 (Task 9) | [README](README.md) | [TODO](TODO.md)
+> Last updated: 2026-08-22 (Task 10) | [README](README.md) | [TODO](TODO.md)
 
 
 
@@ -176,8 +176,8 @@ tui.py / telegram_bot.py / main.py / dagi_gui/__main__.py
 | `tui/app.py`, `tui/commands.py`, `tui/callbacks.py`  | TUI lifecycle, slash commands including `/wtf`, StreamPreview, and callbacks bridge                                                                           |
 | `dagi_gui/server.py`                                 | `GUIServer`: reads NDJSON commands from stdin loop, dispatches to `AgentLoop`/session                                                                          |
 | `dagi_gui/session.py`                                | `SessionController`: lifecycle (run/pause/resume/cancel/clear/compact/shutdown), `_kill_active_work` kills active bash + subagents on pause                     |
-| `desktop/src/shared/protocol.ts`                     | Zod discriminated unions: 19 command types + 17 event types; `PROTOCOL_VERSION=1`; `parseEvent`/`serializeCommand`                                             |
-| `pyside_gui/app.py`                                  | `DagiMainWindow(config, project_path, verbose)` — PySide6 QMainWindow shell; placeholder label as central widget (Task 10 will wire in ConversationView)       |
+| `pyside_gui/app.py`                                  | `DagiMainWindow(config, project_path, verbose)` — full main window: splitter layout, agent dispatch on background thread, pause/resume, slash commands, overlays |
+| `pyside_gui/utils.py`                               | `format_elapsed(start)` — formats elapsed seconds into human-readable string for the running spinner label                                                      |
 | `pyside_gui/conversation.py`                         | `ConversationView(verbose)` — QWebEngineView subclass; 13 Python methods → JS DOM calls; loads `resources/conversation.html`                                    |
 | `pyside_gui/resources/`                              | Static assets for ConversationView: `conversation.html`, `conversation.css` (Catppuccin Mocha), `conversation.js` (DOM API)                                     |
 | `pyside_gui/bridge.py`                               | `AgentBridge(QObject)` — translates all `AgentCallbacks` fields to Qt Signals; `build_callbacks()` returns a wired `AgentCallbacks` for thread-safe UI updates  |
@@ -208,8 +208,8 @@ tui.py / telegram_bot.py / main.py / dagi_gui/__main__.py
 - **`subagent_api` vs `_subagent_runner`**: `tools/subagent_api.py` is the public API (preset resolution, envelope, `SubagentResult`); `tools/_subagent_runner.py` is the private subprocess spawner. Never import `_subagent_runner` directly from outside `subagent_api.py`.
 - **Inherited fork v2**: `ParentContextProvider` preserves the exact request prefix; children reuse its `write_handoff` schema as their final action, and every other tool call remains allowlist-enforced.
 - **`/wtf` report contract**: `.dagi/errors/wtf_<branch>.md` has exactly `Description`, `Error Report`, and `Suggested Fix`; the parent stores only a path/branch reference.
-- **`_last_request_snapshot`**: `AgentLoop` captures provider request fields before each call; compact and inherited forks serialize them without credentials.
 - **PySide6 DLL bootstrap**: On Windows + conda, `os.add_dll_directory` must be called for the PySide6 package dir before any `from PySide6.*` import; `python -m pyside_gui` will crash without it.
+- **PySide6 cross-thread UI calls**: Never call Qt widget methods directly from a background thread; use `QMetaObject.invokeMethod(..., Qt.QueuedConnection)` for non-signal paths, or route through `AgentBridge` signals (auto-queued when connected across threads).
 
 ## User Insights
 
