@@ -213,3 +213,5 @@ benchmarks/dagi_eval/logs/
 config.yaml
 
 docs/*
+
+pycache*
