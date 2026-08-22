@@ -3,6 +3,7 @@
 > Last updated: 2026-08-22 | [README](README.md) | [TODO](TODO.md)
 
 
+
 ---
 
 ## Overview
@@ -166,7 +167,6 @@ tui.py / telegram_bot.py / main.py / dagi_gui/__main__.py
 | `agent/loop.py`                                      | Core loop, parent fork capture, system-prompt assembly, termination/compaction, and handoff dispatch                                                          |
 | `agent/config_loader.py`                             | Reads `config.yaml`, merges `.dagi/config.yaml`, resolves API key, services, Telegram config                                                                   |
 | `agent/session_log.py`                               | Append-only event log; `SessionLog.branches` tracks subagent branches; `branch_event(id)` returns the BRANCH_START event for a branch                         |
-| `agent/session_events.py`                            | Event vocabulary constants (`TURN_START`, `BRANCH_START`, etc.); `SESSION_FORMAT_VERSION`                                                                      |
 | `agent/parent_context.py`                            | Immutable parent request snapshots and version-2 fork-context serialization                                                                                    |
 | `agent/inherited_registry.py`                        | Exact-schema inherited tool wrappers and blocked-tool enforcement                                                                                             |
 | `agent/wtf.py`, `agent/wtf_report.py`                | Atomic `/wtf` orchestration and strict report parser                                                                                                           |
@@ -181,10 +181,11 @@ tui.py / telegram_bot.py / main.py / dagi_gui/__main__.py
 | `pyside_gui/app.py`                                  | `DagiMainWindow(config, project_path, verbose)` — PySide6 QMainWindow shell; placeholder label as central widget (Task 10 will wire in ConversationView)       |
 | `pyside_gui/conversation.py`                         | `ConversationView(verbose)` — QWebEngineView subclass; 13 Python methods → JS DOM calls; loads `resources/conversation.html`                                    |
 | `pyside_gui/resources/`                              | Static assets for ConversationView: `conversation.html`, `conversation.css` (Catppuccin Mocha), `conversation.js` (DOM API)                                     |
+| `pyside_gui/bridge.py`                               | `AgentBridge(QObject)` — translates all `AgentCallbacks` fields to Qt Signals; `build_callbacks()` returns a wired `AgentCallbacks` for thread-safe UI updates  |
+| `pyside_gui/right_sidebar.py`                        | `RightSidebar(QScrollArea)` — status dot, model name, token stats, context breakdown (calls `_system_breakdown`), and plan subtask list                         |
 
 ## Errors Log (recent)
 
-- **2026-08-19**: Compact fork context needed subprocess wiring → `fork_context_path` now reaches the forked child without carrying credentials.
 - **2026-08-20**: Full suite still has eight pre-existing Windows/environment failures (process-kill timing and temp/fixture setup) → documented; feature suites remain green.
 - **2026-08-20**: Task 11 failure matrix found no production defect; all child failure outcomes preserve the parent surface and paused checkpoint.
 - **2026-08-20**: Final review found inherited children skipped preset instructions and wiki context → forward the preset prompt after the exact prefix and suppress dynamic injection.
@@ -193,6 +194,7 @@ tui.py / telegram_bot.py / main.py / dagi_gui/__main__.py
 - **2026-08-20**: Main handoffs used filtered output, ambiguous failure state, and raw thread prefixes → defer full `on_done` Markdown only after confirmed termination and use a reserved, hashed filename.
 - **2026-08-21**: `test_discover_subagent_tools` and `test_subagent_configs` still fail on `dagi/subagent-simplification` branch because `plan`/`cli` deletions (Tasks 1-2) weren't reflected in those tests — pre-existing, not caused by Task 4.
 - **2026-08-22**: PySide6 6.11.2 on Python 3.14 in `dagi` conda env fails DLL load unless `os.add_dll_directory(pyside6_dir)` is called before import — Qt DLLs not on PATH via conda activation; `__main__.py` must bootstrap this before any PySide6 import.
+- **2026-08-22**: `AgentCallbacks.on_emote` type annotation says `Callable[[str, str], None]` (2 args) but actual call site in `tools/emote/_emote.py` passes 3 args `(name, display, is_named)` — annotation is stale; use 3-arg signature.
 
 ## Notes & Terms
 
