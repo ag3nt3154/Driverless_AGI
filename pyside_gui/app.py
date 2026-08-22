@@ -27,7 +27,6 @@ from pyside_gui.prompt_input import PromptInput
 from pyside_gui.right_sidebar import RightSidebar
 from pyside_gui.utils import format_elapsed
 
-
 _SPINNER = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
 
 
@@ -48,8 +47,8 @@ class DagiMainWindow(QMainWindow):
         self._run_start_time: float | None = None
         self._spinner_idx = 0
         self._restore_initial_messages: list | None = None
-        self._pending_ask: object = None          # threading.Event
-        self._pending_ask_container: list | None = None  # answer sink
+        self._pending_ask: object = None  # threading.Event; answer sink below
+        self._pending_ask_container: list | None = None
         self._compose_mode = False
 
         self.setWindowTitle(f"Driverless AGI — {config.display_name}")
@@ -138,9 +137,8 @@ class DagiMainWindow(QMainWindow):
         self._cmd_handler = SlashCommandHandler(
             widgets, self._config, self._project_path
         )
-        self._cmd_handler.set_worker_alive_check(
-            lambda: bool(self._worker and self._worker.is_alive())
-        )
+        alive = lambda: bool(self._worker and self._worker.is_alive())  # noqa: E731
+        self._cmd_handler.set_worker_alive_check(alive)
         self._cmd_handler.load_maps()
 
     def _connect_signals(self) -> None:
@@ -252,10 +250,8 @@ class DagiMainWindow(QMainWindow):
         self._current_loop_ref = []
         callbacks = self._bridge.build_callbacks(self._current_loop_ref)
         self._worker = threading.Thread(
-            target=self._agent_work,
-            args=(task, callbacks, self._current_loop_ref),
-            daemon=True,
-        )
+            target=self._agent_work, args=(task, callbacks, self._current_loop_ref),
+            daemon=True)
         self._worker.start()
 
     def _agent_work(self, task: str, callbacks: object, loop_ref: list) -> None:
@@ -340,7 +336,6 @@ class DagiMainWindow(QMainWindow):
         self._conversation.append_info("— turn complete —")
         if result:
             self._notify("DAGI is done", result)
-        self._hide_running()
         self._enable_input()
 
     @Slot()
@@ -437,9 +432,7 @@ class DagiMainWindow(QMainWindow):
         self._running_label.hide()
 
     def _enable_input(self) -> None:
-        self._hide_running()
-        self._prompt.setDisabled(False)
-        self._prompt.setFocus()
+        self._hide_running(); self._prompt.setDisabled(False); self._prompt.setFocus()
 
     def _tick_spinner(self) -> None:
         if not self._running_label.isVisible():
@@ -485,8 +478,7 @@ class DagiMainWindow(QMainWindow):
 
     def _notify(self, title: str, message: str) -> None:
         try:
-            from tui.notifications import notify
-            notify(title, message)
+            from tui.notifications import notify; notify(title, message)
         except Exception:
             pass
 

@@ -159,6 +159,28 @@ conda run --no-capture-output -n dagi python tui.py -m deepseek-v4-pro-openroute
 
 Exit with `/exit`, `exit`, `quit`, or `Ctrl-C`. Conversation history carries across turns.
 
+### PySide6 Desktop GUI (`pyside_gui/`)
+
+A native Qt 6 desktop app with a dark Catppuccin Mocha theme. Functionally equivalent to the TUI — full streaming conversation (rendered as HTML via QWebEngineView), right sidebar with token stats and plan tracker, left sidebar with session history, overlay dialogs, and the full slash-command set.
+
+```bash
+# Launch (Windows/Linux/macOS — requires conda dagi env):
+conda run --no-capture-output -n dagi python -m pyside_gui
+conda run --no-capture-output -n dagi python -m pyside_gui --model <id> --project /path/to/project
+```
+
+| Flag | Description |
+|------|-------------|
+| `--model` / `-m` | Model ID from `config.yaml` |
+| `--verbose` / `-v` | Show full tool input/output |
+| `--project` / `-p` | Project directory (defaults to `cwd`) |
+
+**Keyboard shortcuts:** `Enter` submit · `Shift+Enter`/`Ctrl+N` newline · `Ctrl+O` compose mode · `Esc` pause · `Ctrl+Q` quit
+
+**Slash commands:** same set as TUI — `/help`, `/clear`, `/model`, `/compact`, `/tools`, `/skills`, `/workflows`, `/hist`, `/init`, `/copy`, `/exit`
+
+> **Windows note:** PySide6 DLL loading is handled automatically by `pyside_gui/__init__.py`.
+
 ### Double-Click Launcher (`dagi_run.bat`) — portable/conda-packed distribution
 
 For a distribution that doesn't require a full conda install, unpack a [conda-pack](https://conda.github.io/conda-pack/)'d environment named `dagi_env` as a sibling folder next to this repo:
