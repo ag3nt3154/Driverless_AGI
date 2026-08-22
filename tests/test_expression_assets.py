@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import math
 from pathlib import Path
 
@@ -159,6 +160,38 @@ def test_invalid_selected_vad_asset_falls_back_and_warns_once(tmp_path: Path) ->
     ]
 
 
+def test_vad_library_keeps_invalid_current_asset_until_hysteresis_is_met(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / ".dagi" / "emotes"
+    _write(root / "default.md", "fallback")
+    _asset(root / "vad" / "calm.png")
+    _write(
+        root / "vad" / "manifest.yaml",
+        (
+            "version: 1\n"
+            "emotes:\n"
+            "  - id: calm\n"
+            "    file: calm.png\n"
+            "    vad: [0.0, 0.0, 0.0]\n"
+            "  - id: broken\n"
+            "    file: ../outside.png\n"
+            "    vad: [0.2, 0.0, 0.0]\n"
+        ),
+    )
+
+    library = VadLibrary.load(root / "vad", root / "default.md")
+
+    emote_id, asset = library.resolve((0.09, 0.0, 0.0), "broken", 0.05)
+    assert emote_id == "broken"
+    assert isinstance(asset, TextFallback)
+    assert asset.text == "fallback"
+
+    emote_id, asset = library.resolve((0.09, 0.0, 0.0), "broken", 0.01)
+    assert emote_id == "calm"
+    assert asset == ImageAsset("calm", root / "vad" / "calm.png")
+
+
 def test_process_state_requires_fallback_keys(tmp_path: Path) -> None:
     root = tmp_path / ".dagi" / "emotes"
     _write(root / "default.md", "fallback")
@@ -250,3 +283,19 @@ def test_load_fallback_uses_literal_dagi_when_default_is_unreadable(tmp_path: Pa
 
     assert fallback.path == unreadable
     assert fallback.text == "DAGI"
+
+
+def test_load_fallback_warns_when_default_is_unreadable(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    root = tmp_path / ".dagi" / "emotes"
+    unreadable = root / "default.md"
+    unreadable.mkdir(parents=True)
+
+    with caplog.at_level(logging.WARNING, logger="agent.expression_assets"):
+        load_fallback(root)
+
+    assert any(
+        "default fallback unreadable" in message and str(unreadable) in message
+        for message in caplog.messages
+    )

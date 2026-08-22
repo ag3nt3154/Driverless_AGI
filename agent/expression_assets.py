@@ -144,7 +144,11 @@ def _distance(left: VadPoint, right: VadPoint) -> float:
 
 def load_fallback(emotes_root: Path) -> TextFallback:
     fallback_path = emotes_root / "default.md"
-    return _load_fallback(fallback_path, "default fallback", lambda *_args: None)
+    return _load_fallback(
+        fallback_path,
+        "default fallback",
+        lambda _key, message: _LOGGER.warning(message),
+    )
 
 
 class VadLibrary:
@@ -237,7 +241,7 @@ class VadLibrary:
             return "fallback", self._fallback(self._disabled_reason or "vad library unavailable")
         nearest = min(self._entries, key=lambda entry: _distance(vector, entry.point))
         current = self._by_id.get(current_id) if current_id else None
-        if current and current.asset is not None and current.id != nearest.id:
+        if current and current.id != nearest.id:
             current_distance = _distance(vector, current.point)
             challenger_distance = _distance(vector, nearest.point)
             if current_distance - challenger_distance < hysteresis:
