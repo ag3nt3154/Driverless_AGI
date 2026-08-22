@@ -1,6 +1,6 @@
 # AGENTS.md
 
-> Last updated: 2026-08-23 (affect config + adjust_affect registry/prompt migration) | [README](README.md) | [TODO](TODO.md)
+> Last updated: 2026-08-23 (affect config validation + runtime controller binding) | [README](README.md) | [TODO](TODO.md)
 
 
 
@@ -142,7 +142,7 @@ tui.py / telegram_bot.py / main.py / dagi_gui/__main__.py / pyside_gui/__main__.
 
 **Expression asset libraries (branch `dagi/affect-and-process-emotes`):** `agent/expression_assets.py` loads `.dagi/emotes/vad/manifest.yaml` and `.dagi/emotes/states/manifest.yaml` into immutable `ImageAsset` / `TextFallback` refs, validates asset paths stay under their channel roots, and caches warning keys so broken manifests warn once while later lookups fall back to `.dagi/emotes/default.md` (or literal `DAGI` if unreadable). `VadLibrary.resolve()` uses Euclidean distance plus hysteresis against the current id; `ProcessStateLibrary.resolve()` follows `tool:<name> -> tool -> thinking -> idle`.
 
-**Affect core (branch `dagi/affect-and-process-emotes`):** `agent/affect.py` defines immutable `AffectConfig`, `AffectVector`, `AffectRestore`, and `AffectSnapshot`, plus `AffectController`. `agent/config_loader.py` validates top-level `affect:` tuning into `AgentConfig`; normal main registries expose `adjust_affect` only when an affect controller is bound, while plan/subagent registries never expose it. The legacy `tools/emote` package remains dormant until its last TUI consumer is removed.
+**Affect core (branch `dagi/affect-and-process-emotes`):** `agent/affect.py` defines immutable `AffectConfig`, `AffectVector`, `AffectRestore`, and `AffectSnapshot`, plus `AffectController`. `agent/config_loader.py` validates top-level `affect:` tuning into `AgentConfig`; `AgentLoop` binds a fallback-capable `AffectController` to the root `SessionTracker` before normal main registry construction. Normal main registries expose `adjust_affect` only when that controller is bound, while plan/subagent registries never expose it; legacy `tools/emote` remains dormant until Task 6 removes its TUI consumer.
 
 **Process-state controller (branch `dagi/affect-and-process-emotes`):** `agent/process_state.py` defines immutable `ProcessSnapshot` plus `ProcessStateController`. The controller consumes `ProcessStateLibrary.resolve(state)`, funnels all public lifecycle methods through `_transition(state)`, deduplicates exact repeat snapshots, stores before publish, and models tool flow as `idle -> thinking -> tool:<name> -> thinking` while letting explicit `paused` / `error` states persist until the next transition.
 
@@ -173,9 +173,8 @@ tui.py / telegram_bot.py / main.py / dagi_gui/__main__.py / pyside_gui/__main__.
 
 ## Errors Log (recent)
 
+- **2026-08-23**: Task 5 review found falsey malformed `affect:` blocks were masked as defaults and main sessions never bound an affect controller → validate present block shape before defaults and bind a fallback-capable controller before normal registry construction.
 - **2026-08-22**: `/wd` did not switch model when project `.dagi/config.yaml` sets a different `default_model` → `_cmd_wd` was passing `self._model_id` to `resolve_model_config`, pinning the old model; fix: pass `None` so the project default wins.
-- **2026-08-20**: Final review found default-credential mixing and shallow handoff checks → fail fast on provider mismatch, recursively reject secret fields, and retry malformed handoffs once.
-- **2026-08-20**: Final-assistant-text handoffs were unreliable on smaller inherited models → restore final `write_handoff`, expose its schema on the main agent, and validate the tool-written file.
 - **2026-08-20**: Main handoffs used filtered output, ambiguous failure state, and raw thread prefixes → defer full `on_done` Markdown only after confirmed termination and use a reserved, hashed filename.
 - **2026-08-21**: `test_discover_subagent_tools` and `test_subagent_configs` still fail on `dagi/subagent-simplification` branch because `plan`/`cli` deletions (Tasks 1-2) weren't reflected in those tests — pre-existing, not caused by Task 4.
 - **2026-08-22**: PySide6 6.11.2 on Python 3.14 in `dagi` conda env fails DLL load unless `os.add_dll_directory(pyside6_dir)` is called before import — Qt DLLs not on PATH via conda activation; `__main__.py` must bootstrap this before any PySide6 import.

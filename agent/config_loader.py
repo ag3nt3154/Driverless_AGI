@@ -131,7 +131,10 @@ def _merge_configs(root_raw: dict, project_raw: dict) -> dict:
 
 def _load_affect_config(raw: dict) -> AffectConfig:
     """Return validated affect-controller tuning from the top-level config."""
-    affect_raw = raw.get("affect") or {}
+    if "affect" not in raw:
+        affect_raw = {}
+    else:
+        affect_raw = raw["affect"]
     if not isinstance(affect_raw, dict):
         raise ValueError("affect must be a mapping")
 

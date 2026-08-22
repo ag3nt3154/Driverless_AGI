@@ -643,6 +643,25 @@ class TestSessionLogWiring:
         assert "session_log" in captured_kwargs
         assert captured_kwargs["session_log"] is loop.log
 
+    def test_main_loop_binds_affect_controller_before_registry_build(self, tmp_path):
+        """A normal main loop must expose adjust_affect when config allowlists it."""
+        from agent.affect import AffectController
+
+        config = AgentConfig(
+            api_key="test-key",
+            project_path=tmp_path,
+            system_prompt="{tools_and_skills}",
+            tools=["adjust_affect"],
+        )
+
+        with patch("openai.OpenAI"):
+            loop = AgentLoop(config=config)
+
+        names = {name for name, _description in loop.registry.list_tools()}
+        assert isinstance(loop.tracker.affect_controller, AffectController)
+        assert "adjust_affect" in names
+        assert "emote" not in names
+
 
 class TestParentForkCapture:
     def test_spawn_fork_uses_request_before_assistant_tool_response(self):

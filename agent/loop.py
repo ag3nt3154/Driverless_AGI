@@ -21,6 +21,8 @@ from openai.types.chat.chat_completion_message_function_tool_call import (
 
 from agent import DAGI_ROOT
 from agent._git_branch import create_task_branch, get_current_branch
+from agent.affect import AffectConfig, AffectController
+from agent.expression_assets import VadLibrary
 from agent.prompts import load_prompt, load_main_system_prompt, load_soul
 from agent.registry import ToolRegistry
 from agent import session_events as sev
@@ -137,6 +139,36 @@ def _format_reload_notification(
 
 
 CONTINUE_PROMPT = load_prompt("main/continue.md")
+
+
+def _load_vad_library(dagi_root: Path) -> VadLibrary:
+    """Load the current VAD library, falling back to text when assets are absent."""
+    emotes_root = dagi_root / ".dagi" / "emotes"
+    return VadLibrary.load(
+        emotes_root / "vad",
+        emotes_root / "default.md",
+    )
+
+
+def _ensure_affect_controller(
+    tracker: SessionTracker,
+    config: "AgentConfig",
+    dagi_root: Path,
+) -> None:
+    """Bind the root affect controller early enough for main registry construction."""
+    if tracker.affect_controller is not None:
+        return
+    affect_config = AffectConfig(
+        drift_pull=config.affect_drift_pull,
+        drift_noise=config.affect_drift_noise,
+        emote_hysteresis=config.affect_emote_hysteresis,
+    )
+    controller = AffectController(
+        _load_vad_library(dagi_root),
+        config=affect_config,
+        record=tracker.record_affect,
+    )
+    tracker.bind_affect_controller(controller)
 
 
 @dataclass
@@ -344,6 +376,7 @@ class AgentLoop:
             self.registry = _registry
             self.skills = []
         else:
+            _ensure_affect_controller(self.tracker, config, dagi_root)
             # ── Load skills ───────────────────────────────────────────────────
             skill_roots = [
                 dagi_root / ".dagi" / "skills",

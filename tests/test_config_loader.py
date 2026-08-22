@@ -65,6 +65,13 @@ def test_affect_config_defaults_when_absent():
     assert cfg.emote_hysteresis == 0.05
 
 
+@pytest.mark.parametrize("affect_value", [[], False, 0, "", None])
+def test_affect_config_rejects_present_non_mapping_blocks(affect_value):
+    """Present but malformed affect blocks must not be masked as defaults."""
+    with pytest.raises(ValueError, match="affect"):
+        _load_affect_config({"affect": affect_value})
+
+
 def test_affect_config_preserves_raw_values_on_all_model_tiers(tmp_path):
     """Changing construction to omit worker/advanced affect values must fail here."""
     cfg_file = tmp_path / "config.yaml"
