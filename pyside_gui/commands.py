@@ -160,9 +160,7 @@ class SlashCommandHandler:
             return None
         self._project_path = new
         from agent.config_loader import resolve_model_config
-        self._config = resolve_model_config(
-            self._config.model_id, project_path=new
-        )
+        self._config = resolve_model_config(None, project_path=new)
         self._w.right_sidebar.update_model(self._config.display_name)
         self._w.right_sidebar.set_project_path(new)
         self._active_loop = None

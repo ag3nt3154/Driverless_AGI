@@ -147,8 +147,10 @@ class SlashCommandsMixin:
             return
         self._project_path = new
         from agent.config_loader import resolve_model_config
-        self._config = resolve_model_config(self._model_id, project_path=new)
-        # The resolved config reflects the new project's merged config (root + .dagi/config.yaml).
+        # Pass model_id=None so the project's default_model takes precedence over the
+        # previously-active model. Passing self._model_id would pin the old model and
+        # prevent the project config from ever changing it.
+        self._config = resolve_model_config(None, project_path=new)
         self._model_id = self._config.model_id
         self._model_name = self._config.display_name
         sidebar = self.query_one(Sidebar)
