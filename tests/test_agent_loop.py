@@ -695,6 +695,23 @@ class TestSessionLogWiring:
 
 
 class TestProcessLifecycle:
+    def test_reload_short_circuit_marks_process_idle_before_notification(self):
+        """A successful /reload is a completed turn and must not leave the UI paused."""
+        events: list[str] = []
+        callbacks = AgentCallbacks(
+            on_process_state_changed=lambda snap: events.append(f"process:{snap.state}"),
+            on_assistant_text=lambda _text: events.append("assistant_text"),
+        )
+        loop = _make_loop()
+        loop.callbacks = callbacks
+        loop._bind_process_listener()
+        loop.pause()
+        loop._rebuild_for_reload = MagicMock(return_value=(set(), set(), []))
+
+        loop.run("/reload")
+
+        assert events == ["process:paused", "process:idle", "assistant_text"]
+
     def test_process_state_wraps_api_attempt_tool_call_and_completion(self):
         """Process callbacks must bracket the real lifecycle, not lag behind UI callbacks."""
         tool = FakeTool(name="echo", result="echoed!")

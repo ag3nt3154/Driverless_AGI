@@ -5,7 +5,6 @@ import time
 from pathlib import Path
 
 from PySide6.QtCore import QMetaObject, Qt, QTimer, Q_ARG, Slot
-from PySide6.QtGui import QAction, QKeySequence
 from PySide6.QtWidgets import (
     QLabel,
     QMainWindow,
@@ -24,6 +23,7 @@ from pyside_gui.commands import SlashCommandHandler, UIWidgets
 from pyside_gui.conversation import ConversationView
 from pyside_gui.left_sidebar import LeftSidebar
 from pyside_gui.markdown_renderer import render_markdown
+from pyside_gui.menu import build_main_menu
 from pyside_gui.overlays import AskUserDialog, CopyPicker
 from pyside_gui.prompt_input import PromptInput
 from pyside_gui.right_sidebar import RightSidebar
@@ -110,55 +110,12 @@ class DagiMainWindow(QMainWindow):
         self._copy_picker = CopyPicker(self._conversation)
 
     def _build_menu(self) -> None:
-        menu = self.menuBar()
-        menu.setStyleSheet("""
-            QMenuBar {
-                background: #313244; color: #cdd6f4;
-                border-bottom: 1px solid #45475a;
-                font-family: 'Segoe UI', system-ui, sans-serif;
-                font-size: 13px;
-                padding: 2px 0px;
-            }
-            QMenuBar::item {
-                padding: 4px 12px;
-                border-radius: 4px;
-                margin: 2px 2px;
-            }
-            QMenuBar::item:selected { background: #45475a; }
-            QMenu {
-                background: #313244; color: #cdd6f4;
-                border: 1px solid #45475a;
-                border-radius: 6px;
-                padding: 4px;
-                font-family: 'Segoe UI', system-ui, sans-serif;
-                font-size: 13px;
-            }
-            QMenu::item {
-                padding: 6px 24px 6px 12px;
-                border-radius: 4px;
-            }
-            QMenu::item:selected { background: #45475a; }
-        """)
-        file_menu = menu.addMenu("&File")
-        new_act = QAction("&New Session", self)
-        new_act.setShortcut(QKeySequence("Ctrl+N"))
-        new_act.triggered.connect(lambda: self._cmd_handler.handle("/clear"))
-        file_menu.addAction(new_act)
-        exit_act = QAction("E&xit", self)
-        exit_act.setShortcut(QKeySequence("Ctrl+Q"))
-        exit_act.triggered.connect(self.close)
-        file_menu.addAction(exit_act)
-
-        sess_menu = menu.addMenu("&Session")
-        compact_act = QAction("&Compact", self)
-        compact_act.triggered.connect(
-            lambda: self._handle_special_command("__COMPACT__")
+        build_main_menu(
+            self,
+            on_new_session=lambda: self._cmd_handler.handle("/clear"),
+            on_compact=lambda: self._handle_special_command("__COMPACT__"),
+            on_compose=self._toggle_compose,
         )
-        sess_menu.addAction(compact_act)
-        compose_act = QAction("&Compose Mode", self)
-        compose_act.setShortcut(QKeySequence("Ctrl+O"))
-        compose_act.triggered.connect(self._toggle_compose)
-        sess_menu.addAction(compose_act)
 
     def _build_commands(self) -> None:
         widgets = UIWidgets(

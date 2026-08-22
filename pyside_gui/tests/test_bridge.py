@@ -81,3 +81,10 @@ def test_token_update_accumulates():
     # Stats accumulates — second emission should show totals
     assert received[1][0] == 300  # input
     assert received[1][1] == 130  # output
+
+
+def test_pyside_app_stays_under_file_cap():
+    from pathlib import Path
+
+    app_path = Path(__file__).parents[1] / "app.py"
+    assert len(app_path.read_text(encoding="utf-8").splitlines()) <= 500

@@ -1084,6 +1084,7 @@ class AgentLoop:
             self.log.append(sev.TURN_START, {"turn": _reload_turn})
             self._log_user_message("system", notification, "reload")
             self._close_turn(_reload_turn, sev.reason_completed())
+            self._completed()
             self.callbacks.on_assistant_text(notification)
             return notification
 

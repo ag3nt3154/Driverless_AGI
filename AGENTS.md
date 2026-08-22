@@ -1,6 +1,6 @@
 # AGENTS.md
 
-> Last updated: 2026-08-23 (affect/process lifecycle integration) | [README](README.md) | [TODO](TODO.md)
+> Last updated: 2026-08-23 (Task 6 review fixes: reload idle + PySide menu extraction) | [README](README.md) | [TODO](TODO.md)
 
 
 
@@ -166,12 +166,15 @@ tui.py / telegram_bot.py / main.py / dagi_gui/__main__.py / pyside_gui/__main__.
 | `tools/subagent_main.py`                             | Forked compact/inherited child entry points, credentials, allowlists, retries, and final handoff validation                                                   |
 | `tui/app.py`, `tui/commands.py`, `tui/callbacks.py`  | TUI lifecycle, slash commands including `/wtf`, StreamPreview, and callbacks bridge                                                                           |
 | `pyside_gui/app.py`                                  | `DagiMainWindow` — main window: splitter layout, agent on daemon thread, streaming dedup, pause/resume, slash commands, overlays (500-line cap)                  |
+| `pyside_gui/menu.py`                                 | Focused Qt menu builder extracted from `pyside_gui/app.py`; owns File/Session actions and shortcuts                                                             |
 | `pyside_gui/bridge.py`                               | `AgentBridge(QObject)` — translates `AgentCallbacks` → Qt Signals; `build_callbacks()` returns wired callbacks for thread-safe UI; owns `_stream_text` accumulator |
 | `pyside_gui/commands.py`                             | `SlashCommandHandler` — GUI slash-command dispatch, skill/workflow map loading, definition-list formatted output                                                 |
 | `pyside_gui/conversation.py` + `resources/`          | `ConversationView(QWebEngineView)` — 13 Python→JS methods; Catppuccin Mocha HTML/CSS/JS template with streaming bubble support                                  |
 
 ## Errors Log (recent)
 
+- **2026-08-23**: `/reload` short-circuit completed without publishing idle, leaving process state paused/thinking in UIs → call `_completed()` before reload notification/return.
+- **2026-08-23**: `pyside_gui/app.py` exceeded the 500-line cap after Task 6 → extract menu construction to `pyside_gui/menu.py` and add a file-cap regression.
 - **2026-08-23**: Task 5 review found falsey malformed `affect:` blocks were masked as defaults and main sessions never bound an affect controller → validate present block shape before defaults and bind a fallback-capable controller before normal registry construction.
 - **2026-08-22**: `/wd` did not switch model when project `.dagi/config.yaml` sets a different `default_model` → `_cmd_wd` was passing `self._model_id` to `resolve_model_config`, pinning the old model; fix: pass `None` so the project default wins.
 - **2026-08-20**: Main handoffs used filtered output, ambiguous failure state, and raw thread prefixes → defer full `on_done` Markdown only after confirmed termination and use a reserved, hashed filename.
@@ -180,8 +183,6 @@ tui.py / telegram_bot.py / main.py / dagi_gui/__main__.py / pyside_gui/__main__.
 - **2026-08-22**: pyside_gui final-review: XSS in fence lang (escape before `class=` interpolation); timeout=0 deadlock (`0.0 or None = None` → explicit `if timeout <= 0` branch); `_messages` race between main+worker threads (snapshot via `list()` before passing to `CopyPicker`).
 - **2026-08-22**: pyside_gui streaming showed `<<END_OF_RESPONSE>>` + duplicate assistant/reasoning bubbles → strip `_LOOP_SENTINELS` in `_on_stream_ended`; gate `_on_assistant_text` and `_on_reasoning` behind `_stream_had_content` flag.
 - **2026-08-22**: `_parse_frontmatter` captured literal `>-` instead of parsing YAML block scalars → added indented-continuation-line collection for `>-`/`|-`/`>`/`|` indicators in both `agent/skills.py` and `agent/workflows.py`.
-- **2026-08-23**: `--basetemp .pytest-tmp` makes git-sensitive tmp_path tests inherit the repo parent → use an out-of-repo basetemp for `test_plan_mode_branch.py`.
-- **2026-08-22**: `pytest` temp fixtures under `C:\Users\alexr\AppData\Local\Temp\pytest-of-alexr` can fail with `PermissionError` in this workspace → pass `--basetemp .pytest-tmp` except for git-sensitive tests.
 
 ## Notes & Terms
 
