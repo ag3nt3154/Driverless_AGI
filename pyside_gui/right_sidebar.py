@@ -31,17 +31,20 @@ QWidget#right-sidebar {
 }
 QLabel {
     color: #cdd6f4;
-    font-family: 'Segoe UI', system-ui, sans-serif;
-    font-size: 13px;
+    font-family: 'Cascadia Code', 'Consolas', monospace;
+    font-size: 12px;
 }
 QLabel#emote-label {
     color: #89b4fa;
-    font-family: 'Cascadia Code', 'Consolas', monospace;
     font-size: 11px;
     padding: 4px;
 }
 QLabel#status-label { font-weight: bold; }
-QLabel#model-label { font-weight: bold; font-size: 14px; }
+QLabel#model-label {
+    font-weight: bold;
+    font-size: 13px;
+    font-family: 'Segoe UI', system-ui, sans-serif;
+}
 QLabel#section-header {
     color: #6c7086;
     font-size: 11px;
@@ -198,10 +201,10 @@ class RightSidebar(QScrollArea):
         )
 
     def _refresh_paths(self) -> None:
-        lines = [f"cwd  {_path_tail(self._project_path)}"]
-        lines.append(f"app  {_path_tail(self._dagi_root)}")
+        lines = [f"{'cwd':<4}{_path_tail(self._project_path)}"]
+        lines.append(f"{'app':<4}{_path_tail(self._dagi_root)}")
         if self._memory_root:
-            lines.append(f"mem  {_path_tail(self._memory_root)}")
+            lines.append(f"{'mem':<4}{_path_tail(self._memory_root)}")
         self._paths_label.setText("\n".join(lines))
 
     def _refresh_tokens(self) -> None:
@@ -210,13 +213,13 @@ class RightSidebar(QScrollArea):
             else "$—"
         )
         parts = [
-            f"in  ~{self._input_tok:,}",
-            f"out ~{self._output_tok:,}",
+            f"{'in':<6}~{self._input_tok:>8,}",
+            f"{'out':<6}~{self._output_tok:>8,}",
         ]
         if self._thinking_tok:
-            parts.append(f"think ~{self._thinking_tok:,}")
+            parts.append(f"{'think':<6}~{self._thinking_tok:>8,}")
         if self._cached_tok:
-            parts.append(f"cache ~{self._cached_tok:,}")
+            parts.append(f"{'cache':<6}~{self._cached_tok:>8,}")
         parts.append(cost)
         self._tokens_label.setText("\n".join(parts))
 
@@ -232,20 +235,20 @@ class RightSidebar(QScrollArea):
         lines: list[str] = []
         for key in ("sys-prompt", "dagi/ag", "proj/ag"):
             n = sys_parts.get(key, 0)
-            lines.append(f"{key:<10} ~{n:>6,}  {pct(n):>4}")
+            lines.append(f"{key:<11}~{n:>6,} {pct(n):>3}")
 
         for key in ("summary", "user", "assistant", "tools"):
             n = self._buckets.get(key, 0)
-            lines.append(f"{key:<10} ~{n:>6,}  {pct(n):>4}")
+            lines.append(f"{key:<11}~{n:>6,} {pct(n):>3}")
 
         res = self._reserve_tokens
-        lines.append(f"{'reserve':<10} ~{res:>6,}  {pct(res):>4}")
+        lines.append(f"{'reserve':<11}~{res:>6,} {pct(res):>3}")
 
         total = sum(sys_parts.values()) + sum(
             self._buckets.values()
         ) + res
         usage = total / W if W else 0
-        lines.append(f"{'total':<10} ~{total:>6,}  {usage*100:.0f}%")
+        lines.append(f"{'total':<11}~{total:>6,} {usage*100:.0f}%")
         self._context_label.setText("\n".join(lines))
 
     def _refresh_plan(self) -> None:

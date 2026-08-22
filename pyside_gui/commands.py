@@ -1,11 +1,20 @@
 from __future__ import annotations
 
+import textwrap
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Callable
 
 from agent import DAGI_ROOT
 from tui.utils import _SLASH_HELP
+
+_DESC_WRAP = 72
+
+
+def _wrap_desc(desc: str, indent: int = 4) -> list[str]:
+    prefix = " " * indent
+    return textwrap.wrap(desc, width=_DESC_WRAP, initial_indent=prefix,
+                         subsequent_indent=prefix)
 
 if TYPE_CHECKING:
     from agent.loop import AgentConfig
@@ -110,7 +119,8 @@ class SlashCommandHandler:
     def _cmd_help(self) -> None:
         lines = ["Commands:"]
         for name, desc in _SLASH_HELP.items():
-            lines.append(f"  {name:<12} {desc}")
+            lines.append(f"  {name}")
+            lines.extend(_wrap_desc(desc))
         self._w.conversation.append_info("\n".join(lines))
         return None
 
@@ -181,7 +191,9 @@ class SlashCommandHandler:
             return None
         lines = ["Registered tools:"]
         for name, desc in self._active_loop.registry.list_tools():
-            lines.append(f"  {name:<20} {desc}")
+            lines.append(f"  {name}")
+            if desc:
+                lines.extend(_wrap_desc(desc))
         conv.append_info("\n".join(lines))
         return None
 
@@ -192,7 +204,9 @@ class SlashCommandHandler:
             return None
         lines = ["Loaded skills:"]
         for s in skills:
-            lines.append(f"  /{s.name:<20} {s.description or ''}")
+            lines.append(f"  /{s.name}")
+            if s.description:
+                lines.extend(_wrap_desc(s.description))
         self._w.conversation.append_info("\n".join(lines))
         return None
 
@@ -203,7 +217,9 @@ class SlashCommandHandler:
             return None
         lines = ["Loaded workflows:"]
         for w in workflows:
-            lines.append(f"  /{w.name:<20} {w.description or ''}")
+            lines.append(f"  /{w.name}")
+            if w.description:
+                lines.extend(_wrap_desc(w.description))
         self._w.conversation.append_info("\n".join(lines))
         return None
 

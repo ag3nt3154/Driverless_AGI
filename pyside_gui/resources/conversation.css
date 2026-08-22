@@ -109,8 +109,10 @@ body {
 
 .info-message {
     color: var(--text-dim);
-    font-size: 13px;
+    font-family: 'Cascadia Code', 'Consolas', monospace;
+    font-size: 12px;
     padding: 4px 14px;
+    white-space: pre-wrap;
 }
 
 .error-message {

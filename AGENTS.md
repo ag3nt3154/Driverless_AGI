@@ -1,6 +1,6 @@
 # AGENTS.md
 
-> Last updated: 2026-08-22 (/wd model-switch fix) | [README](README.md) | [TODO](TODO.md)
+> Last updated: 2026-08-23 (PySide GUI styling + frontmatter fix) | [README](README.md) | [TODO](TODO.md)
 
 
 
@@ -9,23 +9,12 @@
 
 ## Overview
 
-Driverless AGI (dagi) is a self-hosted Python agentic coding assistant: Plan → Act → Observe loop with tools (read, write, edit, bash, grep, etc). 
+Driverless AGI (dagi) is a Python agentic coding assistant. 
 
 ## Rules
 
 - Use `DEFAULT_PYTHON_ENV` for all Python scripts and package installs.
-- Never invoke `benchmarks/dagi_eval` against a real model without explicit authorization — `--solver` defaults to `"agent"`, always pass `naive`/`gold` unless authorized.
-- DAGI never merges, switches off, or deletes its own `dagi/*` task branch — the user handles that.
 - Always update `AGENTS.md` after completing a task.
-
-## Git Workflow
-
-All git operations use `bash`. Follow this workflow at the start of every task:
-
-1. **Check state** — run `git status` and `git branch --show-current`. If there are uncommitted or unstaged changes, or you are not on the intended base branch, **ask the user**: stash, commit, or checkout a different base?
-2. **Create branch** — `git checkout -b dagi/<task-name>` from the confirmed base.
-3. **Commit discipline** — 1 commit per subtask completion + 1 commit after updating project context. Use [Conventional Commits](https://www.conventionalcommits.org/) format: `feat:`, `fix:`, `chore:`, `docs:`, `refactor:`, `test:`, `perf:`.
-4. **On task end** — stay on `dagi/*` branch. Ask the user if they want to merge back to the previous branch. **Never merge unilaterally.**
 
 ## Behavioral Guidelines
 
@@ -97,11 +86,6 @@ Stop and flag when:
 - Security issues are identified
 - Complexity debt would be significant
 
-### Token Budgets
-
-- Per-task: 4,000 tokens. Per-session: 30,000 tokens.
-- If approaching budget: summarize and start fresh. Surface the breach — do not silently overrun.
-
 ### Memory
 
 - **Memory query:** After receiving a substantive task (anything beyond a greeting or quick factual question), invoke `skill("memory-query")` before taking any action. Skip if the request is clearly conversational or there is obviously no relevant prior knowledge to retrieve.
@@ -113,14 +97,6 @@ Stop and flag when:
 - Never swallow exceptions silently
 - Include context (what operation, what input, suggested fix)
 
-## Process Flow
-
-1. Entry point (`tui.py`/`telegram_bot.py`/`main.py`) receives task string.
-2. `resolve_model_config()` reads `config.yaml` (+ per-project `.dagi/config.yaml`) → `AgentConfig`.
-3. `AgentLoop.__init__()` loads skills, builds `ToolRegistry`, assembles system prompt (including AGENTS.md).
-4. `AgentLoop.run(task)` loops: check pause (TUI) → call LLM → dispatch tools or check termination (`write_handoff`, `<<END_OF_RESPONSE>>`, or `<<TASK_END>>`) → inject continue prompt up to `max_continuations`.
-5. Context compaction triggers mid-loop when token count exceeds threshold.
-6. `SessionTracker.finish()` writes session summary to `.dagi/logs/`.
 
 ## Architecture
 
@@ -182,12 +158,12 @@ tui.py / telegram_bot.py / main.py / dagi_gui/__main__.py / pyside_gui/__main__.
 | `dagi_gui/session.py`                                | `SessionController`: lifecycle (run/pause/resume/cancel/clear/compact/shutdown), `_kill_active_work` kills active bash + subagents on pause                     |
 | `pyside_gui/app.py`                                  | `DagiMainWindow` — main window: splitter layout, agent on daemon thread, streaming dedup, pause/resume, slash commands, overlays (500-line cap)                  |
 | `pyside_gui/bridge.py`                               | `AgentBridge(QObject)` — translates `AgentCallbacks` → Qt Signals; `build_callbacks()` returns wired callbacks for thread-safe UI; owns `_stream_text` accumulator |
+| `pyside_gui/commands.py`                             | `SlashCommandHandler` — GUI slash-command dispatch, skill/workflow map loading, definition-list formatted output                                                 |
 | `pyside_gui/conversation.py` + `resources/`          | `ConversationView(QWebEngineView)` — 13 Python→JS methods; Catppuccin Mocha HTML/CSS/JS template with streaming bubble support                                  |
 
 ## Errors Log (recent)
 
 - **2026-08-22**: `/wd` did not switch model when project `.dagi/config.yaml` sets a different `default_model` → `_cmd_wd` was passing `self._model_id` to `resolve_model_config`, pinning the old model; fix: pass `None` so the project default wins.
-- **2026-08-20**: Final review found inherited children skipped preset instructions and wiki context → forward the preset prompt after the exact prefix and suppress dynamic injection.
 - **2026-08-20**: Final review found default-credential mixing and shallow handoff checks → fail fast on provider mismatch, recursively reject secret fields, and retry malformed handoffs once.
 - **2026-08-20**: Final-assistant-text handoffs were unreliable on smaller inherited models → restore final `write_handoff`, expose its schema on the main agent, and validate the tool-written file.
 - **2026-08-20**: Main handoffs used filtered output, ambiguous failure state, and raw thread prefixes → defer full `on_done` Markdown only after confirmed termination and use a reserved, hashed filename.
@@ -196,6 +172,7 @@ tui.py / telegram_bot.py / main.py / dagi_gui/__main__.py / pyside_gui/__main__.
 - **2026-08-22**: `AgentCallbacks.on_emote` type annotation says `Callable[[str, str], None]` (2 args) but actual call site in `tools/emote/_emote.py` passes 3 args `(name, display, is_named)` — annotation is stale; use 3-arg signature.
 - **2026-08-22**: pyside_gui final-review: XSS in fence lang (escape before `class=` interpolation); timeout=0 deadlock (`0.0 or None = None` → explicit `if timeout <= 0` branch); `_messages` race between main+worker threads (snapshot via `list()` before passing to `CopyPicker`).
 - **2026-08-22**: pyside_gui streaming showed `<<END_OF_RESPONSE>>` + duplicate assistant/reasoning bubbles → strip `_LOOP_SENTINELS` in `_on_stream_ended`; gate `_on_assistant_text` and `_on_reasoning` behind `_stream_had_content` flag.
+- **2026-08-23**: `_parse_frontmatter` captured literal `>-` instead of parsing YAML block scalars → added indented-continuation-line collection for `>-`/`|-`/`>`/`|` indicators in both `agent/skills.py` and `agent/workflows.py`.
 
 ## Notes & Terms
 
@@ -231,7 +208,7 @@ tui.py / telegram_bot.py / main.py / dagi_gui/__main__.py / pyside_gui/__main__.
 - ESC pauses parent loop but child subprocesses continue.
 - Session cost tracking mostly blank (providers don't populate `usage.cost`).
 - `/hist` in TUI broken — writes to `rich.Console` behind Textual's canvas.
-- `_parse_frontmatter` duplicated verbatim between `agent/skills.py` and `agent/workflows.py`.
+- `_parse_frontmatter` duplicated between `agent/skills.py` and `agent/workflows.py` — both now handle block scalars but should be deduplicated into a shared module.
 - `disable-model-invocation` flag has zero code enforcement — purely advisory.
 - dagi_eval `--timeout-min` doesn't bound scoring phases or blocked API iterations.
 

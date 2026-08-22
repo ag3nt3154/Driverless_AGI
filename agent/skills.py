@@ -38,7 +38,26 @@ def _parse_frontmatter(text: str) -> tuple[dict[str, str], str]:
         return {}, text
     fm_block = m.group(1)
     body = text[m.end():]
-    meta = {k: v for k, v in _KV_RE.findall(fm_block)}
+    meta: dict[str, str] = {}
+    lines = fm_block.splitlines()
+    i = 0
+    while i < len(lines):
+        kv = _KV_RE.match(lines[i])
+        if kv:
+            key, val = kv.group(1), kv.group(2)
+            if val in (">-", "|-", ">", "|"):
+                parts: list[str] = []
+                i += 1
+                while i < len(lines) and (lines[i].startswith("  ") or not lines[i].strip()):
+                    parts.append(lines[i].strip())
+                    i += 1
+                joiner = " " if val.startswith(">") else "\n"
+                meta[key] = joiner.join(p for p in parts if p)
+            else:
+                meta[key] = val
+                i += 1
+        else:
+            i += 1
     return meta, body
 
 
