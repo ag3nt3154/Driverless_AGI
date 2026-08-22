@@ -1226,6 +1226,58 @@ class TestProcessLifecycle:
         assert not worker.is_alive()
         assert not pause_thread.is_alive()
 
+    def test_pause_waits_for_callback_entry_not_pre_call_marker(self):
+        """Pause must not return after the marker but before callback entry."""
+        loop = _make_loop()
+        pre_entry_reached = threading.Event()
+        release_entry = threading.Event()
+        callback_entered = threading.Event()
+        release_callback_body = threading.Event()
+        pause_returned = threading.Event()
+        original_mark_started = loop._mark_lifecycle_callback_started
+
+        def freeze_before_entry() -> None:
+            pre_entry_reached.set()
+            release_entry.wait(timeout=2.0)
+
+        def mark_started(event) -> None:
+            original_mark_started(event)
+            callback_entered.set()
+
+        loop._before_lifecycle_callback_entry = freeze_before_entry
+        loop._mark_lifecycle_callback_started = mark_started
+
+        def prepare():
+            def callback() -> None:
+                release_callback_body.wait(timeout=2.0)
+
+            return callback
+
+        generation = loop._pause_generation
+        worker = threading.Thread(
+            target=lambda: loop._enqueue_lifecycle("running", generation, prepare)
+        )
+        worker.start()
+        assert pre_entry_reached.wait(timeout=1.0)
+
+        pause_thread = threading.Thread(
+            target=lambda: (loop.pause(), pause_returned.set())
+        )
+        pause_thread.start()
+        assert not pause_returned.wait(timeout=0.2)
+        assert not callback_entered.is_set()
+
+        release_entry.set()
+        assert callback_entered.wait(timeout=1.0)
+        assert pause_returned.wait(timeout=1.0)
+        assert worker.is_alive()
+        release_callback_body.set()
+        worker.join(timeout=2.0)
+        pause_thread.join(timeout=2.0)
+
+        assert not worker.is_alive()
+        assert not pause_thread.is_alive()
+
     def test_legacy_affect_drift_is_not_published_after_pause_returns(self):
         """One-piece legacy drift cannot safely mutate outside lifecycle acceptance."""
         loop = _make_loop()

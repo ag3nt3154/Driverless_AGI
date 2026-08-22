@@ -635,13 +635,20 @@ class AgentLoop:
                 item for item in self._lifecycle_callback_starts if item[1] is not event
             ]
 
+    def _before_lifecycle_callback_entry(self) -> None:
+        """Test seam for freezing after acceptance but before callback entry."""
+
     def _start_lifecycle_callback(
         self,
         callback: Callable[[], None],
         start_event: threading.Event,
     ) -> None:
-        self._mark_lifecycle_callback_started(start_event)
-        callback()
+        def entered_callback() -> None:
+            self._mark_lifecycle_callback_started(start_event)
+            callback()
+
+        self._before_lifecycle_callback_entry()
+        entered_callback()
 
     def _drain_lifecycle_queue(self) -> None:
         while True:
