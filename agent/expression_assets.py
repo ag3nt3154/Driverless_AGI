@@ -303,7 +303,7 @@ def _apply_vad_hysteresis(
     current: VadEntry | None,
     hysteresis: float,
 ) -> VadEntry:
-    if current is None or current.id == nearest.id:
+    if current is None or current.asset is None or current.id == nearest.id:
         return nearest
     current_distance = _distance(vector, current.point)
     challenger_distance = _distance(vector, nearest.point)
@@ -355,7 +355,10 @@ class ProcessStateLibrary:
         if not isinstance(raw_states, dict):
             library._warn_once(
                 f"states:shape:{manifest_path}",
-                f"[expression_assets] states manifest must define a states mapping: {manifest_path}",
+                (
+                    "[expression_assets] states manifest must define a states mapping: "
+                    f"{manifest_path}"
+                ),
             )
             library._disabled_reason = "states manifest mapping"
             return library

@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from agent.affect import AffectController, AffectVector
 from agent.expression_assets import ImageAsset
 from tools.adjust_affect import AdjustAffectTool
@@ -55,3 +57,25 @@ def test_run_reports_prior_delta_result_and_selected_id() -> None:
     assert "Requested delta: (0.5, -0.2, 0.3)" in result
     assert "Result: (1.0, -0.1, 0.3)" in result
     assert "Selected ID: bright" in result
+
+
+@pytest.mark.parametrize(
+    ("kwargs", "axis"),
+    [
+        ({"valence_delta": 1.01, "arousal_delta": 0.0, "dominance_delta": 0.0}, "valence"),
+        ({"valence_delta": 0.0, "arousal_delta": float("inf"), "dominance_delta": 0.0}, "arousal"),
+        ({"valence_delta": 0.0, "arousal_delta": 0.0, "dominance_delta": -1.01}, "dominance"),
+    ],
+)
+def test_run_rejects_invalid_runtime_deltas_before_mutating(kwargs, axis) -> None:
+    controller = AffectController(
+        _FakeLibrary(),
+        baseline=AffectVector(0.0, 0.0, 0.0),
+        current=AffectVector(0.25, 0.25, 0.25),
+    )
+    tool = AdjustAffectTool(controller)
+
+    with pytest.raises(ValueError, match=axis):
+        tool.run(**kwargs)
+
+    assert controller.current == AffectVector(0.25, 0.25, 0.25)

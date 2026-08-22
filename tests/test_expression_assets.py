@@ -160,7 +160,7 @@ def test_invalid_selected_vad_asset_falls_back_and_warns_once(tmp_path: Path) ->
     ]
 
 
-def test_vad_library_keeps_invalid_current_asset_until_hysteresis_is_met(
+def test_vad_library_ignores_invalid_current_asset_for_hysteresis(
     tmp_path: Path,
 ) -> None:
     root = tmp_path / ".dagi" / "emotes"
@@ -183,11 +183,6 @@ def test_vad_library_keeps_invalid_current_asset_until_hysteresis_is_met(
     library = VadLibrary.load(root / "vad", root / "default.md")
 
     emote_id, asset = library.resolve((0.09, 0.0, 0.0), "broken", 0.05)
-    assert emote_id == "broken"
-    assert isinstance(asset, TextFallback)
-    assert asset.text == "fallback"
-
-    emote_id, asset = library.resolve((0.09, 0.0, 0.0), "broken", 0.01)
     assert emote_id == "calm"
     assert asset == ImageAsset("calm", root / "vad" / "calm.png")
 

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 
 from PySide6.QtCore import QSize, Qt, QTimer, Slot
@@ -9,6 +10,8 @@ from PySide6.QtWidgets import QLabel, QVBoxLayout, QWidget
 from agent.affect import AffectSnapshot, AffectVector
 from agent.expression_assets import AssetRef, ImageAsset, TextFallback, load_fallback
 from agent.process_state import ProcessSnapshot
+
+_LOGGER = logging.getLogger(__name__)
 
 
 class ExpressionWidget(QWidget):
@@ -26,6 +29,7 @@ class ExpressionWidget(QWidget):
         self._channel = "vad"
         self._movie: QMovie | None = None
         self._static_pixmap: QPixmap | None = None
+        self._warned_media_failures: set[str] = set()
         self._affect_snapshot = self._initial_affect()
         self._process_snapshot = ProcessSnapshot("idle", self._default_fallback)
 
@@ -114,11 +118,13 @@ class ExpressionWidget(QWidget):
     def _show_movie(self, asset: ImageAsset) -> bool:
         self._clear_media()
         if not asset.path.is_file():
+            self._warn_media_failure("gif missing", asset.path)
             return False
         movie = QMovie(str(asset.path))
         movie.setParent(self)
         if not movie.isValid():
-            movie.stop()
+            self._warn_media_failure("gif decode failed", asset.path)
+            self._release_movie(movie)
             return False
         movie.setScaledSize(self._target_size())
         self._movie = movie
@@ -129,9 +135,11 @@ class ExpressionWidget(QWidget):
     def _show_pixmap(self, asset: ImageAsset) -> bool:
         self._clear_media()
         if not asset.path.is_file():
+            self._warn_media_failure("pixmap missing", asset.path)
             return False
         pixmap = QPixmap(str(asset.path))
         if pixmap.isNull():
+            self._warn_media_failure("pixmap decode failed", asset.path)
             return False
         self._static_pixmap = pixmap
         self._image_label.setPixmap(self._scaled_pixmap())
@@ -139,10 +147,22 @@ class ExpressionWidget(QWidget):
 
     def _clear_media(self) -> None:
         if self._movie is not None:
-            self._movie.stop()
+            self._release_movie(self._movie)
             self._movie = None
         self._static_pixmap = None
         self._image_label.clear()
+
+    def _release_movie(self, movie: QMovie) -> None:
+        movie.stop()
+        movie.setParent(None)
+        movie.deleteLater()
+
+    def _warn_media_failure(self, operation: str, path: Path) -> None:
+        key = f"{self._channel}:{operation}:{path}"
+        if key in self._warned_media_failures:
+            return
+        self._warned_media_failures.add(key)
+        _LOGGER.warning("%s %s: %s", self._channel, operation, path)
 
     def _scaled_pixmap(self) -> QPixmap:
         if self._static_pixmap is None:

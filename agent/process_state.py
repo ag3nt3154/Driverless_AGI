@@ -20,13 +20,17 @@ class ProcessStateController:
     def __init__(self, library: ProcessStateResolver, *, on_change=None) -> None:
         self._library = library
         self._on_change = on_change or (lambda snapshot: None)
-        self._snapshot: ProcessSnapshot | None = None
+        self._snapshot: ProcessSnapshot | None = ProcessSnapshot(
+            state="idle",
+            asset=self._library.resolve("idle"),
+        )
+        self._on_change(self._snapshot)
 
     @property
     def snapshot(self) -> ProcessSnapshot | None:
         return self._snapshot
 
-    def set_listener(self, listener, *, emit_current: bool = False) -> None:
+    def set_listener(self, listener, *, emit_current: bool = True) -> None:
         self._on_change = listener
         if emit_current and self._snapshot is not None:
             self._on_change(self._snapshot)

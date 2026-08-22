@@ -30,6 +30,13 @@ def _clamp(value: float) -> float:
     return max(-1.0, min(1.0, value))
 
 
+def _bounded(name: str, value: float) -> float:
+    value = _finite(name, value)
+    if not -1.0 <= value <= 1.0:
+        raise ValueError(f"{name} must be between -1 and 1")
+    return value
+
+
 def _vector_payload(vector: "AffectVector") -> list[float]:
     return [vector.valence, vector.arousal, vector.dominance]
 
@@ -152,6 +159,11 @@ class AffectController:
             self._on_change(self.snapshot)
 
     def adjust(self, delta: AffectVector) -> AffectSnapshot:
+        delta = AffectVector(
+            _bounded("valence_delta", delta.valence),
+            _bounded("arousal_delta", delta.arousal),
+            _bounded("dominance_delta", delta.dominance),
+        )
         return self._apply_delta(delta, "adjust")
 
     def drift(self) -> AffectSnapshot:

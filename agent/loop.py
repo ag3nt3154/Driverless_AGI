@@ -532,7 +532,8 @@ class AgentLoop:
         self._process.tool_started(name)
 
     def _tool_bookkeeping_finished(self) -> None:
-        self._process.tool_ended()
+        if self._pause_event.is_set():
+            self._process.tool_ended()
 
     def _completed(self) -> None:
         self._process.idle()
@@ -543,7 +544,7 @@ class AgentLoop:
     def _continuing_step_finished(self, turn: int, step: int) -> None:
         self.log.append(sev.STEP_END, {"turn": turn, "step": step})
         controller = self.tracker.affect_controller
-        if controller is not None:
+        if controller is not None and self._pause_event.is_set():
             controller.drift()
 
     def _freeze_request_snapshot(self, create_kwargs: Mapping[str, Any]) -> dict[str, Any]:

@@ -139,7 +139,11 @@ def _parse_affect_vector(payload: object, key: str) -> AffectVector:
     values = payload.get(key)
     if not isinstance(values, list) or len(values) != 3:
         raise ValueError(f"{key} must contain three numeric values")
-    return AffectVector(*values)
+    vector = AffectVector(*values)
+    for axis, value in zip(("valence", "arousal", "dominance"), vector.as_tuple()):
+        if not -1.0 <= value <= 1.0:
+            raise ValueError(f"{key}.{axis} must be between -1 and 1")
+    return vector
 
 
 def build_turn_list(raw_messages: list[dict]) -> list[dict]:

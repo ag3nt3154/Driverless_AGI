@@ -1,6 +1,6 @@
 # AGENTS.md
 
-> Last updated: 2026-08-23 (Task 8 regression gate) | [README](README.md) | [TODO](TODO.md)
+> Last updated: 2026-08-23 (final review fix round) | [README](README.md) | [TODO](TODO.md)
 
 
 
@@ -141,13 +141,13 @@ tui.py / telegram_bot.py / main.py / dagi_gui/__main__.py / pyside_gui/__main__.
 
 **Compact cache-prefix (branch `dagi/compact-cache-branching`):** The compact subagent inherits the parent's warm KV-cache prefix. Flow: (1) `compact()` captures `_last_request_snapshot` (frozen copy of the last API request's model + messages + tools — no credentials) immediately before every provider call. (2) On compaction trigger, `compact()` appends a `BRANCH_START` event with `parent_cut_seq` pointing to the last summarised step (retroactive branch — the physical append happens after later events but the logical fork is earlier). (3) `build_fork_context()` serialises version-1 fork-context JSON: `{version, branch:{id, parent_cut_seq, parent_surface_generation}, request:{model, messages, tools, parallel_tool_calls, extra_body, base_url}}` — no API keys. (4) Fork-context written to a temp file, passed to `run_subagent(fork_context_path=...)` which injects `--fork-context <path>` into the subprocess argv. (5) Compact subprocess (`subagent_main.run_forked_compact_mode`) reads the fork-context, calls `resolve_model_config()` to get credentials from environment (NOT from the fork-context), makes a single non-streaming API call with the inherited prefix + compact task, writes assistant text directly to the handoff file. (6) Parent validates: `result.is_ok`, non-empty handoff text, surface generation unchanged (atomicity check), all edge events live. On success: appends `CONTEXT_COMPACTION`, calls `_sync_messages()`. On failure: returns `_NO_COMPACTION` — surface untouched. `model_tier: inherit` in `.dagi/subagents/compact/subagent_config.yaml` signals the forked-compact path.
 
-**Expression asset libraries (branch `dagi/affect-and-process-emotes`):** `agent/expression_assets.py` loads `.dagi/emotes/vad/manifest.yaml` and `.dagi/emotes/states/manifest.yaml` into immutable `ImageAsset` / `TextFallback` refs, validates asset paths stay under their channel roots, and caches warning keys so broken manifests warn once while later lookups fall back to `.dagi/emotes/default.md` (or literal `DAGI` if unreadable). `VadLibrary.resolve()` uses Euclidean distance plus hysteresis against the current id; `ProcessStateLibrary.resolve()` follows `tool:<name> -> tool -> thinking -> idle`.
+**Expression asset libraries (branch `dagi/affect-and-process-emotes`):** `agent/expression_assets.py` loads `.dagi/emotes/vad/manifest.yaml` and `.dagi/emotes/states/manifest.yaml` into immutable `ImageAsset` / `TextFallback` refs, validates asset paths stay under their channel roots, and caches warning keys so broken manifests warn once while later lookups fall back to `.dagi/emotes/default.md` (or literal `DAGI` if unreadable). `VadLibrary.resolve()` uses Euclidean distance plus hysteresis against the current id only when that current entry has a valid asset; `ProcessStateLibrary.resolve()` follows `tool:<name> -> tool -> thinking -> idle`.
 
 **Dynamic context + affect callbacks (branch `dagi/affect-and-process-emotes`):** `agent/dynamic_context.py` builds the ephemeral request board (Python env, active plan status, affect line) outside the static system prefix. `AgentLoop(initial_affect=...)` restores affect once from history, binds `on_affect_changed(AffectSnapshot)`, and normal registries expose `adjust_affect` only when a controller is bound; the legacy `tools/emote` package has been deleted.
 
-**Process-state controller (branch `dagi/affect-and-process-emotes`):** `agent/process_state.py` defines immutable `ProcessSnapshot` plus `ProcessStateController`. `AgentLoop` publishes `on_process_state_changed(ProcessSnapshot)` through API/tool/pause/resume/error lifecycle transitions, deduplicates exact repeats, and models tool flow as `idle -> thinking -> tool:<name> -> thinking`.
+**Process-state controller (branch `dagi/affect-and-process-emotes`):** `agent/process_state.py` defines immutable `ProcessSnapshot` plus `ProcessStateController`. Controllers start at idle and emit the current snapshot when a listener binds; `AgentLoop` publishes `on_process_state_changed(ProcessSnapshot)` through API/tool/pause/resume/error lifecycle transitions, deduplicates exact repeats, and suppresses post-tool thinking while paused.
 
-**Affect session persistence (branch `dagi/affect-and-process-emotes`):** Root `SessionTracker`s now own the bound affect controller, persist `affect_*` JSONL records alongside normal session events, and let child trackers reuse the root controller without replacing it. `agent/history.py` shares a private JSONL loader between raw-message restore and affect restore, selecting the latest valid affect record while preserving the original `affect_init` baseline and warning once on malformed entries.
+**Affect session persistence (branch `dagi/affect-and-process-emotes`):** Root `SessionTracker`s now own the bound affect controller, persist `affect_*` JSONL records alongside normal session events, and let child trackers reuse the root controller without replacing it. `agent/history.py` shares a private JSONL loader between raw-message restore and affect restore, selecting the latest valid in-range affect record while preserving the original `affect_init` baseline and warning once on malformed entries.
 
 ## Key Files
 
@@ -174,12 +174,12 @@ tui.py / telegram_bot.py / main.py / dagi_gui/__main__.py / pyside_gui/__main__.
 
 ## Errors Log (recent)
 
+- **2026-08-23**: Final review found pause/tool timing, runtime VAD bounds, invalid-current hysteresis, Qt media cleanup, and missing initial idle gaps → guard paused post-tool transitions/drift, validate runtime/restore coordinates, ignore invalid-current hysteresis, release/warn media once, and publish initial idle.
 - **2026-08-23**: Task 8 full pytest stops on six missing live `dagi_gui` imports; remainder exposes Windows `BashTool` kill/timeout failures and stale custom-subagent `parent_context` fixture → document as pre-existing full-suite blockers before final review.
 - **2026-08-23**: `/reload` short-circuit completed without publishing idle, leaving process state paused/thinking in UIs → call `_completed()` before reload notification/return.
 - **2026-08-23**: `pyside_gui/app.py` exceeded the 500-line cap after Task 6 → extract menu construction to `pyside_gui/menu.py` and add a file-cap regression.
 - **2026-08-23**: Task 5 review found falsey malformed `affect:` blocks were masked as defaults and main sessions never bound an affect controller → validate present block shape before defaults and bind a fallback-capable controller before normal registry construction.
 - **2026-08-22**: `/wd` did not switch model when project `.dagi/config.yaml` sets a different `default_model` → `_cmd_wd` was passing `self._model_id` to `resolve_model_config`, pinning the old model; fix: pass `None` so the project default wins.
-- **2026-08-20**: Main handoffs used filtered output, ambiguous failure state, and raw thread prefixes → defer full `on_done` Markdown only after confirmed termination and use a reserved, hashed filename.
 - **2026-08-21**: `test_discover_subagent_tools` and `test_subagent_configs` still fail on `dagi/subagent-simplification` branch because `plan`/`cli` deletions (Tasks 1-2) weren't reflected in those tests — pre-existing, not caused by Task 4.
 - **2026-08-22**: PySide6 6.11.2 on Python 3.14 in `dagi` conda env fails DLL load unless `os.add_dll_directory(pyside6_dir)` is called before import — Qt DLLs not on PATH via conda activation; `__main__.py` must bootstrap this before any PySide6 import.
 - **2026-08-22**: pyside_gui final-review: XSS in fence lang (escape before `class=` interpolation); timeout=0 deadlock (`0.0 or None = None` → explicit `if timeout <= 0` branch); `_messages` race between main+worker threads (snapshot via `list()` before passing to `CopyPicker`).
@@ -197,9 +197,9 @@ tui.py / telegram_bot.py / main.py / dagi_gui/__main__.py / pyside_gui/__main__.
 - **PySide6 DLL bootstrap**: On Windows + conda, `os.add_dll_directory` must be called for the PySide6 package dir before any `from PySide6.*` import; `python -m pyside_gui` will crash without it.
 - **PySide6 cross-thread UI calls**: Never call Qt widget methods directly from a background thread; use `QMetaObject.invokeMethod(..., Qt.QueuedConnection)` for non-signal paths, or route through `AgentBridge` signals (auto-queued when connected across threads).
 - **PySide6 streaming dedup**: After streaming, `AgentLoop` fires `on_reasoning` and `on_assistant_text` with the same content already shown via deltas — `app.py` gates both behind `_stream_had_content` (set in `_on_stream_ended`, cleared only in `_on_assistant_text`).
-- **Expression channels**: VAD/process manifests resolve `ImageAsset`/`TextFallback`; PySide `ExpressionWidget` alternates channels every 3000 ms and falls back to `.dagi/emotes/default.md`.
-- **Affect restore logs**: `affect_init` owns the baseline; history restore reuses its baseline with the latest valid `affect_*` current/emote snapshot and emits at most one warning for malformed records.
-- **Process-state dedupe**: `ProcessStateController` resolves the requested state every call, but only publishes when the new `(state, asset)` snapshot differs from the stored one.
+- **Expression channels**: VAD/process manifests resolve `ImageAsset`/`TextFallback`; PySide `ExpressionWidget` alternates every 3000 ms, releases replaced `QMovie`s, and warns once per channel/media/path before fallback.
+- **Affect restore logs**: `affect_init` owns the baseline; history restore reuses its baseline with the latest valid in-range `affect_*` current/emote snapshot and emits at most one warning for malformed records.
+- **Process-state dedupe**: `ProcessStateController` starts at idle and emits on listener bind, then publishes only when the new `(state, asset)` snapshot differs from the stored one.
 
 ## User Insights
 

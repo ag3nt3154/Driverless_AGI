@@ -262,6 +262,68 @@ class TestLoadAffectRestore:
         with pytest.warns(UserWarning, match="Malformed affect record"):
             assert load_affect_restore(path) is None
 
+    def test_skips_out_of_range_latest_current_and_restores_previous_valid(self, tmp_path):
+        from agent.history import load_affect_restore
+
+        path = tmp_path / "session_test.jsonl"
+        lines = [
+            {
+                "type": "affect_init",
+                "payload": {
+                    "baseline": [0.1, -0.2, 0.3],
+                    "current": [0.1, -0.2, 0.3],
+                    "emote_id": "steady",
+                },
+            },
+            {
+                "type": "affect_adjust",
+                "payload": {
+                    "prior": [0.1, -0.2, 0.3],
+                    "delta": [0.2, 0.0, 0.0],
+                    "current": [0.3, -0.2, 0.3],
+                    "emote_id": "bright",
+                },
+            },
+            {
+                "type": "affect_drift",
+                "payload": {
+                    "prior": [0.3, -0.2, 0.3],
+                    "delta": [0.8, 0.0, 0.0],
+                    "current": [1.1, -0.2, 0.3],
+                    "emote_id": "bright",
+                },
+            },
+        ]
+        path.write_text("\n".join(json.dumps(line) for line in lines), encoding="utf-8")
+
+        with pytest.warns(UserWarning, match="Malformed affect record"):
+            result = load_affect_restore(path)
+
+        assert result == AffectRestore(
+            baseline=AffectVector(0.1, -0.2, 0.3),
+            current=AffectVector(0.3, -0.2, 0.3),
+            emote_id="bright",
+        )
+
+    def test_returns_none_for_out_of_range_baseline(self, tmp_path):
+        from agent.history import load_affect_restore
+
+        path = tmp_path / "session_test.jsonl"
+        lines = [
+            {
+                "type": "affect_init",
+                "payload": {
+                    "baseline": [0.1, -1.2, 0.3],
+                    "current": [0.1, -0.2, 0.3],
+                    "emote_id": "steady",
+                },
+            }
+        ]
+        path.write_text("\n".join(json.dumps(line) for line in lines), encoding="utf-8")
+
+        with pytest.warns(UserWarning, match="Malformed affect record"):
+            assert load_affect_restore(path) is None
+
 
 class TestBuildTurnList:
     def test_empty_messages_returns_empty(self):

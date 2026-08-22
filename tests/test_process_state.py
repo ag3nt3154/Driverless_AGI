@@ -25,15 +25,8 @@ class _FakeLibrary:
 
 def test_process_state_lifecycle_publishes_expected_snapshots() -> None:
     library = _FakeLibrary()
-    seen: list[tuple[str, object]] = []
-    controller_ref: dict[str, ProcessStateController] = {}
-    controller = ProcessStateController(
-        library,
-        on_change=lambda snapshot: seen.append(
-            (snapshot.state, controller_ref["controller"].snapshot)
-        ),
-    )
-    controller_ref["controller"] = controller
+    seen: list[ProcessSnapshot] = []
+    controller = ProcessStateController(library, on_change=seen.append)
 
     idle = controller.idle()
     thinking = controller.thinking()
@@ -51,12 +44,12 @@ def test_process_state_lifecycle_publishes_expected_snapshots() -> None:
         "thinking", ImageAsset("thinking", Path("thinking.gif"))
     )
     assert controller.snapshot == done
-    assert library.calls == ["idle", "thinking", "tool:read", "thinking"]
+    assert library.calls == ["idle", "idle", "thinking", "tool:read", "thinking"]
     assert seen == [
-        ("idle", idle),
-        ("thinking", thinking),
-        ("tool:read", working),
-        ("thinking", done),
+        idle,
+        thinking,
+        working,
+        done,
     ]
 
 
@@ -76,7 +69,7 @@ def test_process_state_skips_exact_duplicate_snapshots() -> None:
         ProcessSnapshot("idle", ImageAsset("idle", Path("idle.gif"))),
         ProcessSnapshot("tool:grep", ImageAsset("tool", Path("tool.gif"))),
     ]
-    assert library.calls == ["idle", "idle", "tool:grep", "tool:grep"]
+    assert library.calls == ["idle", "idle", "idle", "tool:grep", "tool:grep"]
 
 
 def test_process_state_preserves_pause_and_error_until_next_transition() -> None:
@@ -99,7 +92,12 @@ def test_process_state_preserves_pause_and_error_until_next_transition() -> None
     assert resumed == ProcessSnapshot(
         "thinking", ImageAsset("thinking", Path("thinking.gif"))
     )
-    assert seen == [paused, errored, resumed]
+    assert seen == [
+        ProcessSnapshot("idle", ImageAsset("idle", Path("idle.gif"))),
+        paused,
+        errored,
+        resumed,
+    ]
 
 
 def test_process_state_uses_generic_tool_asset_for_unknown_tool_names() -> None:
@@ -112,3 +110,15 @@ def test_process_state_uses_generic_tool_asset_for_unknown_tool_names() -> None:
         "tool:bash",
         ImageAsset("tool", Path("tool.gif")),
     )
+
+
+def test_process_state_listener_receives_initial_idle_after_binding() -> None:
+    library = _FakeLibrary()
+    controller = ProcessStateController(library)
+    seen: list[ProcessSnapshot] = []
+
+    assert controller.snapshot == ProcessSnapshot("idle", ImageAsset("idle", Path("idle.gif")))
+
+    controller.set_listener(seen.append)
+
+    assert seen == [ProcessSnapshot("idle", ImageAsset("idle", Path("idle.gif")))]

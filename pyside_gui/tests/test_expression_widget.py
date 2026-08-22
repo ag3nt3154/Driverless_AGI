@@ -153,7 +153,32 @@ def test_gif_movie_stops_before_replacement(tmp_path: Path) -> None:
     _app.processEvents()
 
     assert movie.state() == QMovie.MovieState.NotRunning
+    assert movie.parent() is None
     assert widget._movie is None
+
+
+def test_invalid_media_decode_warns_once_per_channel_operation_and_path(
+    tmp_path: Path,
+    caplog,
+) -> None:
+    root = tmp_path / "emotes"
+    root.mkdir()
+    (root / "default.md").write_text("default", encoding="utf-8")
+    bad_png = root / "bad.png"
+    bad_png.write_bytes(b"not a png")
+    widget = ExpressionWidget(root)
+
+    with caplog.at_level("WARNING", logger="pyside_gui.expression_widget"):
+        widget.update_affect(_affect(ImageAsset("bad", bad_png)))
+        widget.update_affect(_affect(ImageAsset("bad", bad_png)))
+        widget._rotate_channel()
+        widget.update_process(ProcessSnapshot("tool:bad", ImageAsset("bad", bad_png)))
+        _app.processEvents()
+
+    matching = [message for message in caplog.messages if str(bad_png) in message]
+    assert len(matching) == 2
+    assert any("vad pixmap decode failed" in message for message in matching)
+    assert any("process pixmap decode failed" in message for message in matching)
 
 
 def test_right_sidebar_preserves_sections_with_expression_widget(

@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import json
+import threading
+import time
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
@@ -710,7 +712,7 @@ class TestProcessLifecycle:
 
         loop.run("/reload")
 
-        assert events == ["process:paused", "process:idle", "assistant_text"]
+        assert events == ["process:idle", "process:paused", "process:idle", "assistant_text"]
 
     def test_process_state_wraps_api_attempt_tool_call_and_completion(self):
         """Process callbacks must bracket the real lifecycle, not lag behind UI callbacks."""
@@ -785,6 +787,56 @@ class TestProcessLifecycle:
         assert order.count("drift") == 1
         drift_index = order.index("drift")
         assert order[drift_index - 1] == sev.STEP_END
+
+    def test_pause_during_tool_suppresses_post_tool_thinking_and_drift(self):
+        """Pausing inside a tool turn must leave the visible state paused until resume."""
+        tool = FakeTool(name="echo", result="echoed!")
+        registry = ToolRegistry()
+        registry.register(tool)
+        events: list[str] = []
+        loop = _make_loop(registry=registry)
+
+        class _Affect:
+            def context_line(self) -> str:
+                return "Affect: test"
+
+            def drift(self) -> None:
+                events.append("drift")
+
+        def on_tool_start(_name, _desc, _args) -> None:
+            events.append("tool_start")
+            loop.pause()
+
+        callbacks = AgentCallbacks(
+            on_process_state_changed=lambda snap: events.append(f"process:{snap.state}"),
+            on_tool_start=on_tool_start,
+            on_tool_end=lambda _name, _result: events.append("tool_end"),
+        )
+        loop.callbacks = callbacks
+        loop._bind_process_listener()
+        loop.tracker.affect_controller = _Affect()
+        loop.client = MagicMock()
+        loop.client.chat.completions.create.side_effect = [
+            _make_response(None, tool_calls=[_make_tool_call("tc1", "echo", "{}")]),
+            _make_response(f"Done. {TASK_END_FLAG}"),
+        ]
+        thread = threading.Thread(target=lambda: loop.run("do something"))
+
+        thread.start()
+        deadline = time.time() + 2.0
+        while time.time() < deadline and not loop._pause_checkpoint.is_set():
+            time.sleep(0.01)
+
+        assert loop._pause_checkpoint.is_set()
+        assert loop._pause_event.is_set() is False
+        pause_index = events.index("process:paused")
+        assert "process:thinking" not in events[pause_index + 1:]
+        assert "drift" not in events[pause_index + 1:]
+
+        loop.inject_and_resume("continue")
+        thread.join(timeout=2.0)
+
+        assert not thread.is_alive()
 
 
 class TestParentForkCapture:
