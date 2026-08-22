@@ -86,4 +86,4 @@ Additional tests:
 
 Fix commit:
 
-- pending
+- `434c4f5` — `fix: wrap affect controller signature`
