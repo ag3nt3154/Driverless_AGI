@@ -15,7 +15,9 @@ from PySide6.QtWidgets import (
 )
 
 from agent import DAGI_ROOT
-from agent.loop import AgentConfig, AgentLoop
+from agent.loop import AgentConfig, AgentLoop, AWAIT_USER_FLAG, TASK_END_FLAG
+
+_LOOP_SENTINELS = (AWAIT_USER_FLAG, TASK_END_FLAG)
 
 from pyside_gui.bridge import AgentBridge
 from pyside_gui.commands import SlashCommandHandler, UIWidgets
@@ -50,6 +52,7 @@ class DagiMainWindow(QMainWindow):
         self._pending_ask: object = None  # threading.Event; answer sink below
         self._pending_ask_container: list | None = None
         self._compose_mode = False
+        self._stream_had_content = False  # suppresses duplicate assistant_text after streaming
 
         self.setWindowTitle(f"Driverless AGI — {config.display_name}")
         self.setMinimumSize(1200, 700)
@@ -148,9 +151,9 @@ class DagiMainWindow(QMainWindow):
         b = self._bridge
         b.tool_started.connect(self._conversation.append_tool_start)
         b.tool_ended.connect(self._conversation.append_tool_end)
-        b.assistant_text.connect(self._conversation.append_assistant)
+        b.assistant_text.connect(self._on_assistant_text)
+        b.stream_started.connect(self._on_stream_started)
         b.reasoning_received.connect(self._conversation.append_reasoning)
-        b.stream_started.connect(self._conversation.stream_start)
         b.stream_text_delta.connect(
             lambda c: self._conversation.stream_delta("text", c)
         )
@@ -197,7 +200,6 @@ class DagiMainWindow(QMainWindow):
             self.close()
             return
         if self._pending_ask is not None:
-            # Unblock the agent thread that is waiting in bridge.on_ask_user.
             if self._pending_ask_container is not None:
                 self._pending_ask_container.append(text)
             self._pending_ask.set()
@@ -251,8 +253,7 @@ class DagiMainWindow(QMainWindow):
         self._current_loop_ref = []
         callbacks = self._bridge.build_callbacks(self._current_loop_ref)
         self._worker = threading.Thread(
-            target=self._agent_work, args=(task, callbacks, self._current_loop_ref),
-            daemon=True)
+            target=self._agent_work, args=(task, callbacks, self._current_loop_ref), daemon=True)
         self._worker.start()
 
     def _agent_work(self, task: str, callbacks: object, loop_ref: list) -> None:
@@ -260,14 +261,11 @@ class DagiMainWindow(QMainWindow):
         try:
             tracker = self._active_loop.tracker if self._active_loop else None
             if self._restore_initial_messages is not None:
-                initial = self._restore_initial_messages
-                self._restore_initial_messages = None
+                initial, self._restore_initial_messages = self._restore_initial_messages, None
             else:
                 initial = self._active_loop._messages if self._active_loop else None
             loop = AgentLoop(
-                self._config, callbacks,
-                initial_messages=initial, _tracker=tracker,
-            )
+                self._config, callbacks, initial_messages=initial, _tracker=tracker)
             loop_ref.append(loop)
             self._active_loop = loop
             self._cmd_handler.set_active_loop(loop)
@@ -276,10 +274,8 @@ class DagiMainWindow(QMainWindow):
             self._bridge.error_occurred.emit(str(exc))
         finally:
             if loop_ref:
-                try:
-                    loop_ref[0].finish()
-                except Exception:
-                    pass
+                try: loop_ref[0].finish()
+                except Exception: pass
             self._invoke_on_main("_set_status_slot", "idle")
             self._invoke_on_main("_enable_input_slot")
 
@@ -314,12 +310,28 @@ class DagiMainWindow(QMainWindow):
         self._enable_input()
 
     @Slot()
+    def _on_stream_started(self) -> None:
+        self._stream_had_content = False
+        self._conversation.stream_start()
+
+    @Slot()
     def _on_stream_ended(self) -> None:
-        if self._bridge._stream_text.strip():
-            html = render_markdown(self._bridge._stream_text)
-            self._conversation.stream_end(html)
+        text = self._bridge._stream_text
+        for s in _LOOP_SENTINELS:
+            text = text.replace(s, "")
+        text = text.strip()
+        if text:
+            self._stream_had_content = True
+            self._conversation.stream_end(render_markdown(text))
         else:
             self._conversation.stream_end("")
+
+    @Slot(str)
+    def _on_assistant_text(self, html: str) -> None:
+        if self._stream_had_content:
+            self._stream_had_content = False
+            return
+        self._conversation.append_assistant(html)
 
     @Slot(int, int)
     def _on_compaction(self, kept: int, removed: int) -> None:
@@ -363,27 +375,21 @@ class DagiMainWindow(QMainWindow):
         path = Path(session_data["path"])
         raw = load_raw_messages(path)
         if not raw:
-            self._conversation.append_error(
-                "Cannot restore — session has no raw_messages."
-            )
+            self._conversation.append_error("Cannot restore — session has no raw_messages.")
             return
         self._active_loop = None
         self._current_loop_ref = []
         self._conversation.clear()
         self._restore_initial_messages = raw
-        self._conversation.append_info(
-            f"Restored {len(raw) - 1} messages from {path.name}"
-            " — type your next message to continue"
-        )
+        msg = f"Restored {len(raw) - 1} messages from {path.name} — type your next message to continue"
+        self._conversation.append_info(msg)
         self._left_sidebar.set_expanded(False)
         self._splitter.setSizes([0, 800, 300])
         self._enable_input()
 
     def _do_compact(self) -> None:
         if self._active_loop is None:
-            self._conversation.append_info(
-                "Nothing to compact — no active conversation."
-            )
+            self._conversation.append_info("Nothing to compact — no active conversation.")
             return
         self._conversation.append_info("Compacting context...")
         loop = self._active_loop
@@ -394,18 +400,14 @@ class DagiMainWindow(QMainWindow):
                 self._bridge.error_occurred.emit(f"Compact failed: {exc}")
                 return
             if result.did_compact:
-                self._bridge.compaction_done.emit(
-                    len(loop._messages), result.removed_count
-                )
+                self._bridge.compaction_done.emit(len(loop._messages), result.removed_count)
 
         threading.Thread(target=_work, daemon=True).start()
 
     def _do_wtf(self, description: str | None) -> None:
         loop = self._active_loop
         if loop is None:
-            self._conversation.append_info(
-                "Nothing to diagnose — no active conversation."
-            )
+            self._conversation.append_info("Nothing to diagnose — no active conversation.")
             return
 
         def _work() -> None:
@@ -414,10 +416,9 @@ class DagiMainWindow(QMainWindow):
             except Exception as exc:
                 self._bridge.error_occurred.emit(f"/wtf failed: {exc}")
                 return
-            report_path = Path(result.report_path).resolve()
+            rp = Path(result.report_path).resolve()
             self._bridge.assistant_text.emit(
-                f"<p>Diagnosis: {result.description}</p>"
-                f"<p>Report: {report_path}</p>"
+                f"<p>Diagnosis: {result.description}</p><p>Report: {rp}</p>"
             )
 
         self._show_running()
@@ -458,11 +459,8 @@ class DagiMainWindow(QMainWindow):
             return
         from tools._plan_parser import parse_subtask_statuses
         subtasks = parse_subtask_statuses(text)
-        title = ""
-        for line in text.splitlines():
-            if line.startswith("# Plan"):
-                title = line.lstrip("# ").removeprefix("Plan — ").strip()
-                break
+        title = next((l.lstrip("# ").removeprefix("Plan — ").strip()
+                      for l in text.splitlines() if l.startswith("# Plan")), "")
         self._right_sidebar.update_plan(subtasks, title)
 
     def _toggle_compose(self) -> None:
@@ -471,11 +469,9 @@ class DagiMainWindow(QMainWindow):
         self._compose_mode = not self._compose_mode
         self._conversation.setVisible(not self._compose_mode)
         self._prompt.set_compose_mode(self._compose_mode)
-        self._prompt.setPlaceholderText(
-            "COMPOSE — Enter to submit, Ctrl+O to collapse"
-            if self._compose_mode
-            else "Type a message… (Enter to send, Shift+Enter for newline)"
-        )
+        txt = ("COMPOSE — Enter to submit, Ctrl+O to collapse" if self._compose_mode
+               else "Type a message… (Enter to send, Shift+Enter for newline)")
+        self._prompt.setPlaceholderText(txt)
 
     def _notify(self, title: str, message: str) -> None:
         try:
