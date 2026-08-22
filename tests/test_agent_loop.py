@@ -1071,6 +1071,94 @@ class TestProcessLifecycle:
         assert not worker.is_alive()
         assert events == ["affect:drift", "inject_returned"]
 
+    def test_pause_during_tool_resolution_prevents_late_tool_after_pause_returns(self):
+        """Pause must serialize invalidation with tool-state mutation, not just dequeue."""
+        loop = _make_loop()
+        events: list[str] = []
+        resolver_entered = threading.Event()
+        release_resolver = threading.Event()
+
+        class _BlockingLibrary:
+            def __init__(self, delegate) -> None:
+                self._delegate = delegate
+
+            def resolve(self, state: str):
+                if state == "tool:echo":
+                    resolver_entered.set()
+                    release_resolver.wait(timeout=2.0)
+                return self._delegate.resolve(state)
+
+        loop._process._library = _BlockingLibrary(loop._process._library)
+        loop.callbacks = AgentCallbacks(
+            on_process_state_changed=lambda snap: events.append(f"process:{snap.state}")
+        )
+        loop._bind_process_listener()
+        worker = threading.Thread(target=lambda: loop._tool_started("echo"))
+        worker.start()
+        assert resolver_entered.wait(timeout=1.0)
+
+        def pause_from_ui_thread() -> None:
+            loop.pause()
+            events.append("pause_returned")
+
+        pause_thread = threading.Thread(target=pause_from_ui_thread)
+        pause_thread.start()
+        release_resolver.set()
+        worker.join(timeout=2.0)
+        pause_thread.join(timeout=2.0)
+
+        assert not worker.is_alive()
+        assert not pause_thread.is_alive()
+        assert "pause_returned" in events
+        pause_index = events.index("pause_returned")
+        assert "process:tool:echo" not in events[pause_index + 1:]
+
+    def test_pause_during_affect_resolution_prevents_late_drift_after_pause_returns(self):
+        """Pause must serialize invalidation with affect drift mutation."""
+        loop = _make_loop()
+        events: list[str] = []
+        resolver_entered = threading.Event()
+        release_resolver = threading.Event()
+
+        class _BlockingVadLibrary:
+            def resolve(self, vector, _current_id, _hysteresis):
+                resolver_entered.set()
+                release_resolver.wait(timeout=2.0)
+                return "steady", ImageAsset("steady", Path("steady.png"))
+
+        loop.tracker.affect_controller = AffectController(
+            _BlockingVadLibrary(),
+            config=AffectConfig(drift_pull=0.1, drift_noise=0.0),
+            baseline=AffectVector(0.0, 0.0, 0.0),
+            current=AffectVector(0.5, 0.0, 0.0),
+            on_change=lambda _snapshot: None,
+        )
+        loop.tracker.affect_controller.set_listener(
+            lambda snapshot: events.append(f"affect:{snapshot.reason}"),
+            emit_current=False,
+        )
+        loop.log.append(sev.TURN_START, {"turn": 1})
+        loop.log.append(sev.STEP_START, {"turn": 1, "step": 1})
+        worker = threading.Thread(target=lambda: loop._continuing_step_finished(1, 1))
+        worker.start()
+        assert resolver_entered.wait(timeout=1.0)
+
+        def pause_from_ui_thread() -> None:
+            loop.pause()
+            events.append("pause_returned")
+
+        pause_thread = threading.Thread(target=pause_from_ui_thread)
+        pause_thread.start()
+        release_resolver.set()
+        worker.join(timeout=2.0)
+        pause_thread.join(timeout=2.0)
+
+        assert not worker.is_alive()
+        assert not pause_thread.is_alive()
+        assert "pause_returned" in events
+        pause_index = events.index("pause_returned")
+        assert "affect:drift" not in events[pause_index + 1:]
+
 
 class TestParentForkCapture:
     def test_spawn_fork_uses_request_before_assistant_tool_response(self):

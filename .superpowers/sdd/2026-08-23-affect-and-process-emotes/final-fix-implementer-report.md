@@ -246,3 +246,87 @@ Residual concerns:
 - Pytest still emits the pre-existing Windows `.pytest_cache` warning.
 - Git still warns that `C:\Users\alexr\.config\git\ignore` is permission-denied
   when checking status.
+
+## Fix Round 5: Atomic Lifecycle Acceptance Before Deferred Emit
+
+Date: 2026-08-23
+
+Final re-review found one remaining P1 race: the Round 4 queue still had a
+check-then-act gap between dequeue generation validation and controller mutation.
+A pause could return while a queued tool/drift event was blocked in resolver work,
+then the event could mutate and notify afterward.
+
+Fix:
+
+- Split `ProcessStateController` transitions into state mutation
+  (`transition_without_notify`) and later `emit(snapshot)`.
+- Split `AffectController.drift()` into `drift_without_notify()` plus
+  `emit(snapshot)`, preserving the public `drift()` behavior.
+- Changed the lifecycle queue so dequeue validation and accepted process/affect
+  mutation run under `_pause_state_lock`; only the returned snapshot callback emits
+  outside the lock.
+- Kept stale running events discarded at dequeue via `_pause_generation`, and kept
+  callback re-entry safe because emit still happens after releasing the state lock.
+- Added blocking process/VAD resolver regressions that pause exactly after dequeue
+  validation but before mutation, then assert no tool/drift publication occurs after
+  `pause()` has returned.
+- Updated `AGENTS.md` to document deferred lifecycle emit semantics.
+
+Red verification:
+
+```powershell
+conda run -n dagi python -X utf8 -m pytest tests/test_agent_loop.py::TestProcessLifecycle::test_pause_during_tool_resolution_prevents_late_tool_after_pause_returns tests/test_agent_loop.py::TestProcessLifecycle::test_pause_during_affect_resolution_prevents_late_drift_after_pause_returns -vv --basetemp C:\Users\alexr\AppData\Local\Temp\dagi-publish-round5-red
+```
+
+Result: `2 failed` as expected: `process:tool:echo` and `affect:drift` were both
+observed after `pause_returned`.
+
+Targeted green verification:
+
+```powershell
+conda run -n dagi python -X utf8 -m pytest tests/test_agent_loop.py::TestProcessLifecycle::test_pause_during_tool_resolution_prevents_late_tool_after_pause_returns tests/test_agent_loop.py::TestProcessLifecycle::test_pause_during_affect_resolution_prevents_late_drift_after_pause_returns -vv --basetemp C:\Users\alexr\AppData\Local\Temp\dagi-publish-round5-green-two
+```
+
+Result: `2 passed, 1 warning in 2.79s`.
+
+Lifecycle race cluster:
+
+```powershell
+conda run -n dagi python -X utf8 -m pytest tests/test_agent_loop.py::TestProcessLifecycle::test_process_listener_can_reenter_inject_and_resume tests/test_agent_loop.py::TestProcessLifecycle::test_affect_listener_can_reenter_inject_and_resume tests/test_agent_loop.py::TestProcessLifecycle::test_pause_returns_while_process_listener_is_blocked tests/test_agent_loop.py::TestProcessLifecycle::test_pause_race_cannot_publish_post_tool_thinking_after_paused tests/test_agent_loop.py::TestProcessLifecycle::test_pause_race_cannot_drift_after_paused tests/test_agent_loop.py::TestProcessLifecycle::test_paused_multi_tool_turn_does_not_start_later_tool_process_state tests/test_agent_loop.py::TestProcessLifecycle::test_pause_during_tool_suppresses_post_tool_thinking_and_drift tests/test_agent_loop.py::TestProcessLifecycle::test_pause_during_tool_resolution_prevents_late_tool_after_pause_returns tests/test_agent_loop.py::TestProcessLifecycle::test_pause_during_affect_resolution_prevents_late_drift_after_pause_returns -vv --basetemp C:\Users\alexr\AppData\Local\Temp\dagi-publish-round5-lifecycle-two
+```
+
+Result: `9 passed, 1 warning in 2.93s`.
+
+Focused controller/loop area:
+
+```powershell
+conda run -n dagi python -X utf8 -m pytest tests/test_affect.py tests/test_process_state.py tests/test_agent_loop.py -q --basetemp C:\Users\alexr\AppData\Local\Temp\dagi-publish-round5-focused
+```
+
+Result: `58 passed, 1 warning in 3.26s`.
+
+Feature suite:
+
+```powershell
+conda run -n dagi python -X utf8 -m pytest tests/test_expression_assets.py tests/test_affect.py tests/test_adjust_affect_tool.py tests/test_config_loader.py tests/test_tool_filter.py tests/test_subagent_configs.py tests/test_session_tracker.py tests/test_history.py tests/test_history_integration.py tests/test_process_state.py tests/test_dynamic_context.py tests/test_agent_loop.py tests/test_agent_callbacks.py tests/test_tui_callbacks.py tests/tui/test_sidebar_render.py tests/tui/test_app_layout.py pyside_gui/tests/test_bridge.py pyside_gui/tests/test_commands.py pyside_gui/tests/test_expression_widget.py -q --basetemp C:\Users\alexr\AppData\Local\Temp\dagi-publish-round5-feature-final
+```
+
+Result: `227 passed, 1 warning in 4.97s`.
+
+Static checks:
+
+```powershell
+git diff --check
+rg -n ".{101,}" agent/loop.py agent/process_state.py agent/affect.py tests/test_agent_loop.py
+```
+
+Result: `git diff --check` passed with only Git CRLF warnings. The long-line scan
+reported only pre-existing `agent/loop.py` lines.
+
+Residual concerns:
+
+- `DEFAULT_PYTHON_ENV` was not exported in this shell; verification used
+  `conda run -n dagi python`.
+- Pytest still emits the pre-existing Windows `.pytest_cache` warning.
+- Git still warns that `C:\Users\alexr\.config\git\ignore` is permission-denied
+  when checking status.

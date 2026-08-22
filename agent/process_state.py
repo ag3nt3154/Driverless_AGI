@@ -53,10 +53,22 @@ class ProcessStateController:
     def error(self) -> ProcessSnapshot:
         return self._transition("error")
 
+    def transition_without_notify(self, state: str) -> ProcessSnapshot | None:
+        snapshot, changed = self._transition_snapshot(state)
+        return snapshot if changed else None
+
+    def emit(self, snapshot: ProcessSnapshot) -> None:
+        self._on_change(snapshot)
+
     def _transition(self, state: str) -> ProcessSnapshot:
+        snapshot, changed = self._transition_snapshot(state)
+        if changed:
+            self.emit(snapshot)
+        return snapshot
+
+    def _transition_snapshot(self, state: str) -> tuple[ProcessSnapshot, bool]:
         snapshot = ProcessSnapshot(state=state, asset=self._library.resolve(state))
         if snapshot == self._snapshot:
-            return self._snapshot
+            return self._snapshot, False
         self._snapshot = snapshot
-        self._on_change(snapshot)
-        return snapshot
+        return snapshot, True

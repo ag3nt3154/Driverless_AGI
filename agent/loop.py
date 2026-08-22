@@ -501,7 +501,7 @@ class AgentLoop:
         # queue. It must never be held across process/affect callbacks.
         self._pause_state_lock = threading.RLock()
         self._pause_generation = 0
-        self._lifecycle_queue: list[tuple[str, int, Callable[[], None]]] = []
+        self._lifecycle_queue: list[tuple[str, int, Callable[[], Callable[[], None] | None]]] = []
         self._lifecycle_draining = False
         self._pause_event = threading.Event()
         self._pause_event.set()
@@ -512,7 +512,7 @@ class AgentLoop:
             self._pause_event.clear()
             self._pause_generation += 1
             generation = self._pause_generation
-        self._enqueue_lifecycle("paused", generation, self._process.paused)
+        self._enqueue_lifecycle("paused", generation, self._prepare_process_state("paused"))
 
     def inject_and_resume(self, message: str) -> None:
         self._log_user_message("user", message, "inject")
@@ -520,7 +520,7 @@ class AgentLoop:
             self._pause_event.set()
             self._pause_generation += 1
             generation = self._pause_generation
-        self._enqueue_lifecycle("running", generation, self._process.thinking)
+        self._enqueue_lifecycle("running", generation, self._prepare_process_state("thinking"))
 
     @property
     def parent_context_provider(self) -> ParentContextProvider:
@@ -538,24 +538,52 @@ class AgentLoop:
         self._process.set_listener(self.callbacks.on_process_state_changed)
 
     def _api_attempt_started(self) -> None:
-        self._publish_running_lifecycle(self._process.thinking)
+        self._publish_running_lifecycle(self._prepare_process_state("thinking"))
 
     def _tool_started(self, name: str) -> None:
-        self._publish_running_lifecycle(lambda: self._process.tool_started(name))
+        self._publish_running_lifecycle(self._prepare_process_state(f"tool:{name}"))
 
     def _tool_bookkeeping_finished(self) -> None:
-        self._publish_running_lifecycle(self._process.tool_ended)
+        self._publish_running_lifecycle(self._prepare_process_state("thinking"))
 
-    def _publish_running_lifecycle(self, publish) -> None:
+    def _prepare_process_state(self, state: str) -> Callable[[], Callable[[], None] | None]:
+        def prepare() -> Callable[[], None] | None:
+            snapshot = self._process.transition_without_notify(state)
+            if snapshot is None:
+                return None
+            return lambda: self._process.emit(snapshot)
+
+        return prepare
+
+    def _prepare_affect_drift(self, controller) -> Callable[[], Callable[[], None] | None]:
+        def prepare() -> Callable[[], None] | None:
+            drift_without_notify = getattr(controller, "drift_without_notify", None)
+            emit = getattr(controller, "emit", None)
+            if not callable(drift_without_notify) or not callable(emit):
+                return controller.drift
+            snapshot = drift_without_notify()
+            return lambda: emit(snapshot)
+
+        return prepare
+
+    def _publish_running_lifecycle(
+        self,
+        prepare: Callable[[], Callable[[], None] | None],
+    ) -> None:
         with self._pause_state_lock:
             if not self._pause_event.is_set():
                 return
             generation = self._pause_generation
-        self._enqueue_lifecycle("running", generation, publish)
+        self._enqueue_lifecycle("running", generation, prepare)
 
-    def _enqueue_lifecycle(self, state: str, generation: int, publish) -> None:
+    def _enqueue_lifecycle(
+        self,
+        state: str,
+        generation: int,
+        prepare: Callable[[], Callable[[], None] | None],
+    ) -> None:
         with self._pause_state_lock:
-            self._lifecycle_queue.append((state, generation, publish))
+            self._lifecycle_queue.append((state, generation, prepare))
             if self._lifecycle_draining:
                 return
             self._lifecycle_draining = True
@@ -563,16 +591,23 @@ class AgentLoop:
 
     def _drain_lifecycle_queue(self) -> None:
         while True:
-            with self._pause_state_lock:
-                if not self._lifecycle_queue:
+            try:
+                with self._pause_state_lock:
+                    if not self._lifecycle_queue:
+                        self._lifecycle_draining = False
+                        return
+                    state, generation, prepare = self._lifecycle_queue.pop(0)
+                    should_publish = self._should_publish_lifecycle(state, generation)
+                    callback = prepare() if should_publish else None
+            except BaseException:
+                with self._pause_state_lock:
                     self._lifecycle_draining = False
-                    return
-                state, generation, publish = self._lifecycle_queue.pop(0)
-                should_publish = self._should_publish_lifecycle(state, generation)
+                raise
             if not should_publish:
                 continue
             try:
-                publish()
+                if callback is not None:
+                    callback()
             except BaseException:
                 with self._pause_state_lock:
                     self._lifecycle_draining = False
@@ -596,7 +631,7 @@ class AgentLoop:
         controller = self.tracker.affect_controller
         if controller is None:
             return
-        self._publish_running_lifecycle(controller.drift)
+        self._publish_running_lifecycle(self._prepare_affect_drift(controller))
 
     def _freeze_request_snapshot(self, create_kwargs: Mapping[str, Any]) -> dict[str, Any]:
         """Copy request identity and the live surface boundary before a provider call."""

@@ -167,12 +167,20 @@ class AffectController:
         return self._apply_delta(delta, "adjust")
 
     def drift(self) -> AffectSnapshot:
+        snapshot = self.drift_without_notify()
+        self.emit(snapshot)
+        return snapshot
+
+    def drift_without_notify(self) -> AffectSnapshot:
         delta = AffectVector(
             self._drift_axis(self._baseline.valence, self._current.valence),
             self._drift_axis(self._baseline.arousal, self._current.arousal),
             self._drift_axis(self._baseline.dominance, self._current.dominance),
         )
-        return self._apply_delta(delta, "drift")
+        return self._apply_delta(delta, "drift", emit=False)
+
+    def emit(self, snapshot: AffectSnapshot) -> None:
+        self._on_change(snapshot)
 
     def context_line(self) -> str:
         current = self._current
@@ -185,6 +193,8 @@ class AffectController:
         self,
         delta: AffectVector,
         reason: Literal["adjust", "drift"],
+        *,
+        emit: bool = True,
     ) -> AffectSnapshot:
         prior = self._current
         current = AffectVector(
@@ -192,7 +202,13 @@ class AffectController:
             _clamp(prior.arousal + delta.arousal),
             _clamp(prior.dominance + delta.dominance),
         )
-        return self._apply_change(reason=reason, current=current, prior=prior, delta=delta)
+        return self._apply_change(
+            reason=reason,
+            current=current,
+            prior=prior,
+            delta=delta,
+            emit=emit,
+        )
 
     def _apply_change(
         self,
@@ -202,6 +218,7 @@ class AffectController:
         prior: AffectVector | None = None,
         delta: AffectVector | None = None,
         persist: bool = True,
+        emit: bool = True,
     ) -> AffectSnapshot:
         emote_id, asset = self._library.resolve(
             current.as_tuple(),
@@ -221,7 +238,8 @@ class AffectController:
         if persist:
             event, payload = self._payload_for(reason, prior, delta, snapshot)
             self._record(event, payload)
-        self._on_change(snapshot)
+        if emit:
+            self.emit(snapshot)
         return snapshot
 
     def _payload_for(
