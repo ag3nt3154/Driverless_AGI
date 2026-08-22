@@ -1,6 +1,6 @@
 # AGENTS.md
 
-> Last updated: 2026-08-21 (subagent-simplification complete: plan/cli/escalate_issue deleted, write/edit removed from review+explore_files) | [README](README.md) | [TODO](TODO.md)
+> Last updated: 2026-08-22 | [README](README.md) | [TODO](TODO.md)
 
 
 ---
@@ -178,6 +178,9 @@ tui.py / telegram_bot.py / main.py / dagi_gui/__main__.py
 | `dagi_gui/server.py`                                 | `GUIServer`: reads NDJSON commands from stdin loop, dispatches to `AgentLoop`/session                                                                          |
 | `dagi_gui/session.py`                                | `SessionController`: lifecycle (run/pause/resume/cancel/clear/compact/shutdown), `_kill_active_work` kills active bash + subagents on pause                     |
 | `desktop/src/shared/protocol.ts`                     | Zod discriminated unions: 19 command types + 17 event types; `PROTOCOL_VERSION=1`; `parseEvent`/`serializeCommand`                                             |
+| `pyside_gui/app.py`                                  | `DagiMainWindow(config, project_path, verbose)` — PySide6 QMainWindow shell; placeholder label as central widget (Task 10 will wire in ConversationView)       |
+| `pyside_gui/conversation.py`                         | `ConversationView(verbose)` — QWebEngineView subclass; 13 Python methods → JS DOM calls; loads `resources/conversation.html`                                    |
+| `pyside_gui/resources/`                              | Static assets for ConversationView: `conversation.html`, `conversation.css` (Catppuccin Mocha), `conversation.js` (DOM API)                                     |
 
 ## Errors Log (recent)
 
@@ -189,6 +192,7 @@ tui.py / telegram_bot.py / main.py / dagi_gui/__main__.py
 - **2026-08-20**: Final-assistant-text handoffs were unreliable on smaller inherited models → restore final `write_handoff`, expose its schema on the main agent, and validate the tool-written file.
 - **2026-08-20**: Main handoffs used filtered output, ambiguous failure state, and raw thread prefixes → defer full `on_done` Markdown only after confirmed termination and use a reserved, hashed filename.
 - **2026-08-21**: `test_discover_subagent_tools` and `test_subagent_configs` still fail on `dagi/subagent-simplification` branch because `plan`/`cli` deletions (Tasks 1-2) weren't reflected in those tests — pre-existing, not caused by Task 4.
+- **2026-08-22**: PySide6 6.11.2 on Python 3.14 in `dagi` conda env fails DLL load unless `os.add_dll_directory(pyside6_dir)` is called before import — Qt DLLs not on PATH via conda activation; `__main__.py` must bootstrap this before any PySide6 import.
 
 ## Notes & Terms
 
@@ -201,7 +205,7 @@ tui.py / telegram_bot.py / main.py / dagi_gui/__main__.py
 - **Inherited fork v2**: `ParentContextProvider` preserves the exact request prefix; children reuse its `write_handoff` schema as their final action, and every other tool call remains allowlist-enforced.
 - **`/wtf` report contract**: `.dagi/errors/wtf_<branch>.md` has exactly `Description`, `Error Report`, and `Suggested Fix`; the parent stores only a path/branch reference.
 - **`_last_request_snapshot`**: `AgentLoop` captures provider request fields before each call; compact and inherited forks serialize them without credentials.
-- **`run_forked_compact_mode()`**: `tools/subagent_main.py` uses the inherited v1 prefix, resolves credentials locally, rejects invalid responses, and writes the compact handoff directly.
+- **PySide6 DLL bootstrap**: On Windows + conda, `os.add_dll_directory` must be called for the PySide6 package dir before any `from PySide6.*` import; `python -m pyside_gui` will crash without it.
 
 ## User Insights
 
