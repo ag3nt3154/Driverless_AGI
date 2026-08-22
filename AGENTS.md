@@ -1,6 +1,6 @@
 # AGENTS.md
 
-> Last updated: 2026-08-22 | [README](README.md) | [TODO](TODO.md)
+> Last updated: 2026-08-22 (Task 9) | [README](README.md) | [TODO](TODO.md)
 
 
 
@@ -184,6 +184,7 @@ tui.py / telegram_bot.py / main.py / dagi_gui/__main__.py
 | `pyside_gui/left_sidebar.py`                         | `LeftSidebar(QWidget)` — session history list; `load_sessions(logs_dir, max_sessions)` populates QListWidget; emits `session_selected(object)` on double-click  |
 | `pyside_gui/right_sidebar.py`                        | `RightSidebar(QScrollArea)` — status dot, model name, token stats, context breakdown (calls `_system_breakdown`), and plan subtask list                         |
 | `pyside_gui/commands.py`                             | `SlashCommandHandler` + `UIWidgets` — handles all `/` commands; `handle(raw)` returns task string, `__EXIT__`, or `None`                                       |
+| `pyside_gui/overlays.py`                             | `AskUserDialog` (modal, blocks agent thread via `threading.Event`) and `CopyPicker` (non-modal, lists copyable messages) — Catppuccin Mocha overlay widgets     |
 
 ## Errors Log (recent)
 
