@@ -1688,6 +1688,9 @@ class AgentLoop:
 
     _DYNAMIC_CONTEXT_SENTINEL = DYNAMIC_CONTEXT_SENTINEL
 
+    def _build_dynamic_context(self) -> str:
+        return build_dynamic_context_with_affect(self.config, self.tracker.affect_controller)
+
     def _refresh_dynamic_context(self) -> None:
         """Re-render the board and log it if it changed.
 
@@ -1696,10 +1699,7 @@ class AgentLoop:
         final message of each request, so the reusable prefix through the
         last real message stays byte-identical from step to step.
         """
-        board = build_dynamic_context_with_affect(
-            self.config,
-            self.tracker.affect_controller,
-        )
+        board = self._build_dynamic_context()
         if board == self._board:
             return
         self._board = board

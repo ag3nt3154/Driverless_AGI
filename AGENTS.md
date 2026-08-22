@@ -1,6 +1,6 @@
 # AGENTS.md
 
-> Last updated: 2026-08-23 (lifecycle size cleanup) | [README](README.md) | [TODO](TODO.md)
+> Last updated: 2026-08-23 (dynamic-context compatibility) | [README](README.md) | [TODO](TODO.md)
 
 
 
@@ -174,7 +174,6 @@ tui.py / telegram_bot.py / main.py / dagi_gui/__main__.py / pyside_gui/__main__.
 
 ## Errors Log (recent)
 
-- **2026-08-23**: Scoped re-review found check-then-act pause races still allowed paused→thinking/drift and second-tool repaint → add `_pause_state_lock` around pause/resume, running checks, process transitions, and affect drift.
 - **2026-08-23**: Final re-review found `_pause_state_lock` held across synchronous process/affect listeners, so UI Escape could deadlock behind a blocked worker callback → split authoritative pause generation from lifecycle publication and publish pending paused after blocked callbacks clear.
 - **2026-08-23**: Fix Round 4 found `_lifecycle_publish_lock` still spanned synchronous callbacks and deadlocked on listener re-entry (`inject_and_resume`) → replace it with a pause-state-protected lifecycle queue drained one callback at a time outside locks.
 - **2026-08-23**: Fix Round 5 found queue dequeue validation was still check-then-act before resolver/mutation, allowing late tool/drift after pause returned → defer process/affect emit and mutate accepted snapshots under `_pause_state_lock`.
@@ -182,6 +181,7 @@ tui.py / telegram_bot.py / main.py / dagi_gui/__main__.py / pyside_gui/__main__.
 - **2026-08-23**: Fix Round 7 found callback-start ordering still signaled before callback entry → move the pause waiter signal into the callback-entry trampoline.
 - **2026-08-23**: Fix Round 8 broad review found lifecycle fixes bloated `agent/loop.py` and base diff still had adjust-affect EOF whitespace → extract `agent/lifecycle.py` and remove the extra EOF blank.
 - **2026-08-23**: Fix Round 9 found `agent/loop.py` still above the 1,799-line baseline and `LifecyclePublisher._drain` too complex → move setup/context helpers into lifecycle and split queue acceptance helpers.
+- **2026-08-23**: Fix Round 10 found unchanged `test_plan_status_board.py` callers still use `AgentLoop._build_dynamic_context()` → restore a thin delegating compatibility shim without growing `agent/loop.py`.
 - **2026-08-23**: Task 8 full pytest stops on six missing live `dagi_gui` imports; remainder exposes Windows `BashTool` kill/timeout failures and stale custom-subagent `parent_context` fixture → document as pre-existing full-suite blockers before final review.
 - **2026-08-23**: `/reload` short-circuit completed without publishing idle, leaving process state paused/thinking in UIs → call `_completed()` before reload notification/return.
 
