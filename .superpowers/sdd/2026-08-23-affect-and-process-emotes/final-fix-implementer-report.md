@@ -112,3 +112,58 @@ rg -n ".{101,}" agent/loop.py tests/test_agent_loop.py
 ```
 
 Result: `git diff --check` passed with only Git CRLF warnings; long-line scan reported only pre-existing `agent/loop.py` lines.
+
+## Fix Round 3: Pause-State Callback Deadlock
+
+Date: 2026-08-23
+
+Final re-review found a P1 deadlock: Fix Round 2 held `_pause_state_lock` while `ProcessStateController` and `AffectController` synchronously invoked UI/TUI listeners. If a worker listener blocked and the UI thread pressed Escape, `pause()` waited for `_pause_state_lock`.
+
+Fix:
+
+- Kept `_pause_state_lock` only for authoritative pause state and `_pause_generation`.
+- Added `_lifecycle_publish_lock` to serialize process/affect publications without making `pause()` wait for a blocked listener.
+- Added `_pending_pause_publish` so a pause requested during a blocked lifecycle callback returns promptly, then publishes paused once the callback clears.
+- Converted running-only process transitions and affect drift to generation-checked two-phase publication.
+- Kept resume `thinking` on the same generation-checked path to avoid stale paused→thinking ordering.
+
+Red verification:
+
+```powershell
+conda run -n dagi python -X utf8 -m pytest tests/test_agent_loop.py::TestProcessLifecycle::test_pause_returns_while_process_listener_is_blocked -vv --basetemp C:\Users\alexr\AppData\Local\Temp\dagi-pause-deadlock-red
+```
+
+Result: failed as expected because `pause()` did not return while the worker listener was blocked.
+
+Green verification:
+
+```powershell
+conda run -n dagi python -X utf8 -m pytest tests/test_agent_loop.py::TestProcessLifecycle::test_pause_returns_while_process_listener_is_blocked tests/test_agent_loop.py::TestProcessLifecycle::test_pause_race_cannot_publish_post_tool_thinking_after_paused tests/test_agent_loop.py::TestProcessLifecycle::test_pause_race_cannot_drift_after_paused tests/test_agent_loop.py::TestProcessLifecycle::test_paused_multi_tool_turn_does_not_start_later_tool_process_state tests/test_agent_loop.py::TestProcessLifecycle::test_pause_during_tool_suppresses_post_tool_thinking_and_drift -vv --basetemp C:\Users\alexr\AppData\Local\Temp\dagi-pause-deadlock-green-one
+```
+
+Result: `5 passed, 1 warning in 0.88s`.
+
+Focused amended area:
+
+```powershell
+conda run -n dagi python -X utf8 -m pytest tests/test_agent_loop.py -q --basetemp C:\Users\alexr\AppData\Local\Temp\dagi-pause-deadlock-agent-loop
+```
+
+Result: `43 passed, 1 warning in 1.20s`.
+
+Feature suite:
+
+```powershell
+conda run -n dagi python -X utf8 -m pytest tests/test_expression_assets.py tests/test_affect.py tests/test_adjust_affect_tool.py tests/test_config_loader.py tests/test_tool_filter.py tests/test_subagent_configs.py tests/test_session_tracker.py tests/test_history.py tests/test_history_integration.py tests/test_process_state.py tests/test_dynamic_context.py tests/test_agent_loop.py tests/test_agent_callbacks.py tests/test_tui_callbacks.py tests/tui/test_sidebar_render.py tests/tui/test_app_layout.py pyside_gui/tests/test_bridge.py pyside_gui/tests/test_commands.py pyside_gui/tests/test_expression_widget.py -q --basetemp C:\Users\alexr\AppData\Local\Temp\dagi-pause-deadlock-feature
+```
+
+Result: `223 passed, 1 warning in 2.97s`.
+
+Static checks:
+
+```powershell
+git diff --check
+rg -n ".{101,}" agent/loop.py tests/test_agent_loop.py
+```
+
+Result: `git diff --check` passed with only Git CRLF warnings; long-line scan reported only pre-existing `agent/loop.py` lines.

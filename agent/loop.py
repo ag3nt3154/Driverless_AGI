@@ -497,8 +497,12 @@ class AgentLoop:
             self._handle_switch_model("plan", {"reason": "user-initiated plan mode"})
 
         # Pause/resume: set = running (default), clear = paused.
-        # The lock serializes pause checks with process/drift side effects.
+        # State lock protects the authoritative generation. Lifecycle
+        # publication lock serializes callbacks without blocking pause().
         self._pause_state_lock = threading.RLock()
+        self._lifecycle_publish_lock = threading.Lock()
+        self._pause_generation = 0
+        self._pending_pause_publish = False
         self._pause_event = threading.Event()
         self._pause_event.set()
         self._pause_checkpoint = threading.Event()
@@ -506,13 +510,17 @@ class AgentLoop:
     def pause(self) -> None:
         with self._pause_state_lock:
             self._pause_event.clear()
-            self._process.paused()
+            self._pause_generation += 1
+            self._pending_pause_publish = True
+        self._try_publish_pending_pause()
 
     def inject_and_resume(self, message: str) -> None:
         self._log_user_message("user", message, "inject")
         with self._pause_state_lock:
             self._pause_event.set()
-            self._process.thinking()
+            self._pause_generation += 1
+            self._pending_pause_publish = False
+        self._publish_running_lifecycle(self._process.thinking)
 
     @property
     def parent_context_provider(self) -> ParentContextProvider:
@@ -530,19 +538,42 @@ class AgentLoop:
         self._process.set_listener(self.callbacks.on_process_state_changed)
 
     def _api_attempt_started(self) -> None:
-        with self._pause_state_lock:
-            if self._pause_event.is_set():
-                self._process.thinking()
+        self._publish_running_lifecycle(self._process.thinking)
 
     def _tool_started(self, name: str) -> None:
-        with self._pause_state_lock:
-            if self._pause_event.is_set():
-                self._process.tool_started(name)
+        self._publish_running_lifecycle(lambda: self._process.tool_started(name))
 
     def _tool_bookkeeping_finished(self) -> None:
+        self._publish_running_lifecycle(self._process.tool_ended)
+
+    def _running_generation(self) -> int | None:
         with self._pause_state_lock:
-            if self._pause_event.is_set():
-                self._process.tool_ended()
+            return self._pause_generation if self._pause_event.is_set() else None
+
+    def _is_same_running_generation(self, generation: int) -> bool:
+        with self._pause_state_lock:
+            return self._pause_event.is_set() and self._pause_generation == generation
+
+    def _publish_running_lifecycle(self, publish) -> None:
+        generation = self._running_generation()
+        if generation is None:
+            return
+        with self._lifecycle_publish_lock:
+            if self._is_same_running_generation(generation):
+                publish()
+        self._try_publish_pending_pause()
+
+    def _try_publish_pending_pause(self) -> None:
+        if not self._lifecycle_publish_lock.acquire(blocking=False):
+            return
+        try:
+            with self._pause_state_lock:
+                if not self._pending_pause_publish or self._pause_event.is_set():
+                    return
+                self._pending_pause_publish = False
+            self._process.paused()
+        finally:
+            self._lifecycle_publish_lock.release()
 
     def _completed(self) -> None:
         self._process.idle()
@@ -553,9 +584,15 @@ class AgentLoop:
     def _continuing_step_finished(self, turn: int, step: int) -> None:
         self.log.append(sev.STEP_END, {"turn": turn, "step": step})
         controller = self.tracker.affect_controller
-        with self._pause_state_lock:
-            if controller is not None and self._pause_event.is_set():
+        if controller is None:
+            return
+        generation = self._running_generation()
+        if generation is None:
+            return
+        with self._lifecycle_publish_lock:
+            if self._is_same_running_generation(generation):
                 controller.drift()
+        self._try_publish_pending_pause()
 
     def _freeze_request_snapshot(self, create_kwargs: Mapping[str, Any]) -> dict[str, Any]:
         """Copy request identity and the live surface boundary before a provider call."""

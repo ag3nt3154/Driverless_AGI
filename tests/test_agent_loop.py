@@ -971,6 +971,44 @@ class TestProcessLifecycle:
         assert "process:tool:tool_b" not in snapshot[pause_index + 1:]
         assert "process:thinking" not in snapshot[pause_index + 1:]
 
+    def test_pause_returns_while_process_listener_is_blocked(self):
+        """UI pause must not wait behind a worker-held listener callback."""
+        loop = _make_loop()
+        events: list[str] = []
+        listener_entered = threading.Event()
+        release_listener = threading.Event()
+        pause_returned = threading.Event()
+
+        def on_process(snapshot) -> None:
+            events.append(f"process:{snapshot.state}")
+            if snapshot.state == "thinking":
+                listener_entered.set()
+                release_listener.wait(timeout=2.0)
+
+        loop.callbacks = AgentCallbacks(on_process_state_changed=on_process)
+        loop._bind_process_listener()
+        loop._process.tool_started("echo")
+        worker = threading.Thread(target=loop._tool_bookkeeping_finished)
+        worker.start()
+        assert listener_entered.wait(timeout=1.0)
+
+        def pause_from_ui_thread() -> None:
+            loop.pause()
+            pause_returned.set()
+
+        pause_thread = threading.Thread(target=pause_from_ui_thread)
+        pause_thread.start()
+        returned_before_listener_released = pause_returned.wait(timeout=0.2)
+        release_listener.set()
+        worker.join(timeout=2.0)
+        pause_thread.join(timeout=2.0)
+
+        assert returned_before_listener_released
+        assert not worker.is_alive()
+        assert not pause_thread.is_alive()
+        assert loop._pause_event.is_set() is False
+        assert events[-1] == "process:paused"
+
 
 class TestParentForkCapture:
     def test_spawn_fork_uses_request_before_assistant_tool_response(self):
