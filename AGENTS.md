@@ -1,6 +1,6 @@
 # AGENTS.md
 
-> Last updated: 2026-08-22 (affect session persistence/restore + controller/tool + expression asset libraries + pytest basetemp note) | [README](README.md) | [TODO](TODO.md)
+> Last updated: 2026-08-22 (automatic process-state controller + affect session persistence/restore + controller/tool + expression asset libraries + pytest basetemp note) | [README](README.md) | [TODO](TODO.md)
 
 
 
@@ -144,6 +144,8 @@ tui.py / telegram_bot.py / main.py / dagi_gui/__main__.py / pyside_gui/__main__.
 
 **Affect core (branch `dagi/affect-and-process-emotes`):** `agent/affect.py` defines immutable `AffectConfig`, `AffectVector`, `AffectRestore`, and `AffectSnapshot`, plus `AffectController`. The controller owns random baseline init, per-axis clamping, drift, VAD resolution, context-line formatting, and one shared `_apply_change()` path for mutation + persistence payload creation + listener publication. `tools/adjust_affect/_adjust_affect.py` wraps it in the bounded three-delta replacement tool; registry wiring lands in the later migration task.
 
+**Process-state controller (branch `dagi/affect-and-process-emotes`):** `agent/process_state.py` defines immutable `ProcessSnapshot` plus `ProcessStateController`. The controller consumes `ProcessStateLibrary.resolve(state)`, funnels all public lifecycle methods through `_transition(state)`, deduplicates exact repeat snapshots, stores before publish, and models tool flow as `idle -> thinking -> tool:<name> -> thinking` while letting explicit `paused` / `error` states persist until the next transition.
+
 **Affect session persistence (branch `dagi/affect-and-process-emotes`):** Root `SessionTracker`s now own the bound affect controller, persist `affect_*` JSONL records alongside normal session events, and let child trackers reuse the root controller without replacing it. `agent/history.py` shares a private JSONL loader between raw-message restore and affect restore, selecting the latest valid affect record while preserving the original `affect_init` baseline and warning once on malformed entries.
 
 ## Key Files
@@ -156,6 +158,7 @@ tui.py / telegram_bot.py / main.py / dagi_gui/__main__.py / pyside_gui/__main__.
 | `agent/session_log.py`                               | Append-only event log; `SessionLog.branches` tracks subagent branches; `branch_event(id)` returns the BRANCH_START event for a branch                         |
 | `agent/wtf.py`, `agent/wtf_report.py`                | Atomic `/wtf` orchestration and strict report parser                                                                                                           |
 | `agent/expression_assets.py`                         | Strict VAD/process-state manifest loaders, safe-path validation, hysteresis resolution, and universal text fallback                                            |
+| `agent/process_state.py`                             | Process state snapshot + controller with duplicate-snapshot suppression and explicit idle/thinking/tool/pause/error transitions                                |
 | `agent/tools.py`, `agent/subagent_tools.py`          | Main/subagent registry construction, including mandatory and inherited `write_handoff`                                                                          |
 | `tools/subagent_api.py`                              | **Public API** — spawn/compact/inherited dispatch, branch metadata, handoff and fork-context lifecycle                                                        |
 | `tools/_subagent_runner.py`                          | Private pipe-based subprocess spawner; returns raw dicts; wrapped exclusively by `subagent_api.py`                                                             |
@@ -196,6 +199,7 @@ tui.py / telegram_bot.py / main.py / dagi_gui/__main__.py / pyside_gui/__main__.
 - **PySide6 streaming dedup**: After streaming, `AgentLoop` fires `on_reasoning` and `on_assistant_text` with the same content already shown via deltas — `app.py` gates both behind `_stream_had_content` (set in `_on_stream_ended`, cleared only in `_on_assistant_text`).
 - **Expression manifests**: `.dagi/emotes/vad/manifest.yaml` stores `emotes: [{id, file, vad}]`; `.dagi/emotes/states/manifest.yaml` stores `states: {key: file}` with required `idle`, `thinking`, and `tool`.
 - **Affect restore logs**: `affect_init` owns the baseline; history restore reuses its baseline with the latest valid `affect_*` current/emote snapshot and emits at most one warning for malformed records.
+- **Process-state dedupe**: `ProcessStateController` still resolves the requested state every call, but only publishes when the new `(state, asset)` snapshot differs from the stored one.
 
 ## User Insights
 
