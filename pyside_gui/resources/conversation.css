@@ -1,0 +1,227 @@
+:root {
+    --bg: #1e1e2e;
+    --surface: #282839;
+    --surface-hover: #313147;
+    --text: #cdd6f4;
+    --text-dim: #6c7086;
+    --accent: #89b4fa;
+    --green: #a6e3a1;
+    --yellow: #f9e2af;
+    --red: #f38ba8;
+    --magenta: #cba6f7;
+    --cyan: #94e2d5;
+    --border: #45475a;
+    --font-ui: 'Segoe UI', 'Inter', system-ui, sans-serif;
+    --font-mono: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+    --radius: 8px;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font-ui);
+    font-size: 14px;
+    line-height: 1.6;
+    padding: 12px;
+    overflow-y: auto;
+}
+
+#conversation {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.message {
+    border-radius: var(--radius);
+    padding: 10px 14px;
+    max-width: 100%;
+    word-wrap: break-word;
+}
+
+.user-message {
+    background: #1a3a5c;
+    border-left: 3px solid var(--accent);
+}
+
+.assistant-message {
+    background: var(--surface);
+    border-left: 3px solid var(--green);
+}
+
+.assistant-message.streaming {
+    border-left-color: var(--yellow);
+    opacity: 0.9;
+}
+
+.message-header {
+    font-weight: 600;
+    font-size: 12px;
+    margin-bottom: 4px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.user-message .message-header { color: var(--accent); }
+.assistant-message .message-header { color: var(--green); }
+
+.message-body { color: var(--text); }
+
+.tool-call {
+    background: var(--surface);
+    border-left: 3px solid var(--yellow);
+    font-family: var(--font-mono);
+    font-size: 13px;
+}
+
+.tool-call summary {
+    cursor: pointer;
+    font-weight: 600;
+    padding: 4px 0;
+    color: var(--yellow);
+}
+
+.tool-call .tool-args,
+.tool-call .tool-result {
+    padding: 6px 0;
+    color: var(--text-dim);
+    white-space: pre-wrap;
+    overflow-x: auto;
+    max-height: 300px;
+    overflow-y: auto;
+}
+
+.tool-result-summary {
+    color: var(--green);
+    font-size: 12px;
+}
+
+.reasoning-message {
+    background: var(--surface);
+    border-left: 3px solid var(--magenta);
+    font-style: italic;
+    color: var(--text-dim);
+}
+
+.reasoning-message .message-header { color: var(--magenta); }
+
+.info-message {
+    color: var(--text-dim);
+    font-size: 13px;
+    padding: 4px 14px;
+}
+
+.error-message {
+    color: var(--red);
+    font-weight: 600;
+    padding: 6px 14px;
+}
+
+.question-panel {
+    background: var(--surface);
+    border: 1px solid var(--cyan);
+    border-radius: var(--radius);
+    padding: 12px 16px;
+}
+
+.question-panel .question-header {
+    color: var(--cyan);
+    font-weight: 600;
+    margin-bottom: 8px;
+}
+
+.question-panel table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 8px 0;
+}
+
+.question-panel td {
+    padding: 4px 8px;
+    border-bottom: 1px solid var(--border);
+}
+
+.question-panel .option-num { color: var(--cyan); font-weight: bold; }
+.question-panel .recommended { color: var(--green); }
+
+.subagent-block {
+    margin-left: 20px;
+    border-left: 2px solid var(--cyan);
+    padding-left: 10px;
+    font-size: 13px;
+}
+
+.subagent-header, .subagent-footer {
+    color: var(--cyan);
+    font-weight: 600;
+}
+
+.subagent-tool { color: var(--text-dim); }
+.subagent-error { color: var(--red); }
+
+.streaming .reasoning {
+    color: var(--text-dim);
+    font-style: italic;
+}
+
+/* Markdown content styling */
+.rendered-markdown h1,
+.rendered-markdown h2,
+.rendered-markdown h3 {
+    margin-top: 12px;
+    margin-bottom: 6px;
+    color: var(--accent);
+}
+
+.rendered-markdown code {
+    background: #11111b;
+    padding: 2px 5px;
+    border-radius: 3px;
+    font-family: var(--font-mono);
+    font-size: 13px;
+}
+
+.rendered-markdown pre {
+    background: #11111b;
+    padding: 10px 12px;
+    border-radius: 6px;
+    overflow-x: auto;
+    margin: 8px 0;
+}
+
+.rendered-markdown pre code {
+    background: none;
+    padding: 0;
+}
+
+.rendered-markdown blockquote {
+    border-left: 3px solid var(--border);
+    padding-left: 12px;
+    color: var(--text-dim);
+    margin: 8px 0;
+}
+
+.rendered-markdown table {
+    border-collapse: collapse;
+    margin: 8px 0;
+    width: 100%;
+}
+
+.rendered-markdown th,
+.rendered-markdown td {
+    border: 1px solid var(--border);
+    padding: 6px 10px;
+    text-align: left;
+}
+
+.rendered-markdown th {
+    background: var(--surface);
+}
+
+.rendered-markdown a { color: var(--accent); }
+.rendered-markdown ul, .rendered-markdown ol { padding-left: 20px; }
+.rendered-markdown li { margin: 2px 0; }
+
+#scroll-sentinel { height: 1px; }
