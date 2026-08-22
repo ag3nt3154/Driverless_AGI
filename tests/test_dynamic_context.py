@@ -7,6 +7,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from agent.dynamic_context import build_dynamic_context
+from agent.lifecycle import build_dynamic_context_with_affect
 from agent.loop import AgentConfig, AgentLoop
 
 
@@ -45,6 +46,10 @@ def _make_loop(
     loop.tracker = fake_tracker
     loop.registry = fake_registry
     return loop
+
+
+def _build_loop_dynamic_context(loop: AgentLoop) -> str:
+    return build_dynamic_context_with_affect(loop.config, loop.tracker.affect_controller)
 
 
 PLAN_TEXT = """\
@@ -87,12 +92,12 @@ class TestDynamicContextBoardRendering:
 
     def test_board_contains_sentinel(self, tmp_path):
         loop = _make_loop(tmp_path, python_env="conda:dagi")
-        board = loop._build_dynamic_context()
+        board = _build_loop_dynamic_context(loop)
         assert _SENTINEL in board
 
     def test_board_contains_python_env(self, tmp_path):
         loop = _make_loop(tmp_path, python_env="conda:dagi")
-        board = loop._build_dynamic_context()
+        board = _build_loop_dynamic_context(loop)
         assert "Python env: conda:dagi" in board
 
     def test_board_contains_plan_status(self, tmp_path):
@@ -103,7 +108,7 @@ class TestDynamicContextBoardRendering:
             active_plan_file=str(plan_file),
             python_env="conda:dagi",
         )
-        board = loop._build_dynamic_context()
+        board = _build_loop_dynamic_context(loop)
         assert "1.[x]" in board or "[x]" in board
         assert "2.[~]" in board or "[~]" in board
         assert "3.[ ]" in board or "[ ]" in board
@@ -116,19 +121,19 @@ class TestDynamicContextBoardRendering:
             active_plan_file=str(plan_file),
             python_env="conda:dagi",
         )
-        board = loop._build_dynamic_context()
+        board = _build_loop_dynamic_context(loop)
         assert "Implement" in board  # first in_progress task
 
     def test_board_without_plan(self, tmp_path):
         loop = _make_loop(tmp_path, python_env="venv:.venv")
-        board = loop._build_dynamic_context()
+        board = _build_loop_dynamic_context(loop)
         assert "Python env: venv:.venv" in board
         assert "Plan:" not in board
         assert "Status:" not in board
 
     def test_board_without_python_env_or_plan(self, tmp_path):
         loop = _make_loop(tmp_path)
-        board = loop._build_dynamic_context()
+        board = _build_loop_dynamic_context(loop)
         assert _SENTINEL in board
         # Board should still render (even if sparse)
 
@@ -139,7 +144,7 @@ class TestDynamicContextBoardRendering:
             "Affect: V=+0.20 A=+0.10 D=-0.10 | emote=focused"
         )
 
-        board = loop._build_dynamic_context()
+        board = _build_loop_dynamic_context(loop)
 
         assert board.endswith("Affect: V=+0.20 A=+0.10 D=-0.10 | emote=focused")
 

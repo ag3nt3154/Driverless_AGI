@@ -770,7 +770,7 @@ class TestProcessLifecycle:
         )
         loop = _make_loop()
         loop.callbacks = callbacks
-        loop._bind_process_listener()
+        loop._process.set_listener(loop.callbacks.on_process_state_changed)
         loop.pause()
         loop._rebuild_for_reload = MagicMock(return_value=(set(), set(), []))
 
@@ -793,7 +793,7 @@ class TestProcessLifecycle:
         )
         loop = _make_loop(registry=registry)
         loop.callbacks = callbacks
-        loop._bind_process_listener()
+        loop._process.set_listener(loop.callbacks.on_process_state_changed)
         loop.client = MagicMock()
         loop.client.chat.completions.create.side_effect = [
             _make_response(None, tool_calls=[_make_tool_call("tc1", "echo", "{}")]),
@@ -877,7 +877,7 @@ class TestProcessLifecycle:
             on_tool_end=lambda _name, _result: events.append("tool_end"),
         )
         loop.callbacks = callbacks
-        loop._bind_process_listener()
+        loop._process.set_listener(loop.callbacks.on_process_state_changed)
         loop.tracker.affect_controller = _Affect()
         loop.client = MagicMock()
         loop.client.chat.completions.create.side_effect = [
@@ -910,13 +910,13 @@ class TestProcessLifecycle:
         loop.callbacks = AgentCallbacks(
             on_process_state_changed=lambda snap: events.append(f"process:{snap.state}")
         )
-        loop._bind_process_listener()
+        loop._process.set_listener(loop.callbacks.on_process_state_changed)
         loop._process.tool_started("echo")
         events.clear()
         race_event = _PauseAfterIsSet(loop)
         loop._lifecycle.pause_event = race_event
 
-        loop._tool_bookkeeping_finished()
+        loop._lifecycle.tool_bookkeeping_finished()
         assert race_event.pause_finished.wait(timeout=1.0)
 
         if "process:paused" in events:
@@ -936,7 +936,7 @@ class TestProcessLifecycle:
         loop.callbacks = AgentCallbacks(
             on_process_state_changed=lambda snap: events.append(f"process:{snap.state}")
         )
-        loop._bind_process_listener()
+        loop._process.set_listener(loop.callbacks.on_process_state_changed)
         events.clear()
         race_event = _PauseAfterIsSet(loop)
         loop._lifecycle.pause_event = race_event
@@ -967,7 +967,7 @@ class TestProcessLifecycle:
             on_process_state_changed=lambda snap: events.append(f"process:{snap.state}"),
             on_tool_end=on_tool_end,
         )
-        loop._bind_process_listener()
+        loop._process.set_listener(loop.callbacks.on_process_state_changed)
         loop.client = MagicMock()
         loop.client.chat.completions.create.side_effect = [
             _make_response(
@@ -1012,9 +1012,9 @@ class TestProcessLifecycle:
                 release_listener.wait(timeout=2.0)
 
         loop.callbacks = AgentCallbacks(on_process_state_changed=on_process)
-        loop._bind_process_listener()
+        loop._process.set_listener(loop.callbacks.on_process_state_changed)
         loop._process.tool_started("echo")
-        worker = threading.Thread(target=loop._tool_bookkeeping_finished)
+        worker = threading.Thread(target=loop._lifecycle.tool_bookkeeping_finished)
         worker.start()
         assert listener_entered.wait(timeout=1.0)
 
@@ -1049,10 +1049,10 @@ class TestProcessLifecycle:
                 events.append("inject_returned")
 
         loop.callbacks = AgentCallbacks(on_process_state_changed=on_process)
-        loop._bind_process_listener()
+        loop._process.set_listener(loop.callbacks.on_process_state_changed)
         loop.log.append(sev.TURN_START, {"turn": 1})
         loop.log.append(sev.STEP_START, {"turn": 1, "step": 1})
-        worker = threading.Thread(target=loop._api_attempt_started, daemon=True)
+        worker = threading.Thread(target=loop._lifecycle.api_attempt_started, daemon=True)
 
         worker.start()
         worker.join(timeout=1.0)
@@ -1117,8 +1117,8 @@ class TestProcessLifecycle:
         loop.callbacks = AgentCallbacks(
             on_process_state_changed=lambda snap: events.append(f"process:{snap.state}")
         )
-        loop._bind_process_listener()
-        worker = threading.Thread(target=lambda: loop._tool_started("echo"))
+        loop._process.set_listener(loop.callbacks.on_process_state_changed)
+        worker = threading.Thread(target=lambda: loop._lifecycle.tool_started("echo"))
         worker.start()
         assert resolver_entered.wait(timeout=1.0)
 

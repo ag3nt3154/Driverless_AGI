@@ -1,12 +1,70 @@
 from __future__ import annotations
 
 import threading
-from typing import Callable
+from pathlib import Path
+from typing import Any, Callable
 
+from agent.affect import AffectConfig, AffectController
+from agent.dynamic_context import build_dynamic_context
+from agent.expression_assets import ProcessStateLibrary, VadLibrary
 from agent.process_state import ProcessStateController
 
 LifecycleCallback = Callable[[], None]
 LifecyclePrepare = Callable[[], LifecycleCallback | None]
+LifecycleItem = tuple[str, int, LifecyclePrepare]
+AcceptedCallback = tuple[LifecycleCallback, threading.Event]
+
+
+def load_vad_library(dagi_root: Path) -> VadLibrary:
+    """Load the current VAD library, falling back to text when assets are absent."""
+    emotes_root = dagi_root / ".dagi" / "emotes"
+    return VadLibrary.load(
+        emotes_root / "vad",
+        emotes_root / "default.md",
+    )
+
+
+def ensure_affect_controller(
+    tracker: Any,
+    config: Any,
+    dagi_root: Path,
+    callbacks: Any,
+    initial_affect: Any,
+) -> None:
+    """Bind the root affect controller early enough for main registry construction."""
+    if tracker.affect_controller is not None:
+        tracker.affect_controller.set_listener(callbacks.on_affect_changed)
+        return
+    affect_config = AffectConfig(
+        drift_pull=config.affect_drift_pull,
+        drift_noise=config.affect_drift_noise,
+        emote_hysteresis=config.affect_emote_hysteresis,
+    )
+    controller = AffectController(
+        load_vad_library(dagi_root),
+        config=affect_config,
+        baseline=initial_affect.baseline if initial_affect else None,
+        current=initial_affect.current if initial_affect else None,
+        current_emote_id=initial_affect.emote_id if initial_affect else None,
+        record=tracker.record_affect,
+        on_change=callbacks.on_affect_changed,
+    )
+    tracker.bind_affect_controller(controller)
+
+
+def load_process_library(dagi_root: Path) -> ProcessStateLibrary:
+    emotes_root = dagi_root / ".dagi" / "emotes"
+    return ProcessStateLibrary.load(
+        emotes_root / "states",
+        emotes_root / "default.md",
+    )
+
+
+def build_dynamic_context_with_affect(config: Any, controller: Any) -> str:
+    affect_line = controller.context_line() if controller is not None else None
+    if not isinstance(affect_line, str):
+        affect_line = None
+    return build_dynamic_context(config, affect_line)
 
 
 class LifecyclePublisher:
@@ -21,7 +79,7 @@ class LifecyclePublisher:
         self._process = process
         self._state_lock = threading.RLock()
         self._generation = 0
-        self._queue: list[tuple[str, int, LifecyclePrepare]] = []
+        self._queue: list[LifecycleItem] = []
         self._callback_entries: list[tuple[int, threading.Event]] = []
         self._draining = False
         self.pause_event = threading.Event()
@@ -149,27 +207,53 @@ class LifecyclePublisher:
     def _drain(self) -> None:
         while True:
             try:
-                with self._state_lock:
-                    if not self._queue:
-                        self._draining = False
-                        return
-                    state, generation, prepare = self._queue.pop(0)
-                    should_publish = self._should_publish(state, generation)
-                    callback = prepare() if should_publish else None
-                    entry = self._mark_callback_pending() if callback is not None else None
+                accepted = self._dequeue_accepted_callback()
             except BaseException:
-                with self._state_lock:
-                    self._draining = False
+                self._clear_draining()
                 raise
-            if not should_publish:
-                continue
+            if accepted is None:
+                return
+            callback, entry = accepted
             try:
-                if callback is not None and entry is not None:
-                    self._start_callback(callback, entry)
+                self._start_callback(callback, entry)
             except BaseException:
-                with self._state_lock:
-                    self._draining = False
+                self._clear_draining()
                 raise
+
+    def _dequeue_accepted_callback(self) -> AcceptedCallback | None:
+        while True:
+            item = self._pop_next_item()
+            if item is None:
+                return None
+            state, generation, prepare = item
+            callback = self._accept_callback(state, generation, prepare)
+            if callback is not None:
+                return callback
+
+    def _pop_next_item(self) -> LifecycleItem | None:
+        with self._state_lock:
+            if not self._queue:
+                self._draining = False
+                return None
+            return self._queue.pop(0)
+
+    def _accept_callback(
+        self,
+        state: str,
+        generation: int,
+        prepare: LifecyclePrepare,
+    ) -> AcceptedCallback | None:
+        with self._state_lock:
+            if not self._should_publish(state, generation):
+                return None
+            callback = prepare()
+            if callback is None:
+                return None
+            return callback, self._mark_callback_pending()
+
+    def _clear_draining(self) -> None:
+        with self._state_lock:
+            self._draining = False
 
     def _should_publish(self, state: str, generation: int) -> bool:
         if state == "running":

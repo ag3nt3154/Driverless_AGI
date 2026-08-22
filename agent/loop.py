@@ -21,11 +21,10 @@ from openai.types.chat.chat_completion_message_function_tool_call import (
 
 from agent import DAGI_ROOT
 from agent._git_branch import create_task_branch, get_current_branch
-from agent.affect import AffectConfig, AffectController, AffectRestore, AffectSnapshot
+from agent.affect import AffectRestore, AffectSnapshot
 from agent.dynamic_context import SENTINEL as DYNAMIC_CONTEXT_SENTINEL
-from agent.dynamic_context import build_dynamic_context
-from agent.expression_assets import ProcessStateLibrary, VadLibrary
-from agent.lifecycle import LifecyclePublisher
+from agent.lifecycle import LifecyclePublisher, build_dynamic_context_with_affect
+from agent.lifecycle import ensure_affect_controller, load_process_library
 from agent.process_state import ProcessSnapshot, ProcessStateController
 from agent.prompts import load_prompt, load_main_system_prompt, load_soul
 from agent.registry import ToolRegistry
@@ -143,51 +142,6 @@ def _format_reload_notification(
 
 
 CONTINUE_PROMPT = load_prompt("main/continue.md")
-
-
-def _load_vad_library(dagi_root: Path) -> VadLibrary:
-    """Load the current VAD library, falling back to text when assets are absent."""
-    emotes_root = dagi_root / ".dagi" / "emotes"
-    return VadLibrary.load(
-        emotes_root / "vad",
-        emotes_root / "default.md",
-    )
-
-
-def _ensure_affect_controller(
-    tracker: SessionTracker,
-    config: "AgentConfig",
-    dagi_root: Path,
-    callbacks: "AgentCallbacks",
-    initial_affect: AffectRestore | None,
-) -> None:
-    """Bind the root affect controller early enough for main registry construction."""
-    if tracker.affect_controller is not None:
-        tracker.affect_controller.set_listener(callbacks.on_affect_changed)
-        return
-    affect_config = AffectConfig(
-        drift_pull=config.affect_drift_pull,
-        drift_noise=config.affect_drift_noise,
-        emote_hysteresis=config.affect_emote_hysteresis,
-    )
-    controller = AffectController(
-        _load_vad_library(dagi_root),
-        config=affect_config,
-        baseline=initial_affect.baseline if initial_affect else None,
-        current=initial_affect.current if initial_affect else None,
-        current_emote_id=initial_affect.emote_id if initial_affect else None,
-        record=tracker.record_affect,
-        on_change=callbacks.on_affect_changed,
-    )
-    tracker.bind_affect_controller(controller)
-
-
-def _load_process_library(dagi_root: Path) -> ProcessStateLibrary:
-    emotes_root = dagi_root / ".dagi" / "emotes"
-    return ProcessStateLibrary.load(
-        emotes_root / "states",
-        emotes_root / "default.md",
-    )
 
 
 @dataclass
@@ -403,7 +357,7 @@ class AgentLoop:
             if self.tracker.affect_controller is not None:
                 self.tracker.affect_controller.set_listener(self.callbacks.on_affect_changed)
         else:
-            _ensure_affect_controller(
+            ensure_affect_controller(
                 self.tracker, config, dagi_root, self.callbacks, initial_affect
             )
             # ── Load skills ───────────────────────────────────────────────────
@@ -433,7 +387,7 @@ class AgentLoop:
 
         self.config = config
         self._process = ProcessStateController(
-            _load_process_library(dagi_root),
+            load_process_library(dagi_root),
             on_change=self.callbacks.on_process_state_changed,
         )
         # ── Build system prompt ───────────────────────────────────────────
@@ -519,24 +473,6 @@ class AgentLoop:
     def wait_for_pause_checkpoint(self, timeout: float) -> bool:
         """Wait until a paused run reaches its safe pre-request checkpoint."""
         return self._pause_checkpoint.wait(timeout)
-
-    def _bind_process_listener(self) -> None:
-        self._process.set_listener(self.callbacks.on_process_state_changed)
-
-    def _api_attempt_started(self) -> None:
-        self._lifecycle.api_attempt_started()
-
-    def _tool_started(self, name: str) -> None:
-        self._lifecycle.tool_started(name)
-
-    def _tool_bookkeeping_finished(self) -> None:
-        self._lifecycle.tool_bookkeeping_finished()
-
-    def _completed(self) -> None:
-        self._process.idle()
-
-    def _fatal_error(self) -> None:
-        self._process.error()
 
     def _continuing_step_finished(self, turn: int, step: int) -> None:
         self.log.append(sev.STEP_END, {"turn": turn, "step": step})
@@ -1083,7 +1019,7 @@ class AgentLoop:
             self.log.append(sev.TURN_START, {"turn": _reload_turn})
             self._log_user_message("system", notification, "reload")
             self._close_turn(_reload_turn, sev.reason_completed())
-            self._completed()
+            self._process.idle()
             self.callbacks.on_assistant_text(notification)
             return notification
 
@@ -1130,7 +1066,7 @@ class AgentLoop:
                 _error_retries = 0
                 _paused_on_error = False
                 while True:
-                    self._api_attempt_started()
+                    self._lifecycle.api_attempt_started()
                     _request = self._build_request_messages()
                     self.callbacks.on_api_call(list(_request))
                     try:
@@ -1213,7 +1149,7 @@ class AgentLoop:
                             f"{_null_retries} time(s) in a row. "
                             "Check your model endpoint and retry your task."
                         )
-                        self._fatal_error()
+                        self._process.error()
                         self.callbacks.on_error(Exception(error_msg))
                         self._close_turn(_turn, sev.reason_error(error_msg))
                         return error_msg
@@ -1271,7 +1207,7 @@ class AgentLoop:
                     if _exit_flag:
                         clean = result.replace(_exit_flag, "").strip()
                         self.callbacks.on_assistant_text(clean)
-                        self._completed()
+                        self._process.idle()
                         self.callbacks.on_done(clean)
                         self._close_turn(_turn, sev.reason_completed())
                         return clean
@@ -1279,7 +1215,7 @@ class AgentLoop:
                     # Task not complete — inject "continue" and keep looping
                     self.callbacks.on_assistant_text(result)
                     if self._continuation_count >= self.config.max_continuations:
-                        self._completed()
+                        self._process.idle()
                         self.callbacks.on_done(result)
                         self._close_turn(_turn, sev.reason_max_continuations())
                         return result
@@ -1341,7 +1277,7 @@ class AgentLoop:
 
         except Exception as e:
             self._close_turn(_turn, sev.reason_error(str(e), type(e).__name__))
-            self._fatal_error()
+            self._process.error()
             self.callbacks.on_error(e)
             raise
         finally:
@@ -1365,7 +1301,7 @@ class AgentLoop:
         for tc in message.tool_calls:
             tool_obj = self.registry._tools.get(tc.function.name)
             description = tool_obj.description if tool_obj else tc.function.name
-            self._tool_started(tc.function.name)
+            self._lifecycle.tool_started(tc.function.name)
             self.callbacks.on_tool_start(tc.function.name, description, tc.function.arguments)
             self.tracker.record_tool_start(tc.function.name, description, tc.function.arguments)
 
@@ -1407,7 +1343,7 @@ class AgentLoop:
                     if _switch_target is not None:
                         result = self._handle_switch_model(_switch_target, args)
             self._bookkeep_tool_call(tc, result, description, tool_records)
-            self._tool_bookkeeping_finished()
+            self._lifecycle.tool_bookkeeping_finished()
 
         for _sys_content in deferred_system_msgs:
             self._log_user_message("system", _sys_content, "reload")
@@ -1512,10 +1448,10 @@ class AgentLoop:
 
         self.callbacks.on_handoff()
         full_str = self._bookkeep_tool_call(tc, clean, description, tool_records)
-        self._tool_bookkeeping_finished()
+        self._lifecycle.tool_bookkeeping_finished()
         self._finalize_turn(message, response, tool_records)
 
-        self._completed()
+        self._process.idle()
         self.callbacks.on_done(full_str)
         return full_str
 
@@ -1752,14 +1688,6 @@ class AgentLoop:
 
     _DYNAMIC_CONTEXT_SENTINEL = DYNAMIC_CONTEXT_SENTINEL
 
-    def _build_dynamic_context(self) -> str:
-        """Build the dynamic context board appended as the last message."""
-        controller = self.tracker.affect_controller
-        affect_line = controller.context_line() if controller is not None else None
-        if not isinstance(affect_line, str):
-            affect_line = None
-        return build_dynamic_context(self.config, affect_line)
-
     def _refresh_dynamic_context(self) -> None:
         """Re-render the board and log it if it changed.
 
@@ -1768,7 +1696,10 @@ class AgentLoop:
         final message of each request, so the reusable prefix through the
         last real message stays byte-identical from step to step.
         """
-        board = self._build_dynamic_context()
+        board = build_dynamic_context_with_affect(
+            self.config,
+            self.tracker.affect_controller,
+        )
         if board == self._board:
             return
         self._board = board

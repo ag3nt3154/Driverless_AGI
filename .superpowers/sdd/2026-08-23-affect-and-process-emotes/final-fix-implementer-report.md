@@ -558,3 +558,80 @@ Residual concerns:
 - Pytest still emits the pre-existing Windows `.pytest_cache` warning.
 - Git still warns that `C:\Users\alexr\.config\git\ignore` is permission-denied
   when checking status.
+
+## Fix Round 9: Lifecycle Size and Complexity Cleanup
+
+Date: 2026-08-23
+
+Final broad-review follow-up asked for `agent/loop.py` to return to or below the
+1,799-line pre-task baseline, and for `LifecyclePublisher._drain` cyclomatic
+complexity to fall from 10 to <=8.
+
+Fix:
+
+- Moved affect/process setup helpers and affect-aware dynamic-context assembly
+  from `agent/loop.py` into `agent/lifecycle.py`.
+- Removed pass-through lifecycle/process wrapper methods from `AgentLoop`; call
+  sites now use `LifecyclePublisher` or `ProcessStateController` directly.
+- Split `LifecyclePublisher._drain` into focused dequeue, acceptance, callback,
+  and cleanup helpers so callback bodies remain outside locks.
+- Retargeted tests that swapped loop callbacks to bind `ProcessStateController`
+  directly, and retargeted dynamic-context tests to the extracted helper.
+- Updated `AGENTS.md` with the narrower loop/lifecycle ownership.
+
+Verification:
+
+```powershell
+(Get-Content agent\loop.py).Count
+(Get-Content agent\lifecycle.py).Count
+```
+
+Result: `agent/loop.py` = 1796 lines, `agent/lifecycle.py` = 263 lines.
+
+```powershell
+conda run -n dagi python -X utf8 -m radon cc agent\lifecycle.py -s
+```
+
+Result: `LifecyclePublisher._drain - A (5)`; all lifecycle entries are <= 5.
+
+```powershell
+rg -n ".{101,}" agent/loop.py agent/lifecycle.py agent/process_state.py agent/affect.py tests/test_agent_loop.py tests/test_dynamic_context.py
+```
+
+Result: only pre-existing `agent/loop.py` long lines were reported.
+
+```powershell
+C:\Users\alexr\miniconda3\envs\dagi\python.exe -X utf8 -c "<AST positional-parameter scan for agent/lifecycle.py>"
+```
+
+Result: no lifecycle positional-parameter violations. The broader
+`agent/loop.py` + `agent/lifecycle.py` scan still reports the pre-existing
+`agent/loop.py:306:__init__ has 11 positional params`.
+
+```powershell
+git diff --check
+```
+
+Result: passed with only Git CRLF warnings.
+
+```powershell
+conda run -n dagi python -X utf8 -m pytest tests/test_agent_loop.py::TestProcessLifecycle::test_process_listener_can_reenter_inject_and_resume tests/test_agent_loop.py::TestProcessLifecycle::test_affect_listener_can_reenter_inject_and_resume tests/test_agent_loop.py::TestProcessLifecycle::test_pause_returns_while_process_listener_is_blocked tests/test_agent_loop.py::TestProcessLifecycle::test_pause_race_cannot_publish_post_tool_thinking_after_paused tests/test_agent_loop.py::TestProcessLifecycle::test_pause_race_cannot_drift_after_paused tests/test_agent_loop.py::TestProcessLifecycle::test_paused_multi_tool_turn_does_not_start_later_tool_process_state tests/test_agent_loop.py::TestProcessLifecycle::test_pause_during_tool_suppresses_post_tool_thinking_and_drift tests/test_agent_loop.py::TestProcessLifecycle::test_pause_during_tool_resolution_prevents_late_tool_after_pause_returns tests/test_agent_loop.py::TestProcessLifecycle::test_pause_during_affect_resolution_prevents_late_drift_after_pause_returns tests/test_agent_loop.py::TestProcessLifecycle::test_pause_waits_until_accepted_callback_is_ordered_not_completed tests/test_agent_loop.py::TestProcessLifecycle::test_pause_waits_for_callback_entry_not_pre_call_marker tests/test_agent_loop.py::TestProcessLifecycle::test_legacy_affect_drift_is_not_published_after_pause_returns -vv --basetemp C:\Users\alexr\AppData\Local\Temp\dagi-publish-round9-lifecycle
+```
+
+Result: `12 passed, 1 warning in 3.61s`.
+
+```powershell
+conda run -n dagi python -X utf8 -m pytest tests/test_expression_assets.py tests/test_affect.py tests/test_adjust_affect_tool.py tests/test_config_loader.py tests/test_tool_filter.py tests/test_subagent_configs.py tests/test_session_tracker.py tests/test_history.py tests/test_history_integration.py tests/test_process_state.py tests/test_dynamic_context.py tests/test_agent_loop.py tests/test_agent_callbacks.py tests/test_tui_callbacks.py tests/tui/test_sidebar_render.py tests/tui/test_app_layout.py pyside_gui/tests/test_bridge.py pyside_gui/tests/test_commands.py pyside_gui/tests/test_expression_widget.py -q --basetemp C:\Users\alexr\AppData\Local\Temp\dagi-publish-round9-feature
+```
+
+Result: `230 passed, 1 warning in 5.63s`.
+
+Residual concerns:
+
+- `DEFAULT_PYTHON_ENV` was not exported in this shell; verification used
+  `conda run -n dagi python`.
+- The AST positional-parameter scan for `agent/loop.py` still reports the
+  pre-existing `AgentLoop.__init__` violation.
+- Pytest still emits the pre-existing Windows `.pytest_cache` warning.
+- Git still warns that `C:\Users\alexr\.config\git\ignore` is permission-denied
+  when checking status.
