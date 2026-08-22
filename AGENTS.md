@@ -1,6 +1,6 @@
 # AGENTS.md
 
-> Last updated: 2026-08-22 (Task 10) | [README](README.md) | [TODO](TODO.md)
+> Last updated: 2026-08-22 (Task 11 — pyside_gui complete) | [README](README.md) | [TODO](TODO.md)
 
 
 
@@ -197,6 +197,7 @@ tui.py / telegram_bot.py / main.py / dagi_gui/__main__.py
 - **2026-08-21**: `test_discover_subagent_tools` and `test_subagent_configs` still fail on `dagi/subagent-simplification` branch because `plan`/`cli` deletions (Tasks 1-2) weren't reflected in those tests — pre-existing, not caused by Task 4.
 - **2026-08-22**: PySide6 6.11.2 on Python 3.14 in `dagi` conda env fails DLL load unless `os.add_dll_directory(pyside6_dir)` is called before import — Qt DLLs not on PATH via conda activation; `__main__.py` must bootstrap this before any PySide6 import.
 - **2026-08-22**: `AgentCallbacks.on_emote` type annotation says `Callable[[str, str], None]` (2 args) but actual call site in `tools/emote/_emote.py` passes 3 args `(name, display, is_named)` — annotation is stale; use 3-arg signature.
+- **2026-08-22**: pyside_gui final-review: XSS in fence lang (escape before `class=` interpolation); timeout=0 deadlock (`0.0 or None = None` → explicit `if timeout <= 0` branch); `_messages` race between main+worker threads (snapshot via `list()` before passing to `CopyPicker`).
 
 ## Notes & Terms
 
