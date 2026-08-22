@@ -1,6 +1,6 @@
 # AGENTS.md
 
-> Last updated: 2026-08-22 (expression asset libraries + pytest basetemp note) | [README](README.md) | [TODO](TODO.md)
+> Last updated: 2026-08-22 (affect controller/tool + expression asset libraries + pytest basetemp note) | [README](README.md) | [TODO](TODO.md)
 
 
 
@@ -141,6 +141,8 @@ tui.py / telegram_bot.py / main.py / dagi_gui/__main__.py / pyside_gui/__main__.
 **Compact cache-prefix (branch `dagi/compact-cache-branching`):** The compact subagent inherits the parent's warm KV-cache prefix. Flow: (1) `compact()` captures `_last_request_snapshot` (frozen copy of the last API request's model + messages + tools — no credentials) immediately before every provider call. (2) On compaction trigger, `compact()` appends a `BRANCH_START` event with `parent_cut_seq` pointing to the last summarised step (retroactive branch — the physical append happens after later events but the logical fork is earlier). (3) `build_fork_context()` serialises version-1 fork-context JSON: `{version, branch:{id, parent_cut_seq, parent_surface_generation}, request:{model, messages, tools, parallel_tool_calls, extra_body, base_url}}` — no API keys. (4) Fork-context written to a temp file, passed to `run_subagent(fork_context_path=...)` which injects `--fork-context <path>` into the subprocess argv. (5) Compact subprocess (`subagent_main.run_forked_compact_mode`) reads the fork-context, calls `resolve_model_config()` to get credentials from environment (NOT from the fork-context), makes a single non-streaming API call with the inherited prefix + compact task, writes assistant text directly to the handoff file. (6) Parent validates: `result.is_ok`, non-empty handoff text, surface generation unchanged (atomicity check), all edge events live. On success: appends `CONTEXT_COMPACTION`, calls `_sync_messages()`. On failure: returns `_NO_COMPACTION` — surface untouched. `model_tier: inherit` in `.dagi/subagents/compact/subagent_config.yaml` signals the forked-compact path.
 
 **Expression asset libraries (branch `dagi/affect-and-process-emotes`):** `agent/expression_assets.py` loads `.dagi/emotes/vad/manifest.yaml` and `.dagi/emotes/states/manifest.yaml` into immutable `ImageAsset` / `TextFallback` refs, validates asset paths stay under their channel roots, and caches warning keys so broken manifests warn once while later lookups fall back to `.dagi/emotes/default.md` (or literal `DAGI` if unreadable). `VadLibrary.resolve()` uses Euclidean distance plus hysteresis against the current id; `ProcessStateLibrary.resolve()` follows `tool:<name> -> tool -> thinking -> idle`.
+
+**Affect core (branch `dagi/affect-and-process-emotes`):** `agent/affect.py` defines immutable `AffectConfig`, `AffectVector`, `AffectRestore`, and `AffectSnapshot`, plus `AffectController`. The controller owns random baseline init, per-axis clamping, drift, VAD resolution, context-line formatting, and one shared `_apply_change()` path for mutation + persistence payload creation + listener publication. `tools/adjust_affect/_adjust_affect.py` wraps it in the bounded three-delta replacement tool; registry wiring lands in the later migration task.
 
 ## Key Files
 

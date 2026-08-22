@@ -1,0 +1,2 @@
+from tools.adjust_affect._adjust_affect import AdjustAffectTool
+
