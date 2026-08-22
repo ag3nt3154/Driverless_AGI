@@ -1,6 +1,6 @@
 # AGENTS.md
 
-> Last updated: 2026-08-22 (affect controller/tool + expression asset libraries + pytest basetemp note) | [README](README.md) | [TODO](TODO.md)
+> Last updated: 2026-08-22 (affect session persistence/restore + controller/tool + expression asset libraries + pytest basetemp note) | [README](README.md) | [TODO](TODO.md)
 
 
 
@@ -144,6 +144,8 @@ tui.py / telegram_bot.py / main.py / dagi_gui/__main__.py / pyside_gui/__main__.
 
 **Affect core (branch `dagi/affect-and-process-emotes`):** `agent/affect.py` defines immutable `AffectConfig`, `AffectVector`, `AffectRestore`, and `AffectSnapshot`, plus `AffectController`. The controller owns random baseline init, per-axis clamping, drift, VAD resolution, context-line formatting, and one shared `_apply_change()` path for mutation + persistence payload creation + listener publication. `tools/adjust_affect/_adjust_affect.py` wraps it in the bounded three-delta replacement tool; registry wiring lands in the later migration task.
 
+**Affect session persistence (branch `dagi/affect-and-process-emotes`):** Root `SessionTracker`s now own the bound affect controller, persist `affect_*` JSONL records alongside normal session events, and let child trackers reuse the root controller without replacing it. `agent/history.py` shares a private JSONL loader between raw-message restore and affect restore, selecting the latest valid affect record while preserving the original `affect_init` baseline and warning once on malformed entries.
+
 ## Key Files
 
 
@@ -193,6 +195,7 @@ tui.py / telegram_bot.py / main.py / dagi_gui/__main__.py / pyside_gui/__main__.
 - **PySide6 cross-thread UI calls**: Never call Qt widget methods directly from a background thread; use `QMetaObject.invokeMethod(..., Qt.QueuedConnection)` for non-signal paths, or route through `AgentBridge` signals (auto-queued when connected across threads).
 - **PySide6 streaming dedup**: After streaming, `AgentLoop` fires `on_reasoning` and `on_assistant_text` with the same content already shown via deltas — `app.py` gates both behind `_stream_had_content` (set in `_on_stream_ended`, cleared only in `_on_assistant_text`).
 - **Expression manifests**: `.dagi/emotes/vad/manifest.yaml` stores `emotes: [{id, file, vad}]`; `.dagi/emotes/states/manifest.yaml` stores `states: {key: file}` with required `idle`, `thinking`, and `tool`.
+- **Affect restore logs**: `affect_init` owns the baseline; history restore reuses its baseline with the latest valid `affect_*` current/emote snapshot and emits at most one warning for malformed records.
 
 ## User Insights
 

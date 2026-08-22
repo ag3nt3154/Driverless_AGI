@@ -6,7 +6,10 @@ No Textual imports. Returns only JSON-safe dicts.
 from __future__ import annotations
 
 import json
+import warnings
 from pathlib import Path
+
+from agent.affect import AffectRestore, AffectVector
 
 
 def load_sessions(logs_dir: Path, max_sessions: int = 20) -> list[dict]:
@@ -34,11 +37,7 @@ def load_sessions(logs_dir: Path, max_sessions: int = 20) -> list[dict]:
 def _parse_session_file(path: Path) -> dict | None:
     """Parse a JSONL session file into a JSON-safe summary dict."""
     try:
-        lines = [
-            json.loads(line)
-            for line in path.read_text(encoding="utf-8").splitlines()
-            if line.strip()
-        ]
+        lines = _load_jsonl(path)
     except Exception:
         return None
     start = next((ln for ln in lines if ln.get("type") == "session_start"), {})
@@ -71,17 +70,71 @@ def _derive_title(path: Path, lines: list[dict]) -> str:
 def load_raw_messages(path: Path | str) -> list[dict] | None:
     """Read a session file and return its raw_messages list, or None if absent."""
     try:
-        lines = [
-            json.loads(line)
-            for line in Path(path).read_text(encoding="utf-8").splitlines()
-            if line.strip()
-        ]
+        lines = _load_jsonl(path)
     except Exception:
         return None
     end_rec = next((ln for ln in lines if ln.get("type") == "session_end"), None)
     if end_rec is None:
         return None
     return end_rec.get("raw_messages") or None
+
+
+def load_affect_restore(path: Path | str) -> AffectRestore | None:
+    """Read the latest valid affect state from a session file, if present."""
+    try:
+        lines = _load_jsonl(path)
+    except Exception:
+        return None
+
+    affect_init = next((line for line in lines if line.get("type") == "affect_init"), None)
+    if affect_init is None:
+        return None
+
+    latest_valid = affect_init
+    warned = False
+    for line in lines:
+        if not str(line.get("type", "")).startswith("affect_"):
+            continue
+        try:
+            _parse_affect_restore(affect_init, line)
+        except ValueError:
+            if not warned:
+                warnings.warn("Malformed affect record in session history", UserWarning)
+                warned = True
+            continue
+        latest_valid = line
+    try:
+        return _parse_affect_restore(affect_init, latest_valid)
+    except ValueError:
+        if not warned:
+            warnings.warn("Malformed affect record in session history", UserWarning)
+        return None
+
+
+def _load_jsonl(path: Path | str) -> list[dict]:
+    return [
+        json.loads(line)
+        for line in Path(path).read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+
+
+def _parse_affect_restore(init: dict, latest: dict) -> AffectRestore:
+    baseline = _parse_affect_vector(init.get("payload"), "baseline")
+    current = _parse_affect_vector(latest.get("payload"), "current")
+    emote_id = latest.get("payload", {}).get("emote_id")
+    if emote_id is not None and not isinstance(emote_id, str):
+        raise ValueError("emote_id must be a string or null")
+    return AffectRestore(baseline=baseline, current=current, emote_id=emote_id)
+
+
+def _parse_affect_vector(payload: object, key: str) -> AffectVector:
+    if not isinstance(payload, dict):
+        raise ValueError("payload must be an object")
+    values = payload.get(key)
+    if not isinstance(values, list) or len(values) != 3:
+        raise ValueError(f"{key} must contain three numeric values")
+    return AffectVector(*values)
 
 
 def build_turn_list(raw_messages: list[dict]) -> list[dict]:

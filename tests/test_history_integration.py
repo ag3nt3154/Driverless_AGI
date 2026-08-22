@@ -85,3 +85,41 @@ class TestLoadRawMessagesIntegration:
         from tui.history import load_raw_messages
         path = _write_session(tmp_path, "session_incomplete.jsonl", "2026-08-01T10:00:00Z")
         assert load_raw_messages(path) is None
+
+    def test_load_raw_messages_ignores_affect_records(self, tmp_path):
+        from tui.history import load_raw_messages
+
+        raw = [
+            {"role": "system", "content": "sys"},
+            {"role": "user", "content": "task one"},
+            {"role": "assistant", "content": "done"},
+        ]
+        path = tmp_path / "session_test.jsonl"
+        lines = [
+            {"type": "session_start", "model": "m", "started_at": "2026-08-01T10:00:00Z"},
+            {
+                "type": "affect_init",
+                "payload": {
+                    "baseline": [0.1, -0.2, 0.3],
+                    "current": [0.1, -0.2, 0.3],
+                    "emote_id": "steady",
+                },
+            },
+            {
+                "type": "session_end",
+                "finished_at": "2026-08-01T10:00:00Z",
+                "raw_messages": raw,
+            },
+            {
+                "type": "affect_adjust",
+                "payload": {
+                    "prior": [0.1, -0.2, 0.3],
+                    "delta": [0.2, 0.1, -0.1],
+                    "current": [0.3, -0.1, 0.2],
+                    "emote_id": "energized",
+                },
+            },
+        ]
+        path.write_text("\n".join(json.dumps(line) for line in lines), encoding="utf-8")
+
+        assert load_raw_messages(path) == raw

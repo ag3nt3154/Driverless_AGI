@@ -122,6 +122,72 @@ class TestChildTracker:
         assert deep_msg["depth"] == 2
         assert deep_msg["subagent_id"] == "sub2"
 
+    def test_child_cannot_replace_root_affect_controller_binding(self, tmp_path):
+        parent = SessionTracker(model="m", logs_dir=tmp_path)
+        child = parent.child_tracker("sub1")
+        root_controller = object()
+        child_controller = object()
+
+        parent.bind_affect_controller(root_controller)
+        child.bind_affect_controller(child_controller)
+
+        assert parent.affect_controller is root_controller
+        assert child.affect_controller is root_controller
+
+
+class TestAffectPersistence:
+    def test_record_affect_writes_structured_jsonl_record(self, tmp_path):
+        tracker = SessionTracker(model="m", logs_dir=tmp_path)
+
+        tracker.record_affect(
+            "affect_adjust",
+            {
+                "prior": [0.1, -0.2, 0.3],
+                "delta": [0.2, 0.1, -0.1],
+                "current": [0.3, -0.1, 0.2],
+                "emote_id": "steady",
+            },
+        )
+
+        records = _read_jsonl(tracker._path)
+        affect = [r for r in records if r["type"] == "affect_adjust"][0]
+        assert affect["payload"] == {
+            "prior": [0.1, -0.2, 0.3],
+            "delta": [0.2, 0.1, -0.1],
+            "current": [0.3, -0.1, 0.2],
+            "emote_id": "steady",
+        }
+        assert isinstance(affect["timestamp"], str)
+
+    def test_child_record_affect_reuses_parent_session_file(self, tmp_path):
+        parent = SessionTracker(model="m", logs_dir=tmp_path)
+        child = parent.child_tracker("sub1")
+
+        child.record_affect(
+            "affect_drift",
+            {
+                "prior": [0.5, 0.0, 0.0],
+                "delta": [-0.05, 0.0, 0.0],
+                "current": [0.45, 0.0, 0.0],
+                "emote_id": "steady",
+            },
+        )
+
+        records = _read_jsonl(parent._path)
+        affect = [r for r in records if r["type"] == "affect_drift"][0]
+        assert affect["subagent_id"] == "sub1"
+        assert affect["depth"] == 1
+
+    def test_bind_affect_controller_sets_root_once_for_children_to_reuse(self, tmp_path):
+        parent = SessionTracker(model="m", logs_dir=tmp_path)
+        child = parent.child_tracker("sub1")
+        controller = object()
+
+        parent.bind_affect_controller(controller)
+
+        assert parent.affect_controller is controller
+        assert child.affect_controller is controller
+
 
 class TestFinish:
     def test_finish_writes_session_end_with_totals(self, tmp_path):

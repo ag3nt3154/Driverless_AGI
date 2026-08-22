@@ -1,7 +1,9 @@
 import json
 import pytest
 from pathlib import Path
-from tui.history import load_sessions, load_raw_messages, build_turn_list
+
+from agent.affect import AffectRestore, AffectVector
+from tui.history import build_turn_list, load_raw_messages, load_sessions
 
 
 def _write_session(tmp_path: Path, filename: str, started_at: str,
@@ -112,6 +114,153 @@ class TestLoadRawMessages:
         ]
         path.write_text("\n".join(json.dumps(l) for l in lines), encoding="utf-8")
         assert load_raw_messages(path) is None
+
+
+class TestLoadAffectRestore:
+    def test_returns_latest_valid_affect_restore(self, tmp_path):
+        from agent.history import load_affect_restore
+
+        path = tmp_path / "session_test.jsonl"
+        lines = [
+            {
+                "type": "affect_init",
+                "payload": {
+                    "baseline": [0.1, -0.2, 0.3],
+                    "current": [0.1, -0.2, 0.3],
+                    "emote_id": "steady",
+                },
+            },
+            {
+                "type": "affect_adjust",
+                "payload": {
+                    "prior": [0.1, -0.2, 0.3],
+                    "delta": [0.2, 0.1, -0.1],
+                    "current": [0.3, -0.1, 0.2],
+                    "emote_id": "energized",
+                },
+            },
+            {
+                "type": "affect_drift",
+                "payload": {
+                    "prior": [0.3, -0.1, 0.2],
+                    "delta": [-0.05, 0.0, 0.0],
+                    "current": [0.25, -0.1, 0.2],
+                    "emote_id": "steady",
+                },
+            },
+        ]
+        path.write_text("\n".join(json.dumps(line) for line in lines), encoding="utf-8")
+
+        result = load_affect_restore(path)
+
+        assert result == AffectRestore(
+            baseline=AffectVector(0.1, -0.2, 0.3),
+            current=AffectVector(0.25, -0.1, 0.2),
+            emote_id="steady",
+        )
+
+    def test_preserves_original_baseline_when_latest_state_changes(self, tmp_path):
+        from agent.history import load_affect_restore
+
+        path = tmp_path / "session_test.jsonl"
+        lines = [
+            {
+                "type": "affect_init",
+                "payload": {
+                    "baseline": [-0.4, 0.2, 0.0],
+                    "current": [-0.4, 0.2, 0.0],
+                    "emote_id": "tense",
+                },
+            },
+            {
+                "type": "affect_adjust",
+                "payload": {
+                    "prior": [-0.4, 0.2, 0.0],
+                    "delta": [0.5, -0.1, 0.3],
+                    "current": [0.1, 0.1, 0.3],
+                    "emote_id": "steady",
+                },
+            },
+        ]
+        path.write_text("\n".join(json.dumps(line) for line in lines), encoding="utf-8")
+
+        result = load_affect_restore(path)
+
+        assert result is not None
+        assert result.baseline == AffectVector(-0.4, 0.2, 0.0)
+        assert result.current == AffectVector(0.1, 0.1, 0.3)
+
+    def test_returns_none_for_legacy_logs_without_affect_records(self, tmp_path):
+        from agent.history import load_affect_restore
+
+        path = _write_session(
+            tmp_path,
+            "session_test.jsonl",
+            "2026-08-01T10:00:00Z",
+            raw_messages=[{"role": "user", "content": "hello"}],
+        )
+
+        assert load_affect_restore(path) is None
+
+    def test_skips_malformed_latest_record_and_warns_once(self, tmp_path):
+        from agent.history import load_affect_restore
+
+        path = tmp_path / "session_test.jsonl"
+        lines = [
+            {
+                "type": "affect_init",
+                "payload": {
+                    "baseline": [0.1, -0.2, 0.3],
+                    "current": [0.1, -0.2, 0.3],
+                    "emote_id": "steady",
+                },
+            },
+            {
+                "type": "affect_adjust",
+                "payload": {
+                    "prior": [0.1, -0.2, 0.3],
+                    "delta": [0.2, 0.1, -0.1],
+                    "current": [0.3, -0.1, 0.2],
+                    "emote_id": "energized",
+                },
+            },
+            {
+                "type": "affect_drift",
+                "payload": {
+                    "prior": [0.3, -0.1, 0.2],
+                    "delta": [-0.05, 0.0, 0.0],
+                    "current": ["bad", -0.1, 0.2],
+                    "emote_id": "steady",
+                },
+            },
+        ]
+        path.write_text("\n".join(json.dumps(line) for line in lines), encoding="utf-8")
+
+        with pytest.warns(UserWarning, match="Malformed affect record"):
+            result = load_affect_restore(path)
+
+        assert result is not None
+        assert result.current == AffectVector(0.3, -0.1, 0.2)
+        assert result.emote_id == "energized"
+
+    def test_returns_none_for_malformed_affect_init_and_warns_once(self, tmp_path):
+        from agent.history import load_affect_restore
+
+        path = tmp_path / "session_test.jsonl"
+        lines = [
+            {
+                "type": "affect_init",
+                "payload": {
+                    "baseline": [0.1, -0.2],
+                    "current": [0.1, -0.2, 0.3],
+                    "emote_id": "steady",
+                },
+            }
+        ]
+        path.write_text("\n".join(json.dumps(line) for line in lines), encoding="utf-8")
+
+        with pytest.warns(UserWarning, match="Malformed affect record"):
+            assert load_affect_restore(path) is None
 
 
 class TestBuildTurnList:

@@ -6,6 +6,7 @@ import sys
 from dataclasses import dataclass, field, asdict
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
 from uuid import uuid4
 
 
@@ -54,6 +55,7 @@ class SessionTracker:
         self._subagent_id: str | None = None
         self._depth: int = 0
         self._subagent_stats: list[dict] = []
+        self._affect_controller: Any = None
 
         self._logs_dir.mkdir(parents=True, exist_ok=True)
         self._renamed: bool = False
@@ -89,6 +91,15 @@ class SessionTracker:
     @property
     def thread_id(self) -> str:
         return self._thread_id
+
+    @property
+    def affect_controller(self):
+        return self._root_tracker()._affect_controller
+
+    def bind_affect_controller(self, controller) -> None:
+        if self._parent is not None:
+            return
+        self._affect_controller = controller
 
     def rename_with_slug(self, slug: str) -> None:
         """Rename the session file to include a human-readable slug.
@@ -189,6 +200,13 @@ class SessionTracker:
             "timestamp": _now(),
         })
 
+    def record_affect(self, event_type: str, payload: dict[str, Any]) -> None:
+        self._write(self._tag({
+            "type": event_type,
+            "payload": payload,
+            "timestamp": _now(),
+        }))
+
     def finish(self, raw_messages: list | None = None) -> None:
         if self._parent is not None:
             # Child tracker: roll stats up to the root accumulator, then exit.
@@ -264,6 +282,12 @@ class SessionTracker:
         if self._depth > 0:
             record["depth"] = self._depth
         return record
+
+    def _root_tracker(self) -> "SessionTracker":
+        root = self
+        while root._parent is not None:
+            root = root._parent
+        return root
 
     def _write(self, record: dict) -> None:
         if self._parent is not None:
