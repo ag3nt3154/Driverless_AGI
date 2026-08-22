@@ -212,7 +212,7 @@ benchmarks/dagi_eval/tasks/*/hidden/data/
 benchmarks/dagi_eval/logs/
 config.yaml
 
-docs/*
+docs/superpowers/*
 
 pycache*
 .dagi/config.yaml
