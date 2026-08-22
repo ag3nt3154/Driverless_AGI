@@ -29,9 +29,11 @@ def _fence_renderer(tokens, idx, options, env):
     lang = token.info.strip() if token.info else ""
     code = token.content
     if lang:
+        # Escape lang before interpolating into HTML attributes (XSS guard).
+        safe_lang = _escape(lang)
         highlighted = _highlight_code(code, lang)
         return (
-            f'<pre><code class="highlight language-{lang}">'
+            f'<pre><code class="highlight language-{safe_lang}">'
             f"{highlighted}</code></pre>\n"
         )
     return f"<pre><code>{_escape(code)}</code></pre>\n"

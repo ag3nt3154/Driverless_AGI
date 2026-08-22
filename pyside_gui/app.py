@@ -237,7 +237,8 @@ class DagiMainWindow(QMainWindow):
         elif result.startswith("__WTF__"):
             self._do_wtf(result[7:] or None)
         elif result == "__COPY__":
-            msgs = self._active_loop._messages if self._active_loop else []
+            # Snapshot before passing to UI — agent thread may mutate _messages.
+            msgs = list(self._active_loop._messages) if self._active_loop else []
             self._copy_picker.show_messages(msgs)
 
     def _dispatch_agent(self, task: str) -> None:

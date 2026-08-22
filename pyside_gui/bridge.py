@@ -121,12 +121,13 @@ class AgentBridge(QObject):
             self.ask_user_requested.emit(
                 question, (options, timeout, evt, container), None,
             )
-            # timeout=0 means "auto-select immediately"; add 60s grace for >0
+            # timeout=0 means "auto-select immediately"; add 60s grace for >0.
+            # NOTE: avoid `safety or None` — 0.0 is falsy and would block forever.
             if timeout is not None and timeout <= 0:
-                safety = 0.0
+                safety: float | None = 0.0
             else:
-                safety = (timeout + 60) if timeout is not None else 600.0
-            evt.wait(timeout=safety or None)
+                safety = (timeout + 60.0) if timeout is not None else 600.0
+            evt.wait(timeout=safety)
             if container:
                 return container[0]
             return next(
