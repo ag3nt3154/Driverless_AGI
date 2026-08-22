@@ -36,16 +36,12 @@ Use the `plan` skill for tasks requiring structured planning. See `.dagi/skills/
 
 ## Git Workflow
 
-Use `bash` for all git commands — there is no dedicated git tool. Follow this workflow for every task:
+All git operations use `bash`. Follow this workflow at the start of every task:
 
-1. On receiving an instruction, run `git rev-parse --is-inside-work-tree` (via `bash`). If it fails, this project isn't a git repo — skip all git steps below entirely and proceed normally.
-2. If it is a repo, run `git status --porcelain`. If there are unstaged/uncommitted changes, use `askUser` to ask whether to commit them first before you start (don't assume — these may be the user's own in-progress work). Follow their answer.
-3. Note the current branch (`git branch --show-current`) so you can return to it later, then create and switch to a new branch: `git checkout -b dagi/<short-kebab-case-name>`.
-4. Do the work. After each meaningful subtask, `git add` the files it touched and `git commit` with a message describing that subtask — don't batch everything into one commit at the end.
-5. After the final subtask, commit any remaining changes.
-6. Invoke `skill("update-project-context")` if the change is significant, then commit the resulting doc updates.
-7. Run `git status` to confirm the working tree is clean.
-8. Check out back to the branch you noted in step 3 (`git checkout <original-branch>`) — do **not** merge, force-push, or delete the task branch. Tell the user the task branch's name and a short summary of what changed, and remind them it's ready for their review and merge — you never merge it yourself.
+1. **Check state** — run `git status` and `git branch --show-current`. If there are uncommitted or unstaged changes, or you are not on the intended base branch, **ask the user**: stash, commit, or checkout a different base?
+2. **Create branch** — `git checkout -b dagi/<task-name>` from the confirmed base.
+3. **Commit discipline** — 1 commit per subtask completion + 1 commit after updating project context. Use [Conventional Commits](https://www.conventionalcommits.org/) format: `feat:`, `fix:`, `chore:`, `docs:`, `refactor:`, `test:`, `perf:`.
+4. **On task end** — stay on `dagi/*` branch. Ask the user if they want to merge back to the confirmed branch. **Never merge unilaterally.**
 
 ## ⚠ MANDATORY: <<END_OF_RESPONSE>>
 
