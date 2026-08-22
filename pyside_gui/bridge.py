@@ -37,6 +37,8 @@ class AgentBridge(QObject):
     def __init__(self) -> None:
         super().__init__()
         self._stats = _Stats()
+        # These three fields are written and read exclusively on the agent worker
+        # thread (via callbacks).  Never read them from the Qt main thread.
         self._stream_text = ""
         self._stream_reasoning = ""
         self._handoff_pending = False
@@ -119,8 +121,12 @@ class AgentBridge(QObject):
             self.ask_user_requested.emit(
                 question, (options, timeout, evt, container), None,
             )
-            safety = (timeout + 60) if timeout is not None else 600
-            evt.wait(timeout=safety)
+            # timeout=0 means "auto-select immediately"; add 60s grace for >0
+            if timeout is not None and timeout <= 0:
+                safety = 0.0
+            else:
+                safety = (timeout + 60) if timeout is not None else 600.0
+            evt.wait(timeout=safety or None)
             if container:
                 return container[0]
             return next(
