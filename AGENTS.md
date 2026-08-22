@@ -1,6 +1,6 @@
 # AGENTS.md
 
-> Last updated: 2026-08-23 (Task 6 review fixes: reload idle + PySide menu extraction) | [README](README.md) | [TODO](TODO.md)
+> Last updated: 2026-08-23 (Task 7 PySide expression widget rotation) | [README](README.md) | [TODO](TODO.md)
 
 
 
@@ -110,6 +110,7 @@ tui.py / telegram_bot.py / main.py / dagi_gui/__main__.py / pyside_gui/__main__.
     pyside_gui/__main__.py → pyside_gui/ (app, bridge, conversation, overlays, commands, sidebars)
     │   PySide6/Qt 6 desktop GUI. AgentBridge translates AgentCallbacks → Qt Signals.
     │   Agent runs on daemon thread; all UI via queued signals or QMetaObject.invokeMethod.
+    │   RightSidebar hosts ExpressionWidget, alternating affect/process assets every 3000 ms.
     │
     dagi_gui/__main__.py → dagi_gui/ (protocol, interaction, callbacks, session, catalog, history, server, plan_monitor)
     │   Python sidecar: reads NDJSON commands on stdin, emits NDJSON events on stdout.
@@ -165,8 +166,8 @@ tui.py / telegram_bot.py / main.py / dagi_gui/__main__.py / pyside_gui/__main__.
 | `tools/_subagent_runner.py`                          | Private pipe-based subprocess spawner; returns raw dicts; wrapped exclusively by `subagent_api.py`                                                             |
 | `tools/subagent_main.py`                             | Forked compact/inherited child entry points, credentials, allowlists, retries, and final handoff validation                                                   |
 | `tui/app.py`, `tui/commands.py`, `tui/callbacks.py`  | TUI lifecycle, slash commands including `/wtf`, StreamPreview, and callbacks bridge                                                                           |
-| `pyside_gui/app.py`                                  | `DagiMainWindow` — main window: splitter layout, agent on daemon thread, streaming dedup, pause/resume, slash commands, overlays (500-line cap)                  |
-| `pyside_gui/menu.py`                                 | Focused Qt menu builder extracted from `pyside_gui/app.py`; owns File/Session actions and shortcuts                                                             |
+| `pyside_gui/app.py`, `right_sidebar.py`, `expression_widget.py` | PySide main window/sidebar expression surface; bridge signals wire directly to `ExpressionWidget` slots; `app.py` has a 500-line cap                  |
+| `pyside_gui/menu.py`, `menu_style.py`                | Focused Qt menu builder and byte-preserved stylesheet extracted from `pyside_gui/app.py`; owns File/Session actions and shortcuts                                |
 | `pyside_gui/bridge.py`                               | `AgentBridge(QObject)` — translates `AgentCallbacks` → Qt Signals; `build_callbacks()` returns wired callbacks for thread-safe UI; owns `_stream_text` accumulator |
 | `pyside_gui/commands.py`                             | `SlashCommandHandler` — GUI slash-command dispatch, skill/workflow map loading, definition-list formatted output                                                 |
 | `pyside_gui/conversation.py` + `resources/`          | `ConversationView(QWebEngineView)` — 13 Python→JS methods; Catppuccin Mocha HTML/CSS/JS template with streaming bubble support                                  |
@@ -196,7 +197,7 @@ tui.py / telegram_bot.py / main.py / dagi_gui/__main__.py / pyside_gui/__main__.
 - **PySide6 DLL bootstrap**: On Windows + conda, `os.add_dll_directory` must be called for the PySide6 package dir before any `from PySide6.*` import; `python -m pyside_gui` will crash without it.
 - **PySide6 cross-thread UI calls**: Never call Qt widget methods directly from a background thread; use `QMetaObject.invokeMethod(..., Qt.QueuedConnection)` for non-signal paths, or route through `AgentBridge` signals (auto-queued when connected across threads).
 - **PySide6 streaming dedup**: After streaming, `AgentLoop` fires `on_reasoning` and `on_assistant_text` with the same content already shown via deltas — `app.py` gates both behind `_stream_had_content` (set in `_on_stream_ended`, cleared only in `_on_assistant_text`).
-- **Expression manifests**: `.dagi/emotes/vad/manifest.yaml` stores `emotes: [{id, file, vad}]`; `.dagi/emotes/states/manifest.yaml` stores `states: {key: file}` with required `idle`, `thinking`, and `tool`.
+- **Expression channels**: VAD/process manifests resolve `ImageAsset`/`TextFallback`; PySide `ExpressionWidget` alternates channels every 3000 ms and falls back to `.dagi/emotes/default.md`.
 - **Affect restore logs**: `affect_init` owns the baseline; history restore reuses its baseline with the latest valid `affect_*` current/emote snapshot and emits at most one warning for malformed records.
 - **Process-state dedupe**: `ProcessStateController` resolves the requested state every call, but only publishes when the new `(state, asset)` snapshot differs from the stored one.
 

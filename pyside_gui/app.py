@@ -155,8 +155,12 @@ class DagiMainWindow(QMainWindow):
         b.agent_done.connect(self._on_agent_done)
         b.agent_paused.connect(self._on_agent_paused)
         b.ask_user_requested.connect(self._on_ask_user)
-        b.affect_changed.connect(self._right_sidebar.update_affect)
-        b.process_state_changed.connect(self._right_sidebar.update_process_state)
+        b.affect_changed.connect(
+            self._right_sidebar.expression_widget.update_affect
+        )
+        b.process_state_changed.connect(
+            self._right_sidebar.expression_widget.update_process
+        )
         b.continue_injected.connect(
             lambda c, m: self._conversation.append_info(
                 f"No exit flag — continue prompt injected ({c}/{m})"
