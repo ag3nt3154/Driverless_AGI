@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 import threading
-from typing import Callable
 
-from PySide6.QtCore import Qt, QTimer, Signal
+from PySide6.QtCore import Qt, Signal
+from PySide6.QtGui import QGuiApplication
 from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
@@ -76,7 +76,7 @@ class AskUserDialog(QWidget):
 
         self._event: threading.Event | None = None
         self._container: list | None = None
-        self._timer: QTimer | None = None
+        self._timer: object = None  # reserved for future timeout countdown
 
         layout = QVBoxLayout(self)
         layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -213,15 +213,11 @@ class CopyPicker(QWidget):
     def _on_copy(self, item: QListWidgetItem) -> None:
         idx = self._list.row(item)
         if 0 <= idx < len(self._messages_data):
-            import subprocess
-            import sys
             text = self._messages_data[idx].get("content", "")
-            if sys.platform == "win32":
-                subprocess.run(
-                    ["clip"],
-                    input=text.encode("utf-16-le"),
-                    check=True,
-                )
+            # Use Qt's cross-platform clipboard so this works on all OSes.
+            clipboard = QGuiApplication.clipboard()
+            if clipboard is not None:
+                clipboard.setText(text)
             self.hide()
 
     def keyPressEvent(self, event) -> None:
