@@ -161,7 +161,11 @@ class AffectController:
             f"D={current.dominance:+.2f} | emote={self.current_emote_id}"
         )
 
-    def _apply_delta(self, delta: AffectVector, reason: Literal["adjust", "drift"]) -> AffectSnapshot:
+    def _apply_delta(
+        self,
+        delta: AffectVector,
+        reason: Literal["adjust", "drift"],
+    ) -> AffectSnapshot:
         prior = self._current
         current = AffectVector(
             _clamp(prior.valence + delta.valence),
