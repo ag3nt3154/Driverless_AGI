@@ -222,6 +222,10 @@ class AgentConfig:
     # External service URLs (e.g. {"doc_converter": "http://localhost:8100"}).
     # Loaded from the `services` block in .dagi/config.yaml.
     services: dict[str, str] = field(default_factory=dict)
+    # Affect controller tuning. Loaded from the top-level `affect:` config block.
+    affect_drift_pull: float = 0.05
+    affect_drift_noise: float = 0.02
+    affect_emote_hysteresis: float = 0.05
     # Active Python environment detected at startup (e.g. "conda:dagi" or "venv:/path")
     # Set by config_loader._detect_python_env()
     python_env: str = ""
@@ -362,6 +366,7 @@ class AgentLoop:
                 bash_tool=_bash_tool,
                 session_log=self.log,
                 parent_context=self.parent_context_provider,
+                affect_controller=self.tracker.affect_controller,
             )
 
         self.config = config
@@ -1734,6 +1739,7 @@ class AgentLoop:
             bash_tool=self._injected_bash_tool,
             session_log=self.log,
             parent_context=self.parent_context_provider,
+            affect_controller=self.tracker.affect_controller,
         )
 
         _system = self._assemble_system_string(dagi_root)

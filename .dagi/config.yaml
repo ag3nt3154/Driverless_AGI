@@ -63,8 +63,8 @@ tools:                      # Restrict the main agent to a specific subset of to
   # ── Web tools ────────────────────────────────────────────────────────────────
   - web_search              # Search the web (fallback when no config subagents)
   - web_fetch               # Fetch a URL (fallback when no config subagents)
-  # ── UI tools ─────────────────────────────────────────────────────────────────
-  - emote                   # Update the TUI sidebar face expression
+  # ── Affect tools ─────────────────────────────────────────────────────────────
+  - adjust_affect           # Adjust relative valence/arousal/dominance state
 sandbox_mode: false     # true = file tools have no path restrictions (allowed_roots=None)
 
 models:

@@ -91,6 +91,12 @@ thinking: none    # Extended reasoning effort for models that support it (e.g. D
 # Omit to use the default: {current working directory}/dagi-memory
 # memory_root: /absolute/path/to/dagi-memory
 
+# ── Affect ────────────────────────────────────────────────────────────────────
+# affect:
+#   drift_pull: 0.05        # Pull each VAD axis back toward baseline on drift
+#   drift_noise: 0.02       # Random drift noise per axis; must be between 0 and 1
+#   emote_hysteresis: 0.05  # Stickiness when choosing the nearest VAD emote
+
 # ── Tools ─────────────────────────────────────────────────────────────────────
 sandbox_mode: false  # true  = file tools (read, write, edit, grep, find, copy) have no
                      #         path restrictions — the agent can access any path on disk.
@@ -127,8 +133,8 @@ sandbox_mode: false  # true  = file tools (read, write, edit, grep, find, copy) 
 #   # ── Web tools ────────────────────────────────────────────────────────────────
 #   - web_search              # Search the web (fallback when no config subagents)
 #   - web_fetch               # Fetch a URL (fallback when no config subagents)
-#   # ── UI tools ─────────────────────────────────────────────────────────────────
-#   - emote                   # Update the TUI sidebar face expression
+#   # ── Affect tools ─────────────────────────────────────────────────────────────
+#   - adjust_affect           # Adjust relative valence/arousal/dominance state
 
 # ── Model catalog ─────────────────────────────────────────────────────────────
 # Define every model you want available to dagi here.

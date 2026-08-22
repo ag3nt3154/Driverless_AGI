@@ -4,7 +4,9 @@ from __future__ import annotations
 import os
 from unittest.mock import patch
 
-from agent.config_loader import _build_config_from_entry
+import pytest
+
+from agent.config_loader import _build_config_from_entry, _load_affect_config
 
 
 def test_direct_api_key_used_when_present():
@@ -53,6 +55,67 @@ def test_tools_list_parsed_from_raw():
     raw = {"tools": ["read", "grep", "bash"]}
     cfg = _build_config_from_entry(entry, raw)
     assert cfg.tools == ["read", "grep", "bash"]
+
+
+def test_affect_config_defaults_when_absent():
+    """A missing affect block keeps the controller's documented defaults."""
+    cfg = _load_affect_config({})
+    assert cfg.drift_pull == 0.05
+    assert cfg.drift_noise == 0.02
+    assert cfg.emote_hysteresis == 0.05
+
+
+def test_affect_config_preserves_raw_values_on_all_model_tiers(tmp_path):
+    """Changing construction to omit worker/advanced affect values must fail here."""
+    cfg_file = tmp_path / "config.yaml"
+    cfg_file.write_text(
+        "default_model: default\n"
+        "worker_model: worker\n"
+        "advanced_model: advanced\n"
+        "affect:\n"
+        "  drift_pull: 0.12\n"
+        "  drift_noise: 0.34\n"
+        "  emote_hysteresis: 0.56\n"
+        "models:\n"
+        "  default:\n"
+        "    model: test/default\n"
+        "    api_url: https://example.com/v1\n"
+        "    api_key: sk-test\n"
+        "  worker:\n"
+        "    model: test/worker\n"
+        "    api_url: https://example.com/v1\n"
+        "    api_key: sk-test\n"
+        "  advanced:\n"
+        "    model: test/advanced\n"
+        "    api_url: https://example.com/v1\n"
+        "    api_key: sk-test\n",
+        encoding="utf-8",
+    )
+
+    from agent.config_loader import resolve_model_config
+
+    cfg = resolve_model_config("default", config_path=cfg_file)
+    configs = [cfg, cfg.worker_config, cfg.advanced_config]
+    for tier in configs:
+        assert tier is not None
+        assert tier.affect_drift_pull == 0.12
+        assert tier.affect_drift_noise == 0.34
+        assert tier.affect_emote_hysteresis == 0.56
+
+
+@pytest.mark.parametrize(
+    ("raw", "field"),
+    [
+        ({"affect": {"drift_pull": -0.01}}, "drift_pull"),
+        ({"affect": {"drift_noise": float("inf")}}, "drift_noise"),
+        ({"affect": {"drift_noise": 1.01}}, "drift_noise"),
+        ({"affect": {"emote_hysteresis": -0.01}}, "emote_hysteresis"),
+    ],
+)
+def test_affect_config_rejects_invalid_values_with_field_name(raw, field):
+    """Bad affect values must fail loudly at config load, naming the bad field."""
+    with pytest.raises(ValueError, match=field):
+        _load_affect_config(raw)
 
 
 # def test_tools_none_when_absent():

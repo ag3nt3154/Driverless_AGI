@@ -24,6 +24,7 @@ from pathlib import Path
 
 import yaml
 
+from agent.affect import AffectConfig
 # Imported here to avoid a circular import — config_loader must not import AgentLoop.
 # AgentConfig is a plain dataclass with no side effects.
 from agent.loop import AgentConfig
@@ -128,6 +129,23 @@ def _merge_configs(root_raw: dict, project_raw: dict) -> dict:
     return merged
 
 
+def _load_affect_config(raw: dict) -> AffectConfig:
+    """Return validated affect-controller tuning from the top-level config."""
+    affect_raw = raw.get("affect") or {}
+    if not isinstance(affect_raw, dict):
+        raise ValueError("affect must be a mapping")
+
+    values = {
+        "drift_pull": affect_raw.get("drift_pull", 0.05),
+        "drift_noise": affect_raw.get("drift_noise", 0.02),
+        "emote_hysteresis": affect_raw.get("emote_hysteresis", 0.05),
+    }
+    try:
+        return AffectConfig(**values)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"Invalid affect config: {exc}") from exc
+
+
 def _build_config_from_entry(
     entry: dict, raw: dict, model_id: str = "", python_env: str = ""
 ) -> AgentConfig:
@@ -159,6 +177,7 @@ def _build_config_from_entry(
     system_prompt_preamble = str(raw.get("system_prompt_preamble", "") or "")
     provider_order: list[str] | None = entry.get("provider_order") or None
     services = raw.get("services") or {}
+    affect_config = _load_affect_config(raw)
 
     return AgentConfig(
         model=entry["model"],
@@ -182,6 +201,9 @@ def _build_config_from_entry(
         system_prompt_preamble=system_prompt_preamble,
         provider_order=provider_order,
         services=services,
+        affect_drift_pull=affect_config.drift_pull,
+        affect_drift_noise=affect_config.drift_noise,
+        affect_emote_hysteresis=affect_config.emote_hysteresis,
         python_env=python_env,
     )
 

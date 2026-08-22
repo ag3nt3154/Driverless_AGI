@@ -33,6 +33,7 @@ from tools.copy import CopyTool
 from tools.write import WriteTool
 
 if TYPE_CHECKING:
+    from agent.affect import AffectController
     from agent.loop import AgentCallbacks, AgentConfig
     from agent.session import SessionTracker
     from agent.session_log import SessionLog
@@ -124,6 +125,7 @@ def create_tool_registry(
     bash_tool: "object | None" = None,
     session_log: "SessionLog | None" = None,
     parent_context: "ParentContextProvider | None" = None,
+    affect_controller: "AffectController | None" = None,
 ) -> ToolRegistry:
     """Build a fresh ToolRegistry with all tools bound to *cwd*.
 
@@ -229,9 +231,9 @@ def create_tool_registry(
             reg.register(SwitchModelTool())
         from tools.reload_skills import ReloadSkillsTool
         reg.register(ReloadSkillsTool())
-        from tools.emote import EmoteTool
-        _on_emote = callbacks.on_emote if callbacks else None
-        reg.register(EmoteTool(emotes_dir=_DAGI_ROOT / ".dagi" / "emotes", on_emote=_on_emote))
+        if affect_controller is not None:
+            from tools.adjust_affect import AdjustAffectTool
+            reg.register(AdjustAffectTool(controller=affect_controller))
         if config is not None:
             # Auto-discover predefined subagent types from .dagi/subagents/
             # A valid type directory must contain both prompt.md and subagent_config.yaml.

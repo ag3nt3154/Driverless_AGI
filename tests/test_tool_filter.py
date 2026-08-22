@@ -60,6 +60,52 @@ class TestConfigDrivenFilter:
         reg = create_tool_registry(cwd=Path("."), config=self._config(tools=None))
         names = {n for n, _ in reg.list_tools()}
         assert "bash" in names and "read" in names
+        assert "emote" not in names
+
+    def test_adjust_affect_registered_only_in_normal_mode_with_controller(self, tmp_path):
+        cfg = self._config(tools=None)
+        cfg.project_path = tmp_path
+        reg = create_tool_registry(
+            cwd=tmp_path,
+            config=cfg,
+            affect_controller=object(),
+        )
+        names = {n for n, _ in reg.list_tools()}
+        assert "adjust_affect" in names
+
+    def test_adjust_affect_allowlist_must_name_tool_explicitly(self, tmp_path):
+        cfg = self._config(tools=["read"])
+        cfg.project_path = tmp_path
+        reg = create_tool_registry(
+            cwd=tmp_path,
+            config=cfg,
+            affect_controller=object(),
+        )
+        names = {n for n, _ in reg.list_tools()}
+        assert "adjust_affect" not in names
+
+        cfg.tools = ["read", "adjust_affect"]
+        reg = create_tool_registry(
+            cwd=tmp_path,
+            config=cfg,
+            affect_controller=object(),
+        )
+        names = {n for n, _ in reg.list_tools()}
+        assert "adjust_affect" in names
+
+    def test_plan_mode_never_exposes_adjust_affect(self, tmp_path):
+        cfg = self._config(tools=None)
+        cfg.project_path = tmp_path
+        plan_file = tmp_path / "PLAN.md"
+        reg = create_tool_registry(
+            cwd=tmp_path,
+            config=cfg,
+            plan_mode=True,
+            plan_file=plan_file,
+            affect_controller=object(),
+        )
+        names = {n for n, _ in reg.list_tools()}
+        assert "adjust_affect" not in names
 
     def test_tools_list_filters_registry(self):
         reg = create_tool_registry(cwd=Path("."), config=self._config(tools=["read", "grep"]))

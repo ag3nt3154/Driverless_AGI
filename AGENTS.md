@@ -1,6 +1,6 @@
 # AGENTS.md
 
-> Last updated: 2026-08-22 (automatic process-state controller + affect session persistence/restore + controller/tool + expression asset libraries + pytest basetemp note) | [README](README.md) | [TODO](TODO.md)
+> Last updated: 2026-08-23 (affect config + adjust_affect registry/prompt migration) | [README](README.md) | [TODO](TODO.md)
 
 
 
@@ -142,7 +142,7 @@ tui.py / telegram_bot.py / main.py / dagi_gui/__main__.py / pyside_gui/__main__.
 
 **Expression asset libraries (branch `dagi/affect-and-process-emotes`):** `agent/expression_assets.py` loads `.dagi/emotes/vad/manifest.yaml` and `.dagi/emotes/states/manifest.yaml` into immutable `ImageAsset` / `TextFallback` refs, validates asset paths stay under their channel roots, and caches warning keys so broken manifests warn once while later lookups fall back to `.dagi/emotes/default.md` (or literal `DAGI` if unreadable). `VadLibrary.resolve()` uses Euclidean distance plus hysteresis against the current id; `ProcessStateLibrary.resolve()` follows `tool:<name> -> tool -> thinking -> idle`.
 
-**Affect core (branch `dagi/affect-and-process-emotes`):** `agent/affect.py` defines immutable `AffectConfig`, `AffectVector`, `AffectRestore`, and `AffectSnapshot`, plus `AffectController`. The controller owns random baseline init, per-axis clamping, drift, VAD resolution, context-line formatting, and one shared `_apply_change()` path for mutation + persistence payload creation + listener publication. `tools/adjust_affect/_adjust_affect.py` wraps it in the bounded three-delta replacement tool; registry wiring lands in the later migration task.
+**Affect core (branch `dagi/affect-and-process-emotes`):** `agent/affect.py` defines immutable `AffectConfig`, `AffectVector`, `AffectRestore`, and `AffectSnapshot`, plus `AffectController`. `agent/config_loader.py` validates top-level `affect:` tuning into `AgentConfig`; normal main registries expose `adjust_affect` only when an affect controller is bound, while plan/subagent registries never expose it. The legacy `tools/emote` package remains dormant until its last TUI consumer is removed.
 
 **Process-state controller (branch `dagi/affect-and-process-emotes`):** `agent/process_state.py` defines immutable `ProcessSnapshot` plus `ProcessStateController`. The controller consumes `ProcessStateLibrary.resolve(state)`, funnels all public lifecycle methods through `_transition(state)`, deduplicates exact repeat snapshots, stores before publish, and models tool flow as `idle -> thinking -> tool:<name> -> thinking` while letting explicit `paused` / `error` states persist until the next transition.
 
@@ -154,7 +154,7 @@ tui.py / telegram_bot.py / main.py / dagi_gui/__main__.py / pyside_gui/__main__.
 | Path                                                 | Purpose                                                                                                                                                        |
 | ---------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `agent/loop.py`                                      | Core loop, parent fork capture, system-prompt assembly, termination/compaction, and handoff dispatch                                                          |
-| `agent/config_loader.py`                             | Reads `config.yaml`, merges `.dagi/config.yaml`, resolves API key, services, Telegram config                                                                   |
+| `agent/config_loader.py`                             | Reads/merges config, resolves API keys/models/services, and validates affect tuning                                                                            |
 | `agent/session_log.py`                               | Append-only event log; `SessionLog.branches` tracks subagent branches; `branch_event(id)` returns the BRANCH_START event for a branch                         |
 | `agent/wtf.py`, `agent/wtf_report.py`                | Atomic `/wtf` orchestration and strict report parser                                                                                                           |
 | `agent/expression_assets.py`                         | Strict VAD/process-state manifest loaders, safe-path validation, hysteresis resolution, and universal text fallback                                            |
@@ -190,7 +190,7 @@ tui.py / telegram_bot.py / main.py / dagi_gui/__main__.py / pyside_gui/__main__.
 - **AGENTS.md** is force-injected into every session's system prompt by `_assemble_system_string()`; the file is re-read from disk on every `AgentLoop.__init__` and `_messages[0]` is always overwritten — so AGENTS.md edits made during task N are live in task N+1's context window.
 - **`<<END_OF_RESPONSE>>`**: primary exit sentinel (substring check on LLM text responses only); `_escape_sentinels()` rewrites it to `< <END_OF_RESPONSE>>` in tool results before they enter `_messages` to prevent LLM echo-back.
 - **Handoff termination**: Main calls save `.dagi/handoffs/main_<thread-hash12>.md` and display full Markdown; child calls use assigned paths; only a `write_handoff` result can trigger `<<HANDOFF_WRITTEN>>` termination.
-- **`tools:` allowlist** (`config.yaml`): post-registration filtering strips unnamed tools except mandatory main `write_handoff`; new subagent spawn tools must still be explicitly added.
+- **`tools:` allowlist** (`config.yaml`): post-registration filtering strips unnamed tools except mandatory `write_handoff`; `adjust_affect` survives only when explicitly named.
 - **Windows / conda**: `EditTool`/`WriteTool` always write LF, normalize `oldText`/`newText` for CRLF safety. Use `conda run -n dagi python` for DAGI scripts; for Claude Code hooks use `envs/dagi/python.exe` directly — `conda run` drops stdin in hook context.
 - **`subagent_api` vs `_subagent_runner`**: `tools/subagent_api.py` is the public API (preset resolution, envelope, `SubagentResult`); `tools/_subagent_runner.py` is the private subprocess spawner. Never import `_subagent_runner` directly from outside `subagent_api.py`.
 - **Inherited fork v2**: `ParentContextProvider` preserves the exact request prefix; children reuse its `write_handoff` schema as their final action, and every other tool call remains allowlist-enforced.
