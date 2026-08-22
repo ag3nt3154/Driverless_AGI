@@ -182,6 +182,7 @@ tui.py / telegram_bot.py / main.py / dagi_gui/__main__.py
 | `pyside_gui/conversation.py`                         | `ConversationView(verbose)` — QWebEngineView subclass; 13 Python methods → JS DOM calls; loads `resources/conversation.html`                                    |
 | `pyside_gui/resources/`                              | Static assets for ConversationView: `conversation.html`, `conversation.css` (Catppuccin Mocha), `conversation.js` (DOM API)                                     |
 | `pyside_gui/bridge.py`                               | `AgentBridge(QObject)` — translates all `AgentCallbacks` fields to Qt Signals; `build_callbacks()` returns a wired `AgentCallbacks` for thread-safe UI updates  |
+| `pyside_gui/left_sidebar.py`                         | `LeftSidebar(QWidget)` — session history list; `load_sessions(logs_dir, max_sessions)` populates QListWidget; emits `session_selected(object)` on double-click  |
 | `pyside_gui/right_sidebar.py`                        | `RightSidebar(QScrollArea)` — status dot, model name, token stats, context breakdown (calls `_system_breakdown`), and plan subtask list                         |
 
 ## Errors Log (recent)
