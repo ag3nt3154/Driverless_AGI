@@ -1,6 +1,6 @@
 # AGENTS.md
 
-> Last updated: 2026-08-23 (final review fix round) | [README](README.md) | [TODO](TODO.md)
+> Last updated: 2026-08-23 (pause-state race fix) | [README](README.md) | [TODO](TODO.md)
 
 
 
@@ -145,7 +145,7 @@ tui.py / telegram_bot.py / main.py / dagi_gui/__main__.py / pyside_gui/__main__.
 
 **Dynamic context + affect callbacks (branch `dagi/affect-and-process-emotes`):** `agent/dynamic_context.py` builds the ephemeral request board (Python env, active plan status, affect line) outside the static system prefix. `AgentLoop(initial_affect=...)` restores affect once from history, binds `on_affect_changed(AffectSnapshot)`, and normal registries expose `adjust_affect` only when a controller is bound; the legacy `tools/emote` package has been deleted.
 
-**Process-state controller (branch `dagi/affect-and-process-emotes`):** `agent/process_state.py` defines immutable `ProcessSnapshot` plus `ProcessStateController`. Controllers start at idle and emit the current snapshot when a listener binds; `AgentLoop` publishes `on_process_state_changed(ProcessSnapshot)` through API/tool/pause/resume/error lifecycle transitions, deduplicates exact repeats, and suppresses post-tool thinking while paused.
+**Process-state controller (branch `dagi/affect-and-process-emotes`):** `agent/process_state.py` defines immutable `ProcessSnapshot` plus `ProcessStateController`. Controllers start at idle and emit the current snapshot when a listener binds; `AgentLoop` publishes `on_process_state_changed(ProcessSnapshot)` through API/tool/pause/resume/error lifecycle transitions, deduplicates exact repeats, and serializes pause-state checks with process transitions/drift via `_pause_state_lock`.
 
 **Affect session persistence (branch `dagi/affect-and-process-emotes`):** Root `SessionTracker`s now own the bound affect controller, persist `affect_*` JSONL records alongside normal session events, and let child trackers reuse the root controller without replacing it. `agent/history.py` shares a private JSONL loader between raw-message restore and affect restore, selecting the latest valid in-range affect record while preserving the original `affect_init` baseline and warning once on malformed entries.
 
@@ -175,6 +175,7 @@ tui.py / telegram_bot.py / main.py / dagi_gui/__main__.py / pyside_gui/__main__.
 ## Errors Log (recent)
 
 - **2026-08-23**: Final review found pause/tool timing, runtime VAD bounds, invalid-current hysteresis, Qt media cleanup, and missing initial idle gaps → guard paused post-tool transitions/drift, validate runtime/restore coordinates, ignore invalid-current hysteresis, release/warn media once, and publish initial idle.
+- **2026-08-23**: Scoped re-review found check-then-act pause races still allowed paused→thinking/drift and second-tool repaint → add `_pause_state_lock` around pause/resume, running checks, process transitions, and affect drift.
 - **2026-08-23**: Task 8 full pytest stops on six missing live `dagi_gui` imports; remainder exposes Windows `BashTool` kill/timeout failures and stale custom-subagent `parent_context` fixture → document as pre-existing full-suite blockers before final review.
 - **2026-08-23**: `/reload` short-circuit completed without publishing idle, leaving process state paused/thinking in UIs → call `_completed()` before reload notification/return.
 - **2026-08-23**: `pyside_gui/app.py` exceeded the 500-line cap after Task 6 → extract menu construction to `pyside_gui/menu.py` and add a file-cap regression.
@@ -199,7 +200,7 @@ tui.py / telegram_bot.py / main.py / dagi_gui/__main__.py / pyside_gui/__main__.
 - **PySide6 streaming dedup**: After streaming, `AgentLoop` fires `on_reasoning` and `on_assistant_text` with the same content already shown via deltas — `app.py` gates both behind `_stream_had_content` (set in `_on_stream_ended`, cleared only in `_on_assistant_text`).
 - **Expression channels**: VAD/process manifests resolve `ImageAsset`/`TextFallback`; PySide `ExpressionWidget` alternates every 3000 ms, releases replaced `QMovie`s, and warns once per channel/media/path before fallback.
 - **Affect restore logs**: `affect_init` owns the baseline; history restore reuses its baseline with the latest valid in-range `affect_*` current/emote snapshot and emits at most one warning for malformed records.
-- **Process-state dedupe**: `ProcessStateController` starts at idle and emits on listener bind, then publishes only when the new `(state, asset)` snapshot differs from the stored one.
+- **Pause-state lifecycle**: `AgentLoop._pause_state_lock` serializes pause/resume with running-only process transitions and affect drift; do not reintroduce naked `_pause_event.is_set()` side effects.
 
 ## User Insights
 

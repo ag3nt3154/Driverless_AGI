@@ -58,3 +58,57 @@ Result: `git diff --check` passed with only Git CRLF warnings. Long-line scan sh
 - `DEFAULT_PYTHON_ENV` was not exported in this shell; verification used the repo-documented fallback `conda run -n dagi python`.
 - Pytest still emits the pre-existing Windows `.pytest_cache` warning.
 - Full-suite blockers documented by Task 8 remain outside this fix scope: missing live `dagi_gui` imports, Windows `BashTool` timeout/kill behavior, and stale custom-subagent fixture expectations.
+
+## Fix Round 2: Pause-State Race
+
+Date: 2026-08-23
+
+Scoped re-review found one remaining P1 race: post-tool thinking/drift checks were check-then-act, and `_tool_started()` could repaint a later tool after a pause between tool calls.
+
+Fix:
+
+- Added `AgentLoop._pause_state_lock` as a small `threading.RLock`.
+- Serialized `pause()` and `inject_and_resume()` with running-only process transitions.
+- Guarded `_api_attempt_started()`, `_tool_started()`, `_tool_bookkeeping_finished()`, and affect drift in `_continuing_step_finished()` under the same lock.
+- Added deterministic regressions for paused→thinking, paused→drift, and a paused multi-tool response.
+
+Red verification:
+
+```powershell
+conda run -n dagi python -X utf8 -m pytest tests/test_agent_loop.py::TestProcessLifecycle::test_pause_race_cannot_publish_post_tool_thinking_after_paused tests/test_agent_loop.py::TestProcessLifecycle::test_pause_race_cannot_drift_after_paused tests/test_agent_loop.py::TestProcessLifecycle::test_paused_multi_tool_turn_does_not_start_later_tool_process_state -vv --basetemp C:\Users\alexr\AppData\Local\Temp\dagi-pause-race-red-two
+```
+
+Result: `3 failed` as expected: paused→thinking, paused→drift, and paused→tool_b were reproduced.
+
+Green verification:
+
+```powershell
+conda run -n dagi python -X utf8 -m pytest tests/test_agent_loop.py::TestProcessLifecycle::test_pause_race_cannot_publish_post_tool_thinking_after_paused tests/test_agent_loop.py::TestProcessLifecycle::test_pause_race_cannot_drift_after_paused tests/test_agent_loop.py::TestProcessLifecycle::test_paused_multi_tool_turn_does_not_start_later_tool_process_state -vv --basetemp C:\Users\alexr\AppData\Local\Temp\dagi-pause-race-green-one
+```
+
+Result: `3 passed, 1 warning in 0.87s`.
+
+Focused amended area:
+
+```powershell
+conda run -n dagi python -X utf8 -m pytest tests/test_agent_loop.py -q --basetemp C:\Users\alexr\AppData\Local\Temp\dagi-pause-race-agent-loop
+```
+
+Result: `42 passed, 1 warning in 1.18s`.
+
+Feature suite:
+
+```powershell
+conda run -n dagi python -X utf8 -m pytest tests/test_expression_assets.py tests/test_affect.py tests/test_adjust_affect_tool.py tests/test_config_loader.py tests/test_tool_filter.py tests/test_subagent_configs.py tests/test_session_tracker.py tests/test_history.py tests/test_history_integration.py tests/test_process_state.py tests/test_dynamic_context.py tests/test_agent_loop.py tests/test_agent_callbacks.py tests/test_tui_callbacks.py tests/tui/test_sidebar_render.py tests/tui/test_app_layout.py pyside_gui/tests/test_bridge.py pyside_gui/tests/test_commands.py pyside_gui/tests/test_expression_widget.py -q --basetemp C:\Users\alexr\AppData\Local\Temp\dagi-pause-race-feature
+```
+
+Result: `222 passed, 1 warning in 3.12s`.
+
+Static checks:
+
+```powershell
+git diff --check
+rg -n ".{101,}" agent/loop.py tests/test_agent_loop.py
+```
+
+Result: `git diff --check` passed with only Git CRLF warnings; long-line scan reported only pre-existing `agent/loop.py` lines.

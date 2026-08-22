@@ -496,19 +496,23 @@ class AgentLoop:
         if config.plan_mode and config.advanced_config is not None:
             self._handle_switch_model("plan", {"reason": "user-initiated plan mode"})
 
-        # Pause/resume: set = running (default), clear = paused
+        # Pause/resume: set = running (default), clear = paused.
+        # The lock serializes pause checks with process/drift side effects.
+        self._pause_state_lock = threading.RLock()
         self._pause_event = threading.Event()
         self._pause_event.set()
         self._pause_checkpoint = threading.Event()
 
     def pause(self) -> None:
-        self._pause_event.clear()
-        self._process.paused()
+        with self._pause_state_lock:
+            self._pause_event.clear()
+            self._process.paused()
 
     def inject_and_resume(self, message: str) -> None:
         self._log_user_message("user", message, "inject")
-        self._process.thinking()
-        self._pause_event.set()
+        with self._pause_state_lock:
+            self._pause_event.set()
+            self._process.thinking()
 
     @property
     def parent_context_provider(self) -> ParentContextProvider:
@@ -526,14 +530,19 @@ class AgentLoop:
         self._process.set_listener(self.callbacks.on_process_state_changed)
 
     def _api_attempt_started(self) -> None:
-        self._process.thinking()
+        with self._pause_state_lock:
+            if self._pause_event.is_set():
+                self._process.thinking()
 
     def _tool_started(self, name: str) -> None:
-        self._process.tool_started(name)
+        with self._pause_state_lock:
+            if self._pause_event.is_set():
+                self._process.tool_started(name)
 
     def _tool_bookkeeping_finished(self) -> None:
-        if self._pause_event.is_set():
-            self._process.tool_ended()
+        with self._pause_state_lock:
+            if self._pause_event.is_set():
+                self._process.tool_ended()
 
     def _completed(self) -> None:
         self._process.idle()
@@ -544,8 +553,9 @@ class AgentLoop:
     def _continuing_step_finished(self, turn: int, step: int) -> None:
         self.log.append(sev.STEP_END, {"turn": turn, "step": step})
         controller = self.tracker.affect_controller
-        if controller is not None and self._pause_event.is_set():
-            controller.drift()
+        with self._pause_state_lock:
+            if controller is not None and self._pause_event.is_set():
+                controller.drift()
 
     def _freeze_request_snapshot(self, create_kwargs: Mapping[str, Any]) -> dict[str, Any]:
         """Copy request identity and the live surface boundary before a provider call."""

@@ -78,6 +78,44 @@ def _make_loop(registry=None, **config_overrides) -> AgentLoop:
     return loop
 
 
+class _PauseAfterIsSet:
+    """Event double that requests pause immediately after a running check.
+
+    Old check-then-act code lets the pause finish before the transition/drift
+    publishes. A locked implementation makes the pause wait until that side
+    effect completes, preserving a serializable order.
+    """
+
+    def __init__(self, loop: AgentLoop) -> None:
+        self._loop = loop
+        self._event = threading.Event()
+        self._event.set()
+        self._armed = True
+        self.pause_finished = threading.Event()
+
+    def is_set(self) -> bool:
+        running = self._event.is_set()
+        if running and self._armed:
+            self._armed = False
+            thread = threading.Thread(target=self._pause_loop)
+            thread.start()
+            self.pause_finished.wait(timeout=0.05)
+        return running
+
+    def set(self) -> None:
+        self._event.set()
+
+    def clear(self) -> None:
+        self._event.clear()
+
+    def wait(self, timeout: float | None = None) -> bool:
+        return self._event.wait(timeout)
+
+    def _pause_loop(self) -> None:
+        self._loop.pause()
+        self.pause_finished.set()
+
+
 class TestToolDispatch:
     def test_tool_call_dispatches_to_registered_tool(self):
         tool = FakeTool(name="echo", result="echoed!")
@@ -829,14 +867,109 @@ class TestProcessLifecycle:
 
         assert loop._pause_checkpoint.is_set()
         assert loop._pause_event.is_set() is False
-        pause_index = events.index("process:paused")
-        assert "process:thinking" not in events[pause_index + 1:]
-        assert "drift" not in events[pause_index + 1:]
+        snapshot = list(events)
 
         loop.inject_and_resume("continue")
         thread.join(timeout=2.0)
 
         assert not thread.is_alive()
+        pause_index = snapshot.index("process:paused")
+        assert "process:thinking" not in snapshot[pause_index + 1:]
+        assert "drift" not in snapshot[pause_index + 1:]
+
+    def test_pause_race_cannot_publish_post_tool_thinking_after_paused(self):
+        """Pause state and post-tool thinking must be ordered by one shared gate."""
+        loop = _make_loop()
+        events: list[str] = []
+        loop.callbacks = AgentCallbacks(
+            on_process_state_changed=lambda snap: events.append(f"process:{snap.state}")
+        )
+        loop._bind_process_listener()
+        loop._process.tool_started("echo")
+        events.clear()
+        race_event = _PauseAfterIsSet(loop)
+        loop._pause_event = race_event
+
+        loop._tool_bookkeeping_finished()
+        assert race_event.pause_finished.wait(timeout=1.0)
+
+        if "process:paused" in events:
+            pause_index = events.index("process:paused")
+            assert "process:thinking" not in events[pause_index + 1:]
+
+    def test_pause_race_cannot_drift_after_paused(self):
+        """Affect drift must be serialized with pause, same as process transitions."""
+        loop = _make_loop()
+        events: list[str] = []
+
+        class _Affect:
+            def drift(self) -> None:
+                events.append("drift")
+
+        loop.tracker.affect_controller = _Affect()
+        loop.callbacks = AgentCallbacks(
+            on_process_state_changed=lambda snap: events.append(f"process:{snap.state}")
+        )
+        loop._bind_process_listener()
+        events.clear()
+        race_event = _PauseAfterIsSet(loop)
+        loop._pause_event = race_event
+
+        loop._continuing_step_finished(1, 1)
+        assert race_event.pause_finished.wait(timeout=1.0)
+
+        if "process:paused" in events:
+            pause_index = events.index("process:paused")
+            assert "drift" not in events[pause_index + 1:]
+
+    def test_paused_multi_tool_turn_does_not_start_later_tool_process_state(self):
+        """A pause between tool calls must keep the process channel paused."""
+        tool_a = FakeTool(name="tool_a", result="result a")
+        tool_b = FakeTool(name="tool_b", result="result b")
+        registry = ToolRegistry()
+        registry.register(tool_a)
+        registry.register(tool_b)
+        loop = _make_loop(registry=registry)
+        events: list[str] = []
+
+        def on_tool_end(name: str, _result: str) -> None:
+            events.append(f"tool_end:{name}")
+            if name == "tool_a":
+                loop.pause()
+
+        loop.callbacks = AgentCallbacks(
+            on_process_state_changed=lambda snap: events.append(f"process:{snap.state}"),
+            on_tool_end=on_tool_end,
+        )
+        loop._bind_process_listener()
+        loop.client = MagicMock()
+        loop.client.chat.completions.create.side_effect = [
+            _make_response(
+                None,
+                tool_calls=[
+                    _make_tool_call("tc1", "tool_a", "{}"),
+                    _make_tool_call("tc2", "tool_b", "{}"),
+                ],
+            ),
+            _make_response(f"Done. {TASK_END_FLAG}"),
+        ]
+        thread = threading.Thread(target=lambda: loop.run("do something"))
+
+        thread.start()
+        deadline = time.time() + 2.0
+        while time.time() < deadline and not loop._pause_checkpoint.is_set():
+            time.sleep(0.01)
+
+        assert loop._pause_checkpoint.is_set()
+        snapshot = list(events)
+
+        loop.inject_and_resume("continue")
+        thread.join(timeout=2.0)
+
+        assert not thread.is_alive()
+        pause_index = snapshot.index("process:paused")
+        assert "process:tool:tool_b" not in snapshot[pause_index + 1:]
+        assert "process:thinking" not in snapshot[pause_index + 1:]
 
 
 class TestParentForkCapture:
