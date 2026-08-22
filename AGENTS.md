@@ -1,6 +1,6 @@
 # AGENTS.md
 
-> Last updated: 2026-08-22 (Task 11 — pyside_gui complete) | [README](README.md) | [TODO](TODO.md)
+> Last updated: 2026-08-22 (pyside_gui streaming fixes) | [README](README.md) | [TODO](TODO.md)
 
 
 
@@ -127,9 +127,13 @@ Stop and flag when:
 **Inherited subagents and `/wtf`:** `ParentContextProvider` snapshots the exact parent request prefix (model, messages, tool schemas/order, provider options, and base URL) and records a stable branch. Version-2 forked children receive that prefix plus one new task message, use an explicitly allowlisted inherited registry, and call the parent-visible `write_handoff` schema as their final action; blocked tools return `Error: Access blocked for this tool`. The runner validates the written file and retries a missing/malformed report once. The read-only `wtf` preset writes strict three-section reports under `.dagi/errors/`; `AgentLoop.run_wtf()` validates branch generation, path, and report structure before appending only a `/wtf` reference to the parent. TUI `/wtf [description]` runs asynchronously, waits for a pause checkpoint when needed, and displays only the report description and path.
 
 ```
-tui.py / telegram_bot.py / main.py / dagi_gui/__main__.py
+tui.py / telegram_bot.py / main.py / dagi_gui/__main__.py / pyside_gui/__main__.py
     │
     tui.py → tui/ (app, commands, callbacks, conversation, sidebar, prompt_input, streaming)
+    │
+    pyside_gui/__main__.py → pyside_gui/ (app, bridge, conversation, overlays, commands, sidebars)
+    │   PySide6/Qt 6 desktop GUI. AgentBridge translates AgentCallbacks → Qt Signals.
+    │   Agent runs on daemon thread; all UI via queued signals or QMetaObject.invokeMethod.
     │
     dagi_gui/__main__.py → dagi_gui/ (protocol, interaction, callbacks, session, catalog, history, server, plan_monitor)
     │   Python sidecar: reads NDJSON commands on stdin, emits NDJSON events on stdout.
@@ -176,19 +180,12 @@ tui.py / telegram_bot.py / main.py / dagi_gui/__main__.py
 | `tui/app.py`, `tui/commands.py`, `tui/callbacks.py`  | TUI lifecycle, slash commands including `/wtf`, StreamPreview, and callbacks bridge                                                                           |
 | `dagi_gui/server.py`                                 | `GUIServer`: reads NDJSON commands from stdin loop, dispatches to `AgentLoop`/session                                                                          |
 | `dagi_gui/session.py`                                | `SessionController`: lifecycle (run/pause/resume/cancel/clear/compact/shutdown), `_kill_active_work` kills active bash + subagents on pause                     |
-| `pyside_gui/app.py`                                  | `DagiMainWindow(config, project_path, verbose)` — full main window: splitter layout, agent dispatch on background thread, pause/resume, slash commands, overlays |
-| `pyside_gui/utils.py`                               | `format_elapsed(start)` — formats elapsed seconds into human-readable string for the running spinner label                                                      |
-| `pyside_gui/conversation.py`                         | `ConversationView(verbose)` — QWebEngineView subclass; 13 Python methods → JS DOM calls; loads `resources/conversation.html`                                    |
-| `pyside_gui/resources/`                              | Static assets for ConversationView: `conversation.html`, `conversation.css` (Catppuccin Mocha), `conversation.js` (DOM API)                                     |
-| `pyside_gui/bridge.py`                               | `AgentBridge(QObject)` — translates all `AgentCallbacks` fields to Qt Signals; `build_callbacks()` returns a wired `AgentCallbacks` for thread-safe UI updates  |
-| `pyside_gui/left_sidebar.py`                         | `LeftSidebar(QWidget)` — session history list; `load_sessions(logs_dir, max_sessions)` populates QListWidget; emits `session_selected(object)` on double-click  |
-| `pyside_gui/right_sidebar.py`                        | `RightSidebar(QScrollArea)` — status dot, model name, token stats, context breakdown (calls `_system_breakdown`), and plan subtask list                         |
-| `pyside_gui/commands.py`                             | `SlashCommandHandler` + `UIWidgets` — handles all `/` commands; `handle(raw)` returns task string, `__EXIT__`, or `None`                                       |
-| `pyside_gui/overlays.py`                             | `AskUserDialog` (modal, blocks agent thread via `threading.Event`) and `CopyPicker` (non-modal, lists copyable messages) — Catppuccin Mocha overlay widgets     |
+| `pyside_gui/app.py`                                  | `DagiMainWindow` — main window: splitter layout, agent on daemon thread, streaming dedup, pause/resume, slash commands, overlays (500-line cap)                  |
+| `pyside_gui/bridge.py`                               | `AgentBridge(QObject)` — translates `AgentCallbacks` → Qt Signals; `build_callbacks()` returns wired callbacks for thread-safe UI; owns `_stream_text` accumulator |
+| `pyside_gui/conversation.py` + `resources/`          | `ConversationView(QWebEngineView)` — 13 Python→JS methods; Catppuccin Mocha HTML/CSS/JS template with streaming bubble support                                  |
 
 ## Errors Log (recent)
 
-- **2026-08-20**: Full suite still has eight pre-existing Windows/environment failures (process-kill timing and temp/fixture setup) → documented; feature suites remain green.
 - **2026-08-20**: Task 11 failure matrix found no production defect; all child failure outcomes preserve the parent surface and paused checkpoint.
 - **2026-08-20**: Final review found inherited children skipped preset instructions and wiki context → forward the preset prompt after the exact prefix and suppress dynamic injection.
 - **2026-08-20**: Final review found default-credential mixing and shallow handoff checks → fail fast on provider mismatch, recursively reject secret fields, and retry malformed handoffs once.
@@ -198,6 +195,7 @@ tui.py / telegram_bot.py / main.py / dagi_gui/__main__.py
 - **2026-08-22**: PySide6 6.11.2 on Python 3.14 in `dagi` conda env fails DLL load unless `os.add_dll_directory(pyside6_dir)` is called before import — Qt DLLs not on PATH via conda activation; `__main__.py` must bootstrap this before any PySide6 import.
 - **2026-08-22**: `AgentCallbacks.on_emote` type annotation says `Callable[[str, str], None]` (2 args) but actual call site in `tools/emote/_emote.py` passes 3 args `(name, display, is_named)` — annotation is stale; use 3-arg signature.
 - **2026-08-22**: pyside_gui final-review: XSS in fence lang (escape before `class=` interpolation); timeout=0 deadlock (`0.0 or None = None` → explicit `if timeout <= 0` branch); `_messages` race between main+worker threads (snapshot via `list()` before passing to `CopyPicker`).
+- **2026-08-22**: pyside_gui streaming showed `<<END_OF_RESPONSE>>` + duplicate assistant/reasoning bubbles → strip `_LOOP_SENTINELS` in `_on_stream_ended`; gate `_on_assistant_text` and `_on_reasoning` behind `_stream_had_content` flag.
 
 ## Notes & Terms
 
@@ -208,9 +206,9 @@ tui.py / telegram_bot.py / main.py / dagi_gui/__main__.py
 - **Windows / conda**: `EditTool`/`WriteTool` always write LF, normalize `oldText`/`newText` for CRLF safety. Use `conda run -n dagi python` for DAGI scripts; for Claude Code hooks use `envs/dagi/python.exe` directly — `conda run` drops stdin in hook context.
 - **`subagent_api` vs `_subagent_runner`**: `tools/subagent_api.py` is the public API (preset resolution, envelope, `SubagentResult`); `tools/_subagent_runner.py` is the private subprocess spawner. Never import `_subagent_runner` directly from outside `subagent_api.py`.
 - **Inherited fork v2**: `ParentContextProvider` preserves the exact request prefix; children reuse its `write_handoff` schema as their final action, and every other tool call remains allowlist-enforced.
-- **`/wtf` report contract**: `.dagi/errors/wtf_<branch>.md` has exactly `Description`, `Error Report`, and `Suggested Fix`; the parent stores only a path/branch reference.
 - **PySide6 DLL bootstrap**: On Windows + conda, `os.add_dll_directory` must be called for the PySide6 package dir before any `from PySide6.*` import; `python -m pyside_gui` will crash without it.
 - **PySide6 cross-thread UI calls**: Never call Qt widget methods directly from a background thread; use `QMetaObject.invokeMethod(..., Qt.QueuedConnection)` for non-signal paths, or route through `AgentBridge` signals (auto-queued when connected across threads).
+- **PySide6 streaming dedup**: After streaming, `AgentLoop` fires `on_reasoning` and `on_assistant_text` with the same content already shown via deltas — `app.py` gates both behind `_stream_had_content` (set in `_on_stream_ended`, cleared only in `_on_assistant_text`).
 
 ## User Insights
 
