@@ -501,7 +501,10 @@ class AgentLoop:
         # queue. It must never be held across process/affect callbacks.
         self._pause_state_lock = threading.RLock()
         self._pause_generation = 0
-        self._lifecycle_queue: list[tuple[str, int, Callable[[], Callable[[], None] | None]]] = []
+        self._lifecycle_queue: list[
+            tuple[str, int, Callable[[], Callable[[], None] | None]]
+        ] = []
+        self._lifecycle_callback_starts: list[tuple[int, threading.Event]] = []
         self._lifecycle_draining = False
         self._pause_event = threading.Event()
         self._pause_event.set()
@@ -512,7 +515,12 @@ class AgentLoop:
             self._pause_event.clear()
             self._pause_generation += 1
             generation = self._pause_generation
-        self._enqueue_lifecycle("paused", generation, self._prepare_process_state("paused"))
+        self._enqueue_lifecycle(
+            "paused",
+            generation,
+            self._prepare_process_state("paused"),
+            wait_for_callback_starts=True,
+        )
 
     def inject_and_resume(self, message: str) -> None:
         self._log_user_message("user", message, "inject")
@@ -560,7 +568,7 @@ class AgentLoop:
             drift_without_notify = getattr(controller, "drift_without_notify", None)
             emit = getattr(controller, "emit", None)
             if not callable(drift_without_notify) or not callable(emit):
-                return controller.drift
+                return None
             snapshot = drift_without_notify()
             return lambda: emit(snapshot)
 
@@ -581,13 +589,59 @@ class AgentLoop:
         state: str,
         generation: int,
         prepare: Callable[[], Callable[[], None] | None],
+        *,
+        wait_for_callback_starts: bool = False,
     ) -> None:
         with self._pause_state_lock:
+            start_events = (
+                self._pending_lifecycle_callback_starts()
+                if wait_for_callback_starts
+                else []
+            )
             self._lifecycle_queue.append((state, generation, prepare))
             if self._lifecycle_draining:
-                return
-            self._lifecycle_draining = True
-        self._drain_lifecycle_queue()
+                should_drain = False
+            else:
+                self._lifecycle_draining = True
+                should_drain = True
+        self._wait_for_lifecycle_callback_starts(start_events)
+        if should_drain:
+            self._drain_lifecycle_queue()
+
+    def _pending_lifecycle_callback_starts(self) -> list[threading.Event]:
+        current_thread = threading.get_ident()
+        return [
+            event
+            for thread_id, event in self._lifecycle_callback_starts
+            if thread_id != current_thread and not event.is_set()
+        ]
+
+    def _wait_for_lifecycle_callback_starts(
+        self,
+        start_events: list[threading.Event],
+    ) -> None:
+        for event in start_events:
+            event.wait()
+
+    def _mark_lifecycle_callback_pending(self) -> threading.Event:
+        event = threading.Event()
+        self._lifecycle_callback_starts.append((threading.get_ident(), event))
+        return event
+
+    def _mark_lifecycle_callback_started(self, event: threading.Event) -> None:
+        with self._pause_state_lock:
+            event.set()
+            self._lifecycle_callback_starts = [
+                item for item in self._lifecycle_callback_starts if item[1] is not event
+            ]
+
+    def _start_lifecycle_callback(
+        self,
+        callback: Callable[[], None],
+        start_event: threading.Event,
+    ) -> None:
+        self._mark_lifecycle_callback_started(start_event)
+        callback()
 
     def _drain_lifecycle_queue(self) -> None:
         while True:
@@ -599,6 +653,11 @@ class AgentLoop:
                     state, generation, prepare = self._lifecycle_queue.pop(0)
                     should_publish = self._should_publish_lifecycle(state, generation)
                     callback = prepare() if should_publish else None
+                    start_event = (
+                        self._mark_lifecycle_callback_pending()
+                        if callback is not None
+                        else None
+                    )
             except BaseException:
                 with self._pause_state_lock:
                     self._lifecycle_draining = False
@@ -606,8 +665,8 @@ class AgentLoop:
             if not should_publish:
                 continue
             try:
-                if callback is not None:
-                    callback()
+                if callback is not None and start_event is not None:
+                    self._start_lifecycle_callback(callback, start_event)
             except BaseException:
                 with self._pause_state_lock:
                     self._lifecycle_draining = False

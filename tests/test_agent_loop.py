@@ -117,6 +117,31 @@ class _PauseAfterIsSet:
         self.pause_finished.set()
 
 
+class _ExitBarrierLock:
+    """RLock wrapper that can pause one owner just after releasing a with-block."""
+
+    def __init__(self) -> None:
+        self._lock = threading.RLock()
+        self._armed_thread: int | None = None
+        self.entered = threading.Event()
+        self.release = threading.Event()
+
+    def __enter__(self):
+        return self._lock.__enter__()
+
+    def __exit__(self, exc_type, exc, tb) -> bool:
+        should_block = self._armed_thread == threading.get_ident()
+        self._armed_thread = None
+        result = self._lock.__exit__(exc_type, exc, tb)
+        if should_block:
+            self.entered.set()
+            self.release.wait(timeout=2.0)
+        return result
+
+    def arm_current_exit(self) -> None:
+        self._armed_thread = threading.get_ident()
+
+
 class TestToolDispatch:
     def test_tool_call_dispatches_to_registered_tool(self):
         tool = FakeTool(name="echo", result="echoed!")
@@ -1158,6 +1183,90 @@ class TestProcessLifecycle:
         assert "pause_returned" in events
         pause_index = events.index("pause_returned")
         assert "affect:drift" not in events[pause_index + 1:]
+
+    def test_pause_waits_until_accepted_callback_is_ordered_not_completed(self):
+        """Pause may not return in the post-unlock/pre-callback publication window."""
+        loop = _make_loop()
+        barrier_lock = _ExitBarrierLock()
+        loop._pause_state_lock = barrier_lock
+        callback_entered = threading.Event()
+        release_callback = threading.Event()
+        pause_returned = threading.Event()
+
+        def prepare():
+            barrier_lock.arm_current_exit()
+
+            def callback() -> None:
+                callback_entered.set()
+                release_callback.wait(timeout=2.0)
+
+            return callback
+
+        generation = loop._pause_generation
+        worker = threading.Thread(
+            target=lambda: loop._enqueue_lifecycle("running", generation, prepare)
+        )
+        worker.start()
+        assert barrier_lock.entered.wait(timeout=1.0)
+
+        pause_thread = threading.Thread(
+            target=lambda: (loop.pause(), pause_returned.set())
+        )
+        pause_thread.start()
+        assert not pause_returned.wait(timeout=0.2)
+
+        barrier_lock.release.set()
+        assert callback_entered.wait(timeout=1.0)
+        assert pause_returned.wait(timeout=1.0)
+        assert worker.is_alive()
+        release_callback.set()
+        worker.join(timeout=2.0)
+        pause_thread.join(timeout=2.0)
+
+        assert not worker.is_alive()
+        assert not pause_thread.is_alive()
+
+    def test_legacy_affect_drift_is_not_published_after_pause_returns(self):
+        """One-piece legacy drift cannot safely mutate outside lifecycle acceptance."""
+        loop = _make_loop()
+        events: list[str] = []
+        barrier_lock = _ExitBarrierLock()
+        loop._pause_state_lock = barrier_lock
+
+        class _LegacyAffect:
+            @property
+            def drift(self):
+                barrier_lock.arm_current_exit()
+
+                def callback() -> None:
+                    events.append("legacy_drift")
+
+                return callback
+
+        loop.tracker.affect_controller = _LegacyAffect()
+        loop.log.append(sev.TURN_START, {"turn": 1})
+        loop.log.append(sev.STEP_START, {"turn": 1, "step": 1})
+        worker = threading.Thread(target=lambda: loop._continuing_step_finished(1, 1))
+        worker.start()
+        if not barrier_lock.entered.wait(timeout=0.2):
+            worker.join(timeout=2.0)
+            assert not worker.is_alive()
+            assert events == []
+            return
+
+        pause_thread = threading.Thread(
+            target=lambda: (loop.pause(), events.append("pause_returned"))
+        )
+        pause_thread.start()
+        assert not any(event == "pause_returned" for event in events)
+        barrier_lock.release.set()
+        worker.join(timeout=2.0)
+        pause_thread.join(timeout=2.0)
+
+        assert not worker.is_alive()
+        assert not pause_thread.is_alive()
+        pause_index = events.index("pause_returned")
+        assert "legacy_drift" not in events[pause_index + 1:]
 
 
 class TestParentForkCapture:
