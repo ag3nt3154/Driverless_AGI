@@ -4,6 +4,7 @@
 
 
 
+
 ---
 
 ## Overview
@@ -167,8 +168,6 @@ tui.py / telegram_bot.py / main.py / dagi_gui/__main__.py
 | `agent/loop.py`                                      | Core loop, parent fork capture, system-prompt assembly, termination/compaction, and handoff dispatch                                                          |
 | `agent/config_loader.py`                             | Reads `config.yaml`, merges `.dagi/config.yaml`, resolves API key, services, Telegram config                                                                   |
 | `agent/session_log.py`                               | Append-only event log; `SessionLog.branches` tracks subagent branches; `branch_event(id)` returns the BRANCH_START event for a branch                         |
-| `agent/parent_context.py`                            | Immutable parent request snapshots and version-2 fork-context serialization                                                                                    |
-| `agent/inherited_registry.py`                        | Exact-schema inherited tool wrappers and blocked-tool enforcement                                                                                             |
 | `agent/wtf.py`, `agent/wtf_report.py`                | Atomic `/wtf` orchestration and strict report parser                                                                                                           |
 | `agent/tools.py`, `agent/subagent_tools.py`          | Main/subagent registry construction, including mandatory and inherited `write_handoff`                                                                          |
 | `tools/subagent_api.py`                              | **Public API** — spawn/compact/inherited dispatch, branch metadata, handoff and fork-context lifecycle                                                        |
@@ -184,6 +183,7 @@ tui.py / telegram_bot.py / main.py / dagi_gui/__main__.py
 | `pyside_gui/bridge.py`                               | `AgentBridge(QObject)` — translates all `AgentCallbacks` fields to Qt Signals; `build_callbacks()` returns a wired `AgentCallbacks` for thread-safe UI updates  |
 | `pyside_gui/left_sidebar.py`                         | `LeftSidebar(QWidget)` — session history list; `load_sessions(logs_dir, max_sessions)` populates QListWidget; emits `session_selected(object)` on double-click  |
 | `pyside_gui/right_sidebar.py`                        | `RightSidebar(QScrollArea)` — status dot, model name, token stats, context breakdown (calls `_system_breakdown`), and plan subtask list                         |
+| `pyside_gui/commands.py`                             | `SlashCommandHandler` + `UIWidgets` — handles all `/` commands; `handle(raw)` returns task string, `__EXIT__`, or `None`                                       |
 
 ## Errors Log (recent)
 
