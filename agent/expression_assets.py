@@ -77,7 +77,10 @@ def _validate_asset_path(
     if not isinstance(relative_path, str) or not relative_path.strip():
         warn_once(
             f"{channel}:asset:{asset_id}:path",
-            f"[expression_assets] {channel} asset {asset_id!r} must define a non-empty file path",
+            (
+                f"[expression_assets] {channel} asset {asset_id!r} must define a "
+                "non-empty file path"
+            ),
         )
         return None
     candidate = (assets_root / relative_path).resolve()
@@ -86,7 +89,10 @@ def _validate_asset_path(
     except ValueError:
         warn_once(
             f"{channel}:asset:{asset_id}:escape:{relative_path}",
-            f"[expression_assets] {channel} asset {asset_id!r} escapes {assets_root}: {relative_path}",
+            (
+                f"[expression_assets] {channel} asset {asset_id!r} escapes "
+                f"{assets_root}: {relative_path}"
+            ),
         )
         return None
     if candidate.suffix.lower() not in _SUPPORTED_SUFFIXES:
@@ -142,6 +148,21 @@ def _distance(left: VadPoint, right: VadPoint) -> float:
     return math.sqrt(sum((a - b) ** 2 for a, b in zip(left, right)))
 
 
+def _require_manifest_version(
+    manifest: dict[object, object],
+    channel: str,
+    manifest_path: Path,
+    warn_once,
+) -> bool:
+    if manifest.get("version") == 1:
+        return True
+    warn_once(
+        f"{channel}:version:{manifest_path}",
+        f"[expression_assets] {channel} manifest must declare version 1: {manifest_path}",
+    )
+    return False
+
+
 def load_fallback(emotes_root: Path) -> TextFallback:
     fallback_path = emotes_root / "default.md"
     return _load_fallback(
@@ -183,43 +204,27 @@ class VadLibrary:
         if manifest is None:
             library._disabled_reason = "vad manifest unavailable"
             return library
-        if manifest.get("version") != 1:
-            library._warn_once(
-                f"vad:version:{manifest_path}",
-                f"[expression_assets] vad manifest must declare version 1: {manifest_path}",
-            )
+        if not _require_manifest_version(manifest, "vad", manifest_path, library._warn_once):
             library._disabled_reason = "vad manifest version"
             return library
         raw_entries = manifest.get("emotes")
         if not isinstance(raw_entries, list) or not raw_entries:
             library._warn_once(
                 f"vad:entries:{manifest_path}",
-                f"[expression_assets] vad manifest must define a non-empty emotes list: {manifest_path}",
+                (
+                    "[expression_assets] vad manifest must define a non-empty "
+                    f"emotes list: {manifest_path}"
+                ),
             )
             library._disabled_reason = "vad manifest entries"
             return library
-        seen_ids: set[str] = set()
-        entries: list[VadEntry] = []
         try:
-            for raw_entry in raw_entries:
-                if not isinstance(raw_entry, dict):
-                    raise ValueError(f"VAD entries in {manifest_path} must be mappings")
-                asset_id = raw_entry.get("id")
-                if not isinstance(asset_id, str) or not asset_id.strip():
-                    raise ValueError(f"VAD entries in {manifest_path} must define a non-empty id")
-                if asset_id in seen_ids:
-                    raise ValueError(f"Duplicate VAD id {asset_id!r} in {manifest_path}")
-                seen_ids.add(asset_id)
-                point = _coerce_vad_point(raw_entry.get("vad"), asset_id, manifest_path)
-                asset_path = _validate_asset_path(
-                    assets_root,
-                    raw_entry.get("file"),
-                    "vad",
-                    asset_id,
-                    library._warn_once,
-                )
-                asset = ImageAsset(asset_id, asset_path) if asset_path else None
-                entries.append(VadEntry(asset_id, point, asset))
+            entries = _load_vad_entries(
+                raw_entries,
+                assets_root,
+                manifest_path,
+                library._warn_once,
+            )
         except ValueError as exc:
             library._warn_once(
                 f"vad:invalid:{manifest_path}",
@@ -231,6 +236,10 @@ class VadLibrary:
         library._by_id = {entry.id: entry for entry in library._entries}
         return library
 
+    @staticmethod
+    def _nearest(entries: tuple[VadEntry, ...], vector: VadPoint) -> VadEntry:
+        return min(entries, key=lambda entry: _distance(vector, entry.point))
+
     def resolve(
         self,
         vector: VadPoint,
@@ -239,16 +248,68 @@ class VadLibrary:
     ) -> tuple[str, AssetRef]:
         if self._disabled_reason or not self._entries:
             return "fallback", self._fallback(self._disabled_reason or "vad library unavailable")
-        nearest = min(self._entries, key=lambda entry: _distance(vector, entry.point))
+        nearest = self._nearest(self._entries, vector)
         current = self._by_id.get(current_id) if current_id else None
-        if current and current.id != nearest.id:
-            current_distance = _distance(vector, current.point)
-            challenger_distance = _distance(vector, nearest.point)
-            if current_distance - challenger_distance < hysteresis:
-                nearest = current
+        nearest = _apply_vad_hysteresis(vector, nearest, current, hysteresis)
         if nearest.asset is None:
             return nearest.id, self._fallback(f"invalid VAD asset: {nearest.id}")
         return nearest.id, nearest.asset
+
+
+def _load_vad_entries(
+    raw_entries: list[object],
+    assets_root: Path,
+    manifest_path: Path,
+    warn_once,
+) -> tuple[VadEntry, ...]:
+    seen_ids: set[str] = set()
+    entries: list[VadEntry] = []
+    for raw_entry in raw_entries:
+        entry = _load_vad_entry(raw_entry, seen_ids, assets_root, manifest_path, warn_once)
+        entries.append(entry)
+    return tuple(entries)
+
+
+def _load_vad_entry(
+    raw_entry: object,
+    seen_ids: set[str],
+    assets_root: Path,
+    manifest_path: Path,
+    warn_once,
+) -> VadEntry:
+    if not isinstance(raw_entry, dict):
+        raise ValueError(f"VAD entries in {manifest_path} must be mappings")
+    asset_id = raw_entry.get("id")
+    if not isinstance(asset_id, str) or not asset_id.strip():
+        raise ValueError(f"VAD entries in {manifest_path} must define a non-empty id")
+    if asset_id in seen_ids:
+        raise ValueError(f"Duplicate VAD id {asset_id!r} in {manifest_path}")
+    seen_ids.add(asset_id)
+    point = _coerce_vad_point(raw_entry.get("vad"), asset_id, manifest_path)
+    asset_path = _validate_asset_path(
+        assets_root,
+        raw_entry.get("file"),
+        "vad",
+        asset_id,
+        warn_once,
+    )
+    asset = ImageAsset(asset_id, asset_path) if asset_path else None
+    return VadEntry(asset_id, point, asset)
+
+
+def _apply_vad_hysteresis(
+    vector: VadPoint,
+    nearest: VadEntry,
+    current: VadEntry | None,
+    hysteresis: float,
+) -> VadEntry:
+    if current is None or current.id == nearest.id:
+        return nearest
+    current_distance = _distance(vector, current.point)
+    challenger_distance = _distance(vector, nearest.point)
+    if current_distance - challenger_distance < hysteresis:
+        return current
+    return nearest
 
 
 class ProcessStateLibrary:
@@ -287,11 +348,7 @@ class ProcessStateLibrary:
         if manifest is None:
             library._disabled_reason = "states manifest unavailable"
             return library
-        if manifest.get("version") != 1:
-            library._warn_once(
-                f"states:version:{manifest_path}",
-                f"[expression_assets] states manifest must declare version 1: {manifest_path}",
-            )
+        if not _require_manifest_version(manifest, "states", manifest_path, library._warn_once):
             library._disabled_reason = "states manifest version"
             return library
         raw_states = manifest.get("states")
@@ -306,27 +363,17 @@ class ProcessStateLibrary:
         if missing:
             library._warn_once(
                 f"states:required:{manifest_path}",
-                f"[expression_assets] states manifest missing required keys {missing}: {manifest_path}",
+                (
+                    f"[expression_assets] states manifest missing required keys {missing}: "
+                    f"{manifest_path}"
+                ),
             )
             library._disabled_reason = "states required keys"
             return library
-        assets: dict[str, ImageAsset | None] = {}
-        for state, raw_path in raw_states.items():
-            if not isinstance(state, str) or not state:
-                library._warn_once(
-                    f"states:key:{manifest_path}",
-                    f"[expression_assets] states manifest contains an invalid key: {state!r}",
-                )
-                library._disabled_reason = "states invalid key"
-                return library
-            asset_path = _validate_asset_path(
-                assets_root,
-                raw_path,
-                "states",
-                state,
-                library._warn_once,
-            )
-            assets[state] = ImageAsset(state, asset_path) if asset_path else None
+        assets = _load_process_assets(raw_states, assets_root, manifest_path, library._warn_once)
+        if assets is None:
+            library._disabled_reason = "states invalid key"
+            return library
         library._assets = assets
         return library
 
@@ -344,3 +391,28 @@ class ProcessStateLibrary:
                 return self._fallback(f"invalid process asset: {key}")
             return asset
         return self._fallback(f"unknown process state: {state}")
+
+
+def _load_process_assets(
+    raw_states: dict[object, object],
+    assets_root: Path,
+    manifest_path: Path,
+    warn_once,
+) -> dict[str, ImageAsset | None] | None:
+    assets: dict[str, ImageAsset | None] = {}
+    for state, raw_path in raw_states.items():
+        if not isinstance(state, str) or not state:
+            warn_once(
+                f"states:key:{manifest_path}",
+                f"[expression_assets] states manifest contains an invalid key: {state!r}",
+            )
+            return None
+        asset_path = _validate_asset_path(
+            assets_root,
+            raw_path,
+            "states",
+            state,
+            warn_once,
+        )
+        assets[state] = ImageAsset(state, asset_path) if asset_path else None
+    return assets

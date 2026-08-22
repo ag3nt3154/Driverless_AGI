@@ -90,25 +90,30 @@ def load_affect_restore(path: Path | str) -> AffectRestore | None:
     if affect_init is None:
         return None
 
-    latest_valid = affect_init
-    warned = False
-    for line in lines:
-        if not str(line.get("type", "")).startswith("affect_"):
-            continue
-        try:
-            _parse_affect_restore(affect_init, line)
-        except ValueError:
-            if not warned:
-                warnings.warn("Malformed affect record in session history", UserWarning)
-                warned = True
-            continue
-        latest_valid = line
+    latest_valid, warned = _latest_valid_affect_record(affect_init, lines)
     try:
         return _parse_affect_restore(affect_init, latest_valid)
     except ValueError:
         if not warned:
             warnings.warn("Malformed affect record in session history", UserWarning)
         return None
+
+
+def _latest_valid_affect_record(init: dict, lines: list[dict]) -> tuple[dict, bool]:
+    latest_valid = init
+    warned = False
+    for line in lines:
+        if not str(line.get("type", "")).startswith("affect_"):
+            continue
+        try:
+            _parse_affect_restore(init, line)
+        except ValueError:
+            if not warned:
+                warnings.warn("Malformed affect record in session history", UserWarning)
+                warned = True
+            continue
+        latest_valid = line
+    return latest_valid, warned
 
 
 def _load_jsonl(path: Path | str) -> list[dict]:

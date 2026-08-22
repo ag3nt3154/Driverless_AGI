@@ -34,6 +34,16 @@ def _vector_payload(vector: "AffectVector") -> list[float]:
     return [vector.valence, vector.arousal, vector.dominance]
 
 
+def _is_restore_seed(
+    current_emote_id: str | None,
+    current: "AffectVector | None",
+    baseline: "AffectVector",
+) -> bool:
+    if current_emote_id is not None:
+        return True
+    return current is not None and current != baseline
+
+
 @dataclass(frozen=True)
 class AffectConfig:
     drift_pull: float = 0.05
@@ -111,9 +121,7 @@ class AffectController:
         self._current = self._baseline
         self._current_emote_id = current_emote_id
         self._snapshot: AffectSnapshot | None = None
-        is_restore = current_emote_id is not None or (
-            current is not None and current != self._baseline
-        )
+        is_restore = _is_restore_seed(current_emote_id, current, self._baseline)
         self._apply_change(
             reason="restore" if is_restore else "init",
             current=initial_current,
@@ -199,7 +207,7 @@ class AffectController:
         )
         self._snapshot = snapshot
         if persist:
-            event, payload = self._payload_for(reason, prior, delta, current, emote_id)
+            event, payload = self._payload_for(reason, prior, delta, snapshot)
             self._record(event, payload)
         self._on_change(snapshot)
         return snapshot
@@ -209,16 +217,15 @@ class AffectController:
         reason: AffectReason,
         prior: AffectVector | None,
         delta: AffectVector | None,
-        current: AffectVector,
-        emote_id: str,
+        snapshot: AffectSnapshot,
     ) -> tuple[str, dict[str, object]]:
         if reason == "init":
             return (
                 "affect_init",
                 {
                     "baseline": _vector_payload(self._baseline),
-                    "current": _vector_payload(current),
-                    "emote_id": emote_id,
+                    "current": _vector_payload(snapshot.current),
+                    "emote_id": snapshot.emote_id,
                 },
             )
         if prior is None or delta is None:
@@ -228,8 +235,8 @@ class AffectController:
             {
                 "prior": _vector_payload(prior),
                 "delta": _vector_payload(delta),
-                "current": _vector_payload(current),
-                "emote_id": emote_id,
+                "current": _vector_payload(snapshot.current),
+                "emote_id": snapshot.emote_id,
             },
         )
 
