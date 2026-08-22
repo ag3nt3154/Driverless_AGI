@@ -17,7 +17,8 @@ from agent.loop import (
     AWAIT_USER_FLAG, TASK_END_FLAG, WRITE_HANDOFF_SENTINEL,
     _escape_sentinels,
 )
-from agent.affect import AffectRestore, AffectVector
+from agent.affect import AffectConfig, AffectController, AffectRestore, AffectVector
+from agent.expression_assets import ImageAsset
 from agent.registry import ToolRegistry
 
 
@@ -1008,6 +1009,67 @@ class TestProcessLifecycle:
         assert not pause_thread.is_alive()
         assert loop._pause_event.is_set() is False
         assert events[-1] == "process:paused"
+
+    def test_process_listener_can_reenter_inject_and_resume(self):
+        """Lifecycle publication must not hold a lock while invoking process listeners."""
+        loop = _make_loop()
+        events: list[str] = []
+        injected = [False]
+
+        def on_process(snapshot) -> None:
+            events.append(f"process:{snapshot.state}")
+            if snapshot.state == "thinking" and not injected[0]:
+                injected[0] = True
+                loop.inject_and_resume("continue from callback")
+                events.append("inject_returned")
+
+        loop.callbacks = AgentCallbacks(on_process_state_changed=on_process)
+        loop._bind_process_listener()
+        loop.log.append(sev.TURN_START, {"turn": 1})
+        loop.log.append(sev.STEP_START, {"turn": 1, "step": 1})
+        worker = threading.Thread(target=loop._api_attempt_started, daemon=True)
+
+        worker.start()
+        worker.join(timeout=1.0)
+
+        assert not worker.is_alive()
+        assert "inject_returned" in events
+
+    def test_affect_listener_can_reenter_inject_and_resume(self):
+        """Affect drift publication must not hold a lock across affect listeners."""
+        loop = _make_loop()
+        events: list[str] = []
+
+        class _Library:
+            def resolve(self, vector, _current_id, _hysteresis):
+                return "steady", ImageAsset("steady", Path("steady.png"))
+
+        def on_affect(snapshot) -> None:
+            events.append(f"affect:{snapshot.reason}")
+            if snapshot.reason == "drift":
+                loop.inject_and_resume("continue from affect")
+                events.append("inject_returned")
+
+        loop.tracker.affect_controller = AffectController(
+            _Library(),
+            config=AffectConfig(drift_pull=0.1, drift_noise=0.0),
+            baseline=AffectVector(0.0, 0.0, 0.0),
+            current=AffectVector(0.5, 0.0, 0.0),
+            on_change=lambda _snapshot: None,
+        )
+        loop.tracker.affect_controller.set_listener(on_affect, emit_current=False)
+        loop.log.append(sev.TURN_START, {"turn": 1})
+        loop.log.append(sev.STEP_START, {"turn": 1, "step": 1})
+        worker = threading.Thread(
+            target=lambda: loop._continuing_step_finished(1, 1),
+            daemon=True,
+        )
+
+        worker.start()
+        worker.join(timeout=1.0)
+
+        assert not worker.is_alive()
+        assert events == ["affect:drift", "inject_returned"]
 
 
 class TestParentForkCapture:

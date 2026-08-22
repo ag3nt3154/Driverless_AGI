@@ -167,3 +167,82 @@ rg -n ".{101,}" agent/loop.py tests/test_agent_loop.py
 ```
 
 Result: `git diff --check` passed with only Git CRLF warnings; long-line scan reported only pre-existing `agent/loop.py` lines.
+
+## Fix Round 4: Lifecycle Queue Without Callback Locks
+
+Date: 2026-08-23
+
+Final re-review found the Round 3 serialization still held `_lifecycle_publish_lock`
+across synchronous `ProcessStateController` / `AffectController` listener callbacks.
+That left two re-entry deadlocks: a process listener could call `inject_and_resume()`
+while thinking was being published, and an affect listener could do the same while
+drift was being published.
+
+Fix:
+
+- Removed the callback-spanning `_lifecycle_publish_lock` pattern entirely.
+- Replaced `_pending_pause_publish` with a lifecycle publication queue protected by
+  `_pause_state_lock` only while snapshotting or enqueuing state.
+- Drain the queue one publication at a time with no pause-state lock held across
+  process/affect callbacks.
+- Keep stale work suppressed with `_pause_generation` checks for running and paused
+  lifecycle items.
+- Added deterministic regressions for process listener re-entry, real affect listener
+  re-entry, and kept the blocked-listener pause plus prior paused→thinking/drift and
+  multi-tool pause races passing.
+- Updated `AGENTS.md` to document the queue semantics.
+
+Red verification:
+
+```powershell
+conda run -n dagi python -X utf8 -m pytest tests/test_agent_loop.py::TestProcessLifecycle::test_process_listener_can_reenter_inject_and_resume tests/test_agent_loop.py::TestProcessLifecycle::test_affect_listener_can_reenter_inject_and_resume -vv --basetemp C:\Users\alexr\AppData\Local\Temp\dagi-publish-reentry-red2
+```
+
+Result: `2 failed` as expected: both worker threads remained alive, reproducing the
+callback re-entry deadlock. An earlier red attempt exposed a test setup issue (the
+synthetic re-entry lacked an open turn for `inject_and_resume()` logging); the tests
+were corrected to open a turn/step before asserting the deadlock.
+
+Targeted green verification:
+
+```powershell
+conda run -n dagi python -X utf8 -m pytest tests/test_agent_loop.py::TestProcessLifecycle::test_process_listener_can_reenter_inject_and_resume tests/test_agent_loop.py::TestProcessLifecycle::test_affect_listener_can_reenter_inject_and_resume tests/test_agent_loop.py::TestProcessLifecycle::test_pause_returns_while_process_listener_is_blocked tests/test_agent_loop.py::TestProcessLifecycle::test_pause_race_cannot_publish_post_tool_thinking_after_paused tests/test_agent_loop.py::TestProcessLifecycle::test_pause_race_cannot_drift_after_paused tests/test_agent_loop.py::TestProcessLifecycle::test_paused_multi_tool_turn_does_not_start_later_tool_process_state tests/test_agent_loop.py::TestProcessLifecycle::test_pause_during_tool_suppresses_post_tool_thinking_and_drift -vv --basetemp C:\Users\alexr\AppData\Local\Temp\dagi-publish-queue-green-two
+```
+
+Result: `7 passed, 1 warning in 0.94s`.
+
+Focused amended area:
+
+```powershell
+conda run -n dagi python -X utf8 -m pytest tests/test_agent_loop.py -q --basetemp C:\Users\alexr\AppData\Local\Temp\dagi-publish-queue-agent-loop-final
+```
+
+Result: `45 passed, 1 warning in 1.22s`.
+
+Feature suite:
+
+```powershell
+conda run -n dagi python -X utf8 -m pytest tests/test_expression_assets.py tests/test_affect.py tests/test_adjust_affect_tool.py tests/test_config_loader.py tests/test_tool_filter.py tests/test_subagent_configs.py tests/test_session_tracker.py tests/test_history.py tests/test_history_integration.py tests/test_process_state.py tests/test_dynamic_context.py tests/test_agent_loop.py tests/test_agent_callbacks.py tests/test_tui_callbacks.py tests/tui/test_sidebar_render.py tests/tui/test_app_layout.py pyside_gui/tests/test_bridge.py pyside_gui/tests/test_commands.py pyside_gui/tests/test_expression_widget.py -q --basetemp C:\Users\alexr\AppData\Local\Temp\dagi-publish-queue-feature-final
+```
+
+Result: `225 passed, 1 warning in 2.92s`.
+
+Static checks:
+
+```powershell
+git diff --check
+rg -n ".{101,}" agent/loop.py tests/test_agent_loop.py
+rg -n ".{101,}" tests/test_agent_loop.py
+```
+
+Result: `git diff --check` passed with only Git CRLF warnings. The code/test
+long-line scan reported only pre-existing `agent/loop.py` lines, and the amended
+`tests/test_agent_loop.py` scan returned no matches.
+
+Residual concerns:
+
+- `DEFAULT_PYTHON_ENV` was not exported in this shell; verification used
+  `conda run -n dagi python`.
+- Pytest still emits the pre-existing Windows `.pytest_cache` warning.
+- Git still warns that `C:\Users\alexr\.config\git\ignore` is permission-denied
+  when checking status.
