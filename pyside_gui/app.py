@@ -48,7 +48,8 @@ class DagiMainWindow(QMainWindow):
         self._run_start_time: float | None = None
         self._spinner_idx = 0
         self._restore_initial_messages: list | None = None
-        self._pending_ask: object = None
+        self._pending_ask: object = None          # threading.Event
+        self._pending_ask_container: list | None = None  # answer sink
         self._compose_mode = False
 
         self.setWindowTitle(f"Driverless AGI — {config.display_name}")
@@ -198,7 +199,12 @@ class DagiMainWindow(QMainWindow):
             self.close()
             return
         if self._pending_ask is not None:
+            # Unblock the agent thread that is waiting in bridge.on_ask_user.
+            if self._pending_ask_container is not None:
+                self._pending_ask_container.append(text)
+            self._pending_ask.set()
             self._pending_ask = None
+            self._pending_ask_container = None
             self._conversation.append_user_message(text)
             self._prompt.setDisabled(True)
             self._show_running()
@@ -349,6 +355,7 @@ class DagiMainWindow(QMainWindow):
     def _on_ask_user(self, question: str, data: object, _unused: object) -> None:
         options, timeout, event, container = data
         self._pending_ask = event
+        self._pending_ask_container = container
         self._notify("DAGI has a question", question)
         self._conversation.append_question(question, options, timeout)
         self._ask_dialog.show_question(question, options, timeout, event, container)
