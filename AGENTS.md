@@ -1,6 +1,6 @@
 # AGENTS.md
 
-> Last updated: 2026-08-23 (Task 7 PySide expression widget rotation) | [README](README.md) | [TODO](TODO.md)
+> Last updated: 2026-08-23 (Task 8 regression gate) | [README](README.md) | [TODO](TODO.md)
 
 
 
@@ -174,6 +174,7 @@ tui.py / telegram_bot.py / main.py / dagi_gui/__main__.py / pyside_gui/__main__.
 
 ## Errors Log (recent)
 
+- **2026-08-23**: Task 8 full pytest stops on six missing live `dagi_gui` imports; remainder exposes Windows `BashTool` kill/timeout failures and stale custom-subagent `parent_context` fixture → document as pre-existing full-suite blockers before final review.
 - **2026-08-23**: `/reload` short-circuit completed without publishing idle, leaving process state paused/thinking in UIs → call `_completed()` before reload notification/return.
 - **2026-08-23**: `pyside_gui/app.py` exceeded the 500-line cap after Task 6 → extract menu construction to `pyside_gui/menu.py` and add a file-cap regression.
 - **2026-08-23**: Task 5 review found falsey malformed `affect:` blocks were masked as defaults and main sessions never bound an affect controller → validate present block shape before defaults and bind a fallback-capable controller before normal registry construction.
@@ -183,7 +184,6 @@ tui.py / telegram_bot.py / main.py / dagi_gui/__main__.py / pyside_gui/__main__.
 - **2026-08-22**: PySide6 6.11.2 on Python 3.14 in `dagi` conda env fails DLL load unless `os.add_dll_directory(pyside6_dir)` is called before import — Qt DLLs not on PATH via conda activation; `__main__.py` must bootstrap this before any PySide6 import.
 - **2026-08-22**: pyside_gui final-review: XSS in fence lang (escape before `class=` interpolation); timeout=0 deadlock (`0.0 or None = None` → explicit `if timeout <= 0` branch); `_messages` race between main+worker threads (snapshot via `list()` before passing to `CopyPicker`).
 - **2026-08-22**: pyside_gui streaming showed `<<END_OF_RESPONSE>>` + duplicate assistant/reasoning bubbles → strip `_LOOP_SENTINELS` in `_on_stream_ended`; gate `_on_assistant_text` and `_on_reasoning` behind `_stream_had_content` flag.
-- **2026-08-22**: `_parse_frontmatter` captured literal `>-` instead of parsing YAML block scalars → added indented-continuation-line collection for `>-`/`|-`/`>`/`|` indicators in both `agent/skills.py` and `agent/workflows.py`.
 
 ## Notes & Terms
 
@@ -225,6 +225,7 @@ tui.py / telegram_bot.py / main.py / dagi_gui/__main__.py / pyside_gui/__main__.
 - `_parse_frontmatter` duplicated between `agent/skills.py` and `agent/workflows.py` — both now handle block scalars but should be deduplicated into a shared module.
 - `disable-model-invocation` flag has zero code enforcement — purely advisory.
 - dagi_eval `--timeout-min` doesn't bound scoring phases or blocked API iterations.
+- Full pytest is blocked by archived/missing `dagi_gui` tests plus unrelated BashTool Windows kill and custom-subagent fixture failures.
 
 ### Potential Areas of Exploration
 
