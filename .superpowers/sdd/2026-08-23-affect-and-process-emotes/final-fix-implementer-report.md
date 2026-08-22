@@ -495,3 +495,66 @@ Residual concerns:
 - Pytest still emits the pre-existing Windows `.pytest_cache` warning.
 - Git still warns that `C:\Users\alexr\.config\git\ignore` is permission-denied
   when checking status.
+
+## Fix Round 8: Lifecycle Extraction and Broad-Review Cleanup
+
+Date: 2026-08-23
+
+Final broad review found that the iterative lifecycle fixes had grown
+`agent/loop.py` to 2019 lines and left a base-to-HEAD whitespace warning in
+`tools/adjust_affect/__init__.py`.
+
+Fix:
+
+- Extracted pause/process/affect lifecycle serialization into
+  `agent/lifecycle.py` with a narrow `LifecyclePublisher` interface.
+- Kept `AgentLoop` integration to lifecycle delegation methods and reduced
+  `agent/loop.py` from 2019 lines to 1865 lines.
+- Preserved the callback-entry handshake semantics: accepted process/affect
+  mutation happens under lifecycle state lock, callbacks enter through a
+  trampoline outside locks, `pause()` waits only for callback entry ordering,
+  and blocking callback bodies are not awaited.
+- Retargeted white-box lifecycle race tests to `loop._lifecycle`.
+- Removed the extra blank line at EOF from `tools/adjust_affect/__init__.py`.
+- Updated `AGENTS.md` to document `agent/lifecycle.py` and the synchronous
+  callback limitation.
+
+Verification:
+
+```powershell
+conda run -n dagi python -X utf8 -m pytest tests/test_agent_loop.py::TestProcessLifecycle::test_process_listener_can_reenter_inject_and_resume tests/test_agent_loop.py::TestProcessLifecycle::test_affect_listener_can_reenter_inject_and_resume tests/test_agent_loop.py::TestProcessLifecycle::test_pause_returns_while_process_listener_is_blocked tests/test_agent_loop.py::TestProcessLifecycle::test_pause_race_cannot_publish_post_tool_thinking_after_paused tests/test_agent_loop.py::TestProcessLifecycle::test_pause_race_cannot_drift_after_paused tests/test_agent_loop.py::TestProcessLifecycle::test_paused_multi_tool_turn_does_not_start_later_tool_process_state tests/test_agent_loop.py::TestProcessLifecycle::test_pause_during_tool_suppresses_post_tool_thinking_and_drift tests/test_agent_loop.py::TestProcessLifecycle::test_pause_during_tool_resolution_prevents_late_tool_after_pause_returns tests/test_agent_loop.py::TestProcessLifecycle::test_pause_during_affect_resolution_prevents_late_drift_after_pause_returns tests/test_agent_loop.py::TestProcessLifecycle::test_pause_waits_until_accepted_callback_is_ordered_not_completed tests/test_agent_loop.py::TestProcessLifecycle::test_pause_waits_for_callback_entry_not_pre_call_marker tests/test_agent_loop.py::TestProcessLifecycle::test_legacy_affect_drift_is_not_published_after_pause_returns -vv --basetemp C:\Users\alexr\AppData\Local\Temp\dagi-publish-round8-lifecycle-one
+```
+
+Result: `12 passed, 1 warning in 3.64s`.
+
+```powershell
+conda run -n dagi python -X utf8 -m pytest tests/test_affect.py tests/test_process_state.py tests/test_agent_loop.py -q --basetemp C:\Users\alexr\AppData\Local\Temp\dagi-publish-round8-focused
+```
+
+Result: `61 passed, 1 warning in 3.93s`.
+
+```powershell
+conda run -n dagi python -X utf8 -m pytest tests/test_expression_assets.py tests/test_affect.py tests/test_adjust_affect_tool.py tests/test_config_loader.py tests/test_tool_filter.py tests/test_subagent_configs.py tests/test_session_tracker.py tests/test_history.py tests/test_history_integration.py tests/test_process_state.py tests/test_dynamic_context.py tests/test_agent_loop.py tests/test_agent_callbacks.py tests/test_tui_callbacks.py tests/tui/test_sidebar_render.py tests/tui/test_app_layout.py pyside_gui/tests/test_bridge.py pyside_gui/tests/test_commands.py pyside_gui/tests/test_expression_widget.py -q --basetemp C:\Users\alexr\AppData\Local\Temp\dagi-publish-round8-feature
+```
+
+Result: `230 passed, 1 warning in 5.81s`.
+
+Static checks before commit:
+
+```powershell
+git diff --check
+rg -n ".{101,}" agent/loop.py agent/lifecycle.py agent/process_state.py agent/affect.py tests/test_agent_loop.py
+```
+
+Result: `git diff --check` passed with only Git CRLF warnings. Long-line scan
+reported only pre-existing `agent/loop.py` lines. `git diff --check
+$(git merge-base HEAD main)..HEAD` still reports the committed pre-Round-8
+adjust-affect EOF issue until this cleanup commit lands.
+
+Residual concerns:
+
+- `DEFAULT_PYTHON_ENV` was not exported in this shell; verification used
+  `conda run -n dagi python`.
+- Pytest still emits the pre-existing Windows `.pytest_cache` warning.
+- Git still warns that `C:\Users\alexr\.config\git\ignore` is permission-denied
+  when checking status.

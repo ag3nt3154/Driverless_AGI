@@ -914,7 +914,7 @@ class TestProcessLifecycle:
         loop._process.tool_started("echo")
         events.clear()
         race_event = _PauseAfterIsSet(loop)
-        loop._pause_event = race_event
+        loop._lifecycle.pause_event = race_event
 
         loop._tool_bookkeeping_finished()
         assert race_event.pause_finished.wait(timeout=1.0)
@@ -939,7 +939,7 @@ class TestProcessLifecycle:
         loop._bind_process_listener()
         events.clear()
         race_event = _PauseAfterIsSet(loop)
-        loop._pause_event = race_event
+        loop._lifecycle.pause_event = race_event
 
         loop._continuing_step_finished(1, 1)
         assert race_event.pause_finished.wait(timeout=1.0)
@@ -1188,7 +1188,7 @@ class TestProcessLifecycle:
         """Pause may not return in the post-unlock/pre-callback publication window."""
         loop = _make_loop()
         barrier_lock = _ExitBarrierLock()
-        loop._pause_state_lock = barrier_lock
+        loop._lifecycle._state_lock = barrier_lock
         callback_entered = threading.Event()
         release_callback = threading.Event()
         pause_returned = threading.Event()
@@ -1202,9 +1202,9 @@ class TestProcessLifecycle:
 
             return callback
 
-        generation = loop._pause_generation
+        generation = loop._lifecycle._generation
         worker = threading.Thread(
-            target=lambda: loop._enqueue_lifecycle("running", generation, prepare)
+            target=lambda: loop._lifecycle.enqueue("running", generation, prepare)
         )
         worker.start()
         assert barrier_lock.entered.wait(timeout=1.0)
@@ -1234,7 +1234,7 @@ class TestProcessLifecycle:
         callback_entered = threading.Event()
         release_callback_body = threading.Event()
         pause_returned = threading.Event()
-        original_mark_started = loop._mark_lifecycle_callback_started
+        original_mark_started = loop._lifecycle._mark_callback_entered
 
         def freeze_before_entry() -> None:
             pre_entry_reached.set()
@@ -1244,8 +1244,8 @@ class TestProcessLifecycle:
             original_mark_started(event)
             callback_entered.set()
 
-        loop._before_lifecycle_callback_entry = freeze_before_entry
-        loop._mark_lifecycle_callback_started = mark_started
+        loop._lifecycle.before_callback_entry = freeze_before_entry
+        loop._lifecycle._mark_callback_entered = mark_started
 
         def prepare():
             def callback() -> None:
@@ -1253,9 +1253,9 @@ class TestProcessLifecycle:
 
             return callback
 
-        generation = loop._pause_generation
+        generation = loop._lifecycle._generation
         worker = threading.Thread(
-            target=lambda: loop._enqueue_lifecycle("running", generation, prepare)
+            target=lambda: loop._lifecycle.enqueue("running", generation, prepare)
         )
         worker.start()
         assert pre_entry_reached.wait(timeout=1.0)
@@ -1283,7 +1283,7 @@ class TestProcessLifecycle:
         loop = _make_loop()
         events: list[str] = []
         barrier_lock = _ExitBarrierLock()
-        loop._pause_state_lock = barrier_lock
+        loop._lifecycle._state_lock = barrier_lock
 
         class _LegacyAffect:
             @property

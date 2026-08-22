@@ -1,6 +1,6 @@
 # AGENTS.md
 
-> Last updated: 2026-08-23 (pause lifecycle callback-entry handshake) | [README](README.md) | [TODO](TODO.md)
+> Last updated: 2026-08-23 (lifecycle extraction) | [README](README.md) | [TODO](TODO.md)
 
 
 
@@ -145,7 +145,7 @@ tui.py / telegram_bot.py / main.py / dagi_gui/__main__.py / pyside_gui/__main__.
 
 **Dynamic context + affect callbacks (branch `dagi/affect-and-process-emotes`):** `agent/dynamic_context.py` builds the ephemeral request board (Python env, active plan status, affect line) outside the static system prefix. `AgentLoop(initial_affect=...)` restores affect once from history, binds `on_affect_changed(AffectSnapshot)`, and normal registries expose `adjust_affect` only when a controller is bound; the legacy `tools/emote` package has been deleted.
 
-**Process-state controller (branch `dagi/affect-and-process-emotes`):** `agent/process_state.py` defines immutable `ProcessSnapshot` plus `ProcessStateController`. Controllers start at idle and emit the current snapshot when a listener binds; `AgentLoop` uses `_pause_generation` plus a lifecycle queue whose accepted events mutate under the pause-state lock, then order callback-entry handshakes before emitting outside locks.
+**Process-state controller (branch `dagi/affect-and-process-emotes`):** `agent/process_state.py` defines immutable `ProcessSnapshot` plus `ProcessStateController`. Controllers start at idle and emit the current snapshot when a listener binds; `agent/lifecycle.py` owns pause generation, accepted mutation under lock, and callback-entry ordering before emitting outside locks.
 
 **Affect session persistence (branch `dagi/affect-and-process-emotes`):** Root `SessionTracker`s now own the bound affect controller, persist `affect_*` JSONL records alongside normal session events, and let child trackers reuse the root controller without replacing it. `agent/history.py` shares a private JSONL loader between raw-message restore and affect restore, selecting the latest valid in-range affect record while preserving the original `affect_init` baseline and warning once on malformed entries.
 
@@ -154,13 +154,13 @@ tui.py / telegram_bot.py / main.py / dagi_gui/__main__.py / pyside_gui/__main__.
 
 | Path                                                 | Purpose                                                                                                                                                        |
 | ---------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `agent/loop.py`                                      | Core loop, parent fork capture, system-prompt assembly, affect/process lifecycle, termination/compaction, and handoff dispatch                                  |
+| `agent/loop.py`                                      | Core loop, parent fork capture, system-prompt assembly, lifecycle delegation, termination/compaction, and handoff dispatch                                      |
 | `agent/dynamic_context.py`                           | Builds the ephemeral request board: Python env, active plan status, and affect line without mutating the static system prefix                                  |
 | `agent/config_loader.py`                             | Reads/merges config, resolves API keys/models/services, and validates affect tuning                                                                            |
 | `agent/session_log.py`                               | Append-only event log; `SessionLog.branches` tracks subagent branches; `branch_event(id)` returns the BRANCH_START event for a branch                         |
 | `agent/wtf.py`, `agent/wtf_report.py`                | Atomic `/wtf` orchestration and strict report parser                                                                                                           |
 | `agent/expression_assets.py`                         | Strict VAD/process-state manifest loaders, safe-path validation, hysteresis resolution, and universal text fallback                                            |
-| `agent/process_state.py`                             | Process state snapshot + controller with duplicate-snapshot suppression and explicit idle/thinking/tool/pause/error transitions                                |
+| `agent/lifecycle.py`, `agent/process_state.py`       | Pause/process/affect lifecycle serialization plus process snapshots and idle/thinking/tool/pause/error transitions                                             |
 | `agent/tools.py`, `agent/subagent_tools.py`          | Main/subagent registry construction, including mandatory and inherited `write_handoff`                                                                          |
 | `tools/subagent_api.py`                              | **Public API** — spawn/compact/inherited dispatch, branch metadata, handoff and fork-context lifecycle                                                        |
 | `tools/_subagent_runner.py`                          | Private pipe-based subprocess spawner; returns raw dicts; wrapped exclusively by `subagent_api.py`                                                             |
@@ -174,13 +174,13 @@ tui.py / telegram_bot.py / main.py / dagi_gui/__main__.py / pyside_gui/__main__.
 
 ## Errors Log (recent)
 
-- **2026-08-23**: Final review found pause/tool timing, runtime VAD bounds, invalid-current hysteresis, Qt media cleanup, and missing initial idle gaps → guard paused post-tool transitions/drift, validate runtime/restore coordinates, ignore invalid-current hysteresis, release/warn media once, and publish initial idle.
 - **2026-08-23**: Scoped re-review found check-then-act pause races still allowed paused→thinking/drift and second-tool repaint → add `_pause_state_lock` around pause/resume, running checks, process transitions, and affect drift.
 - **2026-08-23**: Final re-review found `_pause_state_lock` held across synchronous process/affect listeners, so UI Escape could deadlock behind a blocked worker callback → split authoritative pause generation from lifecycle publication and publish pending paused after blocked callbacks clear.
 - **2026-08-23**: Fix Round 4 found `_lifecycle_publish_lock` still spanned synchronous callbacks and deadlocked on listener re-entry (`inject_and_resume`) → replace it with a pause-state-protected lifecycle queue drained one callback at a time outside locks.
 - **2026-08-23**: Fix Round 5 found queue dequeue validation was still check-then-act before resolver/mutation, allowing late tool/drift after pause returned → defer process/affect emit and mutate accepted snapshots under `_pause_state_lock`.
 - **2026-08-23**: Fix Round 6 found pause could return in the post-unlock/pre-callback window and legacy drift still mutated outside acceptance → wait for accepted callback-start ordering and skip one-piece legacy drift.
 - **2026-08-23**: Fix Round 7 found callback-start ordering still signaled before callback entry → move the pause waiter signal into the callback-entry trampoline.
+- **2026-08-23**: Fix Round 8 broad review found lifecycle fixes bloated `agent/loop.py` and base diff still had adjust-affect EOF whitespace → extract `agent/lifecycle.py` and remove the extra EOF blank.
 - **2026-08-23**: Task 8 full pytest stops on six missing live `dagi_gui` imports; remainder exposes Windows `BashTool` kill/timeout failures and stale custom-subagent `parent_context` fixture → document as pre-existing full-suite blockers before final review.
 - **2026-08-23**: `/reload` short-circuit completed without publishing idle, leaving process state paused/thinking in UIs → call `_completed()` before reload notification/return.
 - **2026-08-23**: `pyside_gui/app.py` exceeded the 500-line cap after Task 6 → extract menu construction to `pyside_gui/menu.py` and add a file-cap regression.
@@ -199,7 +199,7 @@ tui.py / telegram_bot.py / main.py / dagi_gui/__main__.py / pyside_gui/__main__.
 - **PySide6 streaming dedup**: After streaming, `AgentLoop` fires `on_reasoning` and `on_assistant_text` with the same content already shown via deltas — `app.py` gates both behind `_stream_had_content` (set in `_on_stream_ended`, cleared only in `_on_assistant_text`).
 - **Expression channels**: VAD/process manifests resolve `ImageAsset`/`TextFallback`; PySide `ExpressionWidget` alternates every 3000 ms, releases replaced `QMovie`s, and warns once per channel/media/path before fallback.
 - **Affect restore logs**: `affect_init` owns the baseline; history restore reuses its baseline with the latest valid in-range `affect_*` current/emote snapshot and emits at most one warning for malformed records.
-- **Pause-state lifecycle**: `_pause_state_lock` protects generation, queue dequeue, accepted mutation, and callback-entry ordering; callbacks emit outside locks, and one-piece legacy drift is skipped.
+- **Pause-state lifecycle**: `LifecyclePublisher` serializes pause generation, accepted mutation, and callback-entry ordering; callbacks are synchronous outside locks, so blocking bodies are not awaited and one-piece legacy drift is skipped.
 
 ## User Insights
 
