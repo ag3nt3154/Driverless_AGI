@@ -153,7 +153,7 @@ class DagiMainWindow(QMainWindow):
         b.tool_ended.connect(self._conversation.append_tool_end)
         b.assistant_text.connect(self._on_assistant_text)
         b.stream_started.connect(self._on_stream_started)
-        b.reasoning_received.connect(self._conversation.append_reasoning)
+        b.reasoning_received.connect(self._on_reasoning)
         b.stream_text_delta.connect(
             lambda c: self._conversation.stream_delta("text", c)
         )
@@ -239,7 +239,6 @@ class DagiMainWindow(QMainWindow):
         elif result.startswith("__WTF__"):
             self._do_wtf(result[7:] or None)
         elif result == "__COPY__":
-            # Snapshot before passing to UI — agent thread may mutate _messages.
             msgs = list(self._active_loop._messages) if self._active_loop else []
             self._copy_picker.show_messages(msgs)
 
@@ -325,6 +324,11 @@ class DagiMainWindow(QMainWindow):
             self._conversation.stream_end(render_markdown(text))
         else:
             self._conversation.stream_end("")
+
+    @Slot(str)
+    def _on_reasoning(self, text: str) -> None:
+        if not self._stream_had_content:
+            self._conversation.append_reasoning(text)
 
     @Slot(str)
     def _on_assistant_text(self, html: str) -> None:
