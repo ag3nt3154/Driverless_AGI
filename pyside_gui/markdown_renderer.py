@@ -24,7 +24,7 @@ def _escape(text: str) -> str:
     )
 
 
-def _fence_renderer(self, tokens, idx, options, env):
+def _fence_renderer(tokens, idx, options, env):
     token = tokens[idx]
     lang = token.info.strip() if token.info else ""
     code = token.content
@@ -38,7 +38,8 @@ def _fence_renderer(self, tokens, idx, options, env):
 
 
 _md = MarkdownIt("gfm-like").enable("table").disable("linkify")
-_md.add_render_rule("fence", _fence_renderer)
+# Wrap in lambda to insulate from add_render_rule's internal binding behaviour.
+_md.add_render_rule("fence", lambda *a: _fence_renderer(*a[-4:]))
 
 
 def render_markdown(text: str) -> str:
