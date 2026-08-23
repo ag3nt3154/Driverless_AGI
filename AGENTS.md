@@ -1,6 +1,6 @@
 # AGENTS.md
 
-> Last updated: 2026-08-23 (PySide GUI: ask_user inline in conversation pane; tool output expand button) | [README](README.md) | [TODO](TODO.md)
+> Last updated: 2026-08-23 (PySide GUI: left sidebar proportional width, text wrap, line numbers for all files) | [README](README.md) | [TODO](TODO.md)
 
 
 
@@ -111,10 +111,10 @@ tui.py / telegram_bot.py / main.py / dagi_gui/__main__.py / pyside_gui/__main__.
     │   PySide6/Qt 6 desktop GUI. AgentBridge translates AgentCallbacks → Qt Signals.
     │   Agent runs on daemon thread; all UI via queued signals or QMetaObject.invokeMethod.
     │   RightSidebar hosts ExpressionWidget, alternating affect/process assets every 3000 ms.
-    │   LeftSidebar: collapsible 40px icon rail + 280px QStackedWidget panel with three modal
-    │     views — SessionHistoryView, FileTreeView (filtered QFileSystemModel), FileViewerView
-    │     (plain text + LineNumberArea, or QWebEngineView for .md). Rail always visible; panel
-    │     expands/collapses on icon click. /hist → activate_view("history"); /wd updates tree.
+    │   LeftSidebar: collapsible 40px icon rail + proportional panel (50% of conversation pane
+    │     via splitter) with three modal views — SessionHistoryView, FileTreeView, FileViewerView
+    │     (plain text + LineNumberArea + word wrap for all files including .md). Rail always
+    │     visible; panel expands/collapses on icon click. /hist → activate_view("history").
     │
     dagi_gui/__main__.py → dagi_gui/ (protocol, interaction, callbacks, session, catalog, history, server, plan_monitor)
     │   Python sidecar: reads NDJSON commands on stdin, emits NDJSON events on stdout.
@@ -171,10 +171,10 @@ tui.py / telegram_bot.py / main.py / dagi_gui/__main__.py / pyside_gui/__main__.
 | `tools/subagent_main.py`                             | Forked compact/inherited child entry points, credentials, allowlists, retries, and final handoff validation                                                   |
 | `tui/app.py`, `tui/commands.py`, `tui/callbacks.py`  | TUI lifecycle, slash commands including `/wtf`, StreamPreview, and callbacks bridge                                                                           |
 | `pyside_gui/app.py`, `right_sidebar.py`, `expression_widget.py` | PySide main window/sidebar expression surface; bridge signals wire directly to `ExpressionWidget` slots; `app.py` has a 500-line cap                  |
-| `pyside_gui/left_sidebar.py`                         | `LeftSidebar(QWidget)` coordinator: icon rail (40px) + `QStackedWidget` panel (280px); `activate_view()`, `collapse()`, `is_expanded()`, `set_project_path()`, `open_file()` |
+| `pyside_gui/left_sidebar.py`                         | `LeftSidebar(QWidget)` coordinator: icon rail (40px) + proportional `QStackedWidget` panel; `expansion_changed` signal drives splitter resizing in `app.py` |
 | `pyside_gui/sidebars/session_history.py`             | `SessionHistoryView` — two-line list items, lazy `load_sessions()`, `session_selected` signal |
 | `pyside_gui/sidebars/file_tree.py`                   | `FileTreeView` — `QFileSystemModel` + `_FilterProxy` (hides `.git`, `__pycache__`, `node_modules`, `.mypy_cache`, `.dagi/logs`, `*.pyc`); dirs-first sort |
-| `pyside_gui/sidebars/file_viewer.py`                 | `FileViewerView` — `_TextEditor`+`LineNumberArea` (plain text) or `QWebEngineView` (`.md`); 500KB cap, UTF-8+replace |
+| `pyside_gui/sidebars/file_viewer.py`                 | `FileViewerView` — `_TextEditor`+`LineNumberArea` (word-wrapped plain text) or `QWebEngineView` (`.md`); 500KB cap |
 | `pyside_gui/menu.py`, `menu_style.py`                | Focused Qt menu builder and byte-preserved stylesheet extracted from `pyside_gui/app.py`; owns File/Session actions and shortcuts                                |
 | `pyside_gui/bridge.py`                               | `AgentBridge(QObject)` — translates `AgentCallbacks` → Qt Signals; `build_callbacks()` returns wired callbacks for thread-safe UI; owns `_stream_text` accumulator |
 | `pyside_gui/commands.py`                             | `SlashCommandHandler` — GUI slash-command dispatch, skill/workflow map loading, definition-list formatted output                                                 |

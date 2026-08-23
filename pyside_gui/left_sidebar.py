@@ -20,7 +20,6 @@ from pyside_gui.sidebars import (
 _VIEW_NAMES = ("history", "files", "viewer")
 _RAIL_ICONS = ("\U0001f4cb", "\U0001f4c1", "\U0001f4c4")
 _RAIL_WIDTH = 40
-_PANEL_WIDTH = 280
 
 _RAIL_CSS = """
 QWidget#rail {{
@@ -47,6 +46,7 @@ _DEFAULT_COLOR = "#6c7086"
 
 class LeftSidebar(QWidget):
     session_selected = Signal(object)
+    expansion_changed = Signal(bool)
 
     def __init__(self, project_path: Path) -> None:
         super().__init__()
@@ -86,7 +86,6 @@ class LeftSidebar(QWidget):
         root_layout.addWidget(rail)
 
         self._panel = QStackedWidget()
-        self._panel.setFixedWidth(_PANEL_WIDTH)
         self._panel.setVisible(False)
         self._panel.setStyleSheet(
             "QStackedWidget {"
@@ -108,8 +107,8 @@ class LeftSidebar(QWidget):
             self.session_selected.emit
         )
 
-        root_layout.addWidget(self._panel)
-        self.setFixedWidth(_RAIL_WIDTH)
+        root_layout.addWidget(self._panel, stretch=1)
+        self.setMinimumWidth(_RAIL_WIDTH)
 
     def activate_view(self, name: str) -> None:
         if name not in _VIEW_NAMES:
@@ -120,9 +119,10 @@ class LeftSidebar(QWidget):
         idx = _VIEW_NAMES.index(name)
         self._panel.setCurrentIndex(idx)
         self._active_view = name
-        self._expanded = True
-        self._panel.setVisible(True)
-        self.setFixedWidth(_RAIL_WIDTH + _PANEL_WIDTH)
+        if not self._expanded:
+            self._expanded = True
+            self._panel.setVisible(True)
+            self.expansion_changed.emit(True)
         self._update_rail_styles()
         if name == "history":
             logs = self._project_path / ".dagi" / "logs"
@@ -133,7 +133,7 @@ class LeftSidebar(QWidget):
         self._expanded = False
         self._active_view = None
         self._panel.setVisible(False)
-        self.setFixedWidth(_RAIL_WIDTH)
+        self.expansion_changed.emit(False)
         self._update_rail_styles()
 
     def is_expanded(self) -> bool:
@@ -148,9 +148,10 @@ class LeftSidebar(QWidget):
         self._active_view = "viewer"
         idx = _VIEW_NAMES.index("viewer")
         self._panel.setCurrentIndex(idx)
-        self._expanded = True
-        self._panel.setVisible(True)
-        self.setFixedWidth(_RAIL_WIDTH + _PANEL_WIDTH)
+        if not self._expanded:
+            self._expanded = True
+            self._panel.setVisible(True)
+            self.expansion_changed.emit(True)
         self._update_rail_styles()
 
     def _on_rail_clicked(self, name: str) -> None:

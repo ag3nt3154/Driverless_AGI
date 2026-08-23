@@ -52,6 +52,7 @@ body {{
     background: var(--bg); color: var(--text);
     font-family: var(--font-ui); font-size: 13px;
     line-height: 1.6; padding: 12px;
+    word-wrap: break-word; overflow-wrap: break-word;
 }}
 h1, h2, h3 {{ color: var(--accent); margin: 12px 0 6px; }}
 code {{
@@ -63,6 +64,7 @@ pre {{
     background: var(--surface); padding: 10px;
     border-radius: 6px; overflow-x: auto;
     border: 1px solid var(--border); margin: 8px 0;
+    white-space: pre-wrap; word-wrap: break-word;
 }}
 pre code {{ background: none; padding: 0; }}
 table {{
@@ -70,7 +72,7 @@ table {{
 }}
 th, td {{
     border: 1px solid var(--border); padding: 6px 10px;
-    text-align: left;
+    text-align: left; word-wrap: break-word;
 }}
 th {{ background: var(--surface); }}
 a {{ color: var(--accent); }}
@@ -78,11 +80,15 @@ blockquote {{
     border-left: 3px solid var(--accent);
     padding-left: 12px; color: #a6adc8; margin: 8px 0;
 }}
+ul, ol {{ padding-left: 24px; margin: 6px 0; }}
+li {{ margin: 2px 0; }}
+ul {{ list-style-type: disc; }}
+ol {{ list-style-type: decimal; }}
+ul ul {{ list-style-type: circle; margin: 2px 0; }}
 </style></head><body>{body}</body></html>"""
 
 
 class _TextEditor(QPlainTextEdit):
-    """QPlainTextEdit that repositions an attached LineNumberArea on resize."""
 
     def set_line_number_area(self, area: "LineNumberArea") -> None:
         self._line_numbers = area
@@ -97,7 +103,9 @@ class _TextEditor(QPlainTextEdit):
             return
         cr = self.contentsRect()
         w = self._line_numbers._area_width()
-        self._line_numbers.setGeometry(cr.left(), cr.top(), w, cr.height())
+        self._line_numbers.setGeometry(
+            cr.left(), cr.top(), w, cr.height()
+        )
 
 
 class LineNumberArea(QWidget):
@@ -176,7 +184,7 @@ class FileViewerView(QWidget):
         self._text_edit = _TextEditor()
         self._text_edit.setReadOnly(True)
         self._text_edit.setLineWrapMode(
-            QPlainTextEdit.LineWrapMode.NoWrap
+            QPlainTextEdit.LineWrapMode.WidgetWidth
         )
         font = QFont("Cascadia Code", 12)
         font.setStyleHint(QFont.StyleHint.Monospace)

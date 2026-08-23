@@ -21,7 +21,7 @@ _LOOP_SENTINELS = (AWAIT_USER_FLAG, TASK_END_FLAG)
 from pyside_gui.bridge import AgentBridge, init_worker_logger, worker_log
 from pyside_gui.commands import SlashCommandHandler, UIWidgets
 from pyside_gui.conversation import ConversationView
-from pyside_gui.left_sidebar import LeftSidebar
+from pyside_gui.left_sidebar import LeftSidebar, _RAIL_WIDTH
 from pyside_gui.markdown_renderer import render_markdown
 from pyside_gui.menu import build_main_menu
 from pyside_gui.overlays import CopyPicker
@@ -132,6 +132,9 @@ class DagiMainWindow(QMainWindow):
     def _connect_signals(self) -> None:
         self._prompt.submitted.connect(self._on_input_submitted)
         self._left_sidebar.session_selected.connect(self._on_session_selected)
+        self._left_sidebar.expansion_changed.connect(
+            self._on_sidebar_expansion
+        )
 
         b = self._bridge
         b.tool_started.connect(self._conversation.append_tool_start)
@@ -282,6 +285,21 @@ class DagiMainWindow(QMainWindow):
             self._action_pause()
             return
         super().keyPressEvent(event)
+
+    def _on_sidebar_expansion(self, expanded: bool) -> None:
+        right_w = self._splitter.sizes()[2]
+        if expanded:
+            conv_w = self._splitter.sizes()[1]
+            half = conv_w // 2
+            sidebar_w = _RAIL_WIDTH + half
+            self._splitter.setSizes(
+                [sidebar_w, conv_w - half, right_w]
+            )
+        else:
+            total = self._splitter.sizes()[0] + self._splitter.sizes()[1]
+            self._splitter.setSizes(
+                [_RAIL_WIDTH, total - _RAIL_WIDTH, right_w]
+            )
 
     def _action_pause(self) -> None:
         if not (self._worker and self._worker.is_alive()):
