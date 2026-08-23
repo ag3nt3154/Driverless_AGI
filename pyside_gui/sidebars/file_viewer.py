@@ -81,6 +81,25 @@ blockquote {{
 </style></head><body>{body}</body></html>"""
 
 
+class _TextEditor(QPlainTextEdit):
+    """QPlainTextEdit that repositions an attached LineNumberArea on resize."""
+
+    def set_line_number_area(self, area: "LineNumberArea") -> None:
+        self._line_numbers = area
+        self._reposition_area()
+
+    def resizeEvent(self, event) -> None:  # type: ignore[override]
+        super().resizeEvent(event)
+        self._reposition_area()
+
+    def _reposition_area(self) -> None:
+        if not hasattr(self, "_line_numbers"):
+            return
+        cr = self.contentsRect()
+        w = self._line_numbers._area_width()
+        self._line_numbers.setGeometry(cr.left(), cr.top(), w, cr.height())
+
+
 class LineNumberArea(QWidget):
     def __init__(self, editor: QPlainTextEdit) -> None:
         super().__init__(editor)
@@ -154,7 +173,7 @@ class FileViewerView(QWidget):
         self._stack = QStackedWidget()
         layout.addWidget(self._stack)
 
-        self._text_edit = QPlainTextEdit()
+        self._text_edit = _TextEditor()
         self._text_edit.setReadOnly(True)
         self._text_edit.setLineWrapMode(
             QPlainTextEdit.LineWrapMode.NoWrap
@@ -163,6 +182,7 @@ class FileViewerView(QWidget):
         font.setStyleHint(QFont.StyleHint.Monospace)
         self._text_edit.setFont(font)
         self._line_numbers = LineNumberArea(self._text_edit)
+        self._text_edit.set_line_number_area(self._line_numbers)
         self._stack.addWidget(self._text_edit)
 
         self._md_view = QWebEngineView()
@@ -176,7 +196,13 @@ class FileViewerView(QWidget):
             rel = file_path
         self._path_label.setText(str(rel))
 
-        size = file_path.stat().st_size
+        try:
+            size = file_path.stat().st_size
+        except OSError as exc:
+            self._stack.setCurrentIndex(0)
+            self._text_edit.setPlainText(f"Cannot open file: {exc}")
+            return
+
         if size > _MAX_FILE_SIZE:
             self._stack.setCurrentIndex(0)
             self._text_edit.setPlainText(
@@ -185,9 +211,15 @@ class FileViewerView(QWidget):
             )
             return
 
-        content = file_path.read_text(
-            encoding="utf-8", errors="replace"
-        )
+        try:
+            content = file_path.read_text(
+                encoding="utf-8", errors="replace"
+            )
+        except OSError as exc:
+            self._stack.setCurrentIndex(0)
+            self._text_edit.setPlainText(f"Cannot read file: {exc}")
+            return
+
         if file_path.suffix.lower() == ".md":
             html = render_markdown(content)
             self._md_view.setHtml(_MD_PAGE.format(body=html))

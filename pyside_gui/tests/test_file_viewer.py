@@ -64,3 +64,9 @@ def test_binary_file_replaces_errors(viewer, tmp_path):
     viewer.open_file(str(f), tmp_path)
     assert viewer._stack.currentIndex() == 0
     assert len(viewer._text_edit.toPlainText()) > 0
+
+
+def test_open_nonexistent_file_shows_error(viewer, tmp_path):
+    viewer.open_file("/nonexistent/path/file.py", tmp_path)
+    assert "Cannot open file" in viewer._text_edit.toPlainText()
+    assert viewer._stack.currentIndex() == 0
