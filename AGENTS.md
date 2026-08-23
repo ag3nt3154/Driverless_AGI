@@ -182,7 +182,6 @@ tui.py / telegram_bot.py / main.py / dagi_gui/__main__.py / pyside_gui/__main__.
 
 ## Errors Log (recent)
 
-- **2026-08-23**: Fix Round 5 found queue dequeue validation was still check-then-act before resolver/mutation, allowing late tool/drift after pause returned → defer process/affect emit and mutate accepted snapshots under `_pause_state_lock`.
 - **2026-08-23**: Fix Round 6 found pause could return in the post-unlock/pre-callback window and legacy drift still mutated outside acceptance → wait for accepted callback-start ordering and skip one-piece legacy drift.
 - **2026-08-23**: Fix Round 7 found callback-start ordering still signaled before callback entry → move the pause waiter signal into the callback-entry trampoline.
 - **2026-08-23**: Fix Round 8 broad review found lifecycle fixes bloated `agent/loop.py` and base diff still had adjust-affect EOF whitespace → extract `agent/lifecycle.py` and remove the extra EOF blank.
@@ -192,6 +191,7 @@ tui.py / telegram_bot.py / main.py / dagi_gui/__main__.py / pyside_gui/__main__.
 - **2026-08-23**: `/reload` short-circuit completed without publishing idle, leaving process state paused/thinking in UIs → call `_completed()` before reload notification/return.
 - **2026-08-23**: Final close-out verification: feature suite `244 passed`; full suite excluding six archived-`dagi_gui` collection errors → `968 passed, 1 failed` (`test_discover_subagent_tools.py::test_discovers_tool_from_main_py`, stale custom-subagent `parent_context` fixture — documented pre-existing, not touched by this branch). Static constraints hold: `agent/loop.py` 1797 lines (below 1799 baseline), `pyside_gui/app.py` 500.
 - **2026-08-23**: PySide freeze after task: stale `_pending_ask` from a timed-out `ask_user` swallowed the next user message (timer shown, no worker started). Fix: clear `_pending_ask` in `_on_agent_done`/`_on_agent_paused`. File-based `pyside_worker.log` added for diagnostics independent of QWebEngineView.
+- **2026-08-23**: PySide GUI sent spurious mid-task notifications: `plan_shown` fired "DAGI's plan is ready" then `ask_user` immediately fired "DAGI has a question" (double-notify per plan); `_tui_window_is_foreground()` always returned `False` for GUI (no console window) so focus-suppression never triggered → removed `plan_shown` notification; added `self.isActiveWindow()` guard in `_notify()`.
 
 ## Notes & Terms
 

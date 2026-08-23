@@ -165,9 +165,6 @@ class DagiMainWindow(QMainWindow):
                 f"No exit flag — continue prompt injected ({c}/{m})"
             )
         )
-        b.plan_shown.connect(
-            lambda: self._notify("DAGI's plan is ready", "Review it.")
-        )
         b.subagent_event.connect(self._conversation.append_subagent_event)
         b.stage_trace.connect(self._conversation.append_info)
 
@@ -478,6 +475,8 @@ class DagiMainWindow(QMainWindow):
         self._prompt.setPlaceholderText(txt)
 
     def _notify(self, title: str, message: str) -> None:
+        if self.isActiveWindow():
+            return
         try:
             from tui.notifications import notify; notify(title, message)
         except Exception:
