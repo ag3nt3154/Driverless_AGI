@@ -1,6 +1,6 @@
 # AGENTS.md
 
-> Last updated: 2026-08-23 (left sidebar: collapsible rail + three modal views) | [README](README.md) | [TODO](TODO.md)
+> Last updated: 2026-08-23 (PySide GUI: ask_user inline in conversation pane; tool output expand button) | [README](README.md) | [TODO](TODO.md)
 
 
 
@@ -190,8 +190,8 @@ tui.py / telegram_bot.py / main.py / dagi_gui/__main__.py / pyside_gui/__main__.
 - **2026-08-23**: Fix Round 10 found unchanged `test_plan_status_board.py` callers still use `AgentLoop._build_dynamic_context()` → restore a thin delegating compatibility shim without growing `agent/loop.py`.
 - **2026-08-23**: Fix Round 11 found malformed UTF-8 assets, Rich markup-controlled IDs, and child affect controller visibility could leak into UI/runtime state → decode failures now use universal fallback, TUI renders plain text, and child trackers expose no affect controller.
 - **2026-08-23**: `/reload` short-circuit completed without publishing idle, leaving process state paused/thinking in UIs → call `_completed()` before reload notification/return.
-- **2026-08-23**: Final close-out verification: feature suite `244 passed`; full suite excluding six archived-`dagi_gui` collection errors → `968 passed, 1 failed` (`test_discover_subagent_tools.py::test_discovers_tool_from_main_py`, stale custom-subagent `parent_context` fixture — documented pre-existing, not touched by this branch). Static constraints hold: `agent/loop.py` 1797 lines (below 1799 baseline), `pyside_gui/app.py` 499.
-- **2026-08-23**: PySide timer/process states can diverge before a new `AgentLoop` starts; stage traces now identify worker start, session capture, construction, and `run()` entry/exit — use the next reproduction to isolate the blocking initializer.
+- **2026-08-23**: Final close-out verification: feature suite `244 passed`; full suite excluding six archived-`dagi_gui` collection errors → `968 passed, 1 failed` (`test_discover_subagent_tools.py::test_discovers_tool_from_main_py`, stale custom-subagent `parent_context` fixture — documented pre-existing, not touched by this branch). Static constraints hold: `agent/loop.py` 1797 lines (below 1799 baseline), `pyside_gui/app.py` 500.
+- **2026-08-23**: PySide freeze after task: stale `_pending_ask` from a timed-out `ask_user` swallowed the next user message (timer shown, no worker started). Fix: clear `_pending_ask` in `_on_agent_done`/`_on_agent_paused`. File-based `pyside_worker.log` added for diagnostics independent of QWebEngineView.
 
 ## Notes & Terms
 
@@ -207,7 +207,7 @@ tui.py / telegram_bot.py / main.py / dagi_gui/__main__.py / pyside_gui/__main__.
 - **PySide6 streaming dedup**: After streaming, `AgentLoop` fires `on_reasoning` and `on_assistant_text` with the same content already shown via deltas — `app.py` gates both behind `_stream_had_content` (set in `_on_stream_ended`, cleared only in `_on_assistant_text`).
 - **Expression channels**: VAD/process manifests resolve `ImageAsset`/`TextFallback`; PySide `ExpressionWidget` alternates every 3000 ms, releases replaced `QMovie`s, and warns once per channel/media/path before fallback.
 - **Affect ownership**: root trackers own affect persistence/controller binding; child trackers expose `None` so legacy in-process children cannot rebind, drift, or mutate root affect.
-- **Pause-state lifecycle**: `LifecyclePublisher` also hosts setup/context helpers; it serializes accepted mutation and callback-entry ordering while callback bodies stay outside locks.
+- **PySide6 `ask_user`**: questions render inline in `ConversationView` via `appendQuestion`; user replies through the prompt input (`_pending_ask` / `_pending_ask_container`); no popup dialog.
 
 ## User Insights
 

@@ -104,12 +104,39 @@ def test_agent_worker_reports_construction_stages(monkeypatch):
 
     assert received == [
         "Stage: worker started",
-        "Stage: session state captured",
+        "Stage: session captured (msgs=0)",
         "Stage: AgentLoop construction started",
-        "Stage: AgentLoop construction completed",
+        "Stage: AgentLoop constructed",
         "Stage: agent run started",
         "Stage: agent run completed",
+        "Stage: finally: idle",
     ]
+
+
+def test_stale_pending_ask_cleared_on_agent_done():
+    """A timed-out ask_user must not swallow the next user message."""
+    from pyside_gui.app import DagiMainWindow
+
+    app = DagiMainWindow.__new__(DagiMainWindow)
+    bridge = AgentBridge()
+    app._bridge = bridge
+    app._conversation = MagicMock()
+    app._right_sidebar = MagicMock()
+    app._prompt = MagicMock()
+    app._run_start_time = None
+    app._running_label = MagicMock()
+    app._running_label.isVisible.return_value = False
+
+    stale_event = threading.Event()
+    app._pending_ask = stale_event
+    app._pending_ask_container = ["old"]
+
+    bridge.agent_done.connect(app._on_agent_done)
+    bridge.agent_done.emit("done")
+    _app.processEvents()
+
+    assert app._pending_ask is None
+    assert app._pending_ask_container is None
 
 
 def test_token_update_accumulates():

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import logging
 import threading
+from pathlib import Path
 from typing import Callable
 
 from PySide6.QtCore import QObject, Signal
@@ -8,6 +10,18 @@ from PySide6.QtCore import QObject, Signal
 from agent.loop import AgentCallbacks
 from pyside_gui.markdown_renderer import render_markdown
 from tui.utils import _Stats, _breakdown
+
+worker_log = logging.getLogger("dagi.pyside.worker")
+
+
+def init_worker_logger(logs_dir: Path) -> None:
+    if worker_log.handlers:
+        return
+    logs_dir.mkdir(parents=True, exist_ok=True)
+    handler = logging.FileHandler(logs_dir / "pyside_worker.log", encoding="utf-8")
+    handler.setFormatter(logging.Formatter("%(asctime)s %(message)s"))
+    worker_log.addHandler(handler)
+    worker_log.setLevel(logging.DEBUG)
 
 
 class AgentBridge(QObject):

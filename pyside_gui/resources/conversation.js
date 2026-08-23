@@ -58,12 +58,11 @@ function appendToolCall(name, args, verbose) {
     const callId = `tool-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
     div.className = 'message tool-call';
     div.id = callId;
-    const openAttr = verbose ? ' open' : '';
     const displayArgs = verbose ? args : (
         args.length > 120 ? args.replace(/\n/g, ' ').slice(0, 120) + '...' : args.replace(/\n/g, ' ')
     );
     div.innerHTML =
-        `<details${openAttr}>` +
+        `<details open>` +
         `<summary>▶ ${_escapeHtml(name)}</summary>` +
         `<div class="tool-args">${_escapeHtml(displayArgs)}</div>` +
         `<div class="tool-result"></div>` +
@@ -82,10 +81,35 @@ function updateToolResult(name, result, verbose) {
     const resultDiv = div.querySelector('.tool-result');
     if (verbose) {
         resultDiv.textContent = result;
-    } else {
-        resultDiv.innerHTML =
-            `<span class="tool-result-summary">✓ ${result.length} chars</span>`;
+        return;
     }
+    const header = document.createElement('div');
+    header.className = 'tool-result-header';
+
+    const label = document.createElement('span');
+    label.className = 'tool-result-summary';
+    label.textContent = `✓ ${result.length} chars`;
+
+    const btn = document.createElement('button');
+    btn.className = 'tool-expand-btn';
+    btn.textContent = '▶';
+    btn.title = 'Show full output';
+
+    const full = document.createElement('pre');
+    full.className = 'tool-result-full';
+    full.textContent = result;
+    full.style.display = 'none';
+
+    btn.addEventListener('click', function () {
+        const hidden = full.style.display === 'none';
+        full.style.display = hidden ? 'block' : 'none';
+        btn.textContent = hidden ? '▼' : '▶';
+    });
+
+    header.appendChild(label);
+    header.appendChild(btn);
+    resultDiv.appendChild(header);
+    resultDiv.appendChild(full);
     _scrollToBottom();
 }
 

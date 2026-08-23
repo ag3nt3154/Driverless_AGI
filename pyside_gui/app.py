@@ -1,6 +1,7 @@
 from __future__ import annotations
 import threading
 import time
+import traceback
 from pathlib import Path
 
 from PySide6.QtCore import QMetaObject, Qt, QTimer, Q_ARG, Slot
@@ -17,13 +18,13 @@ from agent.loop import AgentConfig, AgentLoop, AWAIT_USER_FLAG, TASK_END_FLAG
 
 _LOOP_SENTINELS = (AWAIT_USER_FLAG, TASK_END_FLAG)
 
-from pyside_gui.bridge import AgentBridge
+from pyside_gui.bridge import AgentBridge, init_worker_logger, worker_log
 from pyside_gui.commands import SlashCommandHandler, UIWidgets
 from pyside_gui.conversation import ConversationView
 from pyside_gui.left_sidebar import LeftSidebar
 from pyside_gui.markdown_renderer import render_markdown
 from pyside_gui.menu import build_main_menu
-from pyside_gui.overlays import AskUserDialog, CopyPicker
+from pyside_gui.overlays import CopyPicker
 from pyside_gui.prompt_input import PromptInput
 from pyside_gui.right_sidebar import RightSidebar
 from pyside_gui.utils import format_elapsed
@@ -65,6 +66,7 @@ class DagiMainWindow(QMainWindow):
         self._connect_signals()
         self._start_timers()
         self._show_welcome()
+        init_worker_logger(config.project_path / ".dagi" / "logs")
 
     def _build_ui(self) -> None:
         self._splitter = QSplitter(Qt.Orientation.Horizontal)
@@ -104,7 +106,6 @@ class DagiMainWindow(QMainWindow):
         self._splitter.setSizes([40, 800, 300])
         self.setCentralWidget(self._splitter)
 
-        self._ask_dialog = AskUserDialog(self._conversation)
         self._copy_picker = CopyPicker(self._conversation)
 
     def _build_menu(self) -> None:
@@ -247,7 +248,10 @@ class DagiMainWindow(QMainWindow):
 
     def _agent_work(self, task: str, callbacks: object, loop_ref: list) -> None:
         trace = self._bridge.stage_trace.emit
-        self._invoke_on_main("_set_status_slot", "running"); trace("Stage: worker started")
+        t0 = time.monotonic()
+        def stage(msg: str) -> None:
+            worker_log.info("[%.3fs] %s", time.monotonic() - t0, msg); trace(f"Stage: {msg}")
+        self._invoke_on_main("_set_status_slot", "running"); stage("worker started")
         try:
             tracker = self._active_loop.tracker if self._active_loop else None
             if self._restore_initial_messages is not None:
@@ -256,25 +260,25 @@ class DagiMainWindow(QMainWindow):
             else:
                 initial = self._active_loop._messages if self._active_loop else None
                 initial_affect = None
-            trace("Stage: session state captured"); trace("Stage: AgentLoop construction started")
+            stage(f"session captured (msgs={len(initial) if initial else 0})")
+            stage("AgentLoop construction started")
             loop = AgentLoop(
-                self._config,
-                callbacks,
-                initial_messages=initial,
-                initial_affect=initial_affect,
-                _tracker=tracker,
+                self._config, callbacks, initial_messages=initial,
+                initial_affect=initial_affect, _tracker=tracker,
             )
-            trace("Stage: AgentLoop construction completed"); loop_ref.append(loop)
+            stage("AgentLoop constructed"); loop_ref.append(loop)
             self._active_loop = loop; self._cmd_handler.set_active_loop(loop)
-            trace("Stage: agent run started")
-            loop.run(task); trace("Stage: agent run completed")
+            stage("agent run started")
+            loop.run(task); stage("agent run completed")
         except Exception as exc:
+            stage(f"EXCEPTION: {type(exc).__name__}: {exc}")
+            worker_log.debug("".join(traceback.format_exception(exc)))
             self._bridge.error_occurred.emit(str(exc))
         finally:
             if loop_ref:
                 try: loop_ref[0].finish()
                 except Exception: pass
-            self._invoke_on_main("_set_status_slot", "idle")
+            stage("finally: idle"); self._invoke_on_main("_set_status_slot", "idle")
             self._invoke_on_main("_enable_input_slot")
     def keyPressEvent(self, event) -> None:
         if event.key() == Qt.Key.Key_Escape:
@@ -347,6 +351,7 @@ class DagiMainWindow(QMainWindow):
 
     @Slot(str)
     def _on_agent_done(self, result: str) -> None:
+        self._pending_ask = self._pending_ask_container = None
         self._conversation.append_info("— turn complete —")
         if result:
             self._notify("DAGI is done", result)
@@ -354,6 +359,7 @@ class DagiMainWindow(QMainWindow):
 
     @Slot()
     def _on_agent_paused(self) -> None:
+        self._pending_ask = self._pending_ask_container = None
         self._right_sidebar.set_status("paused")
         self._conversation.append_info(
             "Server error — session paused. Send a message to retry."
@@ -363,12 +369,9 @@ class DagiMainWindow(QMainWindow):
     @Slot(str, object, object)
     def _on_ask_user(self, question: str, data: object, _unused: object) -> None:
         options, timeout, event, container = data
-        self._pending_ask = event
-        self._pending_ask_container = container
+        self._pending_ask, self._pending_ask_container = event, container
         self._notify("DAGI has a question", question)
-        self._conversation.append_question(question, options, timeout)
-        self._ask_dialog.show_question(question, options, timeout, event, container)
-        self._enable_input()
+        self._conversation.append_question(question, options, timeout); self._enable_input()
 
     @Slot(object)
     def _on_session_selected(self, session_data: dict) -> None:
