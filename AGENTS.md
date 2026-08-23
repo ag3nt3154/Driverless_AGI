@@ -182,8 +182,8 @@ tui.py / telegram_bot.py / main.py / dagi_gui/__main__.py / pyside_gui/__main__.
 - **2026-08-23**: Fix Round 9 found `agent/loop.py` still above the 1,799-line baseline and `LifecyclePublisher._drain` too complex → move setup/context helpers into lifecycle and split queue acceptance helpers.
 - **2026-08-23**: Fix Round 10 found unchanged `test_plan_status_board.py` callers still use `AgentLoop._build_dynamic_context()` → restore a thin delegating compatibility shim without growing `agent/loop.py`.
 - **2026-08-23**: Fix Round 11 found malformed UTF-8 assets, Rich markup-controlled IDs, and child affect controller visibility could leak into UI/runtime state → decode failures now use universal fallback, TUI renders plain text, and child trackers expose no affect controller.
-- **2026-08-23**: Task 8 full pytest stops on six missing live `dagi_gui` imports; remainder exposes Windows `BashTool` kill/timeout failures and stale custom-subagent `parent_context` fixture → document as pre-existing full-suite blockers before final review.
 - **2026-08-23**: `/reload` short-circuit completed without publishing idle, leaving process state paused/thinking in UIs → call `_completed()` before reload notification/return.
+- **2026-08-23**: Final close-out verification: feature suite `244 passed`; full suite excluding six archived-`dagi_gui` collection errors → `968 passed, 1 failed` (`test_discover_subagent_tools.py::test_discovers_tool_from_main_py`, stale custom-subagent `parent_context` fixture — documented pre-existing, not touched by this branch). Static constraints hold: `agent/loop.py` 1797 lines (below 1799 baseline), `pyside_gui/app.py` 499.
 
 ## Notes & Terms
 

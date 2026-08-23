@@ -44,7 +44,7 @@ presentation timer and Qt media objects.
   `load_fallback(emotes_root: Path) -> TextFallback`.
 - `VadLibrary.resolve(vector, current_id, hysteresis) -> tuple[str, AssetRef]`.
 - `ProcessStateLibrary.resolve(state: str) -> AssetRef`.
-- [ ] **Step 1: Write failing tests for valid manifests and path-safe resolution**
+- [x] **Step 1: Write failing tests for valid manifests and path-safe resolution**
 ```python
 def test_vad_library_selects_nearest_entry(tmp_path):
     root = tmp_path / ".dagi" / "emotes"
@@ -61,10 +61,10 @@ def test_vad_library_selects_nearest_entry(tmp_path):
     assert emote_id == "calm"
     assert asset.path == root / "vad" / "calm.png"
 ```
-- [ ] **Step 2: Run the focused tests and verify import failures**
+- [x] **Step 2: Run the focused tests and verify import failures**
 Run: `conda run -n dagi python -m pytest tests/test_expression_assets.py -v`
 Expected: FAIL because `agent.expression_assets` does not exist.
-- [ ] **Step 3: Implement immutable asset types and strict YAML loaders**
+- [x] **Step 3: Implement immutable asset types and strict YAML loaders**
 ```python
 @dataclass(frozen=True)
 class ImageAsset:
@@ -85,15 +85,15 @@ Use one private manifest reader and one safe-path validator. Accept `.gif`, `.pn
 `.jpg`, and `.jpeg` case-insensitively. Reject path traversal, non-files, duplicate
 IDs, invalid versions, and non-finite/out-of-range VAD values. Cache warning keys so
 each distinct error is reported once.
-- [ ] **Step 4: Add failing malformed-manifest and fallback tests**
+- [x] **Step 4: Add failing malformed-manifest and fallback tests**
 Cover invalid whole manifests, one invalid selected asset, escaping paths, required
 state keys, exact `tool:read -> tool -> thinking -> idle` lookup, unreadable
 `default.md`, and preservation of its Unicode whitespace.
-- [ ] **Step 5: Implement fallback behavior and hysteresis**
+- [x] **Step 5: Implement fallback behavior and hysteresis**
 Compare Euclidean distances, keeping `current_id` unless the challenger is at least
 `hysteresis` closer. A whole-manifest failure disables only that library; a bad
 entry returns `TextFallback` only when selected.
-- [ ] **Step 6: Run tests and commit**
+- [x] **Step 6: Run tests and commit**
 Run: `conda run -n dagi python -m pytest tests/test_expression_assets.py -v`
 Run: `git add agent/expression_assets.py tests/test_expression_assets.py`
 Run: `git commit -m "feat: add expression asset libraries"`
@@ -112,7 +112,7 @@ Run: `git commit -m "feat: add expression asset libraries"`
 - `AffectController.adjust(delta: AffectVector) -> AffectSnapshot`.
 - `AffectController.drift() -> AffectSnapshot` and `context_line() -> str`.
 - `AdjustAffectTool(controller: AffectController)` exposes three required deltas.
-- [ ] **Step 1: Write failing vector, initialization, clamp, and drift tests**
+- [x] **Step 1: Write failing vector, initialization, clamp, and drift tests**
 ```python
 def test_seeded_drift_pulls_toward_baseline():
     library = MagicMock()
@@ -131,10 +131,10 @@ def test_seeded_drift_pulls_toward_baseline():
 Also assert independent baselines stay in range, non-finite construction fails,
 adjustments clamp per axis, records publish after validation, and listener changes
 take effect on a controller reused by another loop.
-- [ ] **Step 2: Run the tests and verify missing imports**
+- [x] **Step 2: Run the tests and verify missing imports**
 Run: `conda run -n dagi python -m pytest tests/test_affect.py -v`
 Expected: FAIL because `agent.affect` does not exist.
-- [ ] **Step 3: Implement the controller with injected collaborators**
+- [x] **Step 3: Implement the controller with injected collaborators**
 ```python
 class AffectController:
     def __init__(self, library, *, config=AffectConfig(), baseline=None,
@@ -152,10 +152,10 @@ class AffectController:
 Keep mutation, persistence payload creation, and publication in one private method so
 adjust and drift cannot diverge. `AffectRestore` carries baseline, current, and emote
 ID without importing session/history modules.
-- [ ] **Step 4: Write the failing tool schema and output tests**
+- [x] **Step 4: Write the failing tool schema and output tests**
 Assert `minimum=-1`, `maximum=1`, all three required properties, clamped adjustment,
 and output containing prior vector, requested delta, result, and selected ID.
-- [ ] **Step 5: Implement `AdjustAffectTool` and remove no old files yet**
+- [x] **Step 5: Implement `AdjustAffectTool` and remove no old files yet**
 ```python
 def run(self, valence_delta: float, arousal_delta: float,
         dominance_delta: float) -> str:
@@ -167,7 +167,7 @@ def run(self, valence_delta: float, arousal_delta: float,
         f"{snapshot.current.as_tuple()}\nEmote: {snapshot.emote_id}"
     )
 ```
-- [ ] **Step 6: Run focused tests and commit**
+- [x] **Step 6: Run focused tests and commit**
 Run: `conda run -n dagi python -m pytest tests/test_affect.py tests/test_adjust_affect_tool.py -v`
 ```bash
 git add agent/affect.py tools/adjust_affect tests/test_affect.py \
@@ -188,7 +188,7 @@ git commit -m "feat: add persistent affect controller tool"
   `record_affect(event_type, payload)`, and `load_affect_restore(path)`.
 - Private `_load_jsonl(path)` and `_parse_affect_restore(init, latest)` helpers are
   defined in `agent/history.py` and shared by restoration functions.
-- [ ] **Step 1: Write failing session-record tests**
+- [x] **Step 1: Write failing session-record tests**
 ```python
 def test_record_affect_writes_structured_jsonl(tmp_path):
     tracker = SessionTracker("m", logs_dir=tmp_path)
@@ -200,13 +200,13 @@ def test_record_affect_writes_structured_jsonl(tmp_path):
 
 Also assert a controller bound to the root tracker survives reuse and child trackers
 cannot replace or mutate that binding.
-- [ ] **Step 2: Implement root-only controller binding and affect writes**
+- [x] **Step 2: Implement root-only controller binding and affect writes**
 Initialize `_affect_controller = None` only on root trackers. `record_affect` must use
 `_write()` so records receive timestamps and share the root session file.
-- [ ] **Step 3: Write failing history restoration tests**
+- [x] **Step 3: Write failing history restoration tests**
 Cover latest valid affect record, preservation of the original `affect_init` baseline,
 legacy logs returning `None`, and malformed values returning `None` with one warning.
-- [ ] **Step 4: Implement `load_affect_restore` without changing raw-message APIs**
+- [x] **Step 4: Implement `load_affect_restore` without changing raw-message APIs**
 ```python
 def load_affect_restore(path: Path | str) -> AffectRestore | None:
     records = _load_jsonl(path)
@@ -217,7 +217,7 @@ def load_affect_restore(path: Path | str) -> AffectRestore | None:
 ```
 
 Refactor `load_raw_messages` to share `_load_jsonl`; preserve all current return values.
-- [ ] **Step 5: Run persistence/history tests and commit**
+- [x] **Step 5: Run persistence/history tests and commit**
 Run:
 ```powershell
 conda run -n dagi python -m pytest `
@@ -239,7 +239,7 @@ git commit -m "feat: persist and restore affect state"
 - Produces: immutable `ProcessSnapshot` and `ProcessStateController` methods
   `idle()`, `thinking()`, `tool_started(name)`, `tool_ended()`, `paused()`, and
   `error()`.
-- [ ] **Step 1: Write failing state transition and idempotency tests**
+- [x] **Step 1: Write failing state transition and idempotency tests**
 ```python
 def test_tool_lifecycle_publishes_exact_states():
     library = MagicMock()
@@ -254,13 +254,13 @@ def test_tool_lifecycle_publishes_exact_states():
 
 Test repeated identical transitions emit once, pause/error stay until an explicit next
 transition, and library fallbacks are passed through without state rewriting.
-- [ ] **Step 2: Run tests and verify the module is missing**
+- [x] **Step 2: Run tests and verify the module is missing**
 Run: `conda run -n dagi python -m pytest tests/test_process_state.py -v`
 Expected: FAIL because `agent.process_state` does not exist.
-- [ ] **Step 3: Implement the minimal state machine**
+- [x] **Step 3: Implement the minimal state machine**
 Use one `_transition(state)` method: resolve the asset, construct `ProcessSnapshot`,
 skip exact duplicate snapshots, store, then publish. Do not import loop or Qt modules.
-- [ ] **Step 4: Run tests and commit**
+- [x] **Step 4: Run tests and commit**
 Run: `conda run -n dagi python -m pytest tests/test_process_state.py -v`
 Run: `git add agent/process_state.py tests/test_process_state.py`
 Run: `git commit -m "feat: add automatic process state controller"`
@@ -278,10 +278,10 @@ Run: `git commit -m "feat: add automatic process state controller"`
 - Consumes: `AffectConfig`, `AffectController`, `AdjustAffectTool`.
 - Produces: `AgentConfig.affect_drift_pull`, `affect_drift_noise`, and
   `affect_emote_hysteresis`; registry argument `affect_controller`.
-- [ ] **Step 1: Write failing config validation tests**
+- [x] **Step 1: Write failing config validation tests**
 Assert defaults `0.05`, `0.02`, `0.05`; configured overrides; rejection of negative,
 non-finite, or noise-above-one values with messages naming the bad field.
-- [ ] **Step 2: Implement one `_load_affect_config(raw)` validator**
+- [x] **Step 2: Implement one `_load_affect_config(raw)` validator**
 ```python
 def _load_affect_config(raw: dict) -> tuple[float, float, float]:
     data = raw.get("affect") or {}
@@ -298,16 +298,16 @@ def _load_affect_config(raw: dict) -> tuple[float, float, float]:
 ```
 
 Pass the values through worker/advanced config construction unchanged.
-- [ ] **Step 3: Write failing registry migration tests**
+- [x] **Step 3: Write failing registry migration tests**
 Build a normal registry with a fake controller and assert `adjust_affect` exists and
 `emote` does not. Assert config filtering keeps `adjust_affect` only when named and
 plan/subagent registries never expose it.
-- [ ] **Step 4: Replace registration and configuration references**
+- [x] **Step 4: Replace registration and configuration references**
 Add `affect_controller: AffectController | None` to `create_tool_registry`. Register
 `AdjustAffectTool` only in normal main mode when the controller is present. Replace
 the `.dagi/config.yaml` allowlist item and system-prompt instruction with relative VAD
 language. Leave the dormant legacy package until Task 6 removes its last TUI consumer.
-- [ ] **Step 5: Run config/registry tests and commit**
+- [x] **Step 5: Run config/registry tests and commit**
 Run:
 ```powershell
 conda run -n dagi python -m pytest `
@@ -340,7 +340,7 @@ git commit -m "feat: replace emote tool configuration"
 - Produces callbacks `on_affect_changed(AffectSnapshot)` and
   `on_process_state_changed(ProcessSnapshot)`; removes `on_emote`.
 - Adds the `AgentLoop` keyword `initial_affect: AffectRestore | None = None`.
-- [ ] **Step 1: Write failing loop construction and context tests**
+- [x] **Step 1: Write failing loop construction and context tests**
 Assert a new tracker creates/binds one affect controller, a reused tracker rebinds the
 new callback listener without resetting state, and `_build_dynamic_context()` includes:
 
@@ -349,30 +349,30 @@ Affect: V=+0.42 A=+0.31 D=+0.18 | emote=focused
 ```
 
 Assert restored affect seeds a new tracker and legacy restoration randomizes safely.
-- [ ] **Step 2: Extract and extend the dynamic context builder**
+- [x] **Step 2: Extract and extend the dynamic context builder**
 Move the existing Python-environment and plan-board formatter into
 `agent/dynamic_context.py` as `build_dynamic_context(config, affect_line)`. Keep all
 current output byte-compatible, append the affect line, and make `AgentLoop` delegate
 to it. This offsets lifecycle integration growth in the already oversized loop file.
-- [ ] **Step 3: Construct libraries/controllers before the tool registry**
+- [x] **Step 3: Construct libraries/controllers before the tool registry**
 Load from `DAGI_ROOT / ".dagi" / "emotes"`. Reuse `tracker.affect_controller` when
 present; otherwise create from `initial_affect`, bind, record `affect_init` when new,
 and pass the controller to `create_tool_registry`.
-- [ ] **Step 4: Write failing lifecycle-order tests with fake controllers**
+- [x] **Step 4: Write failing lifecycle-order tests with fake controllers**
 Assert `thinking` before every API attempt, `tool:<name>` before `on_tool_start`,
 `thinking` after bookkeeping, drift after `STEP_END` only when continuing, `idle` on
 all completed returns, `paused` from `pause()`, `thinking` from resume, and `error`
 before fatal `on_error`.
-- [ ] **Step 5: Integrate lifecycle calls through small helper methods**
+- [x] **Step 5: Integrate lifecycle calls through small helper methods**
 Add `_set_thinking()`, `_finish_iteration(should_continue)`, and `_finish_process(state)`
 helpers rather than duplicating transitions across return paths. Nested child relay
 events must not update root process state.
-- [ ] **Step 6: Migrate restoration and TUI rendering**
+- [x] **Step 6: Migrate restoration and TUI rendering**
 PySide and TUI store `_restore_affect` beside `_restore_initial_messages`, load it from
 the selected log, and pass it once to `AgentLoop`. TUI callbacks update textual VAD
 ID/vector and process key. Remove `pad_to_lines`/old emote resolution imports, then
 delete the now-unreferenced `tools/emote` package.
-- [ ] **Step 7: Run loop/TUI tests and commit**
+- [x] **Step 7: Run loop/TUI tests and commit**
 Run:
 ```powershell
 conda run -n dagi python -m pytest `
@@ -403,14 +403,14 @@ git commit -m "feat: integrate affect and process lifecycle"
   `update_process(snapshot)` Qt slots.
 - Bridge signals: `affect_changed = Signal(object)` and
   `process_state_changed = Signal(object)`.
-- [ ] **Step 1: Write failing bridge snapshot tests**
+- [x] **Step 1: Write failing bridge snapshot tests**
 Connect each new signal, invoke the corresponding callback, process Qt events, and
 assert the exact snapshot object is delivered. Remove the old emote signal assertion.
-- [ ] **Step 2: Write failing widget timer and caption tests**
+- [x] **Step 2: Write failing widget timer and caption tests**
 Use a controllable `QTimer` or call the timeout slot directly. Assert initial VAD,
 strict VAD/process alternation, no timer restart on snapshot arrival, VAD caption
 format, and process-state caption format.
-- [ ] **Step 3: Implement the widget's channel state and text fallback first**
+- [x] **Step 3: Implement the widget's channel state and text fallback first**
 ```python
 @Slot()
 def _toggle_channel(self) -> None:
@@ -422,17 +422,17 @@ def _toggle_channel(self) -> None:
 
 Use a single image label plus caption label. Preserve whitespace and monospaced font
 for `TextFallback`; never restart `_timer` in either update slot.
-- [ ] **Step 4: Add failing static-image and GIF lifecycle tests**
+- [x] **Step 4: Add failing static-image and GIF lifecycle tests**
 Mock `QMovie` to assert the previous movie's `stop()` runs before replacement. Create
 a tiny PNG fixture to assert aspect-ratio scaling after `resizeEvent`. Make an invalid
 image path resolve to the loaded `default.md` text.
-- [ ] **Step 5: Implement `QPixmap`/`QMovie` rendering and sidebar composition**
+- [x] **Step 5: Implement `QPixmap`/`QMovie` rendering and sidebar composition**
 Keep Qt media ownership entirely in `expression_widget.py`. Replace `_emote_label`
 with `ExpressionWidget(dagi_root / ".dagi" / "emotes" / "default.md")`. Wire both
 bridge signals directly to its update slots; keep all sidebar sections below intact.
 Move the existing menu stylesheet byte-for-byte to `menu_style.py` so modified
 `pyside_gui/app.py` returns below 500 lines without changing appearance.
-- [ ] **Step 6: Run PySide tests and commit**
+- [x] **Step 6: Run PySide tests and commit**
 Run:
 ```powershell
 conda run -n dagi python -m pytest `
@@ -452,7 +452,7 @@ git commit -m "feat: render alternating expression channels"
 - Modify only if tests expose documented coupling: affected existing tests
 **Interfaces:**
 - Consumes the completed feature; produces no new runtime API.
-- [ ] **Step 1: Run all focused feature suites together**
+- [x] **Step 1: Run all focused feature suites together**
 Run:
 ```powershell
 conda run -n dagi python -m pytest `
@@ -465,11 +465,11 @@ conda run -n dagi python -m pytest `
   pyside_gui/tests/test_expression_widget.py -v
 ```
 Expected: PASS with no real provider calls.
-- [ ] **Step 2: Run the complete test suite**
+- [x] **Step 2: Run the complete test suite**
 Run: `conda run -n dagi python -m pytest -v`
 Expected: PASS. If a documented pre-existing failure remains, record its exact test
 name and unchanged reproduction; do not label the suite passing.
-- [ ] **Step 3: Verify file and complexity constraints**
+- [x] **Step 3: Verify file and complexity constraints**
 Run:
 ```powershell
 $sourceFiles = rg --files agent tools pyside_gui tui tests
@@ -481,16 +481,16 @@ $sourceFiles | ForEach-Object {
 Expected: new files stay below 500 lines; `pyside_gui/app.py` returns below 500 lines;
 `agent/loop.py` does not grow from its pre-task size. Review each changed function for
 <=100 lines, <=8 branches, <=5 positional parameters, and <=100 columns.
-- [ ] **Step 4: Update project context**
+- [x] **Step 4: Update project context**
 Invoke the `update-project-context` skill. Record the new controllers, asset folders,
 tool replacement, callback contract, PySide widget, session restoration, and any
 verified errors. Preserve the Behavioral Guidelines section verbatim.
-- [ ] **Step 5: Inspect the final diff and commit context updates**
+- [x] **Step 5: Inspect the final diff and commit context updates**
 Run: `git diff --check` and `git status --short`.
 Expected: no whitespace errors and only intended final-review/context changes.
 
 Run: `git add AGENTS.md`
 Run: `git commit -m "docs: update context for expression channels"`
-- [ ] **Step 6: Request code review and resolve findings**
+- [x] **Step 6: Request code review and resolve findings**
 Invoke `superpowers:requesting-code-review`. Re-run the smallest affected test after
 each fix, then repeat the complete suite before claiming completion.
