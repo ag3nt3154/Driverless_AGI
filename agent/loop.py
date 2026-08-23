@@ -346,8 +346,9 @@ class AgentLoop:
         ).resolve()
 
         self.log = SessionLog()
-        if hasattr(self.tracker, "_path"):
-            _events_path = self.tracker._path.with_suffix(".events.jsonl")
+        _tracker_path = getattr(self.tracker, "_path", None)
+        if isinstance(_tracker_path, Path):
+            _events_path = _tracker_path.with_suffix(".events.jsonl")
             self.log.on_append = lambda event: append_event(_events_path, event)
 
         if _registry is not None:

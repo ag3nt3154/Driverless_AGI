@@ -32,6 +32,8 @@ def ensure_affect_controller(
     initial_affect: Any,
 ) -> None:
     """Bind the root affect controller early enough for main registry construction."""
+    if not getattr(tracker, "owns_affect_controller", True):
+        return
     if tracker.affect_controller is not None:
         tracker.affect_controller.set_listener(callbacks.on_affect_changed)
         return

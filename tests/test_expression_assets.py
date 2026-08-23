@@ -125,6 +125,21 @@ def test_bad_vad_manifest_disables_only_that_library(
     assert asset.text == "fallback"
 
 
+def test_invalid_utf8_manifest_uses_default_text_fallback(tmp_path: Path) -> None:
+    root = tmp_path / ".dagi" / "emotes"
+    _write(root / "default.md", "fallback")
+    manifest = root / "vad" / "manifest.yaml"
+    manifest.parent.mkdir(parents=True, exist_ok=True)
+    manifest.write_bytes(b"\xff\xfe\xfa")
+
+    library = VadLibrary.load(root / "vad", root / "default.md")
+
+    emote_id, asset = library.resolve((0.0, 0.0, 0.0), None, 0.05)
+    assert emote_id == "fallback"
+    assert isinstance(asset, TextFallback)
+    assert asset.text == "fallback"
+
+
 def test_invalid_selected_vad_asset_falls_back_and_warns_once(tmp_path: Path) -> None:
     root = tmp_path / ".dagi" / "emotes"
     warnings: list[str] = []
@@ -277,6 +292,18 @@ def test_load_fallback_uses_literal_dagi_when_default_is_unreadable(tmp_path: Pa
     fallback = load_fallback(root)
 
     assert fallback.path == unreadable
+    assert fallback.text == "DAGI"
+
+
+def test_load_fallback_uses_literal_dagi_when_default_is_invalid_utf8(tmp_path: Path) -> None:
+    root = tmp_path / ".dagi" / "emotes"
+    fallback_path = root / "default.md"
+    fallback_path.parent.mkdir(parents=True, exist_ok=True)
+    fallback_path.write_bytes(b"\xff\xfe\xfa")
+
+    fallback = load_fallback(root)
+
+    assert fallback.path == fallback_path
     assert fallback.text == "DAGI"
 
 

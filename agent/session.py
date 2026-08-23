@@ -94,10 +94,16 @@ class SessionTracker:
 
     @property
     def affect_controller(self):
-        return self._root_tracker()._affect_controller
+        if not self.owns_affect_controller:
+            return None
+        return self._affect_controller
+
+    @property
+    def owns_affect_controller(self) -> bool:
+        return self._parent is None
 
     def bind_affect_controller(self, controller) -> None:
-        if self._parent is not None:
+        if not self.owns_affect_controller:
             return
         self._affect_controller = controller
 

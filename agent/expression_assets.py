@@ -44,7 +44,7 @@ def _read_manifest(
 ) -> dict[object, object] | None:
     try:
         raw = manifest_path.read_text(encoding="utf-8")
-    except OSError as exc:
+    except (OSError, UnicodeError) as exc:
         warn_once(
             f"{channel}:manifest:{manifest_path}",
             f"[expression_assets] {channel} manifest unreadable: {manifest_path} ({exc})",
@@ -117,7 +117,7 @@ def _load_fallback(
 ) -> TextFallback:
     try:
         text = fallback_path.read_text(encoding="utf-8")
-    except OSError as exc:
+    except (OSError, UnicodeError) as exc:
         warn_once(
             f"fallback:{fallback_path}",
             f"[expression_assets] default fallback unreadable: {fallback_path} ({exc})",

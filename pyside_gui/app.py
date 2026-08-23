@@ -384,7 +384,7 @@ class DagiMainWindow(QMainWindow):
         self._conversation.clear()
         self._restore_initial_messages = raw
         self._restore_initial_affect = load_affect_restore(path)
-        msg = f"Restored {len(raw) - 1} messages from {path.name} — type your next message to continue"
+        msg = f"Restored {len(raw) - 1} messages from {path.name} — type next message"
         self._conversation.append_info(msg)
         self._left_sidebar.set_expanded(False)
         self._splitter.setSizes([0, 800, 300])

@@ -247,6 +247,119 @@ Residual concerns:
 - Git still warns that `C:\Users\alexr\.config\git\ignore` is permission-denied
   when checking status.
 
+## Fix Round 11: Fallback, TUI Safety, and Child Affect Ownership
+
+Date: 2026-08-23
+
+Final broad review found malformed UTF-8 asset files could bypass the universal
+fallback path, manifest-controlled names were rendered through Rich markup, child
+trackers could still expose the root affect controller, and changed UI callback
+helpers/static constraints needed tightening.
+
+Fix:
+
+- Treat manifest/default decode failures as loader failures, so invalid UTF-8
+  manifests fall back to `default.md`, and invalid `default.md` falls back to
+  literal `DAGI`.
+- Render TUI emote IDs and process-state names as plain `rich.text.Text` with a
+  style instead of interpolating them as markup.
+- Make affect controller visibility structurally root-only: child
+  `SessionTracker.affect_controller` returns `None`, child binding is ignored,
+  lifecycle setup skips child trackers, and legacy in-process child loops cannot
+  expose `adjust_affect`, rebind listeners, drift, or mutate the root affect.
+- Split `pyside_gui/bridge.py` callback helper methods so changed functions are
+  <=100 lines, fixed the touched >100-column `pyside_gui/app.py` line, and
+  removed the local TUI padding helper recreation.
+- Updated `AGENTS.md` with the new Round 11 invariants.
+
+Red evidence before implementation:
+
+```powershell
+conda run -n dagi python -X utf8 -m pytest tests/test_expression_assets.py::test_invalid_utf8_manifest_uses_default_text_fallback tests/test_expression_assets.py::test_load_fallback_uses_literal_dagi_when_default_is_invalid_utf8 tests/tui/test_sidebar_render.py::test_sidebar_renders_manifest_ids_as_plain_text tests/test_session_tracker.py::TestChildTracker::test_child_cannot_see_or_replace_root_affect_controller_binding tests/test_session_tracker.py::TestAffectPersistence::test_bind_affect_controller_is_root_visible_only tests/test_agent_loop.py::TestSessionLogWiring::test_child_loop_cannot_rebind_expose_or_drift_root_affect -q --basetemp C:\Users\alexr\AppData\Local\Temp\dagi-round11-red
+```
+
+Result: all six new regressions failed for the intended reasons before the fix:
+UTF-8 decode exceptions, Rich markup parsing, child controller exposure, and
+child loop path/controller behavior.
+
+Verification:
+
+```powershell
+conda run -n dagi python -X utf8 -m pytest tests/test_expression_assets.py::test_invalid_utf8_manifest_uses_default_text_fallback tests/test_expression_assets.py::test_load_fallback_uses_literal_dagi_when_default_is_invalid_utf8 tests/tui/test_sidebar_render.py::test_sidebar_renders_manifest_ids_as_plain_text tests/test_session_tracker.py::TestChildTracker::test_child_cannot_see_or_replace_root_affect_controller_binding tests/test_session_tracker.py::TestAffectPersistence::test_bind_affect_controller_is_root_visible_only tests/test_agent_loop.py::TestSessionLogWiring::test_child_loop_cannot_rebind_expose_or_drift_root_affect -q --basetemp C:\Users\alexr\AppData\Local\Temp\dagi-round11-focused-green
+```
+
+Result: `6 passed, 1 warning in 0.96s`.
+
+```powershell
+conda run -n dagi python -X utf8 -m pytest tests/test_expression_assets.py tests/test_session_tracker.py tests/tui/test_sidebar_render.py tests/test_plan_status_board.py pyside_gui/tests/test_bridge.py -q --basetemp C:\Users\alexr\AppData\Local\Temp\dagi-round11-focused-a
+```
+
+Result: `60 passed, 1 warning in 1.35s`.
+
+```powershell
+conda run -n dagi python -X utf8 -m pytest tests/test_agent_loop.py::TestSessionLogWiring::test_main_loop_binds_affect_controller_before_registry_build tests/test_agent_loop.py::TestSessionLogWiring::test_child_loop_cannot_rebind_expose_or_drift_root_affect tests/test_tool_filter.py tests/test_adjust_affect_tool.py -q --basetemp C:\Users\alexr\AppData\Local\Temp\dagi-round11-focused-b
+```
+
+Result: `20 passed, 1 warning in 0.87s`.
+
+```powershell
+conda run -n dagi python -X utf8 -m pytest tests/test_agent_loop.py::TestProcessLifecycle::test_process_listener_can_reenter_inject_and_resume tests/test_agent_loop.py::TestProcessLifecycle::test_affect_listener_can_reenter_inject_and_resume tests/test_agent_loop.py::TestProcessLifecycle::test_pause_returns_while_process_listener_is_blocked tests/test_agent_loop.py::TestProcessLifecycle::test_pause_race_cannot_publish_post_tool_thinking_after_paused tests/test_agent_loop.py::TestProcessLifecycle::test_pause_race_cannot_drift_after_paused tests/test_agent_loop.py::TestProcessLifecycle::test_paused_multi_tool_turn_does_not_start_later_tool_process_state tests/test_agent_loop.py::TestProcessLifecycle::test_pause_during_tool_suppresses_post_tool_thinking_and_drift tests/test_agent_loop.py::TestProcessLifecycle::test_pause_during_tool_resolution_prevents_late_tool_after_pause_returns tests/test_agent_loop.py::TestProcessLifecycle::test_pause_during_affect_resolution_prevents_late_drift_after_pause_returns tests/test_agent_loop.py::TestProcessLifecycle::test_pause_waits_until_accepted_callback_is_ordered_not_completed tests/test_agent_loop.py::TestProcessLifecycle::test_pause_waits_for_callback_entry_not_pre_call_marker tests/test_agent_loop.py::TestProcessLifecycle::test_legacy_affect_drift_is_not_published_after_pause_returns -vv --basetemp C:\Users\alexr\AppData\Local\Temp\dagi-round11-lifecycle
+```
+
+Result: `12 passed, 1 warning in 3.58s`.
+
+```powershell
+conda run -n dagi python -X utf8 -m pytest tests/test_expression_assets.py tests/test_affect.py tests/test_adjust_affect_tool.py tests/test_config_loader.py tests/test_tool_filter.py tests/test_subagent_configs.py tests/test_session_tracker.py tests/test_history.py tests/test_history_integration.py tests/test_process_state.py tests/test_dynamic_context.py tests/test_plan_status_board.py tests/test_agent_loop.py tests/test_agent_callbacks.py tests/test_tui_callbacks.py tests/tui/test_sidebar_render.py tests/tui/test_app_layout.py pyside_gui/tests/test_bridge.py pyside_gui/tests/test_commands.py pyside_gui/tests/test_expression_widget.py -q --basetemp C:\Users\alexr\AppData\Local\Temp\dagi-round11-feature-final
+```
+
+Result: `244 passed, 1 warning in 5.54s`.
+
+Static checks:
+
+```powershell
+(Get-Content pyside_gui\app.py).Count
+(Get-Content agent\loop.py).Count
+```
+
+Result: `pyside_gui/app.py` = 499 lines; `agent/loop.py` = 1797 lines.
+
+```powershell
+rg -n ".{101,}" agent/expression_assets.py agent/lifecycle.py agent/loop.py agent/session.py pyside_gui/app.py pyside_gui/bridge.py tui/sidebar.py tests/test_agent_loop.py tests/test_expression_assets.py tests/test_session_tracker.py tests/tui/test_sidebar_render.py
+```
+
+Result: only pre-existing `agent/loop.py` long lines were reported; no
+touched non-loop files have >100-column lines.
+
+```powershell
+conda run -n dagi python -X utf8 -m radon cc agent\expression_assets.py agent\lifecycle.py agent\session.py pyside_gui\app.py pyside_gui\bridge.py tui\sidebar.py -s
+```
+
+Result: changed lifecycle/bridge helpers remain <=8 complexity. Pre-existing
+complexity findings remain in `SessionTracker.finish`, `pyside_gui/app.py`, and
+`tui/sidebar.py` outside the Round 11 edits.
+
+```powershell
+C:\Users\alexr\miniconda3\envs\dagi\python.exe -X utf8 -c "<AST changed-function length scan for pyside_gui/app.py and pyside_gui/bridge.py>"
+```
+
+Result: no >100-line functions in either scanned file.
+
+```powershell
+git diff --check
+```
+
+Result: passed with only Git CRLF warnings.
+
+Residual concerns:
+
+- `DEFAULT_PYTHON_ENV` was not exported in this shell; verification used
+  `conda run -n dagi python`.
+- Pytest still emits the pre-existing Windows `.pytest_cache` warning.
+- Radon still reports pre-existing complexity over the project standard outside
+  the changed Round 11 helper paths.
+- Git still warns that `C:\Users\alexr\.config\git\ignore` is permission-denied
+  when checking status/diff.
+
 ## Fix Round 6: Callback-Start Handshake and Legacy Drift Rejection
 
 Date: 2026-08-23

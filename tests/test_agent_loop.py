@@ -20,6 +20,7 @@ from agent.loop import (
 from agent.affect import AffectConfig, AffectController, AffectRestore, AffectVector
 from agent.expression_assets import ImageAsset
 from agent.registry import ToolRegistry
+from agent.session import SessionTracker
 
 
 class FakeTool(BaseTool):
@@ -758,6 +759,53 @@ class TestSessionLogWiring:
         assert loop.tracker.affect_controller.baseline == restore.baseline
         assert loop.tracker.affect_controller.current == restore.current
         assert seen[-1].current == restore.current
+
+    def test_child_loop_cannot_rebind_expose_or_drift_root_affect(self, tmp_path):
+        """Legacy in-process child loops must not mutate parent-owned affect."""
+
+        class RootAffect:
+            def __init__(self) -> None:
+                self.listener_rebinds = 0
+                self.drift_calls = 0
+
+            def set_listener(self, _listener) -> None:
+                self.listener_rebinds += 1
+
+            def context_line(self) -> str:
+                return "Affect: root"
+
+            def drift_without_notify(self):
+                self.drift_calls += 1
+                return object()
+
+            def emit(self, _snapshot) -> None:
+                raise AssertionError("child loop must not emit root affect")
+
+        parent = SessionTracker(model="test-model", logs_dir=tmp_path / "logs")
+        root_affect = RootAffect()
+        parent.bind_affect_controller(root_affect)
+        config = AgentConfig(
+            api_key="test-key",
+            project_path=tmp_path,
+            system_prompt="{tools_and_skills}",
+            tools=["adjust_affect"],
+        )
+
+        with patch("openai.OpenAI"):
+            loop = AgentLoop(
+                config=config,
+                _parent_tracker=parent,
+                _subagent_id="child1",
+            )
+
+        names = {name for name, _description in loop.registry.list_tools()}
+        assert loop.tracker.affect_controller is None
+        assert "adjust_affect" not in names
+        assert root_affect.listener_rebinds == 0
+
+        loop._continuing_step_finished(1, 1)
+
+        assert root_affect.drift_calls == 0
 
 
 class TestProcessLifecycle:

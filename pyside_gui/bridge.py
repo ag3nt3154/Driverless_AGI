@@ -47,6 +47,66 @@ class AgentBridge(QObject):
     def reset_stats(self) -> None:
         self._stats = _Stats()
 
+    def _emit_token_update(
+        self,
+        inp: int,
+        out: int,
+        cost: float | None,
+        thinking: int = 0,
+        cached: int = 0,
+    ) -> None:
+        self._stats.update_tokens(inp, out, cost, thinking, cached)
+        self.token_update.emit(
+            self._stats.input_tok,
+            self._stats.output_tok,
+            self._stats.cost,
+            self._stats.thinking_tok,
+            self._stats.cached_tok,
+        )
+
+    def _ask_user(self, question: str, options: list, timeout: float | None) -> str:
+        evt = threading.Event()
+        container: list = []
+        self.ask_user_requested.emit(
+            question, (options, timeout, evt, container), None,
+        )
+        # timeout=0 means "auto-select immediately"; add 60s grace for >0.
+        # NOTE: avoid `safety or None` — 0.0 is falsy and would block forever.
+        if timeout is not None and timeout <= 0:
+            safety: float | None = 0.0
+        else:
+            safety = (timeout + 60.0) if timeout is not None else 600.0
+        evt.wait(timeout=safety)
+        if container:
+            return container[0]
+        return next(
+            (o["label"] for o in options if o.get("recommended")),
+            options[0]["label"] if options else "",
+        )
+
+    def _on_stream_start(self) -> None:
+        self._stream_text = ""
+        self._stream_reasoning = ""
+        self.stream_started.emit()
+
+    def _on_stream_text_delta(self, chunk: str) -> None:
+        self._stream_text += chunk
+        self.stream_text_delta.emit(chunk)
+
+    def _on_reasoning_delta(self, chunk: str) -> None:
+        self._stream_reasoning += chunk
+        self.stream_reasoning_delta.emit(chunk)
+
+    def _on_stream_end(self) -> None:
+        self.stream_ended.emit()
+
+    def _on_done(self, result: str) -> None:
+        if self._handoff_pending and result.strip():
+            html = render_markdown(result)
+            self.assistant_text.emit(html)
+        self._handoff_pending = False
+        self.agent_done.emit(result)
+
     def build_callbacks(
         self,
         loop_ref: list | None = None,
@@ -70,34 +130,9 @@ class AgentBridge(QObject):
                 html = render_markdown(text)
                 self.assistant_text.emit(html)
 
-        def on_token_update(
-            inp: int, out: int, cost: float | None, thinking: int = 0, cached: int = 0
-        ) -> None:
-            stats.update_tokens(inp, out, cost, thinking, cached)
-            self.token_update.emit(
-                stats.input_tok, stats.output_tok,
-                stats.cost, stats.thinking_tok, stats.cached_tok,
-            )
-
         def on_reasoning(text: str) -> None:
             if text.strip():
                 self.reasoning_received.emit(text)
-
-        def on_stream_start() -> None:
-            self._stream_text = ""
-            self._stream_reasoning = ""
-            self.stream_started.emit()
-
-        def on_stream_text_delta(chunk: str) -> None:
-            self._stream_text += chunk
-            self.stream_text_delta.emit(chunk)
-
-        def on_reasoning_delta(chunk: str) -> None:
-            self._stream_reasoning += chunk
-            self.stream_reasoning_delta.emit(chunk)
-
-        def on_stream_end() -> None:
-            self.stream_ended.emit()
 
         def on_compaction(kept: int, removed: int) -> None:
             self.compaction_done.emit(kept, removed)
@@ -116,26 +151,6 @@ class AgentBridge(QObject):
         def on_api_call(messages: list) -> None:
             self.context_update.emit(_breakdown(messages))
 
-        def on_ask_user(question: str, options: list, timeout: float | None) -> str:
-            evt = threading.Event()
-            container: list = []
-            self.ask_user_requested.emit(
-                question, (options, timeout, evt, container), None,
-            )
-            # timeout=0 means "auto-select immediately"; add 60s grace for >0.
-            # NOTE: avoid `safety or None` — 0.0 is falsy and would block forever.
-            if timeout is not None and timeout <= 0:
-                safety: float | None = 0.0
-            else:
-                safety = (timeout + 60.0) if timeout is not None else 600.0
-            evt.wait(timeout=safety)
-            if container:
-                return container[0]
-            return next(
-                (o["label"] for o in options if o.get("recommended")),
-                options[0]["label"] if options else "",
-            )
-
         def on_continue_injected(cur: int, mx: int) -> None:
             self.continue_injected.emit(cur, mx)
 
@@ -153,27 +168,20 @@ class AgentBridge(QObject):
                 self.subagent_event.emit(subagent_type, line)
             return on_event
 
-        def on_done(result: str) -> None:
-            if self._handoff_pending and result.strip():
-                html = render_markdown(result)
-                self.assistant_text.emit(html)
-            self._handoff_pending = False
-            self.agent_done.emit(result)
-
         return AgentCallbacks(
             on_tool_start=on_tool_start,
             on_tool_end=on_tool_end,
             on_assistant_text=on_assistant_text,
-            on_token_update=on_token_update,
+            on_token_update=self._emit_token_update,
             on_iteration=lambda _: None,
-            on_done=on_done,
+            on_done=self._on_done,
             on_error=on_error,
             on_handoff=on_handoff,
             on_api_call=on_api_call,
             on_reasoning=on_reasoning,
             on_compaction=on_compaction,
             on_model_switch=on_model_switch,
-            on_ask_user=on_ask_user,
+            on_ask_user=self._ask_user,
             on_affect_changed=on_affect_changed,
             on_process_state_changed=on_process_state_changed,
             on_subagent_event_factory=on_subagent_factory,
@@ -181,8 +189,8 @@ class AgentBridge(QObject):
             supports_pause=True,
             on_continue_injected=on_continue_injected,
             on_plan_shown=on_plan_shown,
-            on_stream_start=on_stream_start,
-            on_stream_end=on_stream_end,
-            on_assistant_text_delta=on_stream_text_delta,
-            on_reasoning_delta=on_reasoning_delta,
+            on_stream_start=self._on_stream_start,
+            on_stream_end=self._on_stream_end,
+            on_assistant_text_delta=self._on_stream_text_delta,
+            on_reasoning_delta=self._on_reasoning_delta,
         )

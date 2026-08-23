@@ -53,3 +53,25 @@ def test_sidebar_renders_textual_affect_and_process_state() -> None:
     assert sb._emote_name == "focused"
     assert "V=+0.25 A=-0.50 D=+0.75" in sb._emote_display
     assert "process=tool:read" in sb._emote_display
+
+
+def test_sidebar_renders_manifest_ids_as_plain_text() -> None:
+    sb = _make_sidebar()
+    sb.update_affect(AffectSnapshot(
+        baseline=AffectVector(0.0, 0.0, 0.0),
+        current=AffectVector(0.25, -0.50, 0.75),
+        emote_id="[/red]",
+        asset=TextFallback(Path("default.md"), "test", "DAGI"),
+        reason="adjust",
+    ))
+    sb.update_process_state(ProcessSnapshot(
+        state="tool:[/red]",
+        asset=TextFallback(Path("default.md"), "test", "DAGI"),
+    ))
+
+    status_group = sb.render().renderables[0]
+    face_group = status_group.renderables[0]
+    face_text, emote_text = face_group.renderables
+
+    assert face_text.plain.endswith("process=tool:[/red]")
+    assert emote_text.plain == "[/red]"

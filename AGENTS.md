@@ -1,6 +1,6 @@
 # AGENTS.md
 
-> Last updated: 2026-08-23 (dynamic-context compatibility) | [README](README.md) | [TODO](TODO.md)
+> Last updated: 2026-08-23 (round11 fallback and child affect) | [README](README.md) | [TODO](TODO.md)
 
 
 
@@ -143,7 +143,7 @@ tui.py / telegram_bot.py / main.py / dagi_gui/__main__.py / pyside_gui/__main__.
 
 **Expression asset libraries (branch `dagi/affect-and-process-emotes`):** `agent/expression_assets.py` loads `.dagi/emotes/vad/manifest.yaml` and `.dagi/emotes/states/manifest.yaml` into immutable `ImageAsset` / `TextFallback` refs, validates asset paths stay under their channel roots, and caches warning keys so broken manifests warn once while later lookups fall back to `.dagi/emotes/default.md` (or literal `DAGI` if unreadable). `VadLibrary.resolve()` uses Euclidean distance plus hysteresis against the current id only when that current entry has a valid asset; `ProcessStateLibrary.resolve()` follows `tool:<name> -> tool -> thinking -> idle`.
 
-**Dynamic context + affect callbacks (branch `dagi/affect-and-process-emotes`):** `agent/dynamic_context.py` builds the ephemeral request board (Python env, active plan status, affect line) outside the static system prefix. `agent/lifecycle.py` binds/restores affect controllers and appends the current affect line; normal registries expose `adjust_affect` only when a controller is bound; the legacy `tools/emote` package has been deleted.
+**Dynamic context + affect callbacks (branch `dagi/affect-and-process-emotes`):** `agent/dynamic_context.py` builds the ephemeral request board (Python env, active plan status, affect line) outside the static system prefix. `agent/lifecycle.py` binds/restores affect controllers only for root trackers and appends the current affect line; normal registries expose `adjust_affect` only when a controller is bound; the legacy `tools/emote` package has been deleted.
 
 **Process-state controller (branch `dagi/affect-and-process-emotes`):** `agent/process_state.py` defines immutable `ProcessSnapshot` plus `ProcessStateController`. Controllers start at idle and emit the current snapshot when a listener binds; `agent/lifecycle.py` owns pause generation, accepted mutation under lock, and callback-entry ordering before emitting outside locks.
 
@@ -174,7 +174,6 @@ tui.py / telegram_bot.py / main.py / dagi_gui/__main__.py / pyside_gui/__main__.
 
 ## Errors Log (recent)
 
-- **2026-08-23**: Final re-review found `_pause_state_lock` held across synchronous process/affect listeners, so UI Escape could deadlock behind a blocked worker callback → split authoritative pause generation from lifecycle publication and publish pending paused after blocked callbacks clear.
 - **2026-08-23**: Fix Round 4 found `_lifecycle_publish_lock` still spanned synchronous callbacks and deadlocked on listener re-entry (`inject_and_resume`) → replace it with a pause-state-protected lifecycle queue drained one callback at a time outside locks.
 - **2026-08-23**: Fix Round 5 found queue dequeue validation was still check-then-act before resolver/mutation, allowing late tool/drift after pause returned → defer process/affect emit and mutate accepted snapshots under `_pause_state_lock`.
 - **2026-08-23**: Fix Round 6 found pause could return in the post-unlock/pre-callback window and legacy drift still mutated outside acceptance → wait for accepted callback-start ordering and skip one-piece legacy drift.
@@ -182,6 +181,7 @@ tui.py / telegram_bot.py / main.py / dagi_gui/__main__.py / pyside_gui/__main__.
 - **2026-08-23**: Fix Round 8 broad review found lifecycle fixes bloated `agent/loop.py` and base diff still had adjust-affect EOF whitespace → extract `agent/lifecycle.py` and remove the extra EOF blank.
 - **2026-08-23**: Fix Round 9 found `agent/loop.py` still above the 1,799-line baseline and `LifecyclePublisher._drain` too complex → move setup/context helpers into lifecycle and split queue acceptance helpers.
 - **2026-08-23**: Fix Round 10 found unchanged `test_plan_status_board.py` callers still use `AgentLoop._build_dynamic_context()` → restore a thin delegating compatibility shim without growing `agent/loop.py`.
+- **2026-08-23**: Fix Round 11 found malformed UTF-8 assets, Rich markup-controlled IDs, and child affect controller visibility could leak into UI/runtime state → decode failures now use universal fallback, TUI renders plain text, and child trackers expose no affect controller.
 - **2026-08-23**: Task 8 full pytest stops on six missing live `dagi_gui` imports; remainder exposes Windows `BashTool` kill/timeout failures and stale custom-subagent `parent_context` fixture → document as pre-existing full-suite blockers before final review.
 - **2026-08-23**: `/reload` short-circuit completed without publishing idle, leaving process state paused/thinking in UIs → call `_completed()` before reload notification/return.
 
@@ -198,7 +198,7 @@ tui.py / telegram_bot.py / main.py / dagi_gui/__main__.py / pyside_gui/__main__.
 - **PySide6 cross-thread UI calls**: Never call Qt widget methods directly from a background thread; use `QMetaObject.invokeMethod(..., Qt.QueuedConnection)` for non-signal paths, or route through `AgentBridge` signals (auto-queued when connected across threads).
 - **PySide6 streaming dedup**: After streaming, `AgentLoop` fires `on_reasoning` and `on_assistant_text` with the same content already shown via deltas — `app.py` gates both behind `_stream_had_content` (set in `_on_stream_ended`, cleared only in `_on_assistant_text`).
 - **Expression channels**: VAD/process manifests resolve `ImageAsset`/`TextFallback`; PySide `ExpressionWidget` alternates every 3000 ms, releases replaced `QMovie`s, and warns once per channel/media/path before fallback.
-- **Affect restore logs**: `affect_init` owns the baseline; history restore reuses its baseline with the latest valid in-range `affect_*` current/emote snapshot and emits at most one warning for malformed records.
+- **Affect ownership**: root trackers own affect persistence/controller binding; child trackers expose `None` so legacy in-process children cannot rebind, drift, or mutate root affect.
 - **Pause-state lifecycle**: `LifecyclePublisher` also hosts setup/context helpers; it serializes accepted mutation and callback-entry ordering while callback bodies stay outside locks.
 
 ## User Insights

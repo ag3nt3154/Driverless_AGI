@@ -13,15 +13,6 @@ from agent.process_state import ProcessSnapshot
 from .utils import _system_breakdown
 
 
-def _pad_to_lines(text: str, n: int = 5) -> str:
-    lines = text.splitlines()
-    pad = n - len(lines)
-    if pad <= 0:
-        return text
-    top = pad // 2
-    bottom = pad - top
-    return "\n".join([""] * top + lines + [""] * bottom)
-
 def _path_tail(path: Path | str, max_chars: int = 36) -> str:
     """Return the rightmost portion of a path string, prefixed with … when truncated."""
     s = str(path)
@@ -58,7 +49,7 @@ class Sidebar(Widget):
         self._memory_root = memory_root
         self._subtasks: list[dict] = []
         self._plan_title: str = ""
-        self._emote_display: str = _pad_to_lines("V=+0.00 A=+0.00 D=+0.00")
+        self._emote_display: str = "V=+0.00 A=+0.00 D=+0.00"
         self._emote_name: str = "default"
         self._process_state: str = "idle"
 
@@ -70,8 +61,13 @@ class Sidebar(Widget):
         self._model_name = name
         self.refresh()
 
-    def update_stats(self, inp: int, out: int, cost: float | None, thinking: int, cached: int = 0) -> None:
-        self._input_tok, self._output_tok, self._cost, self._thinking_tok = inp, out, cost, thinking
+    def update_stats(
+        self, inp: int, out: int, cost: float | None, thinking: int, cached: int = 0
+    ) -> None:
+        self._input_tok = inp
+        self._output_tok = out
+        self._cost = cost
+        self._thinking_tok = thinking
         self._cached_tok = cached
         self.refresh()
 
@@ -91,7 +87,7 @@ class Sidebar(Widget):
     def update_affect(self, snapshot: AffectSnapshot) -> None:
         current = snapshot.current
         self._emote_name = snapshot.emote_id
-        self._emote_display = _pad_to_lines(
+        self._emote_display = (
             f"V={current.valence:+.2f} A={current.arousal:+.2f} "
             f"D={current.dominance:+.2f}\nprocess={self._process_state}"
         )
@@ -99,7 +95,7 @@ class Sidebar(Widget):
 
     def update_process_state(self, snapshot: ProcessSnapshot) -> None:
         self._process_state = snapshot.state
-        self._emote_display = _pad_to_lines(
+        self._emote_display = (
             f"{self._emote_display.strip().splitlines()[0]}\nprocess={self._process_state}"
         )
         self.refresh()
@@ -137,9 +133,9 @@ class Sidebar(Widget):
         if self._memory_root is not None:
             info.add_row("mem", _path_tail(self._memory_root))
 
-        face_items = [Text.from_markup(f"[#4da6ff]{face}[/#4da6ff]")]
+        face_items = [Text(face, style="#4da6ff")]
         if self._emote_name:
-            face_items.append(Text.from_markup(f"[#4da6ff]{self._emote_name}[/#4da6ff]"))
+            face_items.append(Text(self._emote_name, style="#4da6ff"))
         face_group = Group(*face_items)
         return Group(face_group, info)
 
@@ -186,7 +182,11 @@ class Sidebar(Widget):
         total = sum(sys_parts.values()) + sum(self._buckets.values()) + res
         usage = total / W if W else 0
         uc = "red" if usage >= 0.95 else ("yellow" if usage >= 0.80 else "green")
-        ctx.add_row("[bold]total[/bold]", f"[{uc}]~{total:,}[/{uc}]", f"[{uc}]{usage*100:.0f}%[/{uc}]")
+        ctx.add_row(
+            "[bold]total[/bold]",
+            f"[{uc}]~{total:,}[/{uc}]",
+            f"[{uc}]{usage*100:.0f}%[/{uc}]",
+        )
 
         return Group(tok_line, ctx)
 
