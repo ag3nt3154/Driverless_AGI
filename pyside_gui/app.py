@@ -69,8 +69,7 @@ class DagiMainWindow(QMainWindow):
     def _build_ui(self) -> None:
         self._splitter = QSplitter(Qt.Orientation.Horizontal)
 
-        self._left_sidebar = LeftSidebar()
-        self._left_sidebar.set_expanded(False)
+        self._left_sidebar = LeftSidebar(self._project_path)
         self._splitter.addWidget(self._left_sidebar)
 
         main_col = QWidget()
@@ -102,7 +101,7 @@ class DagiMainWindow(QMainWindow):
             getattr(self._config, "memory_root", None),
         )
         self._splitter.addWidget(self._right_sidebar)
-        self._splitter.setSizes([0, 800, 300])
+        self._splitter.setSizes([40, 800, 300])
         self.setCentralWidget(self._splitter)
 
         self._ask_dialog = AskUserDialog(self._conversation)
@@ -285,9 +284,8 @@ class DagiMainWindow(QMainWindow):
 
     def _action_pause(self) -> None:
         if not (self._worker and self._worker.is_alive()):
-            if self._left_sidebar.isVisible():
-                self._left_sidebar.set_expanded(False)
-                self._splitter.setSizes([0, 800, 300])
+            if self._left_sidebar.is_expanded():
+                self._left_sidebar.collapse()
             return
         if not self._current_loop_ref:
             return
@@ -387,8 +385,7 @@ class DagiMainWindow(QMainWindow):
         self._restore_initial_affect = load_affect_restore(path)
         msg = f"Restored {len(raw) - 1} messages from {path.name} — type next message"
         self._conversation.append_info(msg)
-        self._left_sidebar.set_expanded(False)
-        self._splitter.setSizes([0, 800, 300])
+        self._left_sidebar.collapse()
         self._enable_input()
 
     def _do_compact(self) -> None:

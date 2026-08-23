@@ -173,6 +173,7 @@ class SlashCommandHandler:
         self._config = resolve_model_config(None, project_path=new)
         self._w.right_sidebar.update_model(self._config.display_name)
         self._w.right_sidebar.set_project_path(new)
+        self._w.left_sidebar.set_project_path(new)
         self._active_loop = None
         self.load_maps()
         conv.append_info(f"Working directory -> {new}")
@@ -227,18 +228,7 @@ class SlashCommandHandler:
         return "__COPY__"
 
     def _cmd_hist(self, arg: str | None) -> None:
-        try:
-            n = int(arg) if arg else 20
-        except ValueError:
-            n = 20
-        logs_dir = self._project_path / ".dagi" / "logs"
-        if not logs_dir.exists():
-            self._w.conversation.append_info(
-                "No session history found in .dagi/logs/"
-            )
-            return None
-        self._w.left_sidebar.load_sessions(logs_dir, n)
-        self._w.left_sidebar.set_expanded(True)
+        self._w.left_sidebar.activate_view("history")
         return None
 
     def _cmd_init(self) -> None:
