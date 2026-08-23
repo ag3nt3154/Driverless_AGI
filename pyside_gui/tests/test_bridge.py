@@ -70,6 +70,48 @@ def test_agent_done_emits():
     assert received == ["result text"]
 
 
+def test_agent_worker_reports_construction_stages(monkeypatch):
+    """A pre-request stall must identify the last completed worker stage."""
+    from pyside_gui.app import DagiMainWindow
+
+    received = []
+    bridge = AgentBridge()
+    bridge.stage_trace.connect(received.append)
+    app = DagiMainWindow.__new__(DagiMainWindow)
+    app._bridge = bridge
+    app._config = MagicMock()
+    app._active_loop = None
+    app._restore_initial_messages = None
+    app._restore_initial_affect = None
+    app._cmd_handler = MagicMock()
+    app._invoke_on_main = MagicMock()
+
+    class FakeLoop:
+        def __init__(self, *_args, **_kwargs) -> None:
+            pass
+
+        def run(self, _task: str) -> None:
+            pass
+
+        def finish(self) -> None:
+            pass
+
+    monkeypatch.setattr("pyside_gui.app.AgentLoop", FakeLoop)
+
+    loop_ref = []
+    DagiMainWindow._agent_work(app, "merge back to main", MagicMock(), loop_ref)
+    _app.processEvents()
+
+    assert received == [
+        "Stage: worker started",
+        "Stage: session state captured",
+        "Stage: AgentLoop construction started",
+        "Stage: AgentLoop construction completed",
+        "Stage: agent run started",
+        "Stage: agent run completed",
+    ]
+
+
 def test_token_update_accumulates():
     bridge = AgentBridge()
     received = []

@@ -1,5 +1,4 @@
 from __future__ import annotations
-
 import threading
 import time
 from pathlib import Path
@@ -170,6 +169,7 @@ class DagiMainWindow(QMainWindow):
             lambda: self._notify("DAGI's plan is ready", "Review it.")
         )
         b.subagent_event.connect(self._conversation.append_subagent_event)
+        b.stage_trace.connect(self._conversation.append_info)
 
     def _start_timers(self) -> None:
         self._spinner_timer = QTimer(self)
@@ -247,7 +247,8 @@ class DagiMainWindow(QMainWindow):
         self._worker.start()
 
     def _agent_work(self, task: str, callbacks: object, loop_ref: list) -> None:
-        self._invoke_on_main("_set_status_slot", "running")
+        trace = self._bridge.stage_trace.emit
+        self._invoke_on_main("_set_status_slot", "running"); trace("Stage: worker started")
         try:
             tracker = self._active_loop.tracker if self._active_loop else None
             if self._restore_initial_messages is not None:
@@ -256,6 +257,7 @@ class DagiMainWindow(QMainWindow):
             else:
                 initial = self._active_loop._messages if self._active_loop else None
                 initial_affect = None
+            trace("Stage: session state captured"); trace("Stage: AgentLoop construction started")
             loop = AgentLoop(
                 self._config,
                 callbacks,
@@ -263,10 +265,10 @@ class DagiMainWindow(QMainWindow):
                 initial_affect=initial_affect,
                 _tracker=tracker,
             )
-            loop_ref.append(loop)
-            self._active_loop = loop
-            self._cmd_handler.set_active_loop(loop)
-            loop.run(task)
+            trace("Stage: AgentLoop construction completed"); loop_ref.append(loop)
+            self._active_loop = loop; self._cmd_handler.set_active_loop(loop)
+            trace("Stage: agent run started")
+            loop.run(task); trace("Stage: agent run completed")
         except Exception as exc:
             self._bridge.error_occurred.emit(str(exc))
         finally:
@@ -275,7 +277,6 @@ class DagiMainWindow(QMainWindow):
                 except Exception: pass
             self._invoke_on_main("_set_status_slot", "idle")
             self._invoke_on_main("_enable_input_slot")
-
     def keyPressEvent(self, event) -> None:
         if event.key() == Qt.Key.Key_Escape:
             self._action_pause()

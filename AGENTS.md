@@ -174,7 +174,6 @@ tui.py / telegram_bot.py / main.py / dagi_gui/__main__.py / pyside_gui/__main__.
 
 ## Errors Log (recent)
 
-- **2026-08-23**: Fix Round 4 found `_lifecycle_publish_lock` still spanned synchronous callbacks and deadlocked on listener re-entry (`inject_and_resume`) → replace it with a pause-state-protected lifecycle queue drained one callback at a time outside locks.
 - **2026-08-23**: Fix Round 5 found queue dequeue validation was still check-then-act before resolver/mutation, allowing late tool/drift after pause returned → defer process/affect emit and mutate accepted snapshots under `_pause_state_lock`.
 - **2026-08-23**: Fix Round 6 found pause could return in the post-unlock/pre-callback window and legacy drift still mutated outside acceptance → wait for accepted callback-start ordering and skip one-piece legacy drift.
 - **2026-08-23**: Fix Round 7 found callback-start ordering still signaled before callback entry → move the pause waiter signal into the callback-entry trampoline.
@@ -184,6 +183,7 @@ tui.py / telegram_bot.py / main.py / dagi_gui/__main__.py / pyside_gui/__main__.
 - **2026-08-23**: Fix Round 11 found malformed UTF-8 assets, Rich markup-controlled IDs, and child affect controller visibility could leak into UI/runtime state → decode failures now use universal fallback, TUI renders plain text, and child trackers expose no affect controller.
 - **2026-08-23**: `/reload` short-circuit completed without publishing idle, leaving process state paused/thinking in UIs → call `_completed()` before reload notification/return.
 - **2026-08-23**: Final close-out verification: feature suite `244 passed`; full suite excluding six archived-`dagi_gui` collection errors → `968 passed, 1 failed` (`test_discover_subagent_tools.py::test_discovers_tool_from_main_py`, stale custom-subagent `parent_context` fixture — documented pre-existing, not touched by this branch). Static constraints hold: `agent/loop.py` 1797 lines (below 1799 baseline), `pyside_gui/app.py` 499.
+- **2026-08-23**: PySide timer/process states can diverge before a new `AgentLoop` starts; stage traces now identify worker start, session capture, construction, and `run()` entry/exit — use the next reproduction to isolate the blocking initializer.
 
 ## Notes & Terms
 

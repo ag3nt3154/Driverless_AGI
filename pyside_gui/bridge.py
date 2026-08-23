@@ -34,6 +34,7 @@ class AgentBridge(QObject):
     continue_injected = Signal(int, int)   # cur, max
     plan_shown = Signal()
     subagent_event = Signal(str, str)      # type, json line
+    stage_trace = Signal(str)
 
     def __init__(self) -> None:
         super().__init__()
