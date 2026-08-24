@@ -44,12 +44,18 @@ class SlashCommandHandler:
         self._workflow_map: dict = {}
         self._active_loop = None
         self._worker_alive: Callable[[], bool] = lambda: False
+        self._on_config_changed: Callable[["AgentConfig", Path], None] | None = None
 
     def set_active_loop(self, loop) -> None:
         self._active_loop = loop
 
     def set_worker_alive_check(self, fn: Callable[[], bool]) -> None:
         self._worker_alive = fn
+
+    def set_on_config_changed(
+        self, fn: Callable[["AgentConfig", Path], None]
+    ) -> None:
+        self._on_config_changed = fn
 
     def load_maps(self) -> None:
         from agent.skills import SkillLoader
@@ -152,6 +158,8 @@ class SlashCommandHandler:
             conv.append_error(f"Unknown model: {arg}")
             return None
         self._config = resolve_model_config(arg, project_path=self._project_path)
+        if self._on_config_changed:
+            self._on_config_changed(self._config, self._project_path)
         self._w.right_sidebar.update_model(self._config.display_name)
         conv.append_info(f"Model -> {self._config.display_name}")
         return None
@@ -171,6 +179,8 @@ class SlashCommandHandler:
         self._project_path = new
         from agent.config_loader import resolve_model_config
         self._config = resolve_model_config(None, project_path=new)
+        if self._on_config_changed:
+            self._on_config_changed(self._config, new)
         self._w.right_sidebar.update_model(self._config.display_name)
         self._w.right_sidebar.set_project_path(new)
         self._w.left_sidebar.set_project_path(new)

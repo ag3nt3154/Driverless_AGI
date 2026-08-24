@@ -1,6 +1,6 @@
 # AGENTS.md
 
-> Last updated: 2026-08-24 (emote tool: replaced adjust_emotion with EmoteTool — optional VAD delta + meme display for 2 rotation cycles) | [README](README.md) | [TODO](TODO.md)
+> Last updated: 2026-08-24 (fix: PySide /wd and /model split-brain — config changes now propagate from handler to app) | [README](README.md) | [TODO](TODO.md)
 
 
 
@@ -176,8 +176,8 @@ tui.py / telegram_bot.py / main.py / dagi_gui/__main__.py / pyside_gui/__main__.
 
 ## Errors Log (recent)
 
+- **2026-08-24**: PySide `/wd` and `/model` split-brain: `SlashCommandHandler` held its own `_config`/`_project_path` copies separate from `DagiWindow` — handler updated its copies but app's stayed stale, so `AgentLoop` used old config. Fix: `_on_config_changed` callback propagates handler state to app.
 - **2026-08-24**: `pytestqt` plugin crashes at configure time in the `dagi` conda env (DLL load failure for `PySide6.QtCore`) — use direct `python -c` execution to run tests; the pytestqt DLL bootstrap requires a running QApplication which pytest's configure hook doesn't provide.
-- **2026-08-23**: Fix Round 7 found callback-start ordering still signaled before callback entry → move the pause waiter signal into the callback-entry trampoline.
 - **2026-08-23**: Fix Round 8 broad review found lifecycle fixes bloated `agent/loop.py` and base diff still had adjust-affect EOF whitespace → extract `agent/lifecycle.py` and remove the extra EOF blank.
 - **2026-08-23**: Fix Round 9 found `agent/loop.py` still above the 1,799-line baseline and `LifecyclePublisher._drain` too complex → move setup/context helpers into lifecycle and split queue acceptance helpers.
 - **2026-08-23**: Fix Round 10 found unchanged `test_plan_status_board.py` callers still use `AgentLoop._build_dynamic_context()` → restore a thin delegating compatibility shim without growing `agent/loop.py`.

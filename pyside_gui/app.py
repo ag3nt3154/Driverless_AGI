@@ -131,7 +131,13 @@ class DagiMainWindow(QMainWindow):
         )
         alive = lambda: bool(self._worker and self._worker.is_alive())  # noqa: E731
         self._cmd_handler.set_worker_alive_check(alive)
+        self._cmd_handler.set_on_config_changed(self._on_config_changed)
         self._cmd_handler.load_maps()
+
+    def _on_config_changed(self, config: AgentConfig, project_path: Path) -> None:
+        self._config = config
+        self._project_path = project_path
+        self._active_loop = None
 
     def _connect_signals(self) -> None:
         self._prompt.submitted.connect(self._on_input_submitted)
