@@ -855,8 +855,8 @@ class TestProcessLifecycle:
         assert events.index("tool_end:echo") < events.index("process:thinking", 3)
         assert events[-2:] == ["process:idle", "done"]
 
-    def test_affect_drifts_after_step_end_only_when_loop_continues(self, tmp_path):
-        """Affect drift belongs after a completed continuing step, never on final return."""
+    def test_affect_drift_is_timer_based_not_step_based(self, tmp_path):
+        """Affect drift fires from a periodic timer, not from step completion."""
         tool = FakeTool(name="echo", result="echoed!")
         registry = ToolRegistry()
         registry.register(tool)
@@ -868,6 +868,7 @@ class TestProcessLifecycle:
             affect_drift_pull=0.0,
             affect_drift_noise=0.0,
             affect_wander_volatility=0.0,
+            affect_drift_interval=0.0,
         )
         with (
             patch("openai.OpenAI"),
@@ -877,14 +878,6 @@ class TestProcessLifecycle:
         loop.registry = registry
         loop._skip_slug_generation = True
         order: list[str] = []
-        original_append = loop.log.append
-
-        def append_spy(event_type, *args, **kwargs):
-            if event_type == sev.STEP_END:
-                order.append(sev.STEP_END)
-            return original_append(event_type, *args, **kwargs)
-
-        loop.log.append = append_spy
         loop.tracker.affect_controller.set_listener(
             lambda snapshot: order.append(snapshot.reason),
             emit_current=False,
@@ -897,9 +890,7 @@ class TestProcessLifecycle:
 
         loop.run("do something")
 
-        assert order.count("drift") == 1
-        drift_index = order.index("drift")
-        assert order[drift_index - 1] == sev.STEP_END
+        assert order.count("drift") == 0
 
     def test_pause_during_tool_suppresses_post_tool_thinking_and_drift(self):
         """Pausing inside a tool turn must leave the visible state paused until resume."""

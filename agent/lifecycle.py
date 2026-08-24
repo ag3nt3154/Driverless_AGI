@@ -42,6 +42,7 @@ def ensure_affect_controller(
         drift_noise=config.affect_drift_noise,
         emote_hysteresis=config.affect_emote_hysteresis,
         wander_volatility=config.affect_wander_volatility,
+        drift_interval=config.affect_drift_interval,
     )
     controller = AffectController(
         load_vad_library(dagi_root),

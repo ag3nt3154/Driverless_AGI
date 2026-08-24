@@ -67,12 +67,14 @@ class AffectConfig:
     drift_noise: float = 0.02
     emote_hysteresis: float = 0.05
     wander_volatility: float = 0.08
+    drift_interval: float = 10.0
 
     def __post_init__(self) -> None:
         pull = _finite("drift_pull", self.drift_pull)
         noise = _finite("drift_noise", self.drift_noise)
         hysteresis = _finite("emote_hysteresis", self.emote_hysteresis)
         wander = _finite("wander_volatility", self.wander_volatility)
+        interval = _finite("drift_interval", self.drift_interval)
         if pull < 0:
             raise ValueError("drift_pull must be non-negative")
         if noise < 0:
@@ -83,10 +85,13 @@ class AffectConfig:
             raise ValueError("emote_hysteresis must be non-negative")
         if wander < 0:
             raise ValueError("wander_volatility must be non-negative")
+        if interval < 0:
+            raise ValueError("drift_interval must be non-negative")
         object.__setattr__(self, "drift_pull", pull)
         object.__setattr__(self, "drift_noise", noise)
         object.__setattr__(self, "emote_hysteresis", hysteresis)
         object.__setattr__(self, "wander_volatility", wander)
+        object.__setattr__(self, "drift_interval", interval)
 
 
 @dataclass(frozen=True)

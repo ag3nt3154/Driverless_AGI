@@ -97,6 +97,7 @@ thinking: none    # Extended reasoning effort for models that support it (e.g. D
 #   drift_noise: 0.02       # Random drift noise per axis; must be between 0 and 1
 #   emote_hysteresis: 0.05  # Stickiness when choosing the nearest VAD emote
 #   wander_volatility: 0.08 # Brownian motion step size for baseline wandering
+#   drift_interval: 10.0    # Minimum seconds between affect drifts (matches GIF rotation)
 
 # ── Tools ─────────────────────────────────────────────────────────────────────
 sandbox_mode: false  # true  = file tools (read, write, edit, grep, find, copy) have no
