@@ -1,8 +1,8 @@
 """
-dagi_launch.py — Interactive launcher for the Driverless AGI TUI.
+dagi_launch.py — Interactive launcher for the Driverless AGI TUI / GUI.
 
-Prompts for a default model (from config.yaml's `models` catalog) and a
-verbose on/off toggle, then launches tui.py with the corresponding args.
+Prompts for interface (TUI or GUI), a model, and verbose toggle, then
+launches tui.py or pyside_gui.py with the corresponding args.
 
 Usage:
     python dagi_launch.py
@@ -50,16 +50,26 @@ def prompt_verbose() -> bool:
         print("Please enter y or n.")
 
 
+def prompt_interface() -> str:
+    while True:
+        choice = input("Interface? [tui/gui]: ").strip().lower()
+        if choice in ("tui", "gui"):
+            return choice
+        print("Please enter tui or gui.")
+
+
 def main() -> None:
     models, default_model = load_models()
     if not models:
         print(f"No models found in {CONFIG_PATH}")
         sys.exit(1)
 
+    interface = prompt_interface()
     model_id = prompt_model(models, default_model)
     verbose = prompt_verbose()
 
-    args = [sys.executable, str(ROOT / "tui.py"), "--model", model_id]
+    launcher = "pyside_gui.py" if interface == "gui" else "tui.py"
+    args = [sys.executable, str(ROOT / launcher), "--model", model_id]
     if verbose:
         args.append("--verbose")
 
