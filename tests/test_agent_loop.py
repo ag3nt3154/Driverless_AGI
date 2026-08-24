@@ -714,14 +714,14 @@ class TestSessionLogWiring:
         assert captured_kwargs["session_log"] is loop.log
 
     def test_main_loop_binds_affect_controller_before_registry_build(self, tmp_path):
-        """A normal main loop must expose adjust_emotion when config allowlists it."""
+        """A normal main loop must expose emote when config allowlists it."""
         from agent.affect import AffectController
 
         config = AgentConfig(
             api_key="test-key",
             project_path=tmp_path,
             system_prompt="{tools_and_skills}",
-            tools=["adjust_emotion"],
+            tools=["emote"],
         )
 
         with patch("openai.OpenAI"):
@@ -729,8 +729,7 @@ class TestSessionLogWiring:
 
         names = {name for name, _description in loop.registry.list_tools()}
         assert isinstance(loop.tracker.affect_controller, AffectController)
-        assert "adjust_emotion" in names
-        assert "emote" not in names
+        assert "emote" in names
 
     def test_initial_affect_restore_reuses_state_without_init_record(self, tmp_path):
         """Restoring history must carry affect forward without inventing a new baseline."""
@@ -788,7 +787,7 @@ class TestSessionLogWiring:
             api_key="test-key",
             project_path=tmp_path,
             system_prompt="{tools_and_skills}",
-            tools=["adjust_emotion"],
+            tools=["emote"],
         )
 
         with patch("openai.OpenAI"):
@@ -800,7 +799,7 @@ class TestSessionLogWiring:
 
         names = {name for name, _description in loop.registry.list_tools()}
         assert loop.tracker.affect_controller is None
-        assert "adjust_emotion" not in names
+        assert "emote" not in names
         assert root_affect.listener_rebinds == 0
 
         loop._continuing_step_finished(1, 1)

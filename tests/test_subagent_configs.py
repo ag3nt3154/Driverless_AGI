@@ -68,12 +68,12 @@ def test_config_schema_has_required_keys():
         assert "description" not in data, f"{config_path}: 'description' should be removed"
 
 
-def test_subagent_tool_allowlists_never_expose_adjust_emotion():
+def test_subagent_tool_allowlists_never_expose_emote():
     """Emotion adjustment is a main-agent affordance, not a child registry surface."""
     for config_path in _registered_subagent_config_paths():
         data = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
-        assert "adjust_emotion" not in data["tools"], (
-            f"{config_path}: subagents must not expose adjust_emotion"
+        assert "emote" not in data["tools"], (
+            f"{config_path}: subagents must not expose emote"
         )
 
 
