@@ -62,13 +62,13 @@ class ExpressionWidget(QWidget):
     def update_affect(self, snapshot: AffectSnapshot) -> None:
         self._affect_snapshot = snapshot
         if self._channel == "vad":
-            self._render_current()
+            self._update_caption()
 
     @Slot(object)
     def update_process(self, snapshot: ProcessSnapshot) -> None:
         self._process_snapshot = snapshot
         if self._channel == "process":
-            self._render_current()
+            self._update_caption()
 
     def _initial_affect(self) -> AffectSnapshot:
         zero = AffectVector(0.0, 0.0, 0.0)
@@ -84,18 +84,21 @@ class ExpressionWidget(QWidget):
         self._channel = "process" if self._channel == "vad" else "vad"
         self._render_current()
 
+    def _update_caption(self) -> None:
+        if self._channel == "process":
+            self._caption_label.setText(f"PROCESS {self._process_snapshot.state}")
+        else:
+            current = self._affect_snapshot.current
+            self._caption_label.setText(
+                f"V={current.valence:+.2f} A={current.arousal:+.2f} D={current.dominance:+.2f}"
+            )
+
     def _render_current(self) -> None:
         if self._channel == "process":
-            snapshot = self._process_snapshot
-            self._render_asset(snapshot.asset)
-            self._caption_label.setText(f"PROCESS {snapshot.state}")
-            return
-        snapshot = self._affect_snapshot
-        current = snapshot.current
-        self._render_asset(snapshot.asset)
-        self._caption_label.setText(
-            f"V={current.valence:+.2f} A={current.arousal:+.2f} D={current.dominance:+.2f}"
-        )
+            self._render_asset(self._process_snapshot.asset)
+        else:
+            self._render_asset(self._affect_snapshot.asset)
+        self._update_caption()
 
     def _render_asset(self, asset: AssetRef) -> None:
         if isinstance(asset, TextFallback):

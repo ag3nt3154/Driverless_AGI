@@ -143,7 +143,7 @@ def _load_affect_config(raw: dict) -> AffectConfig:
         "drift_noise": affect_raw.get("drift_noise", 0.02),
         "emote_hysteresis": affect_raw.get("emote_hysteresis", 0.05),
         "wander_volatility": affect_raw.get("wander_volatility", 0.08),
-        "drift_interval": affect_raw.get("drift_interval", 3.0),
+        "drift_interval": affect_raw.get("drift_interval", 1.0),
     }
     try:
         return AffectConfig(**values)

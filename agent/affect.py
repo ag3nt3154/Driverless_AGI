@@ -67,7 +67,7 @@ class AffectConfig:
     drift_noise: float = 0.02
     emote_hysteresis: float = 0.05
     wander_volatility: float = 0.08
-    drift_interval: float = 3.0
+    drift_interval: float = 1.0
 
     def __post_init__(self) -> None:
         pull = _finite("drift_pull", self.drift_pull)
