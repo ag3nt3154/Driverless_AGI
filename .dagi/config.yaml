@@ -67,6 +67,14 @@ tools:                      # Restrict the main agent to a specific subset of to
   - adjust_emotion           # Adjust emotional state via valence/arousal/dominance deltas
 sandbox_mode: false     # true = file tools have no path restrictions (allowed_roots=None)
 
+# ── Affect ────────────────────────────────────────────────────────────────────
+affect:
+  drift_pull: 0.07        # Pull each VAD axis back toward baseline on drift
+  drift_noise: 0.02       # Random drift noise per axis; must be between 0 and 1
+#   emote_hysteresis: 0.05  # Stickiness when choosing the nearest VAD emote
+  wander_volatility: 0.1 # Brownian motion step size for baseline wandering
+  drift_interval: 1.0     # Seconds between affect drifts (matches GIF rotation)
+
 models:
   claude-opus-openrouter:
     api_key_env: OPENROUTER_API_KEY

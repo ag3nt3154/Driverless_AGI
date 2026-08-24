@@ -15,6 +15,7 @@ load_dotenv()
 from agent.config_loader import resolve_model_config
 from pyside_gui.app import DagiMainWindow
 
+from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import QApplication
 
 _cli = typer.Typer(name="dagi-gui", add_completion=False)
@@ -33,6 +34,9 @@ def main(
     project_path = Path(project).resolve() if project else Path.cwd()
     config = resolve_model_config(model, project_path=project_path)
     qt_app = QApplication(sys.argv)
+    _icon = Path(__file__).with_name("resources") / "icon.png"
+    if _icon.exists():
+        qt_app.setWindowIcon(QIcon(str(_icon)))
     window = DagiMainWindow(config, project_path, verbose)
     window.show()
     sys.exit(qt_app.exec())

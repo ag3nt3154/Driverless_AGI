@@ -3,368 +3,368 @@ emotes:
   # ── Idle / relaxed ────────────────────────────────────────────────────────
   - id: daiji-huxi-xiuxian
     file: daiji-huxi-xiuxian.gif
-    vad: [0.3, 0.0, 0.4]      # calm idle breathing
+    vad: [0.30, -0.20, 0.40]    # 待机呼吸休闲 — calm idle breathing
 
   - id: xiawuziqi
     file: xiawuziqi.gif
-    vad: [0.4, -0.4, 0.3]     # afternoon nap, drowsy
+    vad: [0.30, -0.50, 0.30]    # 下午自起（午睡）— afternoon nap, drowsy
 
   - id: lanjing-xianshi
     file: lanjing-xianshi.gif
-    vad: [0.2, -0.2, 0.3]     # lazy lounging display
+    vad: [0.20, -0.40, 0.30]    # 懒静显示 — lazy lounging display
 
   - id: haqian-liantian
     file: haqian-liantian.gif
-    vad: [0.2, -0.1, 0.3]     # yawning, daydreaming
+    vad: [0.20, -0.60, 0.20]    # 哈欠连天 — yawning continuously, sleepy
 
   - id: youxian-hengga
     file: youxian-hengga.gif
-    vad: [0.5, -0.1, 0.4]     # leisurely lounging, carefree
+    vad: [0.50, -0.10, 0.40]    # 悠闲哼歌 — leisurely humming, carefree
 
   - id: yaoshan-naliang
     file: yaoshan-naliang.gif
-    vad: [0.4, 0.2, 0.4]      # fanning herself cool, relaxed
+    vad: [0.40, 0.10, 0.40]     # 摇扇纳凉 — fanning for cool air, relaxed
 
   - id: menghua-xiaoyouling
     file: menghua-xiaoyouling.gif
-    vad: [0.5, 0.1, 0.3]      # dreamy, whimsical little ghost
+    vad: [0.50, 0.10, 0.30]     # 梦幻小幽灵 — dreamy little ghost, whimsical
 
   - id: beiluoye-yanmo
     file: beiluoye-yanmo.gif
-    vad: [0.4, 0.1, 0.3]      # covered in fallen leaves, peaceful
+    vad: [0.40, 0.10, 0.30]     # 被落叶淹没 — buried in fallen leaves, peaceful
 
   # ── Focused / working ─────────────────────────────────────────────────────
   - id: xie-daima
     file: xie-daima.gif
-    vad: [0.3, 0.5, 0.6]      # writing code, focused and determined
+    vad: [0.30, 0.50, 0.60]     # 写代码 — writing code, focused and determined
 
   - id: shendu-sikao-suisuinian
     file: shendu-sikao-suisuinian.gif
-    vad: [0.1, 0.4, 0.5]      # deep contemplative thinking
+    vad: [0.10, 0.40, 0.50]     # 深度思考碎碎念 — deep thinking, muttering
 
   - id: qingkuai-jilu
     file: qingkuai-jilu.gif
-    vad: [0.4, 0.5, 0.6]      # quick note-taking, efficient
+    vad: [0.40, 0.60, 0.60]     # 轻快记录 — quick note-taking, efficient
 
   - id: xie-fuzi
     file: xie-fuzi.gif
-    vad: [0.3, 0.3, 0.5]      # writing calligraphy, serene focus
+    vad: [0.30, 0.30, 0.50]     # 写符字 — writing calligraphy, serene focus
 
   - id: duixueren
     file: duixueren.gif
-    vad: [0.4, 0.5, 0.5]      # talking to someone, engaged
+    vad: [0.40, 0.50, 0.50]     # 对话学人 — talking to someone, engaged
 
   - id: yuandi-qiaoji-zhuomian-hudong
     file: yuandi-qiaoji-zhuomian-hudong.gif
-    vad: [0.3, 0.5, 0.5]      # tapping table, antsy but engaged
+    vad: [0.30, 0.50, 0.50]     # 原地敲击桌面互动 — tapping table in place, antsy
 
   - id: beishubiao-tuozhuai-xuankong-fankui
     file: beishubiao-tuozhuai-xuankong-fankui.gif
-    vad: [0.2, 0.3, 0.4]      # mouse-drag floating feedback, neutral
+    vad: [0.10, 0.40, 0.20]     # 被鼠标拖拽悬空反馈 — mouse-drag floating feedback
 
   # ── Cheerful / happy ──────────────────────────────────────────────────────
   - id: dianji-huiying-kaixin-yuedong
     file: dianji-huiying-kaixin-yuedong.gif
-    vad: [0.9, 0.8, 0.6]      # happy and excited click response
+    vad: [0.90, 0.80, 0.60]     # 点击回应开心跃动 — click response happy jumping
 
   - id: dianji-huiying-yuanqi-huishou
     file: dianji-huiying-yuanqi-huishou.gif
-    vad: [0.8, 0.8, 0.6]      # energetic wave, bright
+    vad: [0.80, 0.70, 0.60]     # 点击回应元气挥手 — click response energetic wave
 
   - id: dianji-huiying-naoyang-gegexiao
     file: dianji-huiying-naoyang-gegexiao.gif
-    vad: [0.8, 0.7, 0.4]      # tickled, giggling
+    vad: [0.80, 0.60, 0.40]     # 点击回应挠痒格格笑 — click response tickled giggling
 
   - id: dangqiuqian
     file: dangqiuqian.gif
-    vad: [0.8, 0.6, 0.5]      # swinging on swing, carefree joy
+    vad: [0.80, 0.60, 0.50]     # 荡秋千 — swinging on swing, carefree joy
 
   - id: shou-hongbao
     file: shou-hongbao.gif
-    vad: [0.9, 0.7, 0.5]      # receiving red envelope, thrilled
+    vad: [0.90, 0.70, 0.50]     # 收红包 — receiving red envelope, thrilled
 
   - id: chai-liwu
     file: chai-liwu.gif
-    vad: [0.9, 0.7, 0.5]      # unwrapping a gift, delighted
+    vad: [0.90, 0.65, 0.50]     # 拆礼物 — unwrapping a gift, delighted (eager rummaging)
 
   - id: hudie-mifeng-huanrao-touding-kaihua
     file: hudie-mifeng-huanrao-touding-kaihua.gif
-    vad: [0.8, 0.5, 0.4]      # butterflies and flowers, enchanted
+    vad: [0.80, 0.40, 0.40]     # 蝴蝶蜜蜂环绕头顶开花 — butterflies & bees overhead, enchanted
 
   - id: dongwu-huanrao
     file: dongwu-huanrao.gif
-    vad: [0.7, 0.5, 0.4]      # animals surrounding her, gentle delight
+    vad: [0.70, 0.40, 0.35]     # 动物环绕 — animals surrounding her, gentle delight
 
   - id: chi-bingqilin-ronghua
     file: chi-bingqilin-ronghua.gif
-    vad: [0.7, 0.3, 0.5]      # eating melting ice cream, pleased
+    vad: [0.70, 0.25, 0.50]     # 吃冰淇淋融化 — eating melting ice cream, pleased
 
   - id: chi-xigua
     file: chi-xigua.gif
-    vad: [0.7, 0.3, 0.5]      # eating watermelon, refreshed
+    vad: [0.70, 0.30, 0.50]     # 吃西瓜 — eating watermelon, refreshed
 
   - id: chi-tanghulu
     file: chi-tanghulu.gif
-    vad: [0.7, 0.4, 0.5]      # eating sugar hawthorn, sweet delight
+    vad: [0.70, 0.40, 0.50]     # 吃糖葫芦 — eating sugar-coated hawthorn, sweet delight
 
   - id: chi-token
     file: chi-token.gif
-    vad: [0.8, 0.6, 0.6]      # eating tokens, gleeful (AI humor)
+    vad: [0.80, 0.65, 0.60]     # 吃token — eating tokens, gleeful (AI humour)
 
   - id: shuan-huoguo
     file: shuan-huoguo.gif
-    vad: [0.7, 0.4, 0.5]      # hot pot, cozy and satisfied
+    vad: [0.70, 0.35, 0.50]     # 涮火锅 — hot pot, cosy and satisfied
 
   - id: dakou-chi-lingshi
     file: dakou-chi-lingshi.gif
-    vad: [0.7, 0.5, 0.5]      # eagerly eating snacks
+    vad: [0.70, 0.55, 0.50]     # 大口吃零食 — eagerly eating snacks with big bites
 
   - id: chi-dazhaxie
     file: chi-dazhaxie.gif
-    vad: [0.7, 0.4, 0.5]      # eating hairy crab, indulgent
+    vad: [0.70, 0.45, 0.50]     # 吃大闸蟹 — eating hairy crab, indulgent
 
   # ── Energetic / playful ───────────────────────────────────────────────────
   - id: fang-yanhua
     file: fang-yanhua.gif
-    vad: [0.9, 0.8, 0.6]      # setting off fireworks, exhilarated
+    vad: [0.90, 0.85, 0.60]     # 放烟花 — setting off fireworks, exhilarated
 
   - id: wan-shuiqiang
     file: wan-shuiqiang.gif
-    vad: [0.8, 0.7, 0.6]      # playing water gun, energetic glee
+    vad: [0.80, 0.75, 0.60]     # 玩水枪 — playing water gun, energetic glee
 
   - id: yuandi-tiaoyue-zhuasui-touding-wupin
     file: yuandi-tiaoyue-zhuasui-touding-wupin.gif
-    vad: [0.7, 0.7, 0.6]      # jumping to catch items, excited
+    vad: [0.70, 0.70, 0.60]     # 原地跳跃抓碎头顶物品 — jumping to catch items overhead, excited
 
   - id: yuandi-zuozhuan-benpao
     file: yuandi-zuozhuan-benpao.gif
-    vad: [0.4, 0.7, 0.5]      # turning and running, hasty energy
+    vad: [0.40, 0.70, 0.50]     # 原地左转奔跑 — turning and running in place, hasty energy
 
   - id: qingkuai-yaobaiwu
     file: qingkuai-yaobaiwu.gif
-    vad: [0.7, 0.6, 0.5]      # breezy swaying dance, joyful
+    vad: [0.70, 0.60, 0.45]     # 轻快摇摆舞 — breezy swaying dance, graceful joy
 
   - id: ti-jianzi
     file: ti-jianzi.gif
-    vad: [0.7, 0.6, 0.5]      # kicking shuttlecock, active and cheerful
+    vad: [0.70, 0.60, 0.55]     # 踢毽子 — kicking shuttlecock, active and sporty
 
   - id: wu-shitou
     file: wu-shitou.gif
-    vad: [0.5, 0.6, 0.5]      # rock paper scissors, competitive play
+    vad: [0.50, 0.60, 0.55]     # 猜拳（出石头）— rock-paper-scissors, tense competitive play
 
   - id: chou-tuoluo
     file: chou-tuoluo.gif
-    vad: [0.6, 0.5, 0.5]      # spinning top, playful focus
+    vad: [0.60, 0.50, 0.55]     # 抽陀螺 — spinning top, playful focused energy
 
   - id: chui-qiqiu
     file: chui-qiqiu.gif
-    vad: [0.7, 0.5, 0.5]      # blowing balloons, cheerful
+    vad: [0.70, 0.50, 0.45]     # 吹气球 — blowing balloons, cheerful effort
 
   - id: qi-muma
     file: qi-muma.gif
-    vad: [0.7, 0.5, 0.5]      # riding rocking horse, playful
+    vad: [0.65, 0.50, 0.50]     # 骑木马 — riding rocking horse, gentle playful
 
   - id: pangxie-zoulu
     file: pangxie-zoulu.gif
-    vad: [0.5, 0.5, 0.4]      # crab-walking sideways, silly fun
+    vad: [0.50, 0.50, 0.40]     # 螃蟹走路 — crab-walking sideways, silly fun
 
   - id: xiaofudu-yuandi-360du-xuanzhuan-zhanshi
     file: xiaofudu-yuandi-360du-xuanzhuan-zhanshi.gif
-    vad: [0.6, 0.6, 0.6]      # 360 spin display, showy and spirited
+    vad: [0.60, 0.60, 0.60]     # 小幅度原地360度旋转展示 — 360° spin display, showy and spirited
 
   - id: yong-jingyu-weiba-paidadi
     file: yong-jingyu-weiba-paidadi.gif
-    vad: [0.5, 0.6, 0.5]      # whale tail slap, boisterous play
+    vad: [0.50, 0.60, 0.45]     # 用鲸鱼尾巴拍打地 — whale tail slap, boisterous silly play
 
   - id: puke-moshu
     file: puke-moshu.gif
-    vad: [0.5, 0.6, 0.6]      # poker magic trick, mischievous focus
+    vad: [0.50, 0.60, 0.60]     # 扑克魔术 — poker magic trick, mischievous focus
 
   - id: yuandi-dunxia-wan-wanju-qiche
     file: yuandi-dunxia-wan-wanju-qiche.gif
-    vad: [0.6, 0.4, 0.5]      # squatting to play toy car, absorbed
+    vad: [0.60, 0.40, 0.45]     # 原地蹲下玩玩具汽车 — squatting to play toy car, absorbed
 
   # ── Artistic / graceful ───────────────────────────────────────────────────
   - id: xiaotiqin-yanzou
     file: xiaotiqin-yanzou.gif
-    vad: [0.6, 0.5, 0.7]      # violin performance, expressive artistry
+    vad: [0.60, 0.50, 0.70]     # 小提琴演奏 — violin performance, expressive artistry
 
   - id: chui-dizi
     file: chui-dizi.gif
-    vad: [0.6, 0.4, 0.6]      # playing flute, serene and expressive
+    vad: [0.60, 0.40, 0.60]     # 吹笛子 — playing flute, serene and expressive
 
   - id: youya-nvpuwu
     file: youya-nvpuwu.gif
-    vad: [0.7, 0.5, 0.7]      # elegant maid dance, graceful confidence
+    vad: [0.70, 0.50, 0.70]     # 优雅女仆舞 — elegant maid dance, graceful confidence
 
   - id: nvpu-quxi-liyi
     file: nvpu-quxi-liyi.gif
-    vad: [0.5, 0.3, 0.6]      # maid ceremonial greeting, composed
+    vad: [0.50, 0.20, 0.60]     # 女仆屈膝礼仪 — maid curtsy, composed deference
 
   - id: zhao-jingzi
     file: zhao-jingzi.gif
-    vad: [0.6, 0.3, 0.6]      # looking in mirror, self-pleased
+    vad: [0.60, 0.30, 0.60]     # 照镜子 — looking in mirror, self-pleased
 
   - id: zhengti-huanzhuang-shise
     file: zhengti-huanzhuang-shise.gif
-    vad: [0.7, 0.5, 0.6]      # color/outfit transformation, excited
+    vad: [0.80, 0.50, 0.60]     # 整体换装色色 — full outfit/colour transformation, delighted
 
   - id: pingkong-shenghua
     file: pingkong-shenghua.gif
-    vad: [0.7, 0.3, 0.4]      # floating/ascending, transcendent lightness
+    vad: [0.70, 0.30, 0.40]     # 凭空升华 — floating/ascending, transcendent lightness
 
   - id: yuandi-piaofu-tabu
     file: yuandi-piaofu-tabu.gif
-    vad: [0.5, 0.3, 0.4]      # floating steps, gentle and airy
+    vad: [0.50, 0.30, 0.40]     # 原地飘浮踏步 — floating steps in place, gentle and airy
 
   - id: lu-mao
     file: lu-mao.gif
-    vad: [0.6, 0.1, 0.5]      # stroking fur, soothing and gentle
+    vad: [0.60, 0.10, 0.50]     # 撸毛 — stroking fur/pet, soothing and gentle
 
   # ── Shy / flustered ───────────────────────────────────────────────────────
   - id: dianji-huiying-haixiu-jingya
     file: dianji-huiying-haixiu-jingya.gif
-    vad: [0.3, 0.6, 0.2]      # shy and surprised, flustered
+    vad: [0.30, 0.60, 0.20]     # 点击回应害羞惊讶 — click response shy and surprised, flustered
 
   - id: touchi-lingshi-bei-zhuazhu
     file: touchi-lingshi-bei-zhuazhu.gif
-    vad: [-0.2, 0.7, 0.2]     # caught sneaking snacks, guilty and startled
+    vad: [-0.20, 0.70, 0.20]    # 偷吃零食被抓住 — caught stealing snacks, guilty and startled
 
   - id: keai-zhaiwu
     file: keai-zhaiwu.gif
-    vad: [-0.1, 0.4, 0.2]     # cute debt/owing something, sheepish
+    vad: [-0.10, 0.40, 0.20]    # 可爱债务 — cute sheepishness over owing something
 
   - id: jingyu-tu-paopao-texiao
     file: jingyu-tu-paopao-texiao.gif
-    vad: [0.6, 0.4, 0.5]      # whale bubble magic effect, whimsical
+    vad: [0.60, 0.40, 0.55]     # 鲸鱼吐泡泡特效 — whale blowing bubbles, whimsical wonder
 
   # ── Negative / distressed ─────────────────────────────────────────────────
   - id: dianji-huiying-aojiao-shengqi-ceshen-zhanshi
     file: dianji-huiying-aojiao-shengqi-ceshen-zhanshi.gif
-    vad: [-0.2, 0.6, 0.8]     # tsundere irritated side pose, proud anger
+    vad: [-0.20, 0.60, 0.80]    # 点击回应傲娇生气侧身展示 — tsundere irritated side pose, proud anger
 
   - id: dongzhangxiwang
     file: dongzhangxiwang.gif
-    vad: [-0.1, 0.6, 0.3]     # nervously looking around, anxious
+    vad: [-0.10, 0.60, 0.30]    # 东张西望 — nervously looking around, anxious
 
   - id: da-keshui-bei-jingxing
     file: da-keshui-bei-jingxing.gif
-    vad: [-0.1, 0.7, 0.2]     # dozing then startled awake, alarmed
+    vad: [-0.10, 0.70, 0.20]    # 打瞌睡被惊醒 — dozing then startled awake, alarmed
 
   - id: beixiayitiao-zhamao
     file: beixiayitiao-zhamao.gif
-    vad: [-0.2, 0.8, 0.2]     # startled like a cat, sudden fright
+    vad: [-0.30, 0.80, 0.20]    # 被吓一跳炸毛 — startled like a puffed-up cat, sudden fright
 
   - id: wan-youxi-qijibaituai
     file: wan-youxi-qijibaituai.gif
-    vad: [-0.3, 0.7, 0.2]     # gaming and losing badly, frustrated
+    vad: [-0.40, 0.70, 0.20]    # 玩游戏七绩爆碎 — gaming and losing badly, frustrated
 
   - id: sanqiu-paojie
     file: sanqiu-paojie.gif
-    vad: [-0.1, 0.3, 0.3]     # bubble bursting, fleeting melancholy
+    vad: [-0.10, 0.30, 0.30]    # 三秋泡泡破裂 — bubble bursting, fleeting melancholy
 
   - id: yuandi-xiaoqi-chenmian
     file: yuandi-xiaoqi-chenmian.gif
-    vad: [-0.1, 0.1, 0.3]     # small flag drooping, resigned
+    vad: [-0.20, 0.10, 0.30]    # 原地小旗沉眠 — little flag drooping, dejected and resigned
 
   - id: yuandi-zhongli-xiadun-yasuo
     file: yuandi-zhongli-xiadun-yasuo.gif
-    vad: [-0.1, 0.3, 0.3]     # squatting under gravity, strained
+    vad: [-0.20, 0.30, 0.30]    # 原地重力下蹲压缩 — squatting under gravity, strained
 
   - id: shia-chishenme
     file: shia-chishenme.gif
-    vad: [0.0, 0.3, 0.3]      # "what to eat" indecision, puzzled
+    vad: [0.00, 0.30, 0.30]     # 啊吃什么 — "what to eat" indecision, puzzled
 
   # ── Routine / daily life ──────────────────────────────────────────────────
   - id: chi-baifan
     file: chi-baifan.gif
-    vad: [0.4, 0.2, 0.4]      # eating plain rice, quietly content
+    vad: [0.40, 0.20, 0.40]     # 吃白饭 — eating plain rice, quietly content
 
   - id: chi-zaocan
     file: chi-zaocan.gif
-    vad: [0.5, 0.4, 0.4]      # eating breakfast, fresh start
+    vad: [0.50, 0.40, 0.40]     # 吃早餐 — eating breakfast, fresh start
 
   - id: chi-wucan
     file: chi-wucan.gif
-    vad: [0.5, 0.3, 0.4]      # eating lunch, content
+    vad: [0.50, 0.30, 0.45]     # 吃午餐 — eating lunch, content midday
 
   - id: chi-wancan
     file: chi-wancan.gif
-    vad: [0.5, 0.2, 0.4]      # eating dinner, winding down
+    vad: [0.50, 0.20, 0.40]     # 吃晚餐 — eating dinner, winding down
 
   - id: chenjian-shuaya
     file: chenjian-shuaya.gif
-    vad: [0.3, 0.4, 0.4]      # morning routine (brushing teeth)
+    vad: [0.30, 0.40, 0.40]     # 晨间刷牙 — morning tooth-brushing routine
 
   - id: chaoda-shenlanyao
     file: chaoda-shenlanyao.gif
-    vad: [0.3, 0.2, 0.4]      # lazy stretch, comfortable
+    vad: [0.30, 0.20, 0.40]     # 超大伸懒腰 — big lazy stretch, comfortable
 
   - id: cha-zhuyu-shangju
     file: cha-zhuyu-shangju.gif
-    vad: [0.4, 0.4, 0.5]      # arranging decorations, focused
+    vad: [0.40, 0.40, 0.50]     # 插竹鱼上具 — arranging decorations, quietly focused
 
   - id: bian-gezi
     file: bian-gezi.gif
-    vad: [0.3, 0.4, 0.5]      # changing pattern, curious
+    vad: [0.30, 0.40, 0.50]     # 变格子 — changing pattern/colour, curious
 
   # ── Festivals / seasonal ──────────────────────────────────────────────────
   - id: zhuangdian-shengdanshu
     file: zhuangdian-shengdanshu.gif
-    vad: [0.8, 0.6, 0.6]      # decorating Christmas tree, festive cheer
+    vad: [0.80, 0.60, 0.60]     # 装点圣诞树 — decorating Christmas tree, festive cheer
 
   - id: taotang-nanguadeng
     file: taotang-nanguadeng.gif
-    vad: [0.6, 0.5, 0.5]      # carving Halloween pumpkin, playful
+    vad: [0.60, 0.50, 0.45]     # 掏糖南瓜灯 — carving Halloween pumpkin, playful spooky
 
   - id: zhongqiu-shangyue-chi-yuebing
     file: zhongqiu-shangyue-chi-yuebing.gif
-    vad: [0.6, 0.3, 0.4]      # Mid-Autumn moon-gazing & mooncake, warm nostalgia
+    vad: [0.60, 0.30, 0.40]     # 中秋赏月吃月饼 — Mid-Autumn moon-gazing & mooncake, warm nostalgia
 
   - id: chi-zongzi
     file: chi-zongzi.gif
-    vad: [0.6, 0.3, 0.5]      # eating zongzi (Dragon Boat), festive
+    vad: [0.60, 0.30, 0.50]     # 吃粽子 — eating zongzi (Dragon Boat Festival), festive
 
   - id: chi-niangao
     file: chi-niangao.gif
-    vad: [0.6, 0.4, 0.5]      # eating New Year cake, happy
+    vad: [0.65, 0.40, 0.50]     # 吃年糕 — eating New Year cake, happy and celebratory
 
   - id: chi-chongyanggao
     file: chi-chongyanggao.gif
-    vad: [0.5, 0.3, 0.5]      # Double Ninth festival cake
+    vad: [0.50, 0.30, 0.50]     # 吃重阳糕 — Double Ninth festival cake, mild warmth
 
   - id: chi-labazhou
     file: chi-labazhou.gif
-    vad: [0.5, 0.2, 0.4]      # Laba porridge, warm and cozy
+    vad: [0.50, 0.15, 0.40]     # 吃腊八粥 — Laba porridge, warm and cosy (slow winter morning)
 
   - id: chi-qingtuan
     file: chi-qingtuan.gif
-    vad: [0.5, 0.2, 0.4]      # Qingming green rice balls, mild pleasant
+    vad: [0.50, 0.20, 0.35]     # 吃青团 — Qingming green rice balls, mild and pleasant
 
   - id: chi-changshoumian
     file: chi-changshoumian.gif
-    vad: [0.6, 0.3, 0.5]      # longevity noodles, warmly celebratory
+    vad: [0.65, 0.30, 0.50]     # 吃长寿面 — longevity noodles, warmly celebratory
 
   - id: chijiaozi
     file: chijiaozi.gif
-    vad: [0.6, 0.3, 0.5]      # eating dumplings, cozy happy
+    vad: [0.60, 0.30, 0.55]     # 吃饺子 — eating dumplings, cosy family warmth
 
   - id: chitangyuan
     file: chitangyuan.gif
-    vad: [0.6, 0.3, 0.5]      # tangyuan (Lantern Festival), sweet warmth
+    vad: [0.60, 0.25, 0.50]     # 吃汤圆 — tangyuan (Lantern Festival), sweet gentle warmth
 
   - id: fang-kongmingdeng
     file: fang-kongmingdeng.gif
-    vad: [0.7, 0.4, 0.4]      # releasing sky lantern, wistful and hopeful
+    vad: [0.70, 0.40, 0.40]     # 放孔明灯 — releasing sky lantern, wistful and hopeful
 
   - id: fanghedeng
     file: fanghedeng.gif
-    vad: [0.6, 0.3, 0.4]      # river lantern, serene and hopeful
+    vad: [0.55, 0.25, 0.40]     # 放河灯 — river lantern, serene and quietly hopeful
 
   - id: fang-fengzheng
     file: fang-fengzheng.gif
-    vad: [0.7, 0.5, 0.5]      # flying a kite, free and happy
+    vad: [0.70, 0.50, 0.55]     # 放风筝 — flying a kite, free and happy
 
   - id: chuanzhenqiqiao
     file: chuanzhenqiqiao.gif
-    vad: [0.4, 0.3, 0.5]      # threading needle (Qixi), patient and delicate
+    vad: [0.40, 0.30, 0.50]     # 穿针乞巧 — threading needle (Qixi Festival), patient and delicate
