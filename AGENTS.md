@@ -1,6 +1,6 @@
 # AGENTS.md
 
-> Last updated: 2026-08-23 (PySide GUI: left sidebar proportional width, text wrap, line numbers for all files) | [README](README.md) | [TODO](TODO.md)
+> Last updated: 2026-08-24 (PySide GUI: fixed expression widget height consistency between GIF and text fallback) | [README](README.md) | [TODO](TODO.md)
 
 
 
