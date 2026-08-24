@@ -1,0 +1,6 @@
+version: 1
+states:
+  idle: idle.png
+  thinking: thinking.png
+  tool: money.gif
+  error: genshin-impact-fallen.gif
