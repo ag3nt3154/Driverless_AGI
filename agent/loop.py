@@ -488,18 +488,29 @@ class AgentLoop:
         interval = self.config.affect_drift_interval
         if interval <= 0:
             return
+        self._drift_stop = threading.Event()
 
         def tick() -> None:
-            self._lifecycle.publish_affect_drift(controller)
-            self._drift_timer = threading.Timer(interval, tick)
-            self._drift_timer.daemon = True
-            self._drift_timer.start()
+            if self._drift_stop.is_set():
+                return
+            try:
+                self._lifecycle.publish_affect_drift(controller)
+            except Exception:
+                pass
+            if not self._drift_stop.is_set():
+                t = threading.Timer(interval, tick)
+                t.daemon = True
+                self._drift_timer = t
+                t.start()
 
         self._drift_timer = threading.Timer(interval, tick)
         self._drift_timer.daemon = True
         self._drift_timer.start()
 
     def _stop_drift_timer(self) -> None:
+        stop = getattr(self, "_drift_stop", None)
+        if stop is not None:
+            stop.set()
         if self._drift_timer is not None:
             self._drift_timer.cancel()
             self._drift_timer = None
