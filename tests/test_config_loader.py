@@ -108,6 +108,7 @@ def test_affect_config_preserves_raw_values_on_all_model_tiers(tmp_path):
         assert tier.affect_drift_pull == 0.12
         assert tier.affect_drift_noise == 0.34
         assert tier.affect_emote_hysteresis == 0.56
+        assert tier.affect_wander_volatility == 0.08
 
 
 @pytest.mark.parametrize(

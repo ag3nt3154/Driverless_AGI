@@ -125,7 +125,11 @@ def _load_jsonl(path: Path | str) -> list[dict]:
 
 
 def _parse_affect_restore(init: dict, latest: dict) -> AffectRestore:
-    baseline = _parse_affect_vector(init.get("payload"), "baseline")
+    latest_payload = latest.get("payload", {})
+    if isinstance(latest_payload, dict) and "baseline" in latest_payload:
+        baseline = _parse_affect_vector(latest_payload, "baseline")
+    else:
+        baseline = _parse_affect_vector(init.get("payload"), "baseline")
     current = _parse_affect_vector(latest.get("payload"), "current")
     emote_id = latest.get("payload", {}).get("emote_id")
     if emote_id is not None and not isinstance(emote_id, str):

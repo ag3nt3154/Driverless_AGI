@@ -38,10 +38,14 @@ class _FakeLibrary:
 class _StubRng:
     def __init__(self, values: list[float]) -> None:
         self._values = list(values)
-        self.calls: list[tuple[float, float]] = []
+        self.calls: list[tuple] = []
 
     def uniform(self, start: float, end: float) -> float:
-        self.calls.append((start, end))
+        self.calls.append(("uniform", start, end))
+        return self._values.pop(0)
+
+    def gauss(self, mu: float, sigma: float) -> float:
+        self.calls.append(("gauss", mu, sigma))
         return self._values.pop(0)
 
 
@@ -84,7 +88,7 @@ def test_random_initialization_stays_in_range_and_records_init() -> None:
     assert seen[0].reason == "init"
     assert seen[0].asset == ImageAsset("steady", Path("steady.png"))
     assert library.calls == [((0.25, -0.3, 0.15), None, 0.05)]
-    assert rng.calls == [(-0.3, 0.3), (-0.3, 0.3), (-0.3, 0.3)]
+    assert rng.calls == [("uniform", -1.0, 1.0), ("uniform", -1.0, 1.0), ("uniform", -1.0, 1.0)]
 
 
 def test_adjust_clamps_each_axis_and_publishes_after_state_updates() -> None:
@@ -112,6 +116,7 @@ def test_adjust_clamps_each_axis_and_publishes_after_state_updates() -> None:
         (
             "affect_adjust",
             {
+                "baseline": [0.0, 0.0, 0.0],
                 "prior": [0.9, -0.9, 0.2],
                 "delta": [0.5, -0.5, 0.9],
                 "current": [1.0, -1.0, 1.0],
@@ -126,7 +131,8 @@ def test_adjust_clamps_each_axis_and_publishes_after_state_updates() -> None:
 
 def test_seeded_drift_pulls_toward_baseline() -> None:
     library = _FakeLibrary()
-    rng = _StubRng([0.0, 0.0, 0.0])
+    # 3 gauss calls for wander_baseline, then 3 uniform calls for drift_axis noise
+    rng = _StubRng([0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
     records: list[tuple[str, dict[str, object]]] = []
     controller = AffectController(
         library,
@@ -144,6 +150,7 @@ def test_seeded_drift_pulls_toward_baseline() -> None:
         (
             "affect_drift",
             {
+                "baseline": [0.0, 0.0, 0.0],
                 "prior": [1.0, -1.0, 0.5],
                 "delta": [-0.05, 0.05, -0.025],
                 "current": [0.95, -0.95, 0.475],
@@ -151,7 +158,10 @@ def test_seeded_drift_pulls_toward_baseline() -> None:
             },
         )
     ]
-    assert rng.calls == [(-0.02, 0.02), (-0.02, 0.02), (-0.02, 0.02)]
+    assert rng.calls == [
+        ("gauss", 0, 0.08), ("gauss", 0, 0.08), ("gauss", 0, 0.08),
+        ("uniform", -0.02, 0.02), ("uniform", -0.02, 0.02), ("uniform", -0.02, 0.02),
+    ]
 
 
 def test_set_listener_replaces_callback_and_can_emit_current_snapshot() -> None:

@@ -4,8 +4,8 @@ import logging
 from pathlib import Path
 
 from PySide6.QtCore import QSize, Qt, QTimer, Slot
-from PySide6.QtGui import QFont, QMovie, QPixmap, QResizeEvent
-from PySide6.QtWidgets import QLabel, QVBoxLayout, QWidget
+from PySide6.QtGui import QFont, QImageReader, QMovie, QPixmap, QResizeEvent
+from PySide6.QtWidgets import QLabel, QSizePolicy, QVBoxLayout, QWidget
 
 from agent.affect import AffectSnapshot, AffectVector
 from agent.expression_assets import AssetRef, ImageAsset, TextFallback, load_fallback
@@ -20,14 +20,13 @@ class ExpressionWidget(QWidget):
     def __init__(
         self,
         emotes_root: Path,
-        *,
-        rotation_interval_ms: int = 3000,
     ) -> None:
         super().__init__()
         self._emotes_root = emotes_root
         self._default_fallback = load_fallback(emotes_root)
         self._channel = "vad"
         self._movie: QMovie | None = None
+        self._movie_natural_size: QSize | None = None
         self._static_pixmap: QPixmap | None = None
         self._warned_media_failures: set[str] = set()
         self._affect_snapshot = self._initial_affect()
@@ -38,7 +37,11 @@ class ExpressionWidget(QWidget):
         self._image_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._image_label.setTextFormat(Qt.TextFormat.PlainText)
         self._image_label.setWordWrap(False)
-        self._image_label.setMinimumHeight(96)
+        self._image_label.setMinimumHeight(80)
+        self._image_label.setMaximumHeight(140)
+        self._image_label.setSizePolicy(
+            QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed
+        )
 
         self._caption_label = QLabel()
         self._caption_label.setObjectName("expression-caption")
@@ -51,9 +54,8 @@ class ExpressionWidget(QWidget):
         layout.addWidget(self._caption_label)
 
         self._rotation_timer = QTimer(self)
-        self._rotation_timer.setInterval(rotation_interval_ms)
+        self._rotation_timer.setSingleShot(True)
         self._rotation_timer.timeout.connect(self._rotate_channel)
-        self._rotation_timer.start()
         self._render_current()
 
     @Slot(object)
@@ -92,8 +94,7 @@ class ExpressionWidget(QWidget):
         current = snapshot.current
         self._render_asset(snapshot.asset)
         self._caption_label.setText(
-            f"VAD {snapshot.emote_id} | V={current.valence:+.2f} "
-            f"A={current.arousal:+.2f} D={current.dominance:+.2f}"
+            f"V={current.valence:+.2f} A={current.arousal:+.2f} D={current.dominance:+.2f}"
         )
 
     def _render_asset(self, asset: AssetRef) -> None:
@@ -114,22 +115,35 @@ class ExpressionWidget(QWidget):
         font.setFixedPitch(True)
         self._image_label.setFont(font)
         self._image_label.setText(text)
+        self._rotation_timer.start(5000)
 
     def _show_movie(self, asset: ImageAsset) -> bool:
         self._clear_media()
         if not asset.path.is_file():
             self._warn_media_failure("gif missing", asset.path)
             return False
+        natural = QImageReader(str(asset.path)).size()
+        self._movie_natural_size = natural if natural.isValid() and not natural.isEmpty() else None
         movie = QMovie(str(asset.path))
         movie.setParent(self)
         if not movie.isValid():
             self._warn_media_failure("gif decode failed", asset.path)
             self._release_movie(movie)
+            self._movie_natural_size = None
             return False
-        movie.setScaledSize(self._target_size())
+        movie.setScaledSize(self._movie_scaled_size())
         self._movie = movie
         self._image_label.setMovie(movie)
         movie.start()
+        frame_count = movie.frameCount()
+        if frame_count > 0:
+            def _on_frame(n: int, _fc: int = frame_count, _m: QMovie = movie) -> None:
+                if n == _fc - 1:
+                    _m.stop()
+                    QTimer.singleShot(0, self._rotate_channel)
+            movie.frameChanged.connect(_on_frame)
+        else:
+            self._rotation_timer.start(5000)
         return True
 
     def _show_pixmap(self, asset: ImageAsset) -> bool:
@@ -143,12 +157,15 @@ class ExpressionWidget(QWidget):
             return False
         self._static_pixmap = pixmap
         self._image_label.setPixmap(self._scaled_pixmap())
+        self._rotation_timer.start(5000)
         return True
 
     def _clear_media(self) -> None:
+        self._rotation_timer.stop()
         if self._movie is not None:
             self._release_movie(self._movie)
             self._movie = None
+        self._movie_natural_size = None
         self._static_pixmap = None
         self._image_label.clear()
 
@@ -176,12 +193,19 @@ class ExpressionWidget(QWidget):
     def _target_size(self) -> QSize:
         size = self._image_label.size()
         width = size.width() if size.width() > 0 else max(self.width(), 160)
-        height = size.height() if size.height() > 0 else 140
+        height = min(size.height() if size.height() > 0 else 130, 140)
         return QSize(max(width, 1), max(height, 1))
+
+    _GIF_BOUND = QSize(150, 130)
+
+    def _movie_scaled_size(self) -> QSize:
+        if self._movie_natural_size is not None:
+            return self._movie_natural_size.scaled(
+                self._GIF_BOUND, Qt.AspectRatioMode.KeepAspectRatio
+            )
+        return self._GIF_BOUND
 
     def resizeEvent(self, event: QResizeEvent) -> None:
         super().resizeEvent(event)
-        if self._movie is not None:
-            self._movie.setScaledSize(self._target_size())
         if self._static_pixmap is not None:
             self._image_label.setPixmap(self._scaled_pixmap())

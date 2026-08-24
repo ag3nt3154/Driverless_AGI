@@ -14,7 +14,7 @@ from pyside_gui.expression_widget import ExpressionWidget
 from tui.utils import _system_breakdown
 
 
-def _path_tail(path: Path | str, max_chars: int = 30) -> str:
+def _path_tail(path: Path | str, max_chars: int = 22) -> str:
     s = str(path)
     return s if len(s) <= max_chars else "..." + s[-(max_chars - 1):]
 
@@ -94,8 +94,8 @@ class RightSidebar(QScrollArea):
         self.setHorizontalScrollBarPolicy(
             Qt.ScrollBarPolicy.ScrollBarAlwaysOff
         )
-        self.setMinimumWidth(220)
-        self.setMaximumWidth(320)
+        self.setMinimumWidth(180)
+        self.setMaximumWidth(260)
         self.setStyleSheet(_SIDEBAR_CSS)
 
         container = QWidget()
@@ -107,7 +107,9 @@ class RightSidebar(QScrollArea):
         self.expression_widget = ExpressionWidget(
             self._dagi_root / ".dagi" / "emotes"
         )
-        self._layout.addWidget(self.expression_widget)
+        self._layout.addWidget(
+            self.expression_widget, alignment=Qt.AlignmentFlag.AlignHCenter
+        )
 
         # Status
         self._status_label = QLabel()

@@ -867,6 +867,7 @@ class TestProcessLifecycle:
             project_path=tmp_path,
             affect_drift_pull=0.0,
             affect_drift_noise=0.0,
+            affect_wander_volatility=0.0,
         )
         with (
             patch("openai.OpenAI"),

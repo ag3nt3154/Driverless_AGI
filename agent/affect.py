@@ -30,6 +30,16 @@ def _clamp(value: float) -> float:
     return max(-1.0, min(1.0, value))
 
 
+def _reflect(value: float) -> float:
+    """Reflect a value into [-1, +1] off the boundaries."""
+    while value > 1.0 or value < -1.0:
+        if value > 1.0:
+            value = 2.0 - value
+        if value < -1.0:
+            value = -2.0 - value
+    return value
+
+
 def _bounded(name: str, value: float) -> float:
     value = _finite(name, value)
     if not -1.0 <= value <= 1.0:
@@ -56,11 +66,13 @@ class AffectConfig:
     drift_pull: float = 0.05
     drift_noise: float = 0.02
     emote_hysteresis: float = 0.05
+    wander_volatility: float = 0.08
 
     def __post_init__(self) -> None:
         pull = _finite("drift_pull", self.drift_pull)
         noise = _finite("drift_noise", self.drift_noise)
         hysteresis = _finite("emote_hysteresis", self.emote_hysteresis)
+        wander = _finite("wander_volatility", self.wander_volatility)
         if pull < 0:
             raise ValueError("drift_pull must be non-negative")
         if noise < 0:
@@ -69,9 +81,12 @@ class AffectConfig:
             raise ValueError("drift_noise must be <= 1")
         if hysteresis < 0:
             raise ValueError("emote_hysteresis must be non-negative")
+        if wander < 0:
+            raise ValueError("wander_volatility must be non-negative")
         object.__setattr__(self, "drift_pull", pull)
         object.__setattr__(self, "drift_noise", noise)
         object.__setattr__(self, "emote_hysteresis", hysteresis)
+        object.__setattr__(self, "wander_volatility", wander)
 
 
 @dataclass(frozen=True)
@@ -172,6 +187,7 @@ class AffectController:
         return snapshot
 
     def drift_without_notify(self) -> AffectSnapshot:
+        self._wander_baseline()
         delta = AffectVector(
             self._drift_axis(self._baseline.valence, self._current.valence),
             self._drift_axis(self._baseline.arousal, self._current.arousal),
@@ -263,6 +279,7 @@ class AffectController:
         return (
             f"affect_{reason}",
             {
+                "baseline": _vector_payload(self._baseline),
                 "prior": _vector_payload(prior),
                 "delta": _vector_payload(delta),
                 "current": _vector_payload(snapshot.current),
@@ -274,9 +291,19 @@ class AffectController:
         noise = self._rng.uniform(-self._config.drift_noise, self._config.drift_noise)
         return self._config.drift_pull * (baseline - current) + noise
 
+    def _wander_baseline(self) -> None:
+        sigma = self._config.wander_volatility
+        if sigma <= 0:
+            return
+        self._baseline = AffectVector(
+            _reflect(self._baseline.valence + self._rng.gauss(0, sigma)),
+            _reflect(self._baseline.arousal + self._rng.gauss(0, sigma)),
+            _reflect(self._baseline.dominance + self._rng.gauss(0, sigma)),
+        )
+
     def _random_vector(self) -> AffectVector:
         return AffectVector(
-            self._rng.uniform(-0.3, 0.3),
-            self._rng.uniform(-0.3, 0.3),
-            self._rng.uniform(-0.3, 0.3),
+            self._rng.uniform(-1.0, 1.0),
+            self._rng.uniform(-1.0, 1.0),
+            self._rng.uniform(-1.0, 1.0),
         )

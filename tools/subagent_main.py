@@ -47,6 +47,7 @@ def _apply_worker_config(config: AgentConfig) -> AgentConfig:
         affect_drift_pull=w.affect_drift_pull,
         affect_drift_noise=w.affect_drift_noise,
         affect_emote_hysteresis=w.affect_emote_hysteresis,
+        affect_wander_volatility=w.affect_wander_volatility,
         plan_mode=False,
         plan_file=None,
         worker_config=None,
