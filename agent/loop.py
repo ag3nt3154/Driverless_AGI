@@ -232,7 +232,7 @@ class AgentConfig:
     affect_drift_noise: float = 0.02
     affect_emote_hysteresis: float = 0.05
     affect_wander_volatility: float = 0.08
-    affect_drift_interval: float = 10.0
+    affect_drift_interval: float = 3.0
     # Active Python environment detected at startup (e.g. "conda:dagi" or "venv:/path")
     # Set by config_loader._detect_python_env()
     python_env: str = ""
