@@ -5,7 +5,7 @@ import random
 from dataclasses import dataclass
 from typing import Literal, Protocol
 
-from agent.expression_assets import AssetRef, VadPoint
+from agent.expression_assets import AssetRef, ImageAsset, VadPoint
 
 AffectReason = Literal["init", "adjust", "drift", "restore"]
 
@@ -123,6 +123,7 @@ class AffectSnapshot:
     emote_id: str
     asset: AssetRef
     reason: AffectReason
+    meme_asset: ImageAsset | None = None
 
 
 class AffectController:
@@ -206,6 +207,20 @@ class AffectController:
 
     def emit(self, snapshot: AffectSnapshot) -> None:
         self._on_change(snapshot)
+
+    def trigger_meme(self, asset: ImageAsset) -> AffectSnapshot:
+        with self._lock:
+            current_snapshot = self._snapshot
+        snapshot = AffectSnapshot(
+            baseline=current_snapshot.baseline,
+            current=current_snapshot.current,
+            emote_id=current_snapshot.emote_id,
+            asset=current_snapshot.asset,
+            reason=current_snapshot.reason,
+            meme_asset=asset,
+        )
+        self.emit(snapshot)
+        return snapshot
 
     def context_line(self) -> str:
         current = self._current

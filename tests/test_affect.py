@@ -201,3 +201,43 @@ def test_context_line_and_restore_seed_use_expected_shapes() -> None:
     )
 
     assert controller.context_line() == "Affect: V=+0.45 A=+0.00 D=-0.15 | emote=steady"
+
+
+def test_trigger_meme_fires_snapshot_with_meme_asset(tmp_path):
+    """trigger_meme should emit a snapshot carrying the meme asset."""
+    seen = []
+    controller = AffectController(
+        _FakeLibrary(),
+        baseline=AffectVector(0.0, 0.0, 0.0),
+        on_change=seen.append,
+    )
+    meme = ImageAsset("absolute_cinema", tmp_path / "absolute_cinema.gif")
+    snapshot = controller.trigger_meme(meme)
+    assert snapshot.meme_asset is meme
+    assert seen[-1].meme_asset is meme
+    assert snapshot.current == controller.current
+
+
+def test_trigger_meme_does_not_persist_to_session(tmp_path):
+    """Meme triggers are ephemeral — no session JSONL record written."""
+    records = []
+    controller = AffectController(
+        _FakeLibrary(),
+        baseline=AffectVector(0.0, 0.0, 0.0),
+        record=lambda event, payload: records.append(event),
+    )
+    init_count = len(records)
+    controller.trigger_meme(ImageAsset("meme", tmp_path / "meme.gif"))
+    assert len(records) == init_count
+
+
+def test_normal_snapshots_have_none_meme_asset():
+    """Regular adjust/drift must produce meme_asset=None."""
+    controller = AffectController(
+        _FakeLibrary(),
+        baseline=AffectVector(0.0, 0.0, 0.0),
+    )
+    snapshot = controller.adjust(AffectVector(0.1, 0.0, 0.0))
+    assert snapshot.meme_asset is None
+    drift_snap = controller.drift()
+    assert drift_snap.meme_asset is None
