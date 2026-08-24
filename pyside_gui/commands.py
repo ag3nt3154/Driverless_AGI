@@ -45,6 +45,7 @@ class SlashCommandHandler:
         self._active_loop = None
         self._worker_alive: Callable[[], bool] = lambda: False
         self._on_config_changed: Callable[["AgentConfig", Path], None] | None = None
+        self._on_session_cleared: Callable[[], None] | None = None
 
     def set_active_loop(self, loop) -> None:
         self._active_loop = loop
@@ -56,6 +57,9 @@ class SlashCommandHandler:
         self, fn: Callable[["AgentConfig", Path], None]
     ) -> None:
         self._on_config_changed = fn
+
+    def set_on_session_cleared(self, fn: Callable[[], None]) -> None:
+        self._on_session_cleared = fn
 
     def load_maps(self) -> None:
         from agent.skills import SkillLoader
@@ -138,6 +142,8 @@ class SlashCommandHandler:
             return None
         self._w.conversation.clear()
         self._active_loop = None
+        if self._on_session_cleared:
+            self._on_session_cleared()
         self._w.right_sidebar.update_stats(0, 0, None, 0)
         self._w.right_sidebar.update_plan([], "")
         self._w.conversation.append_info("Context cleared — new session")
