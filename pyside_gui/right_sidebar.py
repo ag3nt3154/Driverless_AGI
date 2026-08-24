@@ -6,6 +6,7 @@ from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QLabel,
     QScrollArea,
+    QSizePolicy,
     QVBoxLayout,
     QWidget,
 )
@@ -107,9 +108,10 @@ class RightSidebar(QScrollArea):
         self.expression_widget = ExpressionWidget(
             self._dagi_root / ".dagi" / "emotes"
         )
-        self._layout.addWidget(
-            self.expression_widget, alignment=Qt.AlignmentFlag.AlignHCenter
+        self.expression_widget.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed
         )
+        self._layout.addWidget(self.expression_widget)
 
         # Status
         self._status_label = QLabel()

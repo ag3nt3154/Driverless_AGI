@@ -5,7 +5,13 @@ from pathlib import Path
 
 from PySide6.QtCore import QSize, Qt, QTimer, Slot
 from PySide6.QtGui import QFont, QImageReader, QMovie, QPixmap, QResizeEvent
-from PySide6.QtWidgets import QLabel, QSizePolicy, QVBoxLayout, QWidget
+from PySide6.QtWidgets import (
+    QHBoxLayout,
+    QLabel,
+    QSizePolicy,
+    QVBoxLayout,
+    QWidget,
+)
 
 from agent.affect import AffectSnapshot, AffectVector
 from agent.expression_assets import AssetRef, ImageAsset, TextFallback, load_fallback
@@ -40,17 +46,23 @@ class ExpressionWidget(QWidget):
         self._image_label.setMinimumHeight(80)
         self._image_label.setMaximumHeight(260)
         self._image_label.setSizePolicy(
-            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed
+            QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed
         )
 
         self._caption_label = QLabel()
         self._caption_label.setObjectName("expression-caption")
         self._caption_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
+        image_row = QHBoxLayout()
+        image_row.setContentsMargins(0, 0, 0, 0)
+        image_row.addStretch()
+        image_row.addWidget(self._image_label)
+        image_row.addStretch()
+
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 6)
         layout.setSpacing(4)
-        layout.addWidget(self._image_label)
+        layout.addLayout(image_row)
         layout.addWidget(self._caption_label)
 
         self._rotation_timer = QTimer(self)
@@ -199,7 +211,8 @@ class ExpressionWidget(QWidget):
         height = min(size.height() if size.height() > 0 else 260, 260)
         return QSize(max(width, 1), max(height, 1))
 
-    _GIF_BOUND = QSize(300, 260)
+    n = 1.4
+    _GIF_BOUND = QSize(int(150 * n), int(130 * n))
 
     def _movie_scaled_size(self) -> QSize:
         if self._movie_natural_size is not None:
