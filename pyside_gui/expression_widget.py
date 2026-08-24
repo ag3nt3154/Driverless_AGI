@@ -38,9 +38,9 @@ class ExpressionWidget(QWidget):
         self._image_label.setTextFormat(Qt.TextFormat.PlainText)
         self._image_label.setWordWrap(False)
         self._image_label.setMinimumHeight(80)
-        self._image_label.setMaximumHeight(140)
+        self._image_label.setMaximumHeight(260)
         self._image_label.setSizePolicy(
-            QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed
         )
 
         self._caption_label = QLabel()
@@ -196,10 +196,10 @@ class ExpressionWidget(QWidget):
     def _target_size(self) -> QSize:
         size = self._image_label.size()
         width = size.width() if size.width() > 0 else max(self.width(), 160)
-        height = min(size.height() if size.height() > 0 else 130, 140)
+        height = min(size.height() if size.height() > 0 else 260, 260)
         return QSize(max(width, 1), max(height, 1))
 
-    _GIF_BOUND = QSize(150, 130)
+    _GIF_BOUND = QSize(300, 260)
 
     def _movie_scaled_size(self) -> QSize:
         if self._movie_natural_size is not None:
