@@ -37,6 +37,8 @@ class ExpressionWidget(QWidget):
         self._warned_media_failures: set[str] = set()
         self._affect_snapshot = self._initial_affect()
         self._process_snapshot = ProcessSnapshot("idle", self._default_fallback)
+        self._meme_asset: ImageAsset | None = None
+        self._meme_cycles_remaining: int = 0
 
         self._image_label = QLabel()
         self._image_label.setObjectName("expression-image")
@@ -73,6 +75,12 @@ class ExpressionWidget(QWidget):
     @Slot(object)
     def update_affect(self, snapshot: AffectSnapshot) -> None:
         self._affect_snapshot = snapshot
+        if snapshot.meme_asset is not None:
+            self._meme_asset = snapshot.meme_asset
+            self._meme_cycles_remaining = 2
+            if self._channel == "vad":
+                self._render_current()
+            return
         if self._channel == "vad":
             self._update_caption()
 
@@ -93,12 +101,18 @@ class ExpressionWidget(QWidget):
         )
 
     def _rotate_channel(self) -> None:
+        if self._channel == "vad" and self._meme_cycles_remaining > 0:
+            self._meme_cycles_remaining -= 1
+            if self._meme_cycles_remaining == 0:
+                self._meme_asset = None
         self._channel = "process" if self._channel == "vad" else "vad"
         self._render_current()
 
     def _update_caption(self) -> None:
         if self._channel == "process":
             self._caption_label.setText(f"PROCESS {self._process_snapshot.state}")
+        elif self._meme_cycles_remaining > 0 and self._meme_asset is not None:
+            self._caption_label.setText(f"MEME {self._meme_asset.id}")
         else:
             current = self._affect_snapshot.current
             self._caption_label.setText(
@@ -108,6 +122,8 @@ class ExpressionWidget(QWidget):
     def _render_current(self) -> None:
         if self._channel == "process":
             self._render_asset(self._process_snapshot.asset)
+        elif self._meme_cycles_remaining > 0 and self._meme_asset is not None:
+            self._render_asset(self._meme_asset)
         else:
             self._render_asset(self._affect_snapshot.asset)
         self._update_caption()
