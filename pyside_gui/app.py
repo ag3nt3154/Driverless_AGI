@@ -5,6 +5,7 @@ import traceback
 from pathlib import Path
 
 from PySide6.QtCore import QMetaObject, Qt, QTimer, Q_ARG, Slot
+from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import (
     QLabel,
     QMainWindow,
@@ -58,6 +59,9 @@ class DagiMainWindow(QMainWindow):
         self.setWindowTitle(f"Driverless AGI — {config.display_name}")
         self.setMinimumSize(1200, 700)
         self.setStyleSheet("QMainWindow { background: #1e1e2e; }")
+        _icon_path = Path(__file__).with_name("resources") / "icon.png"
+        if _icon_path.exists():
+            self.setWindowIcon(QIcon(str(_icon_path)))
 
         self._build_ui()
         self._bridge = AgentBridge()
@@ -178,6 +182,21 @@ class DagiMainWindow(QMainWindow):
         self._plan_timer = QTimer(self)
         self._plan_timer.timeout.connect(self._poll_plan)
         self._plan_timer.start(2000)
+        drift_ms = int(self._config.affect_drift_interval * 1000)
+        if drift_ms > 0:
+            self._drift_timer = QTimer(self)
+            self._drift_timer.timeout.connect(self._tick_drift)
+            self._drift_timer.start(drift_ms)
+
+    @Slot()
+    def _tick_drift(self) -> None:
+        loop = self._active_loop
+        if loop is None:
+            return
+        controller = loop.tracker.affect_controller
+        if controller is None:
+            return
+        controller.drift()
 
     def _show_welcome(self) -> None:
         self._conversation.append_info(

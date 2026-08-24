@@ -138,6 +138,8 @@ class AffectController:
         record=None,
         on_change=None,
     ) -> None:
+        import threading as _threading
+        self._lock = _threading.Lock()
         self._library = library
         self._config = config
         self._rng = rng or random.Random()
@@ -184,10 +186,12 @@ class AffectController:
             _bounded("arousal_delta", delta.arousal),
             _bounded("dominance_delta", delta.dominance),
         )
-        return self._apply_delta(delta, "adjust")
+        with self._lock:
+            return self._apply_delta(delta, "adjust")
 
     def drift(self) -> AffectSnapshot:
-        snapshot = self.drift_without_notify()
+        with self._lock:
+            snapshot = self.drift_without_notify()
         self.emit(snapshot)
         return snapshot
 
