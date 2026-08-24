@@ -232,8 +232,8 @@ def create_tool_registry(
         from tools.reload_skills import ReloadSkillsTool
         reg.register(ReloadSkillsTool())
         if affect_controller is not None:
-            from tools.adjust_affect import AdjustAffectTool
-            reg.register(AdjustAffectTool(controller=affect_controller))
+            from tools.adjust_emotion import AdjustEmotionTool
+            reg.register(AdjustEmotionTool(controller=affect_controller))
         if config is not None:
             # Auto-discover predefined subagent types from .dagi/subagents/
             # A valid type directory must contain both prompt.md and subagent_config.yaml.

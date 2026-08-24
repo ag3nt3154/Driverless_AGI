@@ -6,7 +6,7 @@ import pytest
 
 from agent.affect import AffectController, AffectVector
 from agent.expression_assets import ImageAsset
-from tools.adjust_affect import AdjustAffectTool
+from tools.adjust_emotion import AdjustEmotionTool
 
 
 class _FakeLibrary:
@@ -21,7 +21,7 @@ class _FakeLibrary:
 
 
 def test_schema_requires_three_bounded_deltas() -> None:
-    tool = AdjustAffectTool(
+    tool = AdjustEmotionTool(
         AffectController(
             _FakeLibrary(),
             baseline=AffectVector(0.0, 0.0, 0.0),
@@ -49,7 +49,7 @@ def test_run_reports_prior_delta_result_and_selected_id() -> None:
         baseline=AffectVector(0.0, 0.0, 0.0),
         current=AffectVector(0.9, 0.1, 0.0),
     )
-    tool = AdjustAffectTool(controller)
+    tool = AdjustEmotionTool(controller)
 
     result = tool.run(valence_delta=0.5, arousal_delta=-0.2, dominance_delta=0.3)
 
@@ -73,7 +73,7 @@ def test_run_rejects_invalid_runtime_deltas_before_mutating(kwargs, axis) -> Non
         baseline=AffectVector(0.0, 0.0, 0.0),
         current=AffectVector(0.25, 0.25, 0.25),
     )
-    tool = AdjustAffectTool(controller)
+    tool = AdjustEmotionTool(controller)
 
     with pytest.raises(ValueError, match=axis):
         tool.run(**kwargs)

@@ -4,10 +4,11 @@ from agent.affect import AffectController, AffectVector
 from agent.base_tool import BaseTool
 
 
-class AdjustAffectTool(BaseTool):
-    name = "adjust_affect"
+class AdjustEmotionTool(BaseTool):
+    name = "adjust_emotion"
     description = (
-        "Adjust the current affect vector by relative valence, arousal, and dominance deltas. "
+        "Adjust your emotional state by relative valence, arousal, and dominance deltas. "
+        "Use this to accurately reflect your current emotional experience as you work. "
         "All three deltas are required and must be between -1 and 1."
     )
     _parameters = {

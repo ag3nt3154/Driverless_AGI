@@ -135,7 +135,7 @@ sandbox_mode: false  # true  = file tools (read, write, edit, grep, find, copy) 
 #   - web_search              # Search the web (fallback when no config subagents)
 #   - web_fetch               # Fetch a URL (fallback when no config subagents)
 #   # ── Affect tools ─────────────────────────────────────────────────────────────
-#   - adjust_affect           # Adjust relative valence/arousal/dominance state
+#   - adjust_emotion           # Adjust emotional state via valence/arousal/dominance deltas
 
 # ── Model catalog ─────────────────────────────────────────────────────────────
 # Define every model you want available to dagi here.
