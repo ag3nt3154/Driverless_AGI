@@ -12,9 +12,19 @@ from .utils import _colour, _truncate
 class ConversationPane(RichLog):
     """Scrollable Rich log. auto_scroll pauses when user scrolls up."""
 
+    _BOTTOM_THRESHOLD = 3
+
     def on_mount(self) -> None:
         self.auto_scroll = True
         self._last_assistant: str = ""
+
+    def _is_near_bottom(self) -> bool:
+        return (
+            self.max_scroll_y - self.scroll_y <= self._BOTTOM_THRESHOLD
+        )
+
+    def on_scroll(self) -> None:
+        self.auto_scroll = self._is_near_bottom()
 
     def append_tool_start(self, name: str, args: str, verbose: bool) -> None:
         col = _colour(name)
