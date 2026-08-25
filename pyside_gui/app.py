@@ -142,6 +142,7 @@ class DagiMainWindow(QMainWindow):
 
     def _on_session_cleared(self) -> None:
         self._active_loop = None
+        self._bridge.reset_stats()
 
     def _connect_signals(self) -> None:
         self._prompt.submitted.connect(self._on_input_submitted)
