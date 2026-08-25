@@ -1215,7 +1215,10 @@ class AgentLoop:
                         _thinking_tok,
                         _cached_tok,
                     )
-                    self.tracker.record_assistant(message.content, response.usage, tool_records)
+                    self.tracker.record_assistant(
+                        message.content, response.usage, tool_records,
+                        cached_tokens=_cached_tok, thinking_tokens=_thinking_tok,
+                    )
 
                     # Check for either exit flag (TASK_END_FLAG kept as legacy alias)
                     _exit_flag = (
@@ -1431,7 +1434,6 @@ class AgentLoop:
         Shared by the end of the normal per-tool-call loop and the
         `_handle_write_handoff` short-circuit path.
         """
-        self.tracker.record_assistant(message.content, response.usage, tool_records)
         _thinking_tok = (
             getattr(getattr(response.usage, "completion_tokens_details", None), "reasoning_tokens", None)
             or 0
@@ -1439,6 +1441,10 @@ class AgentLoop:
         _cached_tok = (
             getattr(getattr(response.usage, "prompt_tokens_details", None), "cached_tokens", None)
             or 0
+        )
+        self.tracker.record_assistant(
+            message.content, response.usage, tool_records,
+            cached_tokens=_cached_tok, thinking_tokens=_thinking_tok,
         )
         self.callbacks.on_token_update(
             getattr(response.usage, "prompt_tokens", 0) or 0,

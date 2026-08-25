@@ -34,6 +34,8 @@ class MessageNode:
     cost: float | None
     tool_calls: list[ToolCallRecord]
     timestamp: str
+    cached_tokens: int | None = None
+    thinking_tokens: int | None = None
 
 
 class SessionTracker:
@@ -151,6 +153,9 @@ class SessionTracker:
         content: str | None,
         usage,
         tool_calls: list[ToolCallRecord],
+        *,
+        cached_tokens: int = 0,
+        thinking_tokens: int = 0,
     ) -> None:
         input_tokens = getattr(usage, "prompt_tokens", None) if usage else None
         output_tokens = getattr(usage, "completion_tokens", None) if usage else None
@@ -163,6 +168,8 @@ class SessionTracker:
             output_tokens=output_tokens,
             cost=cost,
             tool_calls=tool_calls,
+            cached_tokens=cached_tokens or None,
+            thinking_tokens=thinking_tokens or None,
         )
         self._write(self._tag({"type": "message", **asdict(node)}))
 
@@ -222,6 +229,8 @@ class SessionTracker:
             assistant_nodes = [m for m in self._messages if m.entity == "assistant"]
             child_in  = sum(n.input_tokens  for n in assistant_nodes if n.input_tokens)
             child_out = sum(n.output_tokens for n in assistant_nodes if n.output_tokens)
+            child_cached = sum(n.cached_tokens for n in assistant_nodes if n.cached_tokens)
+            child_thinking = sum(n.thinking_tokens for n in assistant_nodes if n.thinking_tokens)
             child_cost = sum(n.cost for n in assistant_nodes if n.cost)
             child_tools: dict[str, int] = {}
             for n in assistant_nodes:
@@ -231,6 +240,8 @@ class SessionTracker:
                 "subagent_id": self._subagent_id,
                 "input_tokens": child_in,
                 "output_tokens": child_out,
+                "cached_tokens": child_cached,
+                "thinking_tokens": child_thinking,
                 "cost": child_cost,
                 "tool_call_counts": child_tools,
             })
@@ -241,6 +252,8 @@ class SessionTracker:
         assistant_nodes = [m for m in self._messages if m.entity == "assistant"]
         total_in = sum(n.input_tokens for n in assistant_nodes if n.input_tokens is not None)
         total_out = sum(n.output_tokens for n in assistant_nodes if n.output_tokens is not None)
+        total_cached = sum(n.cached_tokens for n in assistant_nodes if n.cached_tokens)
+        total_thinking = sum(n.thinking_tokens for n in assistant_nodes if n.thinking_tokens)
         costs = [n.cost for n in assistant_nodes if n.cost is not None]
         total_cost = sum(costs) if costs else None
 
@@ -253,6 +266,8 @@ class SessionTracker:
         for s in self._subagent_stats:
             total_in  += s["input_tokens"]
             total_out += s["output_tokens"]
+            total_cached += s.get("cached_tokens", 0)
+            total_thinking += s.get("thinking_tokens", 0)
             if s["cost"]:
                 total_cost = (total_cost or 0) + s["cost"]
             for name, count in s["tool_call_counts"].items():
@@ -263,6 +278,8 @@ class SessionTracker:
             "finished_at": finished_at.isoformat(),
             "total_input_tokens": total_in,
             "total_output_tokens": total_out,
+            "total_cached_tokens": total_cached,
+            "total_thinking_tokens": total_thinking,
             "total_cost": total_cost,
             "tool_call_counts": tool_call_counts,
         }
@@ -311,6 +328,8 @@ class SessionTracker:
         output_tokens: int | None = None,
         cost: float | None = None,
         tool_calls: list[ToolCallRecord] | None = None,
+        cached_tokens: int | None = None,
+        thinking_tokens: int | None = None,
     ) -> MessageNode:
         node = MessageNode(
             id=uuid4().hex,
@@ -323,6 +342,8 @@ class SessionTracker:
             cost=cost,
             tool_calls=tool_calls or [],
             timestamp=_now(),
+            cached_tokens=cached_tokens,
+            thinking_tokens=thinking_tokens,
         )
         self._messages.append(node)
         self._seq += 1
