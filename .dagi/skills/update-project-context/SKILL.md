@@ -1,11 +1,16 @@
 ---
 name: update-project-context
-description: Create or update AGENTS.md at the project root — a living, continuously-updated technical overview that gives any future session a fast picture of the project without re-reading the whole repo. Sections are deliberately lean: Overview, Rules, Behavioral Guidelines, Process Flow, Architecture, Key Files & Directories, a capped Errors log, Notes & Terms, and a trimmed User Insights (subsections capped at 10 one-liners each). Use whenever the user says "update project context", "update agents.md", "refresh the context doc", "create project context", or "update the docs". Also invoke automatically at the end of every task, and proactively mid-session after a major architectural change.
+description: Use when creating, compressing, or updating a project's AGENTS.md, including end-of-task context refreshes and standing-instruction changes.
 ---
 
 # Update Project Context
 
-You are creating or updating `AGENTS.md` at the project root. This document is a living overview any future session can skim in under 5 minutes to understand current project state. It is updated at the end of every task, so it must stay lean — bloat compounds fast when a file is rewritten this often.
+Create or update the project-root `AGENTS.md`: a compact operational briefing injected into
+future sessions. It is not architecture documentation, a roadmap, or a project diary. Preserve
+instructions and hard-won operational knowledge; link to durable docs for everything else.
+
+**Output target:** 1,500–2,000 tokens when the stable behavioral rules require that much; shorter
+is welcome. Treat the budget as a forcing function, not permission to delete required instructions.
 
 ## Mode Detection
 
@@ -19,7 +24,7 @@ Only on first creation, when there is no prior document and no task context to l
 - Read `README.md`, `TODO.md`
 - Run `git log --oneline -20` and `git status`
 - List top-level directories (1 level deep)
-- Note: a freshly-scaffolded `AGENTS.md` (from `/init`) already ships a `## Behavioral Guidelines` placeholder — fill it in with the project's coding standards and session protocol rather than leaving it blank.
+- If `/init` supplied an empty `## Behavioral Guidelines`, fill it with actual project standards.
 
 ## Step 1b: Gather Context (updates — the common case)
 
@@ -32,7 +37,9 @@ Instead:
 
 ## Step 2: Write AGENTS.md
 
-Use this template. Every section should be skimmable in seconds — prefer bullets and short tables over prose.
+Use exactly this section model. Omit `Process Flow`, `Errors Log`, or `Notes & Terms` when there is
+nothing useful to say. Do not add architecture, key-file catalogs, user profiles, shortcomings, or
+idea backlogs; those belong in README, TODO, issue tracking, or dedicated design documents.
 
 ---
 
@@ -45,14 +52,11 @@ Use this template. Every section should be skimmable in seconds — prefer bulle
 
 ## Overview
 
-{2-4 sentences: what the project is, what it does, who/what uses it, and the
-core problem it solves. Merge "what" and "why" — do not split into separate
-Description/Objective sections.}
+{1-2 sentences: what the project is and does. Link README for setup and detail.}
 
 ## Rules
 
-{Behavioral rules relevant to this specific project. Short, imperative
-bullets.}
+{Project-specific standing instructions. Short, imperative bullets.}
 
 - {rule}
 
@@ -67,59 +71,22 @@ when the user gives an explicit standing behavioral instruction.}
 
 ## Process Flow
 
-{Numbered, step-by-step main execution path. Name key functions/files/services.
-Update only if this session changed the flow — otherwise leave untouched.}
-
-## Architecture
-
-{High-level components and how they relate. Short bullet list or ASCII diagram.
-Shape of the system, not implementation detail.}
-
-## Key Files & Directories
-
-| Path | Purpose |
-|------|---------|
-| `path/to/file.py` | One-line description |
-
-{Only non-obvious, load-bearing entries. Aim for well under 20 rows. If this
-table is growing every session, it's a sign entries need pruning, not just
-adding.}
+{Optional: 3-6 numbered lines describing the main runtime or delivery path.
+Name only the boundary files/services needed to orient a new session.}
 
 ## Errors Log
 
-{Capped at the 10 most recent entries. Each entry is ONE line: error + fix,
-no cause paragraphs. When adding a new entry past the cap, drop the oldest.}
+{Optional: at most 5 unresolved or recurrence-prone failures. One line each. A
+normal completed bugfix does not automatically deserve an entry.}
 
 - **{YYYY-MM-DD}**: {error} → {fix}
 
 ## Notes & Terms
 
-{Merged gotchas + glossary. Each bullet is either a surprising constraint/
-workaround, or a domain term worth defining. Keep this the most heavily
-curated section — prune stale or superseded entries rather than only adding.}
+{Optional: at most 8 non-obvious invariants or required workarounds. One line
+each. Keep information that changes how a competent contributor acts.}
 
-- **{Term or gotcha}**: {one or two sentences}
-
----
-
-## User Insights
-
-> Independent observations — not highlighted by the user. Be specific and
-> honest. Each subsection is capped at 10 points, each point a single line.
-
-### User Tendencies
-{Observed patterns in how the user works, prioritizes, or communicates. Max
-10 one-line bullets.}
-
-### Project Shortcomings
-{Weaknesses the project has that the user may not be emphasizing: missing
-tests, hardcoded config, security gaps, scalability ceilings. Max 10
-one-line bullets.}
-
-### Potential Areas of Exploration
-{Directions the project could profitably go that have not been discussed:
-optimizations, missing features, integration opportunities. Max 10 one-line
-bullets.}
+- **{Term or gotcha}**: {one sentence}
 ```
 
 ---
@@ -129,33 +96,46 @@ bullets.}
 - **Overview**: touch only if this session changed it structurally. Otherwise leave as-is.
 - **Rules**: add a rule when the user gives a project-specific standing instruction. Remove rules no longer accurate.
 - **Behavioral Guidelines**: leave untouched on routine updates. Only edit when the user explicitly changes a standing behavioral rule.
-- **Architecture / Process Flow**: touch only if this session changed them structurally. Otherwise leave as-is.
-- **Key Files & Directories**: add entries this session's work made load-bearing; remove entries no longer accurate or load-bearing. This table should not grow monotonically.
-- **Errors Log**: append one line for a new error this session actually hit (never speculate). Compress to `**{date}**: {error} → {fix}`. Enforce the cap of 10 — when adding the 11th, drop the oldest.
-- **Notes & Terms**: add anything genuinely surprising discovered this session; prune superseded entries.
-- **User Insights**: actively revise — sharpen vague entries, remove inaccurate ones, add new observations. Each subsection capped at 10 one-line points — merge or drop the weakest when adding an 11th. This section should read as accurate today, not as an archive of every observation ever made.
+- **Process Flow**: change only when the main path changes; keep it at 3-6 steps.
+- **Errors Log**: record only unresolved or likely-to-recur failures whose workaround remains useful. Remove resolved history and enforce the 5-line cap.
+- **Notes & Terms**: add only knowledge that changes future action. Remove facts discoverable quickly from code or README and enforce the 8-line cap.
+- **Removed categories**: migrate no content from Architecture, Key Files, User Tendencies, Project Shortcomings, or Potential Areas of Exploration unless a specific item qualifies as an operational rule, live error, or non-obvious invariant.
 
-Preserve content that is still accurate. Do not rewrite sections that have not changed.
+Preserve required instructions and still-useful operational knowledge. Accuracy alone is not an
+inclusion test: current but low-value detail should be pruned.
 
 ## Step 4: Confirm and Save
 
 Write `AGENTS.md` to the project root. Then briefly report:
 - Whether this was a creation or an update
 - Which sections changed and why
-- Anything pruned (dropped errors-log entry, removed stale note, etc.)
+- Anything pruned or deliberately not recorded
 
 ## Guidelines
 
-**Trigger discipline**: run this at the end of every task. Also run it proactively mid-session if something major happens (a structural/architectural change) — don't wait for task end in that case.
+**Trigger discipline**: run at the end of every task and after a standing instruction changes.
 
-**On length**: this is the top priority for this skill. If a section is growing every update, that's a signal to prune, not a signal it's working. The whole document should stay a 5-minute read regardless of how many sessions have touched it.
+**On length**: measure before and after. Aim for 1,500–2,000 tokens; never let routine updates
+increase the document unless they add a required instruction or replace weaker context. If over
+budget, prune descriptive material before rules, then resolved errors, then obvious notes.
 
-**On the Errors Log cap**: the cap exists because this doc updates after every task — an uncapped append-only log is exactly what makes documents like this unreadable over time. Git history is the durable record; this log is only for the most recent, still-relevant issues.
+**On errors**: Git history is the archive. Keep only failures likely to save a future session from
+repeating wasted work; recency alone is insufficient.
 
 **On dates:** Always ISO format (YYYY-MM-DD). Never write "recently" or relative dates.
 
-**On User Insights**: still the most valuable part of the document — write it as an honest briefing for a future session that has never spoken with this user. 3 subsections, each capped at 10 one-liners — sharpen and consolidate rather than let any subsection hit the cap and stay there.
+**On description vs README/TODO**: Overview orients; README explains; TODO tracks future work.
+Reference those files instead of copying their contents.
 
-**On description vs README**: Overview and Architecture complement `README.md`, not duplicate it. Link to README for setup/usage instead of repeating it.
+**On behavioral guidelines:** `AGENTS.md` is loaded into the system prompt. `Rules` and
+`Behavioral Guidelines` are the only homes for standing instructions; do not duplicate them.
 
-**On behavioral guidelines:** `AGENTS.md` itself (per-project) is the mechanism loaded into the system prompt at runtime — the `## Behavioral Guidelines` section holds rules for operating as a coding agent generally (dagi-root copy) or rules specific to whatever project dagi is pointed at (project-path copy). Do not duplicate its content into other sections (Architecture, Notes & Terms, etc.) — Rules and Behavioral Guidelines are the two sections where standing-instruction content belongs; everything else stays purely descriptive.
+## Inclusion Test
+
+Keep a line only if at least one is true:
+
+1. It is a standing instruction future agents must follow.
+2. Omitting it creates a meaningful risk of a repeated error or wasted investigation.
+3. It explains a non-obvious runtime boundary needed to choose where to work.
+
+If none applies, delete it or link to its durable home.
