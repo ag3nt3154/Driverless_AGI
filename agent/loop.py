@@ -298,10 +298,30 @@ def _extract_reasoning(message) -> str:
     return text or ""
 
 
+class _SafePlaceholder:
+    """Sentinel returned by _SafeDict for unknown keys.
+
+    Preserves the original ``{key}`` or ``{key:spec}`` text so
+    ``str.format_map`` passes through placeholders it doesn't know about.
+    """
+    __slots__ = ("_key",)
+
+    def __init__(self, key: str) -> None:
+        self._key = key
+
+    def __str__(self) -> str:
+        return f"{{{self._key}}}"
+
+    def __format__(self, format_spec: str) -> str:
+        if format_spec:
+            return f"{{{self._key}:{format_spec}}}"
+        return f"{{{self._key}}}"
+
+
 class _SafeDict(dict):
     """Format-map helper: leaves unknown {key} placeholders intact."""
-    def __missing__(self, key: str) -> str:
-        return f"{{{key}}}"
+    def __missing__(self, key: str) -> _SafePlaceholder:
+        return _SafePlaceholder(key)
 
 
 class AgentLoop:
