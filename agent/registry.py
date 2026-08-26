@@ -1,4 +1,5 @@
 from agent.base_tool import BaseTool
+from agent.protocol import ToolResult
 
 
 class ToolRegistry:
@@ -42,7 +43,7 @@ class ToolRegistry:
         for name in names:
             self._tools.pop(name, None)
 
-    def dispatch(self, name: str, kwargs: dict) -> str | list:
+    def dispatch(self, name: str, kwargs: dict) -> str | list | ToolResult:
         if name not in self._tools:
             return f"Error: unknown tool '{name}'"
         if name in self._denied:

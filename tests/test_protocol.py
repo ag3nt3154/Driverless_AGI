@@ -82,3 +82,36 @@ class TestConstants:
         from agent.protocol import LIST_ENCODING_PREFIX
 
         assert LIST_ENCODING_PREFIX == "__list__:"
+
+
+class TestBaseToolReturnType:
+    def test_base_tool_accepts_tool_result_return(self):
+        """BaseTool.run() type hint accepts ToolResult."""
+        import inspect
+        from agent.base_tool import BaseTool
+
+        sig = inspect.signature(BaseTool.run)
+        # Just verify ToolResult is mentioned in the annotation
+        annotation = sig.return_annotation
+        assert "ToolResult" in str(annotation)
+
+
+class TestRegistryDispatchToolResult:
+    def test_dispatch_passes_through_tool_result(self):
+        from agent.base_tool import BaseTool
+        from agent.protocol import SideEffect, ToolResult
+        from agent.registry import ToolRegistry
+
+        class FakeTool(BaseTool):
+            name = "fake"
+            description = "fake"
+            _parameters = {"type": "object", "properties": {}}
+
+            def run(self) -> ToolResult:
+                return ToolResult(output="ok", side_effect=SideEffect.END_TURN)
+
+        reg = ToolRegistry()
+        reg.register(FakeTool())
+        result = reg.dispatch("fake", {})
+        assert isinstance(result, ToolResult)
+        assert result.side_effect is SideEffect.END_TURN
