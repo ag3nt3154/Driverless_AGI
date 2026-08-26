@@ -47,11 +47,12 @@ class TestNotifyWiring:
 
     def test_failed_write_handoff_stays_visible_without_deferring_completion(self):
         app = _make_app()
-        callbacks = build_callbacks(app, loop_ref=[])
+        with patch("tui.callbacks.notify"):
+            callbacks = build_callbacks(app, loop_ref=[])
 
-        callbacks.on_tool_end("write_handoff", "Error: cannot write handoff")
-        callbacks.on_assistant_text("Fallback response")
-        callbacks.on_done("Fallback response")
+            callbacks.on_tool_end("write_handoff", "Error: cannot write handoff")
+            callbacks.on_assistant_text("Fallback response")
+            callbacks.on_done("Fallback response")
 
         app._conv.append_tool_end.assert_called_once_with(
             "write_handoff", "Error: cannot write handoff", False
