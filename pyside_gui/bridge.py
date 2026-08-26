@@ -90,7 +90,7 @@ class AgentBridge(QObject):
         if timeout is not None and timeout <= 0:
             safety: float | None = 0.0
         else:
-            safety = (timeout + 60.0) if timeout is not None else 600.0
+            safety = (timeout + 60.0) if timeout is not None else None
         evt.wait(timeout=safety)
         if container:
             return container[0]

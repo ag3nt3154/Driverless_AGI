@@ -111,17 +111,22 @@ class DagiApp(SlashCommandsMixin, App[None]):
         if self._input_expanded:
             self.action_toggle_compose()
         if self._pending_ask is not None:
-            ask_evt, container, options, _ = self._pending_ask
+            if self._ask_is_live():
+                ask_evt, container, options, _ = self._pending_ask
+                self._pending_ask = None
+                container.append(raw)
+                self.query_one(ConversationPane).write(
+                    Panel(raw, title="[bold cyan]You[/bold cyan]",
+                          title_align="left", border_style="cyan", padding=(0, 1))
+                )
+                ask_evt.set()
+                self.query_one("#prompt", PromptInput).disabled = True
+                self._show_running_indicator()
+                return
+            # Nobody is left to read the answer: the ask_user call timed out
+            # and its turn has since ended. Posting into the dead event would
+            # show the running indicator without starting a worker — a hang.
             self._pending_ask = None
-            container.append(raw)
-            self.query_one(ConversationPane).write(
-                Panel(raw, title="[bold cyan]You[/bold cyan]",
-                      title_align="left", border_style="cyan", padding=(0, 1))
-            )
-            ask_evt.set()
-            self.query_one("#prompt", PromptInput).disabled = True
-            self._show_running_indicator()
-            return
         if raw.startswith("/") and raw.split(maxsplit=1)[0].lower() == "/wtf":
             self._handle_slash(raw)
             return
@@ -240,6 +245,7 @@ class DagiApp(SlashCommandsMixin, App[None]):
                     loop_ref[0].finish()
                 except Exception:
                     pass
+            self.call_from_thread(self._clear_pending_ask)
             self.call_from_thread(sidebar.set_status, "idle")
             self.call_from_thread(self._enable_input)
 
@@ -307,6 +313,17 @@ class DagiApp(SlashCommandsMixin, App[None]):
         self.query_one(ConversationPane).append_question(question, options, timeout)
         self._pending_ask = (evt, container, options, timeout)
         self._enable_input()
+
+    def _ask_is_live(self) -> bool:
+        """True while a thread that can still consume an ask_user answer is running."""
+        return any(
+            worker is not None and worker.is_alive()
+            for worker in (self._worker, self._wtf_worker)
+        )
+
+    def _clear_pending_ask(self) -> None:
+        """Retire an unanswered question once its worker can no longer read the answer."""
+        self._pending_ask = None
 
     def on_history_screen_session_selected(
         self, event: "HistoryScreen.SessionSelected"

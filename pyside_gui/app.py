@@ -221,15 +221,20 @@ class DagiMainWindow(QMainWindow):
             self.close()
             return
         if self._pending_ask is not None:
-            if self._pending_ask_container is not None:
-                self._pending_ask_container.append(text)
-            self._pending_ask.set()
-            self._pending_ask = None
-            self._pending_ask_container = None
-            self._conversation.append_user_message(text)
-            self._prompt.setDisabled(True)
-            self._show_running()
-            return
+            if self._worker and self._worker.is_alive():
+                if self._pending_ask_container is not None:
+                    self._pending_ask_container.append(text)
+                self._pending_ask.set()
+                self._pending_ask = None
+                self._pending_ask_container = None
+                self._conversation.append_user_message(text)
+                self._prompt.setDisabled(True)
+                self._show_running()
+                return
+            # Nobody is left to read the answer: the ask_user call timed out
+            # and its turn has since ended. Posting into the dead event would
+            # show the running label without starting a worker — a hang.
+            self._pending_ask = self._pending_ask_container = None
         # Inject-and-resume while paused
         if (
             self._worker and self._worker.is_alive()
@@ -308,6 +313,7 @@ class DagiMainWindow(QMainWindow):
             if loop_ref:
                 try: loop_ref[0].finish()
                 except Exception: pass
+            self._invoke_on_main("_clear_pending_ask_slot")
             stage("finally: idle"); self._invoke_on_main("_set_status_slot", "idle")
             self._invoke_on_main("_enable_input_slot")
     def keyPressEvent(self, event) -> None:
@@ -537,6 +543,11 @@ class DagiMainWindow(QMainWindow):
     @Slot()
     def _enable_input_slot(self) -> None:
         self._enable_input()
+
+    @Slot()
+    def _clear_pending_ask_slot(self) -> None:
+        """Retire an unanswered question once its worker can no longer read the answer."""
+        self._pending_ask = self._pending_ask_container = None
 
     def _invoke_on_main(self, slot: str, arg: str | None = None) -> None:
         """Queue a Qt slot on the main thread from any thread."""

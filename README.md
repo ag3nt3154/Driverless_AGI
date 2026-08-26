@@ -85,6 +85,8 @@ PDF/DOCX/XLSX/PPTX reading no longer requires any dagi-side extras — it's hand
 
 **OpenAI credentials errors** — if you see authentication failures on startup, confirm your `.env` file exists at the repo root and contains the correct key, and that `python-dotenv` picked it up (it's a core dependency, installed automatically by `pip install -e .`).
 
+**App appears frozen — running timer, `process=idle`** — a running indicator that keeps counting while the process channel reads `idle` and the prompt stays disabled means the UI is holding an answer sink for an `ask_user` question nobody is waiting on any more. Both the TUI and the PySide GUI now retire the pending question when its worker exits, and ignore a stale one at submit time, so the message starts a normal turn instead. If you still see it, check `.dagi/logs/pyside_worker.log` (GUI) and the session `*.events.jsonl` — a run whose last event is `plan/write` with no `turn/end` is a *different* stall: the worker is blocked inside the provider call, not on a stale question.
+
 **Authorization / proxy errors** — if API requests are blocked by a corporate proxy or firewall, add the API base URL to the `no_proxy` environment variable so requests bypass the proxy:
 
 ```bash

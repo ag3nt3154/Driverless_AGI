@@ -223,7 +223,7 @@ def create_tool_registry(
         _ask_timeout = (
             config.ask_user_timeout
             if (config and config.ask_user_timeout is not None)
-            else 300
+            else None
         )
         reg.register(AskUserTool(on_ask_user=_on_ask, timeout=_ask_timeout))
         if config is not None and (config.advanced_config is not None or config.worker_config is not None):

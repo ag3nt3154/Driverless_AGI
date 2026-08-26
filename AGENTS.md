@@ -119,6 +119,7 @@ Use `bash` for Git operations.
 
 ## Errors Log (recent)
 
+- **2026-08-26**: The 08-23 `_pending_ask` fix only covered done/paused, and the TUI never got it → both UIs now ignore a stale sink at submit time (`_ask_is_live`) and retire it in `_agent_work`'s `finally`.
 - **2026-08-25**: PySide `/clear` retained old token totals → reset `AgentBridge` stats with the session.
 - **2026-08-24**: PySide `/wd` and `/model` updated handler-only state → propagate config changes to `DagiWindow`.
 - **2026-08-24**: `pytestqt` cannot load `PySide6.QtCore` in the `dagi` environment → run Qt tests directly with Python.
