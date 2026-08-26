@@ -1,4 +1,4 @@
-# tests/test_compact_integration.py
+﻿# tests/test_compact_integration.py
 """Integration tests: subagent-based compaction with session log."""
 from __future__ import annotations
 
@@ -73,10 +73,10 @@ class TestCompactionSurfaceIntegration:
 
         loop = AgentLoop(config=_config(), _registry=_make_registry())
         _seed_steps(loop, turn=1, n_steps=5)
-        loop._last_prompt_tokens = 5_000  # 1000/step avg → keep 1, middle 4
+        loop._last_prompt_tokens = 5_000  # 1000/step avg â†’ keep 1, middle 4
         loop._last_request_snapshot = _SNAPSHOT
 
-        with patch("agent.loop.run_subagent", return_value=mock_result):
+        with patch("agent._compaction.run_subagent", return_value=mock_result):
             t = loop.log.next_turn()
             loop.log.append(sev.TURN_START, {"turn": t})
             result = loop.compact(force=True)
@@ -112,7 +112,7 @@ class TestCompactionSurfaceIntegration:
         # Before compaction: 5 steps visible
         assert len(loop._collect_steps()) == 5
 
-        with patch("agent.loop.run_subagent", return_value=mock_result):
+        with patch("agent._compaction.run_subagent", return_value=mock_result):
             t = loop.log.next_turn()
             loop.log.append(sev.TURN_START, {"turn": t})
             loop.compact(force=True)
@@ -120,7 +120,7 @@ class TestCompactionSurfaceIntegration:
 
         # After compaction: only the tail step(s) visible, not the summarized middle
         steps_after = loop._collect_steps()
-        # With 5 steps and keep_recent_tokens=1_500, avg=1000 → keep 1
+        # With 5 steps and keep_recent_tokens=1_500, avg=1000 â†’ keep 1
         assert len(steps_after) == 1
         # The surviving step is the last one
         assert steps_after[0] == (1, 4)
@@ -138,7 +138,7 @@ class TestCompactionSurfaceIntegration:
         loop._last_prompt_tokens = 5_000
         loop._last_request_snapshot = _SNAPSHOT
 
-        with patch("agent.loop.run_subagent", return_value=mock_result):
+        with patch("agent._compaction.run_subagent", return_value=mock_result):
             t1 = loop.log.next_turn()
             loop.log.append(sev.TURN_START, {"turn": t1})
             r1 = loop.compact(force=True)
@@ -147,11 +147,11 @@ class TestCompactionSurfaceIntegration:
 
         # Add more steps so there's a new middle
         _seed_steps(loop, turn=2, n_steps=5)
-        loop._last_prompt_tokens = 6_000  # 6 visible steps × 1000/step → keep 1 → 5 middle
+        loop._last_prompt_tokens = 6_000  # 6 visible steps Ã— 1000/step â†’ keep 1 â†’ 5 middle
 
         mock_result.handoff_text = "Summary v2."
         mock_result.branch_id = "compact_b"
-        with patch("agent.loop.run_subagent", return_value=mock_result):
+        with patch("agent._compaction.run_subagent", return_value=mock_result):
             loop._last_request_snapshot = _SNAPSHOT
             t2 = loop.log.next_turn()
             loop.log.append(sev.TURN_START, {"turn": t2})
@@ -175,7 +175,7 @@ class TestCompactionSurfaceIntegration:
         mock_result = MagicMock()
         mock_result.is_ok = False
         mock_result.handoff_text = ""
-        with patch("agent.loop.run_subagent", return_value=mock_result):
+        with patch("agent._compaction.run_subagent", return_value=mock_result):
             result = loop.compact(force=True)
 
         assert result.did_compact is False
@@ -196,7 +196,7 @@ class TestCompactionSurfaceIntegration:
 
         original_list = loop._messages
 
-        with patch("agent.loop.run_subagent", return_value=mock_result):
+        with patch("agent._compaction.run_subagent", return_value=mock_result):
             t = loop.log.next_turn()
             loop.log.append(sev.TURN_START, {"turn": t})
             loop.compact(force=True)
@@ -219,7 +219,7 @@ class TestCompactionSurfaceIntegration:
 
         events_before = len(loop.log.events)
 
-        with patch("agent.loop.run_subagent", return_value=mock_result):
+        with patch("agent._compaction.run_subagent", return_value=mock_result):
             t = loop.log.next_turn()
             loop.log.append(sev.TURN_START, {"turn": t})
             loop.compact(force=True)
@@ -227,7 +227,7 @@ class TestCompactionSurfaceIntegration:
 
         # More events than before (new BRANCH_START + CONTEXT_COMPACTION added)
         assert len(loop.log.events) > events_before
-        # No duplicates — every seq is unique
+        # No duplicates â€” every seq is unique
         seqs = [e.seq for e in loop.log.events]
         assert len(seqs) == len(set(seqs))
 
@@ -245,7 +245,7 @@ class TestCompactionSurfaceIntegration:
         mock_result = MagicMock()
         mock_result.is_ok = False
         mock_result.handoff_text = ""
-        with patch("agent.loop.run_subagent", return_value=mock_result):
+        with patch("agent._compaction.run_subagent", return_value=mock_result):
             result = loop.compact(force=True)
 
         assert result.did_compact is False
@@ -268,7 +268,7 @@ class TestCompactionSurfaceIntegration:
         loop._last_prompt_tokens = 5_000
         loop._last_request_snapshot = _SNAPSHOT
 
-        with patch("agent.loop.run_subagent", return_value=mock_result):
+        with patch("agent._compaction.run_subagent", return_value=mock_result):
             t1 = loop.log.next_turn()
             loop.log.append(sev.TURN_START, {"turn": t1})
             r1 = loop.compact(force=True)
@@ -284,7 +284,7 @@ class TestCompactionSurfaceIntegration:
             if "[CONTEXT SUMMARY" not in content:
                 assert "task 0" not in content
 
-        # Second compaction — add more steps first
+        # Second compaction â€” add more steps first
         _seed_steps(loop, turn=2, n_steps=5)
         loop._last_prompt_tokens = 6_000
         loop._last_request_snapshot = _SNAPSHOT
@@ -293,18 +293,18 @@ class TestCompactionSurfaceIntegration:
         mock_result.branch_id = "compact_r2"
         mock_result.handoff_path = Path(".dagi/handoffs/compact_r2.md")
 
-        with patch("agent.loop.run_subagent", return_value=mock_result):
+        with patch("agent._compaction.run_subagent", return_value=mock_result):
             t2 = loop.log.next_turn()
             loop.log.append(sev.TURN_START, {"turn": t2})
             r2 = loop.compact(force=True)
             loop.log.append(sev.TURN_END, {"turn": t2, "reason": {"kind": "completed"}})
         assert r2.generation == 2
 
-        # Two CONTEXT_COMPACTION events in log (both preserved — append-only)
+        # Two CONTEXT_COMPACTION events in log (both preserved â€” append-only)
         cc_events = [e for e in loop.log.events if e.type == sev.CONTEXT_COMPACTION]
         assert len(cc_events) == 2
 
-        # _messages now reflects v2 summary, not v1 — the replacement actually happened
+        # _messages now reflects v2 summary, not v1 â€” the replacement actually happened
         non_sys2 = [m for m in loop._messages if m.get("role") != "system"]
         all_content = " ".join(str(m.get("content", "")) for m in non_sys2)
         assert "Summary v2." in all_content, "Second summary should be present in messages"

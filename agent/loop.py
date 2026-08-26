@@ -315,8 +315,9 @@ class AgentLoop:
         return ParentFork(branch_id, cut_seq, generation, request)
 
     def _compact_context(self) -> CompactionResult:
-        """Delegates to compact(). Failures are non-fatal — the session continues
-        with un-compacted messages rather than crashing."""
+        """Delegates to self.compact (body moved verbatim to
+        agent/_compaction.compact). Failures are non-fatal — the session
+        continues with un-compacted messages rather than crashing."""
         try:
             return self.compact()
         except Exception as exc:
@@ -435,223 +436,25 @@ class AgentLoop:
         return messages
 
     def _collect_steps(self) -> list[tuple[int, int]]:
-        """Return chronological (turn, step) pairs that are active on the surface."""
-        event_map = {e.seq: e for e in self.log.events}
-        steps: list[tuple[int, int]] = []
-        seen: set[tuple[int, int]] = set()
-        for seq in self.log.surface.nodes:
-            event = event_map.get(seq)
-            if event is None:
-                continue
-            t = event.data.get("turn")
-            s = event.data.get("step")
-            if t is not None and s is not None:
-                key = (t, s)
-                if key not in seen:
-                    seen.add(key)
-                    steps.append(key)
-        return steps
+        from agent._compaction import collect_steps
+
+        return collect_steps(self.log)
 
     def _find_surface_index_for_step(self, target: tuple[int, int]) -> int:
-        """Return the surface node index of the first event in the given (turn, step)."""
-        t_turn, t_step = target
-        event_map = {e.seq: e for e in self.log.events}
-        for idx, seq in enumerate(self.log.surface.nodes):
-            event = event_map.get(seq)
-            if event is None:
-                continue
-            if event.data.get("turn") == t_turn and event.data.get("step") == t_step:
-                return idx
-        raise ValueError(f"step ({t_turn}, {t_step}) not found on surface")
+        from agent._compaction import find_surface_index_for_step
+
+        return find_surface_index_for_step(self.log, target)
 
     def _log_compaction(self, result: CompactionResult, tail_first_step: tuple[int, int]) -> None:
-        """Record a subagent compaction as a surface replace.
+        from agent._compaction import log_compaction
 
-        Shadows all surface nodes before the tail's first step with a single
-        CONTEXT_COMPACTION event containing the summary.
-        """
-        if not result.did_compact:
-            return
-        nodes = self.log.surface.nodes
-        if not nodes:
-            return
-
-        try:
-            tail_surface_idx = self._find_surface_index_for_step(tail_first_step)
-        except ValueError:
-            raise InvariantError(
-                f"tail step {tail_first_step} not found on surface — "
-                f"cannot log compaction"
-            )
-
-        lo = 0
-        hi = tail_surface_idx - 1
-
-        if hi < lo:
-            return  # nothing to shadow (tail starts at position 0)
-        if hi >= len(nodes):
-            raise InvariantError(
-                f"compaction span [{lo}, {hi}] is outside surface of "
-                f"{len(nodes)} node(s)"
-            )
-
-        self.log.append(
-            sev.CONTEXT_COMPACTION,
-            {
-                "summary": result.summary_content,
-                "removed": result.removed_count,
-                "generation": result.generation,
-            },
-            surface_op=("replace", nodes[lo], nodes[hi]),
-            source_seqs=nodes[lo:hi + 1],
-        )
-        self._sync_messages()
+        log_compaction(self.log, result, tail_first_step, self._sync_messages)
 
     def compact(self, force: bool = False) -> CompactionResult:
-        """Compact context via a subprocess that inherits the parent's prefix.
+        """Delegate to agent/_compaction.compact (moved verbatim)."""
+        from agent._compaction import compact as _compact
 
-        The compact subprocess receives the parent's warm KV-cache prefix
-        through a fork-context file, makes a single non-streaming API call,
-        and returns the summary as its handoff. The parent surface is only
-        mutated after validating the handoff against the recorded surface
-        generation (atomic acceptance).
-
-        Exceptions propagate — callers that want them swallowed use
-        _compact_context.
-        """
-        if self._last_request_snapshot is None:
-            return _NO_COMPACTION
-
-        steps = self._collect_steps()
-        if not steps:
-            return _NO_COMPACTION
-
-        boundary = compute_tail_boundary(
-            steps=steps,
-            prompt_tokens=self._last_prompt_tokens,
-            keep_recent_tokens=self.config.keep_recent_tokens,
-        )
-        if not boundary.has_middle:
-            return _NO_COMPACTION
-
-        # --- Resolve structural values from the log ---
-        middle_last = boundary.middle_steps[-1]
-        step_end_seq: int | None = None
-        for evt in self.log.events:
-            if (
-                evt.type == sev.STEP_END
-                and evt.branch == "main"
-                and evt.data.get("turn") == middle_last[0]
-                and evt.data.get("step") == middle_last[1]
-            ):
-                step_end_seq = evt.seq
-                break
-        if step_end_seq is None:
-            return _NO_COMPACTION  # last summarized step incomplete
-
-        nodes = self.log.surface.nodes
-        tail_first = boundary.tail_steps[0]
-        try:
-            tail_idx = self._find_surface_index_for_step(tail_first)
-        except ValueError:
-            return _NO_COMPACTION
-        if tail_idx == 0:
-            return _NO_COMPACTION  # nothing to shadow
-
-        first_summarized_seq = nodes[0]
-        last_summarized_seq = nodes[tail_idx - 1]
-        pre_gen = self.log.surface.generation
-
-        # --- Record retroactive BRANCH_START ---
-        from uuid import uuid4
-        branch_id = f"compact_{uuid4().hex[:8]}"
-        self.log.append(
-            sev.BRANCH_START,
-            {
-                "branch": branch_id,
-                "parent_branch": "main",
-                "turn": middle_last[0],
-                "step": middle_last[1],
-                "parent_cut_seq": step_end_seq,
-                "parent_surface_generation": pre_gen,
-            },
-        )
-
-        # --- Reconstruct the inherited prefix ---
-        from agent.context_spec import reconstruct, spec_for_branch
-        spec = spec_for_branch(self.log, branch_id)
-        _header, prefix_msgs = reconstruct(self.log, spec)
-
-        fork_messages = [
-            {"role": "system", "content": _header["content"]},
-            *prefix_msgs,
-        ]
-        fork_snapshot = {**self._last_request_snapshot, "messages": fork_messages}
-        fork_ctx = build_fork_context(
-            branch_id=branch_id,
-            parent_cut_seq=step_end_seq,
-            parent_surface_generation=pre_gen,
-            request_snapshot=fork_snapshot,
-        )
-
-        # --- Write fork-context and run subprocess ---
-        fd, fc_path = tempfile.mkstemp(suffix=".json", prefix="dagi_fork_ctx_")
-        os.close(fd)
-        try:
-            Path(fc_path).write_text(json.dumps(fork_ctx), encoding="utf-8")
-            result = run_subagent(
-                task="",
-                preset="compact",
-                project_path=self.config.project_path,
-                parent_log=None,
-                fork_context_path=fc_path,
-            )
-        finally:
-            Path(fc_path).unlink(missing_ok=True)
-
-        # --- Validate and atomically accept ---
-        if not result.is_ok or not result.handoff_text.strip():
-            return _NO_COMPACTION
-        if self.log.surface.generation != pre_gen:
-            return _NO_COMPACTION  # surface changed during compact
-
-        current_nodes = self.log.surface.nodes
-        if (
-            first_summarized_seq not in current_nodes
-            or last_summarized_seq not in current_nodes
-        ):
-            return _NO_COMPACTION  # replacement edges no longer live
-
-        self._compaction_generation += 1
-        summary_content = (
-            f"[CONTEXT SUMMARY — conversation compacted "
-            f"(generation {self._compaction_generation})]\n\n"
-            f"{result.handoff_text}"
-        )
-        removed_count = len(boundary.middle_steps)
-        source_nodes = list(current_nodes[:tail_idx])
-        self.log.append(
-            sev.CONTEXT_COMPACTION,
-            {
-                "summary": summary_content,
-                "removed": removed_count,
-                "generation": self._compaction_generation,
-                "branch": branch_id,
-                "handoff": str(result.handoff_path),
-            },
-            surface_op=("replace", first_summarized_seq, last_summarized_seq),
-            source_seqs=source_nodes,
-        )
-        self._sync_messages()
-
-        compaction = CompactionResult(
-            did_compact=True,
-            generation=self._compaction_generation,
-            summary_content=summary_content,
-            removed_count=removed_count,
-        )
-        self.callbacks.on_compaction(len(boundary.tail_steps), removed_count)
-        return compaction
+        return _compact(self, force)
 
     def _sync_messages(self) -> None:
         """Rebuild ``_messages`` from the log, in place."""

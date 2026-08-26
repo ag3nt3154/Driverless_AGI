@@ -1,4 +1,4 @@
-"""tests/test_session_log_shadow.py — Phase-1 shadow log verification.
+﻿"""tests/test_session_log_shadow.py â€” Phase-1 shadow log verification.
 
 During Phase 1 the event log runs alongside AgentLoop._messages, which stays
 authoritative. These tests prove the log's vocabulary is complete and its
@@ -64,7 +64,7 @@ def _text_response(content: str) -> SimpleNamespace:
 
 class TestLogConstruction:
     def test_loop_owns_a_log_holding_only_the_initial_header(self, tmp_path):
-        """Construction logs the request envelope and nothing else — no turn
+        """Construction logs the request envelope and nothing else â€” no turn
         is open, and the envelope costs zero surface nodes."""
         loop = _make_loop(tmp_path)
         assert [e.type for e in loop.log.events] == [ev.REQUEST_HEADER]
@@ -302,7 +302,7 @@ class TestAssistantAndToolEvents:
 class TestDerivationHolds:
     """What the Phase-1 shadow harness used to assert, kept as end-to-end cover.
 
-    The harness itself is gone — once _messages is *computed from* the log,
+    The harness itself is gone â€” once _messages is *computed from* the log,
     asserting they agree is a tautology. These exercise the same conversation
     shapes through run() and check the derivation end to end instead.
     """
@@ -379,7 +379,7 @@ class TestEphemeralBoard:
     """The plan status board is rendered per request, never stored.
 
     Storing it made the reusable request prefix end wherever the board last
-    sat — roughly one full step behind the tail. Rendering it as a trailing
+    sat â€” roughly one full step behind the tail. Rendering it as a trailing
     message keeps everything before it byte-identical between steps.
     """
 
@@ -563,7 +563,7 @@ class TestCompactionEvent:
         # compact() needs an open turn to log CONTEXT_COMPACTION
         t = loop.log.next_turn()
         loop.log.append(ev.TURN_START, {"turn": t})
-        with patch("agent.loop.run_subagent", return_value=mock_result):
+        with patch("agent._compaction.run_subagent", return_value=mock_result):
             result = loop.compact(force=True)
         loop.log.append(ev.TURN_END, {"turn": t, "reason": {"kind": "completed"}})
 

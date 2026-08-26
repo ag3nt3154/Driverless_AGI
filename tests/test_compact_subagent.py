@@ -1,4 +1,4 @@
-# tests/test_compact_subagent.py
+﻿# tests/test_compact_subagent.py
 """Tests for subagent-based compaction in AgentLoop."""
 from __future__ import annotations
 
@@ -69,20 +69,20 @@ def _make_loop_with_history(config):
     loop = AgentLoop(config=config, _registry=_make_registry())
     _seed_steps(loop, turn=1, n_steps=3, prefix="task")
     _seed_steps(loop, turn=2, n_steps=2, prefix="task2")
-    loop._last_prompt_tokens = 5_000  # 5 steps × 1000/step avg
+    loop._last_prompt_tokens = 5_000  # 5 steps Ã— 1000/step avg
     return loop
 
 
 class TestSubagentCompaction:
     def test_compact_noop_when_no_history(self):
-        """No steps → no compaction."""
+        """No steps â†’ no compaction."""
         loop = AgentLoop(config=_config(), _registry=_make_registry())
         result = loop.compact(force=False)
         assert result.did_compact is False
 
     def test_compact_noop_when_budget_covers_all(self):
         """When budget covers everything, compact() is a no-op."""
-        with patch("agent.loop.run_subagent") as mock_spawn:
+        with patch("agent._compaction.run_subagent") as mock_spawn:
             loop = _make_loop_with_history(_config(keep_recent_tokens=100_000))
             result = loop.compact(force=False)
             mock_spawn.assert_not_called()
@@ -97,7 +97,7 @@ class TestSubagentCompaction:
         mock_result.handoff_path = Path(".dagi/handoffs/compact_abc12345.md")
         mock_result.branch_id = "compact_abc12345"
 
-        with patch("agent.loop.run_subagent", return_value=mock_result) as mock_spawn:
+        with patch("agent._compaction.run_subagent", return_value=mock_result) as mock_spawn:
             loop = _make_loop_with_history(_config(keep_recent_tokens=1_500))
             loop._last_request_snapshot = _SNAPSHOT
             # compact() appends a surface event which requires an open turn
@@ -128,7 +128,7 @@ class TestSubagentCompaction:
         mock_result.handoff_text = ""
         mock_result.handoff_path = Path(".dagi/handoffs/compact_fail.md")
 
-        with patch("agent.loop.run_subagent", return_value=mock_result):
+        with patch("agent._compaction.run_subagent", return_value=mock_result):
             loop = _make_loop_with_history(_config(keep_recent_tokens=1_500))
             loop._last_request_snapshot = _SNAPSHOT
             result = loop.compact(force=True)
@@ -136,7 +136,7 @@ class TestSubagentCompaction:
 
     def test_compact_context_swallows_exceptions(self):
         """_compact_context() swallows all exceptions from compact()."""
-        with patch("agent.loop.run_subagent", side_effect=RuntimeError("network down")):
+        with patch("agent._compaction.run_subagent", side_effect=RuntimeError("network down")):
             loop = _make_loop_with_history(_config(keep_recent_tokens=1_500))
             loop._last_request_snapshot = _SNAPSHOT
             result = loop._compact_context()
@@ -150,7 +150,7 @@ class TestSubagentCompaction:
         mock_result.handoff_path = Path(".dagi/handoffs/compact_a.md")
         mock_result.branch_id = "compact_a"
 
-        with patch("agent.loop.run_subagent", return_value=mock_result):
+        with patch("agent._compaction.run_subagent", return_value=mock_result):
             loop = _make_loop_with_history(_config(keep_recent_tokens=1_500))
             loop._last_request_snapshot = _SNAPSHOT
             t1 = loop.log.next_turn()
@@ -161,14 +161,14 @@ class TestSubagentCompaction:
 
         # Add more steps so there's a new middle for the second compaction.
         # After first compaction the surface has 1 surviving tail step + CONTEXT_COMPACTION.
-        # Seeding 5 more steps gives 6 visible steps: avg=6000/6=1000 → keep=1 → 5 in middle.
+        # Seeding 5 more steps gives 6 visible steps: avg=6000/6=1000 â†’ keep=1 â†’ 5 in middle.
         _seed_steps(loop, turn=3, n_steps=5, prefix="more")
         mock_result.handoff_text = "Summary v2."
         mock_result.handoff_path = Path(".dagi/handoffs/compact_b.md")
         mock_result.branch_id = "compact_b"
-        with patch("agent.loop.run_subagent", return_value=mock_result):
+        with patch("agent._compaction.run_subagent", return_value=mock_result):
             loop._last_request_snapshot = _SNAPSHOT
-            loop._last_prompt_tokens = 6_000  # 6 steps × 1000/step avg
+            loop._last_prompt_tokens = 6_000  # 6 steps Ã— 1000/step avg
             t2 = loop.log.next_turn()
             loop.log.append(sev.TURN_START, {"turn": t2})
             r2 = loop.compact(force=True)
@@ -237,7 +237,7 @@ class TestRequestSnapshot:
             loop.run("hello")
 
         snap_msgs_before = [m.copy() for m in loop._last_request_snapshot["messages"]]
-        # Mutate _messages — snapshot should be unaffected
+        # Mutate _messages â€” snapshot should be unaffected
         loop._messages.clear()
         assert loop._last_request_snapshot["messages"] == snap_msgs_before
 
@@ -261,7 +261,7 @@ class TestCompactOrchestration:
         loop = _make_loop_with_history(_config(keep_recent_tokens=1_500))
         loop._last_request_snapshot = _SNAPSHOT
 
-        with patch("agent.loop.run_subagent", return_value=mock_result):
+        with patch("agent._compaction.run_subagent", return_value=mock_result):
             t = loop.log.next_turn()
             loop.log.append(sev.TURN_START, {"turn": t})
             loop.compact(force=True)
@@ -292,7 +292,7 @@ class TestCompactOrchestration:
             loop.log.surface.generation += 1
             return mock_result
 
-        with patch("agent.loop.run_subagent", side_effect=bump_generation):
+        with patch("agent._compaction.run_subagent", side_effect=bump_generation):
             t = loop.log.next_turn()
             loop.log.append(sev.TURN_START, {"turn": t})
             result = loop.compact(force=True)
@@ -322,7 +322,7 @@ class TestCompactOrchestration:
             result.handoff_path = Path(tempfile.gettempdir()) / f"{branch}.md"
             return result
 
-        with patch("agent.loop.run_subagent", side_effect=_dynamic_run_subagent):
+        with patch("agent._compaction.run_subagent", side_effect=_dynamic_run_subagent):
             t = loop.log.next_turn()
             loop.log.append(sev.TURN_START, {"turn": t})
             loop.compact(force=True)
