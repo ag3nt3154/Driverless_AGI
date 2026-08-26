@@ -7,13 +7,7 @@ keep using `from agent.loop import AWAIT_USER_FLAG, ...` (re-exported there).
 from __future__ import annotations
 
 from pathlib import Path
-from typing import TYPE_CHECKING
-
 from agent.prompts import load_prompt
-
-if TYPE_CHECKING:
-    from agent.registry import ToolRegistry
-    from agent.skills import Skill
 
 TASK_END_FLAG = "<<TASK_END>>"           # legacy alias — still recognised
 AWAIT_USER_FLAG = "<<END_OF_RESPONSE>>"
@@ -115,6 +109,15 @@ def _format_reload_notification(
 
 
 CONTINUE_PROMPT = load_prompt("main/continue.md")
+
+
+def _extract_reasoning(message) -> str:
+    """Get reasoning text from the response message, trying SDK attr then model_extra."""
+    text = getattr(message, "reasoning_content", None) or ""
+    if not text:
+        extras = getattr(message, "model_extra", None) or {}
+        text = extras.get("reasoning") or extras.get("reasoning_content") or ""
+    return text or ""
 
 
 def _extract_reasoning(message) -> str:

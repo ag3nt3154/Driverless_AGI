@@ -50,13 +50,10 @@ from agent._loop_helpers import (  # noqa: F401
     TASK_END_FLAG,
     WRITE_HANDOFF_SENTINEL,
     _LOOP_SENTINELS,
-    _SafeDict,
-    _SafePlaceholder,
     _build_wiki_index_context,
     _escape_sentinels,
     _extract_reasoning,
     _format_reload_notification,
-    _format_tools_and_skills,
     _is_plan_empty,
 )
 
@@ -1392,69 +1389,23 @@ class AgentLoop:
 
         return f"Switched to '{target}' tier: {to_name}. Reason: {reason}"
 
-    def _build_preamble(self, dagi_root: Path) -> str:
-        parts: list[str] = []
-        if self.config.system_prompt_preamble:
-            parts.append(self.config.system_prompt_preamble.strip())
-        soul_text = load_soul(dagi_root, self.config.project_path)
-        if soul_text:
-            parts.append(soul_text.strip())
-        for agents_path in [
-            dagi_root / "AGENTS.md",
-            self.config.project_path / "AGENTS.md",
-        ]:
-            if agents_path.exists():
-                text = agents_path.read_text(encoding="utf-8").strip()
-                if text:
-                    parts.append(text)
-        return "\n\n---\n\n".join(parts)
-
     def _assemble_system_string(self, dagi_root: Path) -> str:
         """Single source of truth for system-prompt assembly.
 
-        Reads self.config and self.registry; also refreshes self.system_parts for
-        the UI expander. Call sites handle _messages assignment via _sync_messages().
+        Body moved verbatim to agent/_system_prompt.assemble_system_string;
+        instance state (system_parts / _system_prefix) is assigned here.
+        Call sites handle _messages assignment via _sync_messages().
         """
-        readme_path = (dagi_root / "README.md").resolve()
-        prompt_text = (
-            self.config.system_prompt
-            if self.config.system_prompt
-            else load_main_system_prompt(dagi_root, self.config.project_path)
+        from agent._system_prompt import assemble_system_string
+
+        system, self.system_parts = assemble_system_string(
+            config=self.config,
+            registry=self.registry,
+            skills=self.skills,
+            effective_memory_root=self._effective_memory_root,
+            system_prompt_override=self._system_prompt_override,
+            dagi_root=dagi_root,
         )
-        tools_and_skills = _format_tools_and_skills(self.registry, self.skills)
-        prompt = prompt_text.format_map(_SafeDict(
-            readme_path=readme_path,
-            tools_and_skills=tools_and_skills,
-            cwd=str(self.config.project_path.resolve()),
-            memory_root=str(self._effective_memory_root),
-            dagi_root=str(dagi_root.resolve()),
-        ))
-
-        soul_text = load_soul(dagi_root, self.config.project_path)
-        dagi_agents = dagi_root / "AGENTS.md"
-        project_agents = self.config.project_path / "AGENTS.md"
-        self.system_parts = []
-        if soul_text:
-            self.system_parts.append({"label": "SOUL.md", "content": soul_text.strip()})
-        if dagi_agents.exists():
-            self.system_parts.append({
-                "label": "AGENTS.md (dagi)",
-                "content": dagi_agents.read_text(encoding="utf-8").strip(),
-            })
-        if project_agents.exists():
-            self.system_parts.append({
-                "label": "AGENTS.md (project)",
-                "content": project_agents.read_text(encoding="utf-8").strip(),
-            })
-        self.system_parts.append({"label": "System Prompt", "content": prompt})
-
-        preamble = self._build_preamble(dagi_root)
-        sections = [s for s in [preamble, prompt] if s]
-        system = "\n\n---\n\n".join(sections)
-        system += f"\n\n---\n\nProject root: {self.config.project_path}"
-
-        if self._system_prompt_override is not None:
-            system = self._system_prompt_override
         self._system_prefix = system
         return system
 
