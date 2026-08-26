@@ -184,14 +184,13 @@ class AgentLoop:
 
         self.client = openai.OpenAI(api_key=config.api_key, base_url=config.base_url)
         # Build extra_body for OpenRouter extensions (reasoning, prompt caching, provider routing).
-        self._extra_body: dict = {}
+        # Single source of truth shared with agent/_model_switch.handle_switch_model.
         self._parallel_tool_calls = False
-        if config.thinking and config.thinking.lower() != "none":
-            self._extra_body["reasoning"] = {"effort": config.thinking.lower()}
-        if config.cache_prompt:
-            self._extra_body["cache_prompt"] = True
-        if config.provider_order:
-            self._extra_body["provider"] = {"order": config.provider_order}
+        from agent._model_switch import build_extra_body
+
+        self._extra_body: dict = build_extra_body(
+            config.thinking, config.cache_prompt, config.provider_order,
+        )
 
         # ── Model-tier tracking ───────────────────────────────────────────────
         # Snapshot the six LLM identity fields so "default" tier can always
@@ -1245,66 +1244,9 @@ class AgentLoop:
         return handle_all_tasks_resolved(self)
 
     def _handle_switch_model(self, target: str, args: dict) -> str:
-        """Switch the active LLM tier in-place without changing the tool registry."""
-        reason = args.get("reason", "")
+        from agent._model_switch import handle_switch_model
 
-        if target == self._current_tier:
-            return (
-                f"Already on the '{target}' tier "
-                f"({self.config.display_name or self.config.model}) — no switch needed."
-            )
-
-        from_name = self.config.display_name or self.config.model
-
-        if target == "plan":
-            tier_cfg = self.config.advanced_config
-            if tier_cfg is None:
-                return (
-                    "Cannot switch to 'advanced' tier: no advanced_model is configured in .dagi/config.yaml. "
-                    "Continuing with the current model."
-                )
-        elif target == "worker":
-            tier_cfg = self.config.worker_config
-            if tier_cfg is None:
-                return (
-                    "Cannot switch to 'worker' tier: no worker_model is configured in .dagi/config.yaml. "
-                    "Continuing with the current model."
-                )
-        elif target == "default":
-            snap = self._base_config_snapshot
-            self.config.model          = snap["model"]
-            self.config.base_url       = snap["base_url"]
-            self.config.api_key        = snap["api_key"]
-            self.config.thinking       = snap["thinking"]
-            self.config.display_name   = snap["display_name"]
-            self.config.provider_order = snap["provider_order"]
-            tier_cfg = None
-        else:
-            return f"Unknown model tier '{target}'. Valid values: plan, default, worker."
-
-        if tier_cfg is not None:
-            self.config.model          = tier_cfg.model
-            self.config.base_url       = tier_cfg.base_url
-            self.config.api_key        = tier_cfg.api_key
-            self.config.thinking       = tier_cfg.thinking
-            self.config.display_name   = tier_cfg.display_name
-            self.config.provider_order = tier_cfg.provider_order
-
-        self.client = openai.OpenAI(api_key=self.config.api_key, base_url=self.config.base_url)
-
-        self._extra_body = {}
-        if self.config.thinking and self.config.thinking.lower() != "none":
-            self._extra_body["reasoning"] = {"effort": self.config.thinking.lower()}
-        if self.config.cache_prompt:
-            self._extra_body["cache_prompt"] = True
-        if self.config.provider_order:
-            self._extra_body["provider"] = {"order": self.config.provider_order}
-
-        self._current_tier = target
-        to_name = self.config.display_name or self.config.model
-        self.callbacks.on_model_switch(from_name, to_name)
-
-        return f"Switched to '{target}' tier: {to_name}. Reason: {reason}"
+        return handle_switch_model(self, target, args)
 
     def _assemble_system_string(self, dagi_root: Path) -> str:
         """Single source of truth for system-prompt assembly.
