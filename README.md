@@ -644,7 +644,15 @@ Driverless_AGI/
 │   ├── base_tool.py       # BaseTool ABC
 │   ├── registry.py        # ToolRegistry singleton
 │   ├── tools.py           # Builds and returns the tool registry
-│   ├── loop.py            # AgentLoop, AgentConfig, AgentCallbacks
+│   ├── loop.py            # AgentLoop orchestrator (run loop, __init__, pause/resume)
+│   ├── _loop_config.py    # AgentConfig, AgentCallbacks, CompactionResult dataclasses
+│   ├── _loop_helpers.py   # Loop sentinels, CONTINUE_PROMPT, wiki-index + reload helpers
+│   ├── _system_prompt.py  # System-prompt assembly (single source of truth)
+│   ├── _plan_mode.py      # Plan-mode lifecycle handlers (enter/exit/rebuild/reload)
+│   ├── _model_switch.py   # LLM tier switching + shared extra_body builder
+│   ├── _streaming.py      # Streaming chat-completions consumer
+│   ├── _compaction.py     # Context compaction via forked compact subagent
+│   ├── _tool_dispatch.py  # Tool-call dispatch, bookkeeping, write_handoff short-circuit
 │   ├── config_loader.py   # Resolves model config from YAML
 │   ├── session.py         # SessionTracker — JSONL logs
 │   ├── session_events.py  # Event vocabulary + SESSION_FORMAT_VERSION (2)
