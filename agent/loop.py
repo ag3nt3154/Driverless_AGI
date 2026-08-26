@@ -36,14 +36,8 @@ from agent.session_store import append_event
 from agent.skills import Skill, SkillLoader
 from tools.subagent_api import build_fork_context, run_subagent
 from tools.compact._tail_boundary import compute_tail_boundary
-from tools.update_task_status import UPDATE_TASK_STATUS_SENTINEL
-from tools.plan_mode import ENTER_PLAN_MODE_SENTINEL, EXIT_PLAN_MODE_SENTINEL
-from tools.reload_skills import RELOAD_SKILLS_SENTINEL
 from tools.output_filter import filter_tool_output
-from tools.switch_model import parse_switch_sentinel
 
-# Loop sentinels, helpers, and CONTINUE_PROMPT moved verbatim to
-# agent/_loop_helpers.py; re-exported here for backward compatibility.
 from agent._loop_helpers import (  # noqa: F401
     AWAIT_USER_FLAG,
     CONTINUE_PROMPT,

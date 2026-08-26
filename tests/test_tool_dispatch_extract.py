@@ -17,7 +17,7 @@ def test_module_functions_importable():
         "dispatch_tool_calls",
         "bookkeep_tool_call",
         "finalize_turn",
-        "handle_write_handoff",
+        "handle_end_turn",
     ):
         assert callable(getattr(td, fn)), fn
 

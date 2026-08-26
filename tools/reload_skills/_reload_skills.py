@@ -1,8 +1,7 @@
 from __future__ import annotations
 
 from agent.base_tool import BaseTool
-
-RELOAD_SKILLS_SENTINEL = "__RELOAD_SKILLS__"
+from agent.protocol import SideEffect, ToolResult
 
 
 class ReloadSkillsTool(BaseTool):
@@ -17,5 +16,8 @@ class ReloadSkillsTool(BaseTool):
         "required": [],
     }
 
-    def run(self, **kwargs) -> str:
-        return RELOAD_SKILLS_SENTINEL
+    def run(self, **kwargs) -> ToolResult:
+        return ToolResult(
+            output="Reloading skills...",
+            side_effect=SideEffect.RELOAD_SKILLS,
+        )
