@@ -119,6 +119,7 @@ Use `bash` for Git operations.
 
 ## Errors Log (recent)
 
+- **2026-08-26**: DeepSeek cache hits plateaued because the ephemeral Session Context board breaks the growing request prefix → make provider-visible dynamic state append-only (pending).
 - **2026-08-25**: PySide `/clear` retained old token totals → reset `AgentBridge` stats with the session.
 - **2026-08-24**: PySide `/wd` and `/model` updated handler-only state → propagate config changes to `DagiWindow`.
 - **2026-08-24**: `pytestqt` cannot load `PySide6.QtCore` in the `dagi` environment → run Qt tests directly with Python.
@@ -127,6 +128,7 @@ Use `bash` for Git operations.
 
 ## Notes & Terms
 
+- **Prompt-cache boundary**: the entire prior provider input must prefix the next request; ignoring a trailing dynamic board is not cache-safe.
 - **AGENTS.md loading**: re-read for each `AgentLoop`; edits take effect in the next session.
 - **Termination**: assistant text uses `<<END_OF_RESPONSE>>`; child completion requires `write_handoff`.
 - **Tool filtering**: `config.yaml` removes tools outside `tools:` except mandatory `write_handoff`.
