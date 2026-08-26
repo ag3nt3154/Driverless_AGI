@@ -792,68 +792,10 @@ class AgentLoop:
             self._close_turn(_turn, sev.reason_error("turn closed without a reason"))
 
     def _dispatch_tool_calls(self, message, response, tool_records) -> str | None:
-        """Dispatch every tool call in `message`, appending results to _messages.
+        """Delegate to agent/_tool_dispatch.dispatch_tool_calls (moved verbatim)."""
+        from agent._tool_dispatch import dispatch_tool_calls
 
-        Extracted verbatim from `run()`. Returns a non-None string only when
-        the write_handoff sentinel fired, in which case `run()` must return
-        that value immediately without a further API turn.
-
-        Deferred system messages are appended AFTER all tool results so they
-        don't break the assistant→tool pairing that strict providers
-        (e.g. DeepSeek) enforce.
-        """
-        deferred_system_msgs: list[str] = []
-
-        for tc in message.tool_calls:
-            tool_obj = self.registry._tools.get(tc.function.name)
-            description = tool_obj.description if tool_obj else tc.function.name
-            self._lifecycle.tool_started(tc.function.name)
-            self.callbacks.on_tool_start(tc.function.name, description, tc.function.arguments)
-            self.tracker.record_tool_start(tc.function.name, description, tc.function.arguments)
-
-            # Recorded BEFORE execution: a tool/call with no tool/result is a
-            # detectable interruption, which Phase 4 crash repair depends on.
-            self.log.append(
-                sev.TOOL_CALL,
-                {
-                    "turn": self.log.open_turn,
-                    "step": self.log.open_step,
-                    "call_id": tc.id,
-                    "name": tc.function.name,
-                    "arguments": tc.function.arguments,  # raw, unparsed
-                },
-            )
-            args = json.loads(tc.function.arguments)
-            result = self.registry.dispatch(tc.function.name, args)
-            if (
-                isinstance(result, str)
-                and WRITE_HANDOFF_SENTINEL in result
-                and tc.function.name == "write_handoff"
-            ):
-                return self._handle_write_handoff(
-                    tc, result, description, tool_records, (message, response)
-                )
-            if isinstance(result, str) and result.startswith(ENTER_PLAN_MODE_SENTINEL):
-                result = self._handle_enter_plan_mode(args)
-            elif result == EXIT_PLAN_MODE_SENTINEL:
-                result = self._handle_exit_plan_mode(args)
-            elif isinstance(result, str) and UPDATE_TASK_STATUS_SENTINEL in result:
-                result = self._handle_all_tasks_resolved()
-            elif result == RELOAD_SKILLS_SENTINEL:
-                added, removed, errors = self._rebuild_for_reload()
-                result = _format_reload_notification(len(self.skills), added, removed, errors)
-                deferred_system_msgs.append(result)
-            else:
-                if isinstance(result, str):
-                    _switch_target = parse_switch_sentinel(result)
-                    if _switch_target is not None:
-                        result = self._handle_switch_model(_switch_target, args)
-            self._bookkeep_tool_call(tc, result, description, tool_records)
-            self._lifecycle.tool_bookkeeping_finished()
-
-        for _sys_content in deferred_system_msgs:
-            self._log_user_message("system", _sys_content, "reload")
-        return None
+        return dispatch_tool_calls(self, message, response, tool_records)
 
     def _bookkeep_tool_call(
         self,
@@ -862,81 +804,14 @@ class AgentLoop:
         description: str,
         tool_records: list[ToolCallRecord],
     ) -> str:
-        """Filter, log, and record a single tool call's result, appending its
-        tool message to self._messages. Shared by the normal per-tool-call
-        dispatch loop and the `_handle_write_handoff` short-circuit path so
-        the two can't drift (e.g. the list-safety conversion below must
-        apply to both). Returns the full (unfiltered) result string.
-        """
-        # ── Output filter ────────────────────────────────────────
-        context_result, full_str = filter_tool_output(
-            result, self.config.reserve_tokens, Path(self.config.project_path)
-        )
-        if context_result is not result:
-            # Filtering fired — warn the user via the assistant text stream
-            self.callbacks.on_assistant_text(
-                f"[output filter] Tool result was large and has been truncated. "
-                f"Full output saved under "
-                f"{Path(self.config.project_path) / '.dagi' / 'hash_cache' / 'tool_output'}."
-            )
-        # ─────────────────────────────────────────────────────────
-        result_str = (
-            context_result if isinstance(context_result, str)
-            else "__list__:" + json.dumps(context_result)
-        )
-        self.callbacks.on_tool_end(tc.function.name, result_str)   # filtered
-        self.tracker.record_tool_end(tc.function.name, full_str)    # full (JSONL)
+        from agent._tool_dispatch import bookkeep_tool_call
 
-        tool_records.append(ToolCallRecord(
-            name=tc.function.name,
-            description=description,
-            input=tc.function.arguments,
-            result=full_str,                                        # full (JSONL)
-        ))
-        _tool_content = (
-            _escape_sentinels(context_result)
-            if isinstance(context_result, str)
-            else context_result
-        )
-        self.log.append(
-            sev.TOOL_RESULT,
-            {
-                "turn": self.log.open_turn,
-                "step": self.log.open_step,
-                "call_id": tc.id,
-                "content": _tool_content,
-                "meta": None,
-            },
-            surface_op="append",
-        )
-        self._sync_messages()
-        return full_str
+        return bookkeep_tool_call(self, tc, result, description, tool_records)
 
     def _finalize_turn(self, message, response, tool_records: list[ToolCallRecord]) -> None:
-        """Record the assistant turn and emit the token-usage callback.
+        from agent._tool_dispatch import finalize_turn
 
-        Shared by the end of the normal per-tool-call loop and the
-        `_handle_write_handoff` short-circuit path.
-        """
-        _thinking_tok = (
-            getattr(getattr(response.usage, "completion_tokens_details", None), "reasoning_tokens", None)
-            or 0
-        )
-        _cached_tok = (
-            getattr(getattr(response.usage, "prompt_tokens_details", None), "cached_tokens", None)
-            or 0
-        )
-        self.tracker.record_assistant(
-            message.content, response.usage, tool_records,
-            cached_tokens=_cached_tok, thinking_tokens=_thinking_tok,
-        )
-        self.callbacks.on_token_update(
-            getattr(response.usage, "prompt_tokens", 0) or 0,
-            getattr(response.usage, "completion_tokens", 0) or 0,
-            getattr(response.usage, "cost", None),
-            _thinking_tok,
-            _cached_tok,
-        )
+        return finalize_turn(self, message, response, tool_records)
 
     def _handle_write_handoff(
         self,
@@ -946,23 +821,9 @@ class AgentLoop:
         tool_records: list[ToolCallRecord],
         message_response: tuple,
     ) -> str:
-        """Terminate the subagent's turn immediately on WRITE_HANDOFF_SENTINEL.
+        from agent._tool_dispatch import handle_write_handoff
 
-        Mirrors the tool-message bookkeeping the normal dispatch path performs
-        (via `_bookkeep_tool_call`/`_finalize_turn`), then short-circuits the
-        run() call — no further tool calls or API turns happen after this.
-        """
-        message, response = message_response
-        clean = result.replace(WRITE_HANDOFF_SENTINEL, "").strip()
-
-        self.callbacks.on_handoff()
-        full_str = self._bookkeep_tool_call(tc, clean, description, tool_records)
-        self._lifecycle.tool_bookkeeping_finished()
-        self._finalize_turn(message, response, tool_records)
-
-        self._process.idle()
-        self.callbacks.on_done(full_str)
-        return full_str
+        return handle_write_handoff(self, tc, result, description, tool_records, message_response)
 
     # ── Plan mode transitions ─────────────────────────────────────────────────
 
