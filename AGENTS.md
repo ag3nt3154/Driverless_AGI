@@ -119,16 +119,16 @@ Use `bash` for Git operations.
 
 ## Errors Log (recent)
 
+- **2026-08-26**: RAM-watchdog `tests/conftest.py` errors every long test at setup when ambient machine RAM ≥70% (hardcoded warn threshold) → gate runs need `--noconftest`.
 - **2026-08-26**: The 08-23 `_pending_ask` fix only covered done/paused, and the TUI never got it → both UIs now ignore a stale sink at submit time (`_ask_is_live`) and retire it in `_agent_work`'s `finally`.
 - **2026-08-25**: PySide `/clear` retained old token totals → reset `AgentBridge` stats with the session.
 - **2026-08-24**: PySide `/wd` and `/model` updated handler-only state → propagate config changes to `DagiWindow`.
 - **2026-08-24**: `pytestqt` cannot load `PySide6.QtCore` in the `dagi` environment → run Qt tests directly with Python.
-- **2026-08-23**: Timed-out `ask_user` swallowed the next prompt → clear `_pending_ask` when the agent finishes or pauses.
-- **2026-08-23**: `/reload` left process state non-idle → publish completion before returning.
 
 ## Notes & Terms
 
-- **AGENTS.md loading**: re-read for each `AgentLoop`; edits take effect in the next session.
+- **Sentinel display sanitization**: agent tool-output views escape loop sentinels (`<<` → `< <`) before showing them; byte-check source before any sentinel-related edit — displayed strings lie.
+- **agent/_\* loop modules**: `loop.py` delegates to internal modules (`_loop_config`, `_loop_helpers`, `_system_prompt`, `_plan_mode`, `_model_switch`, `_streaming`, `_compaction`, `_tool_dispatch`) re-exported via `agent.loop`; white-box test patches must target the owning module (e.g. `agent._compaction.run_subagent`).
 - **Termination**: assistant text uses `<<END_OF_RESPONSE>>`; child completion requires `write_handoff`.
 - **Tool filtering**: `config.yaml` removes tools outside `tools:` except mandatory `write_handoff`.
 - **Subagent API**: import `tools/subagent_api.py`, never private `_subagent_runner.py`.
