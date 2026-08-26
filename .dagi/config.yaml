@@ -10,8 +10,8 @@ reserve_tokens: 16384
 
 # default_model: minimax-2.7-openrouter
 # default_model: deepseek-v4-flash-openrouter
-default_model: deepseek-v4-flash-deepseek
-# default_model: current-free-openrouter
+# default_model: deepseek-v4-flash-deepseek
+default_model: current-free-openrouter
 # default_model: laguna-free-openrouter
 # worker_model: glm-5-turbo-openrouter       # cheaper LLM for sub-agents; omit to use default_model
 # advanced_model: deepseek-v4-pro-openrouter   # advanced LLM for planning; omit to use default_model
