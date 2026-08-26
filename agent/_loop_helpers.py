@@ -28,21 +28,6 @@ def _escape_sentinels(text: str) -> str:
     return text
 
 
-def _is_plan_empty(path: Path) -> bool:
-    """Return True if the plan file has no meaningful content beyond scaffold boilerplate."""
-    try:
-        text = path.read_text(encoding="utf-8")
-    except Exception:
-        return True
-    meaningful = [
-        line for line in text.splitlines()
-        if line.strip()
-        and not line.strip().startswith("#")
-        and line.strip() not in ("- [ ]", "- [ ] ", "- [x]")
-    ]
-    return len(meaningful) == 0
-
-
 def _build_wiki_index_context(memory_root: Path) -> str | None:
     """Read wiki root and section .index.md files; return a formatted context block."""
     wiki_root = memory_root / "wiki"

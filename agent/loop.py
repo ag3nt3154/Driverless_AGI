@@ -54,9 +54,12 @@ from agent._loop_helpers import (  # noqa: F401
     _escape_sentinels,
     _extract_reasoning,
     _format_reload_notification,
-    _is_plan_empty,
 )
 
+
+# Plan-mode lifecycle moved verbatim to agent/_plan_mode.py;
+# _is_plan_empty re-exported here for backward compatibility.
+from agent._plan_mode import _is_plan_empty  # noqa: F401,E402
 
 # Compaction/config/callback dataclasses moved verbatim to agent/_loop_config.py;
 # re-exported here for backward compatibility with existing importers.
@@ -1227,105 +1230,19 @@ class AgentLoop:
     # ── Plan mode transitions ─────────────────────────────────────────────────
 
     def _handle_enter_plan_mode(self, args: dict) -> str:
-        mode = args.get("mode", "interactive")
-        task_summary = (args.get("task_summary") or "").strip()
-        if not task_summary:
-            return "Error: task_summary is required when entering plan mode."
+        from agent._plan_mode import handle_enter_plan_mode
 
-        interactive = mode != "autonomous"
-        dagi_root = DAGI_ROOT
-        plans_dir = self.config.project_path / ".dagi" / "plans"
-        plans_dir.mkdir(parents=True, exist_ok=True)
-        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-        plan_dir = plans_dir / f"plan_{ts}"
-        plan_dir.mkdir(parents=True, exist_ok=True)
-        plan_file = plan_dir / "plan.md"
-        plan_file.write_text(
-            f"# Plan: {task_summary}\n\n"
-            "## Context\n\n\n"
-            "## Approach\n\n\n"
-            "## Files to Modify\n\n\n"
-            "## Subtasks\n\n"
-            "### Subtask 1: [ ] \n"
-            "**Goal:** \n"
-            "**Requirements:**\n"
-            "- \n"
-            "**Acceptance Criteria:**\n"
-            "- \n"
-            "#### Tests\n\n"
-            "## Notes\n\n"
-            "## Verification\n\n",
-            encoding="utf-8",
-        )
-
-        self.config.previous_branch = get_current_branch(self.config.project_path)
-
-        branch_name: str | None = None
-        branch_creation_failed = False
-        try:
-            branch_name = create_task_branch(self.config.project_path, task_summary, plan_dir.name)
-        except RuntimeError as e:
-            branch_creation_failed = True
-            self.callbacks.on_assistant_text(f"[git] Could not create task branch: {e}")
-
-        if branch_name:
-            branch_note = f"**Branch:** `{branch_name}`"
-        elif branch_creation_failed:
-            branch_note = (
-                "**Branch:** (branch creation failed — see notice above — "
-                "continuing without a git workflow)"
-            )
-        else:
-            branch_note = "**Branch:** (no git repository detected — skipping git workflow)"
-
-        self._handle_switch_model("plan", {"reason": "entering plan mode"})
-        to_name = self.config.display_name or self.config.model
-
-        self.callbacks.on_assistant_text(
-            f"Entering plan mode — switching to advanced model ({to_name}).\n\n"
-            f"**Plan file:** `{plan_file}`\n\n**Mode:** {mode}\n\n{branch_note}"
-        )
-
-        self._rebuild_for_plan_mode(dagi_root, plan_file, interactive=interactive)
-
-        return (
-            f"Plan mode activated ({mode} mode). Advanced model: {to_name}.\n\n"
-            f"Plan file: {plan_file}\n\n"
-            f"{branch_note}\n\n"
-            f"Tools restricted to: read, grep, find, write/edit (plan file only), "
-            f"web_research, skill, run_skill_script, ask_user, show_plan, exit_plan_mode."
-        )
+        return handle_enter_plan_mode(self, args)
 
     def _handle_exit_plan_mode(self, args: dict) -> str:
-        saved_plan = self.config.plan_file
-        dagi_root = DAGI_ROOT
-        self._handle_switch_model("default", {"reason": "plan complete, returning to normal mode"})
-        self.config.active_plan_file = saved_plan
-        self._rebuild_for_normal_mode(dagi_root)
-        if saved_plan and _is_plan_empty(Path(saved_plan)):
-            return (
-                "The plan document is empty. "
-                "Stop immediately and ask the user for further directions "
-                "before doing anything else."
-            )
-        try:
-            plan_contents = Path(saved_plan).read_text(encoding="utf-8")
-        except Exception:
-            plan_contents = "(plan file could not be read)"
-        return (
-            f"Plan mode exited. Full tools restored. Plan file: {saved_plan}\n\n"
-            f"{plan_contents}"
-        )
+        from agent._plan_mode import handle_exit_plan_mode
+
+        return handle_exit_plan_mode(self, args)
 
     def _handle_all_tasks_resolved(self) -> str:
-        cleared = self.config.active_plan_file
-        self.config.active_plan_file = None
-        self._rebuild_for_normal_mode(DAGI_ROOT)
-        return (
-            f"Active plan cleared (was: {cleared}). "
-            "Handoffs will now go to .dagi/handoffs/. "
-            "The plan document is preserved on disk — reference it by path if needed."
-        )
+        from agent._plan_mode import handle_all_tasks_resolved
+
+        return handle_all_tasks_resolved(self)
 
     def _handle_switch_model(self, target: str, args: dict) -> str:
         """Switch the active LLM tier in-place without changing the tool registry."""
@@ -1429,90 +1346,20 @@ class AgentLoop:
         self.log.append(sev.PLAN_WRITE, {"board": board})
 
     def _rebuild_for_normal_mode(self, dagi_root: Path) -> None:
-        from agent.tools import create_tool_registry
+        from agent._plan_mode import rebuild_for_normal_mode
 
-        self.config.plan_mode = False
-        self.config.plan_file = None
-        self.config.plan_mode_initiated_by = "user"
-
-        skill_roots = [
-            dagi_root / ".dagi" / "skills",
-            self.config.project_path / ".dagi" / "skills",
-        ]
-        self.registry = create_tool_registry(
-            cwd=self.config.project_path,
-            allowed_roots=[dagi_root, self.config.project_path, self._effective_memory_root],
-            skill_roots=skill_roots,
-            plan_mode=False,
-            plan_file=None,
-            plan_mode_initiated_by="user",
-            config=self.config,
-            callbacks=self.callbacks,
-            tracker=self.tracker,
-            memory_root=self._effective_memory_root,
-            bash_tool=self._injected_bash_tool,
-            session_log=self.log,
-            parent_context=self.parent_context_provider,
-            affect_controller=self.tracker.affect_controller,
-        )
-
-        _system = self._assemble_system_string(dagi_root)
-        self._emit_header(_system, "change")
-        self._sync_messages()
+        rebuild_for_normal_mode(self, dagi_root)
 
     def _rebuild_for_plan_mode(self, dagi_root: Path, plan_file: Path, interactive: bool = True) -> None:
-        from agent.tools import create_tool_registry
+        from agent._plan_mode import rebuild_for_plan_mode
 
-        initiated_by = "user" if interactive else "dagi"
-        self.config.plan_mode = True
-        self.config.plan_file = str(plan_file)
-        self.config.plan_mode_initiated_by = initiated_by
-
-        skill_roots = [
-            dagi_root / ".dagi" / "skills",
-            self.config.project_path / ".dagi" / "skills",
-        ]
-        self.registry = create_tool_registry(
-            cwd=self.config.project_path,
-            allowed_roots=[dagi_root, self.config.project_path, self._effective_memory_root],
-            skill_roots=skill_roots,
-            plan_mode=True,
-            plan_file=plan_file,
-            plan_mode_initiated_by=initiated_by,
-            config=self.config,
-            callbacks=self.callbacks,
-            tracker=self.tracker,
-            memory_root=self._effective_memory_root,
-            session_log=self.log,
-            parent_context=self.parent_context_provider,
-        )
-        _system = self._assemble_system_string(dagi_root)
-        self._emit_header(_system, "change")
-        self._sync_messages()
+        rebuild_for_plan_mode(self, dagi_root, plan_file, interactive)
 
     def _rebuild_for_reload(self) -> tuple[set[str], set[str], list[tuple[str, str]]]:
-        """Hot-reload skills from disk, rebuild registry + system prompt preserving current mode.
+        """Hot-reload skills; body moved to agent/_plan_mode.rebuild_for_reload."""
+        from agent._plan_mode import rebuild_for_reload
 
-        Returns (added_names, removed_names, errors) for notification formatting.
-        """
-        dagi_root = DAGI_ROOT
-        skill_roots = [
-            dagi_root / ".dagi" / "skills",
-            self.config.project_path / ".dagi" / "skills",
-        ]
-
-        before_names = {s.name for s in self.skills}
-        new_skills, errors = SkillLoader().load_all_with_errors(skill_roots, dagi_root=dagi_root)
-        self.skills = new_skills
-        after_names = {s.name for s in self.skills}
-
-        if self.config.plan_mode and self.config.plan_file:
-            interactive = self.config.plan_mode_initiated_by == "user"
-            self._rebuild_for_plan_mode(dagi_root, Path(self.config.plan_file), interactive=interactive)
-        else:
-            self._rebuild_for_normal_mode(dagi_root)
-
-        return after_names - before_names, before_names - after_names, errors
+        return rebuild_for_reload(self)
 
     def finish(self) -> None:
         """Finalize the session — write session_end to JSONL. Called by the CLI at session end."""

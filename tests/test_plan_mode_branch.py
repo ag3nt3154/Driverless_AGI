@@ -83,8 +83,10 @@ class TestEnterPlanModeAutoBranch:
 
     def test_distinguishes_branch_creation_failure_from_no_repo(self, git_repo: Path):
         loop = _make_loop(git_repo)
+        # Patch target follows the code: the branch-creation call site moved
+        # from agent.loop to agent._plan_mode in the 2026-08-26 loop.py split.
         with patch(
-            "agent.loop.create_task_branch",
+            "agent._plan_mode.create_task_branch",
             side_effect=RuntimeError("branch already exists"),
         ):
             result = loop._handle_enter_plan_mode(
