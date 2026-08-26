@@ -1,6 +1,6 @@
 # AGENTS.md
 
-> Last updated: 2026-08-24 (fix: PySide /wd and /model split-brain — config changes now propagate from handler to app) | [README](README.md) | [TODO](TODO.md)
+> Last updated: 2026-08-26 (context compressed; maintenance contract revised) | [README](README.md) | [TODO](TODO.md)
 
 
 
@@ -97,144 +97,40 @@ Stop and flag when:
 - Never swallow exceptions silently
 - Include context (what operation, what input, suggested fix)
 
+## Git Workflow
 
-## Architecture
+Use `bash` for Git operations.
 
-**Inherited subagents and `/wtf`:** `ParentContextProvider` snapshots the exact parent request prefix (model, messages, tool schemas/order, provider options, and base URL) and records a stable branch. Version-2 forked children receive that prefix plus one new task message, use an explicitly allowlisted inherited registry, and call the parent-visible `write_handoff` schema as their final action; blocked tools return `Error: Access blocked for this tool`. The runner validates the written file and retries a missing/malformed report once. The read-only `wtf` preset writes strict three-section reports under `.dagi/errors/`; `AgentLoop.run_wtf()` validates branch generation, path, and report structure before appending only a `/wtf` reference to the parent. TUI `/wtf [description]` runs asynchronously, waits for a pause checkpoint when needed, and displays only the report description and path.
+- Start with `git status --short` and `git branch --show-current`; never discard existing work.
+- If unrelated changes overlap files needed for the task, stop and ask.
+- Stay on the current branch for small, low-risk work.
+- Use `dagi/<task-name>` for risky, experimental, multi-file, or explicitly isolated work.
+- Commit coherent changes with Conventional Commit prefixes.
+- Never commit, merge, push, stash, switch branches, or create a branch without user approval.
+- At completion, report the branch, changed files, tests, and remaining dirty files.
 
-```
-tui.py / telegram_bot.py / main.py / dagi_gui/__main__.py / pyside_gui/__main__.py
-    │
-    tui.py → tui/ (app, commands, callbacks, conversation, sidebar, prompt_input, streaming)
-    │
-    pyside_gui/__main__.py → pyside_gui/ (app, bridge, conversation, overlays, commands, sidebars)
-    │   PySide6/Qt 6 desktop GUI. AgentBridge translates AgentCallbacks → Qt Signals.
-    │   Agent runs on daemon thread; all UI via queued signals or QMetaObject.invokeMethod.
-    │   RightSidebar hosts ExpressionWidget, alternating affect/process assets every 3000 ms.
-    │   LeftSidebar: collapsible 40px icon rail + proportional panel (50% of conversation pane
-    │     via splitter) with three modal views — SessionHistoryView, FileTreeView, FileViewerView
-    │     (plain text + LineNumberArea + word wrap for all files including .md). Rail always
-    │     visible; panel expands/collapses on icon click. /hist → activate_view("history").
-    │
-    dagi_gui/__main__.py → dagi_gui/ (protocol, interaction, callbacks, session, catalog, history, server, plan_monitor)
-    │   Python sidecar: reads NDJSON commands on stdin, emits NDJSON events on stdout.
-    │   dagi_gui/server.py drives AgentLoop; dagi_gui/plan_monitor.py watches PLAN.md.
-    │   Paired with Electron frontend (desktop/) over stdio NDJSON pipe.
-    │
-    desktop/ (Electron 33 + React 18 + TypeScript + Vite, three build contexts)
-    │   main/main.ts         — BrowserWindow, PythonSupervisor, IPC routing
-    │   main/python-supervisor.ts — spawns sidecar, line-splits NDJSON, crash restarts
-    │   main/preload.ts      — channel-whitelisted contextBridge (SEND/RECV sets)
-    │   renderer/App.tsx     — useReducer(dagiReducer), IPC subscription, slash dispatch
-    │   renderer/state.ts    — pure dagiReducer (no Redux); AppState + Action union
-    │   renderer/components/ — Conversation, ToolCard, Composer, Sidebar, QuestionDialog
-    │   shared/protocol.ts   — Zod discriminated unions for all 19 commands + 17 events
-    │
-    └── AgentLoop (agent/loop.py)
-            ├── ToolRegistry (agent/registry.py)
-            ├── SessionTracker (agent/session.py)
-            ├── Context compaction (AgentLoop.compact + tools/compact boundary)
-            ├── SkillLoader (.dagi/skills/)
-            └── AgentCallbacks → TUI via App.call_from_thread()
-                             → GUI via dagi_gui/callbacks.py (EventWriter)
-```
+## Process Flow
 
-**Tool layout:** `tools/<name>/__init__.py` re-exports from `_<name>.py`; shared helpers are flat files in `tools/` (`_path_guard.py`, `_hash_cache.py`, `_subagent_runner.py`, `_handoff_format.py`, `_task_envelope.py`, `output_filter.py`, `subagent_main.py`, `subagent_api.py`). `edit` uses `oldText`/`newText` unique-substring matching; `read` outputs `cat -n` style line numbers.
-
-**Subagents:** Pipe-based subprocesses. Public API: `run_subagent()` / `SubagentResult` / `resume_subagent_by_pid()` in `tools/subagent_api.py` (never import `_subagent_runner` directly). `run_subagent()` accepts optional `parent_log: SessionLog` — when provided and a turn is open, logs a `branch/start` event before spawning; `SubagentResult.branch_id` carries the generated id. `run_subagent()` also accepts `fork_context_path: str | None` — when set, injects `--fork-context <path>` into the subprocess argv (used by `compact()`). Each type is a self-contained package: `.dagi/subagents/<type>/main.py` exports a `BaseTool` subclass; `_discover_subagent_tools()` in `agent/subagent_tools.py` discovers types by import (scans DAGI root then `cwd/.dagi/subagents/`; project types override built-ins by name). All 8 active constructors accept `session_log=None` and store `self._session_log`; `run()` forwards `parent_log=self._session_log` — `session_log` is passed unconditionally (no `inspect.signature` conditional). 8 built-in types (after simplification): `explore_files`, `web_research`, `memory-query`, `memory-add`, `memory-refresh`, `read-large-text`, `worker`, `review`. (`plan`, `cli`, `escalate_issue` were deleted in subagent-simplification branch.) `SubagentResult` fields: `status`, `handoff_text`, `handoff_path`, `session_log_path`, `pid`, `branch_id` — **no `escalation` field** (removed in simplification). `dispatch_status_result()` signature: `(result: dict, error_prefix: str, include_timeout: bool = True)` — **no `include_escalation` param**. `subagent_config.yaml` schema: `tools`, `model_tier`, `default_handoff_spec`, `agents_md`. WriteHandoffTool is always visible to the main agent and auto-injected when a child `handoff_path` is set; its `<<HANDOFF_WRITTEN>>` sentinel immediately ends either turn without `END_OF_RESPONSE`. Regular pipe mode retains `_ensure_handoff()` and its unverified scrape fallback; inherited v2 validates the explicit tool-written file and hard-fails after one corrective retry. Every subagent task is wrapped by `_task_envelope.py` (`## Task` / `## Instructions` / `## Output`), with parent-supplied `briefing` and `handoff_spec`. Custom one-off subagent workflows are authored as DAGI scripts calling `run_subagent()` directly (see `.dagi/skills/run_subagent/SKILL.md`).
-
-**Compact cache-prefix (branch `dagi/compact-cache-branching`):** The compact subagent inherits the parent's warm KV-cache prefix. Flow: (1) `compact()` captures `_last_request_snapshot` (frozen copy of the last API request's model + messages + tools — no credentials) immediately before every provider call. (2) On compaction trigger, `compact()` appends a `BRANCH_START` event with `parent_cut_seq` pointing to the last summarised step (retroactive branch — the physical append happens after later events but the logical fork is earlier). (3) `build_fork_context()` serialises version-1 fork-context JSON: `{version, branch:{id, parent_cut_seq, parent_surface_generation}, request:{model, messages, tools, parallel_tool_calls, extra_body, base_url}}` — no API keys. (4) Fork-context written to a temp file, passed to `run_subagent(fork_context_path=...)` which injects `--fork-context <path>` into the subprocess argv. (5) Compact subprocess (`subagent_main.run_forked_compact_mode`) reads the fork-context, calls `resolve_model_config()` to get credentials from environment (NOT from the fork-context), makes a single non-streaming API call with the inherited prefix + compact task, writes assistant text directly to the handoff file. (6) Parent validates: `result.is_ok`, non-empty handoff text, surface generation unchanged (atomicity check), all edge events live. On success: appends `CONTEXT_COMPACTION`, calls `_sync_messages()`. On failure: returns `_NO_COMPACTION` — surface untouched. `model_tier: inherit` in `.dagi/subagents/compact/subagent_config.yaml` signals the forked-compact path.
-
-**Expression asset libraries (branch `dagi/affect-and-process-emotes`):** `agent/expression_assets.py` loads `.dagi/emotes/vad/manifest.yaml` and `.dagi/emotes/states/manifest.yaml` into immutable `ImageAsset` / `TextFallback` refs, validates asset paths stay under their channel roots, and caches warning keys so broken manifests warn once while later lookups fall back to `.dagi/emotes/default.md` (or literal `DAGI` if unreadable). `VadLibrary.resolve()` uses Euclidean distance plus hysteresis against the current id only when that current entry has a valid asset; `ProcessStateLibrary.resolve()` follows `tool:<name> -> tool -> thinking -> idle`. **Meme display:** `AffectSnapshot.meme_asset` carries a transient `ImageAsset | None`; `AffectController.trigger_meme()` fires a snapshot with `meme_asset` set (no VAD mutation, no JSONL persistence); `ExpressionWidget` intercepts this in `update_affect`, sets `_meme_cycles_remaining = 2`, and renders the meme in the VAD slot for 2 rotation cycles before reverting. Meme assets live in `.dagi/emotes/memes/`; `EmoteTool` scans this dir at init for its dynamic description.
-
-**Dynamic context + affect callbacks (branch `dagi/affect-and-process-emotes`):** `agent/dynamic_context.py` builds the ephemeral request board (Python env, active plan status, affect line) outside the static system prefix. `agent/lifecycle.py` binds/restores affect controllers only for root trackers and appends the current affect line; normal registries expose `emote` only when a controller is bound.
-
-**Process-state controller (branch `dagi/affect-and-process-emotes`):** `agent/process_state.py` defines immutable `ProcessSnapshot` plus `ProcessStateController`. Controllers start at idle and emit the current snapshot when a listener binds; `agent/lifecycle.py` owns pause generation, accepted mutation under lock, and callback-entry ordering before emitting outside locks.
-
-**Affect session persistence (branch `dagi/affect-and-process-emotes`):** Root `SessionTracker`s now own the bound affect controller, persist `affect_*` JSONL records alongside normal session events, and let child trackers reuse the root controller without replacing it. `agent/history.py` shares a private JSONL loader between raw-message restore and affect restore, selecting the latest valid in-range affect record while preserving the original `affect_init` baseline and warning once on malformed entries.
-
-## Key Files
-
-
-| Path                                                 | Purpose                                                                                                                                                        |
-| ---------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `agent/loop.py`                                      | Core loop, parent fork capture, system-prompt assembly, lifecycle delegation, termination/compaction, and handoff dispatch                                      |
-| `agent/dynamic_context.py`                           | Builds the ephemeral request board: Python env, active plan status, and affect line without mutating the static system prefix                                  |
-| `agent/config_loader.py`                             | Reads/merges config, resolves API keys/models/services, and validates affect tuning                                                                            |
-| `agent/session_log.py`                               | Append-only event log; `SessionLog.branches` tracks subagent branches; `branch_event(id)` returns the BRANCH_START event for a branch                         |
-| `agent/expression_assets.py`                         | Strict VAD/process-state manifest loaders, safe-path validation, hysteresis resolution, and universal text fallback                                            |
-| `agent/lifecycle.py`, `agent/process_state.py`       | Affect/process setup, pause/process/affect serialization, process snapshots, and idle/thinking/tool/pause/error transitions                                   |
-| `agent/tools.py`, `agent/subagent_tools.py`          | Main/subagent registry construction, including mandatory and inherited `write_handoff`                                                                          |
-| `tools/emote/_emote.py`                              | `EmoteTool` — optional VAD delta + meme display; scans `.dagi/emotes/memes/` at init for dynamic description listing available memes                          |
-| `tools/subagent_api.py`                              | **Public API** — spawn/compact/inherited dispatch, branch metadata, handoff and fork-context lifecycle                                                        |
-| `tools/subagent_main.py`                             | Forked compact/inherited child entry points, credentials, allowlists, retries, and final handoff validation                                                   |
-| `tui/app.py`, `tui/commands.py`, `tui/callbacks.py`  | TUI lifecycle, slash commands including `/wtf`, StreamPreview, and callbacks bridge                                                                           |
-| `pyside_gui/app.py`, `right_sidebar.py`, `expression_widget.py` | PySide main window/sidebar expression surface; `ExpressionWidget` handles VAD/process/meme channels; `app.py` has a 500-line cap                  |
-| `pyside_gui/bridge.py`                               | `AgentBridge(QObject)` — translates `AgentCallbacks` → Qt Signals; `build_callbacks()` returns wired callbacks for thread-safe UI; owns `_stream_text` accumulator |
-| `pyside_gui/conversation.py` + `resources/`          | `ConversationView(QWebEngineView)` — 13 Python→JS methods; Catppuccin Mocha HTML/CSS/JS template with streaming bubble support                                  |
-| `agent/wtf.py`, `agent/wtf_report.py`                | Atomic `/wtf` orchestration and strict report parser                                                                                                           |
+1. An entry point starts `AgentLoop` with configuration, tools, session state, and UI callbacks.
+2. `AgentLoop` assembles stable instructions plus dynamic context, calls the provider, and dispatches tool requests through `ToolRegistry`.
+3. `SessionTracker` and `SessionLog` persist conversation, usage, affect, and subagent branch events.
+4. Subagents run through `tools/subagent_api.py`; inherited children reuse the captured parent request prefix and finish through `write_handoff`.
+5. TUI, PySide, Electron/sidecar, Telegram, and CLI entry points translate the same callbacks and agent state for their interfaces.
 
 ## Errors Log (recent)
 
-- **2026-08-24**: PySide `/wd` and `/model` split-brain: `SlashCommandHandler` held its own `_config`/`_project_path` copies separate from `DagiWindow` — handler updated its copies but app's stayed stale, so `AgentLoop` used old config. Fix: `_on_config_changed` callback propagates handler state to app.
-- **2026-08-24**: `pytestqt` plugin crashes at configure time in the `dagi` conda env (DLL load failure for `PySide6.QtCore`) — use direct `python -c` execution to run tests; the pytestqt DLL bootstrap requires a running QApplication which pytest's configure hook doesn't provide.
-- **2026-08-23**: Fix Round 8 broad review found lifecycle fixes bloated `agent/loop.py` and base diff still had adjust-affect EOF whitespace → extract `agent/lifecycle.py` and remove the extra EOF blank.
-- **2026-08-23**: Fix Round 9 found `agent/loop.py` still above the 1,799-line baseline and `LifecyclePublisher._drain` too complex → move setup/context helpers into lifecycle and split queue acceptance helpers.
-- **2026-08-23**: Fix Round 10 found unchanged `test_plan_status_board.py` callers still use `AgentLoop._build_dynamic_context()` → restore a thin delegating compatibility shim without growing `agent/loop.py`.
-- **2026-08-23**: Fix Round 11 found malformed UTF-8 assets, Rich markup-controlled IDs, and child affect controller visibility could leak into UI/runtime state → decode failures now use universal fallback, TUI renders plain text, and child trackers expose no affect controller.
-- **2026-08-23**: `/reload` short-circuit completed without publishing idle, leaving process state paused/thinking in UIs → call `_completed()` before reload notification/return.
-- **2026-08-23**: Final close-out verification: feature suite `244 passed`; full suite excluding six archived-`dagi_gui` collection errors → `968 passed, 1 failed` (`test_discover_subagent_tools.py::test_discovers_tool_from_main_py`, stale custom-subagent `parent_context` fixture — documented pre-existing, not touched by this branch). Static constraints hold: `agent/loop.py` 1797 lines (below 1799 baseline), `pyside_gui/app.py` 500.
-- **2026-08-23**: PySide freeze after task: stale `_pending_ask` from a timed-out `ask_user` swallowed the next user message (timer shown, no worker started). Fix: clear `_pending_ask` in `_on_agent_done`/`_on_agent_paused`. File-based `pyside_worker.log` added for diagnostics independent of QWebEngineView.
-- **2026-08-23**: PySide GUI sent spurious mid-task notifications: `plan_shown` fired "DAGI's plan is ready" then `ask_user` immediately fired "DAGI has a question" (double-notify per plan); `_tui_window_is_foreground()` always returned `False` for GUI (no console window) so focus-suppression never triggered → removed `plan_shown` notification; added `self.isActiveWindow()` guard in `_notify()`.
+- **2026-08-25**: PySide `/clear` retained old token totals → reset `AgentBridge` stats with the session.
+- **2026-08-24**: PySide `/wd` and `/model` updated handler-only state → propagate config changes to `DagiWindow`.
+- **2026-08-24**: `pytestqt` cannot load `PySide6.QtCore` in the `dagi` environment → run Qt tests directly with Python.
+- **2026-08-23**: Timed-out `ask_user` swallowed the next prompt → clear `_pending_ask` when the agent finishes or pauses.
+- **2026-08-23**: `/reload` left process state non-idle → publish completion before returning.
 
 ## Notes & Terms
 
-- **AGENTS.md** is force-injected into every session's system prompt by `_assemble_system_string()`; the file is re-read from disk on every `AgentLoop.__init__` and `_messages[0]` is always overwritten — so AGENTS.md edits made during task N are live in task N+1's context window.
-- **`<<END_OF_RESPONSE>>`**: primary exit sentinel (substring check on LLM text responses only); `_escape_sentinels()` rewrites it to `< <END_OF_RESPONSE>>` in tool results before they enter `_messages` to prevent LLM echo-back.
-- **Handoff termination**: Main calls save `.dagi/handoffs/main_<thread-hash12>.md` and display full Markdown; child calls use assigned paths; only a `write_handoff` result can trigger `<<HANDOFF_WRITTEN>>` termination.
-- **`tools:` allowlist** (`config.yaml`): post-registration filtering strips unnamed tools except mandatory `write_handoff`; `emote` survives only when explicitly named.
-- **Windows / conda**: `EditTool`/`WriteTool` always write LF, normalize `oldText`/`newText` for CRLF safety. Use `conda run -n dagi python` for DAGI scripts; for Claude Code hooks use `envs/dagi/python.exe` directly — `conda run` drops stdin in hook context.
-- **`subagent_api` vs `_subagent_runner`**: `tools/subagent_api.py` is the public API (preset resolution, envelope, `SubagentResult`); `tools/_subagent_runner.py` is the private subprocess spawner. Never import `_subagent_runner` directly from outside `subagent_api.py`.
-- **Inherited fork v2**: `ParentContextProvider` preserves the exact request prefix; children reuse its `write_handoff` schema as their final action, and every other tool call remains allowlist-enforced.
-- **PySide6 DLL bootstrap**: On Windows + conda, `os.add_dll_directory` must be called for the PySide6 package dir before any `from PySide6.*` import; `python -m pyside_gui` will crash without it.
-- **PySide6 cross-thread UI calls**: Never call Qt widget methods directly from a background thread; use `QMetaObject.invokeMethod(..., Qt.QueuedConnection)` for non-signal paths, or route through `AgentBridge` signals (auto-queued when connected across threads).
-- **PySide6 streaming dedup**: After streaming, `AgentLoop` fires `on_reasoning` and `on_assistant_text` with the same content already shown via deltas — `app.py` gates both behind `_stream_had_content` (set in `_on_stream_ended`, cleared only in `_on_assistant_text`).
-- **Expression channels**: VAD/process/meme — `ExpressionWidget` alternates VAD↔process every 3000 ms; a meme snapshot (`meme_asset != None`) hijacks the VAD slot for 2 rotation cycles then auto-reverts; memes are ephemeral (no JSONL persistence).
-- **Affect ownership**: root trackers own affect persistence/controller binding; child trackers expose `None` so legacy in-process children cannot rebind, drift, or mutate root affect.
-- **PySide6 `ask_user`**: questions render inline in `ConversationView` via `appendQuestion`; user replies through the prompt input (`_pending_ask` / `_pending_ask_container`); no popup dialog.
-
-## User Insights
-
-> Independent observations — not highlighted by the user.
-
-### User Tendencies
-
-- Ships incrementally, tests at each step; no large-batch refactors.
-- Structural cleanup at ~800 lines, organizational only, behavior preserved.
-- Works directly on `main`; prefers local merge over push+PR.
-- Prefers explicit config and pause-and-resume over cancel-and-restart.
-- Follows strict TDD for infrastructure; adversarial design grilling before implementation.
-- Comfortable delegating multi-task features to autonomous subagents without check-ins.
-- Hard line on real LLM spend — never without explicit permission.
-- GNHF self-review dormant 95+ days despite 259 unanalysed sessions.
-- Actively building Claude Code tooling (BM25 memory hook) around DAGI's wiki infra — treats Claude Code as first-class runtime alongside DAGI.
-
-### Project Shortcomings
-
-- ESC pauses parent loop but child subprocesses continue.
-- Session cost tracking mostly blank (providers don't populate `usage.cost`).
-- `/hist` in TUI broken — writes to `rich.Console` behind Textual's canvas.
-- `_parse_frontmatter` duplicated between `agent/skills.py` and `agent/workflows.py` — both now handle block scalars but should be deduplicated into a shared module.
-- `disable-model-invocation` flag has zero code enforcement — purely advisory.
-- dagi_eval `--timeout-min` doesn't bound scoring phases or blocked API iterations.
-- Full pytest is blocked by archived/missing `dagi_gui` tests plus unrelated BashTool Windows kill and custom-subagent fixture failures.
-
-### Potential Areas of Exploration
-
-- Extract `web_fetch`/`web_search` as MCP-analog services (like doc_converter).
-- Fix `/hist`; add cache-hit visibility in sidebar.
-- Session replay / dry-run mode from JSONL logs.
-- Parallel subagent dispatch via `background: true` + `get_subagent_result(id)` two-tool protocol.
-- Bootstrap GNHF self-review against 259 accumulated session logs.
-- TODO-013: DAGI-native `memory_recall` tool (BM25 inside agent loop, explicit tool call) still pending — Claude Code hook (passive, pre-prompt) is a complement, not a replacement.
-- Tasks 1–7 of `compact-cache-prefix` done; remaining tasks (8+) in `.superpowers/sdd/2026-08-18-compact-cache-prefix/`.
+- **AGENTS.md loading**: re-read for each `AgentLoop`; edits take effect in the next session.
+- **Termination**: assistant text uses `<<END_OF_RESPONSE>>`; child completion requires `write_handoff`.
+- **Tool filtering**: `config.yaml` removes tools outside `tools:` except mandatory `write_handoff`.
+- **Subagent API**: import `tools/subagent_api.py`, never private `_subagent_runner.py`.
+- **Windows / conda**: use `conda run -n dagi python`; hooks use `envs/dagi/python.exe` because `conda run` drops stdin.
+- **PySide6 imports**: add the package directory with `os.add_dll_directory` before importing PySide6.
+- **Qt threading**: background work reaches widgets only through queued signals or `QMetaObject.invokeMethod`.

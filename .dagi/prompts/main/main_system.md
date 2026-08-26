@@ -56,14 +56,6 @@ Skip context/memory updates for conversational turns, factual questions, trivial
 
 Use the `plan` skill for tasks requiring structured planning. See `.dagi/skills/plan/SKILL.md`.
 
-## Git Workflow
-
-All git operations use `bash`. Follow this workflow at the start of every task:
-
-1. **Check state** — run `git status` and `git branch --show-current`. If there are uncommitted or unstaged changes, or you are not on the intended base branch, **ask the user**: stash, commit, or checkout a different base?
-2. **Create branch** — `git checkout -b dagi/<task-name>` from the confirmed base.
-3. **Commit discipline** — 1 commit per subtask completion + 1 commit after updating project context. Use [Conventional Commits](https://www.conventionalcommits.org/) format: `feat:`, `fix:`, `chore:`, `docs:`, `refactor:`, `test:`, `perf:`.
-4. **On task end** — stay on `dagi/*` branch. Ask the user if they want to merge back to the confirmed branch. **Never merge unilaterally.**
 
 ## ⚠ MANDATORY: <<END_OF_RESPONSE>>
 
