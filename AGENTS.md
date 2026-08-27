@@ -121,7 +121,7 @@ Use `bash` for Git operations.
 
 - **2026-08-26**: RAM-watchdog `tests/conftest.py` errors every long test at setup when ambient machine RAM ≥70% (hardcoded warn threshold) → gate runs need `--noconftest`.
 - **2026-08-26**: The 08-23 `_pending_ask` fix only covered done/paused, and the TUI never got it → both UIs now ignore a stale sink at submit time (`_ask_is_live`) and retire it in `_agent_work`'s `finally`.
-- **2026-08-26**: DeepSeek cache hits plateaued because the ephemeral Session Context board breaks the growing request prefix → make provider-visible dynamic state append-only (pending).
+- **2026-08-26**: DeepSeek cache hits plateaued because the ephemeral Session Context board breaks the growing request prefix → board removed entirely: `dynamic_context.py` deleted, `PLAN_WRITE` event removed, `_board`/`_refresh_dynamic_context`/`_build_dynamic_context` stripped from `AgentLoop` (2026-08-27).
 - **2026-08-25**: PySide `/clear` retained old token totals → reset `AgentBridge` stats with the session.
 - **2026-08-24**: PySide `/wd` and `/model` updated handler-only state → propagate config changes to `DagiWindow`.
 - **2026-08-24**: `pytestqt` cannot load `PySide6.QtCore` in the `dagi` environment → run Qt tests directly with Python.

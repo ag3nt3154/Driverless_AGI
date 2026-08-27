@@ -5,7 +5,6 @@ from pathlib import Path
 from typing import Any, Callable
 
 from agent.affect import AffectConfig, AffectController
-from agent.dynamic_context import build_dynamic_context
 from agent.expression_assets import ProcessStateLibrary, VadLibrary
 from agent.process_state import ProcessStateController
 
@@ -62,13 +61,6 @@ def load_process_library(dagi_root: Path) -> ProcessStateLibrary:
         emotes_root / "states",
         emotes_root / "default.md",
     )
-
-
-def build_dynamic_context_with_affect(config: Any, controller: Any) -> str:
-    affect_line = controller.context_line() if controller is not None else None
-    if not isinstance(affect_line, str):
-        affect_line = None
-    return build_dynamic_context(config, affect_line)
 
 
 class LifecyclePublisher:

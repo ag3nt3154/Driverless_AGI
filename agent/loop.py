@@ -22,8 +22,7 @@ from openai.types.chat.chat_completion_message_function_tool_call import (
 from agent import DAGI_ROOT
 from agent._git_branch import create_task_branch, get_current_branch
 from agent.affect import AffectRestore, AffectSnapshot
-from agent.dynamic_context import SENTINEL as DYNAMIC_CONTEXT_SENTINEL
-from agent.lifecycle import LifecyclePublisher, build_dynamic_context_with_affect
+from agent.lifecycle import LifecyclePublisher
 from agent.lifecycle import ensure_affect_controller, load_process_library
 from agent.process_state import ProcessSnapshot, ProcessStateController
 from agent.prompts import load_prompt, load_main_system_prompt, load_soul
@@ -31,7 +30,7 @@ from agent.registry import ToolRegistry
 from agent import session_events as sev
 from agent.parent_context import ForkMode, ParentContextProvider, ParentFork
 from agent.session import SessionTracker, ToolCallRecord
-from agent.session_log import InvariantError, SessionLog, is_status_board
+from agent.session_log import InvariantError, SessionLog
 from agent.session_store import append_event
 from agent.skills import Skill, SkillLoader
 from tools.subagent_api import build_fork_context, run_subagent
@@ -163,9 +162,6 @@ class AgentLoop:
         # See docs/superpowers/specs/2026-08-16-session-event-log-design.md
         # (self.log is initialized earlier, before create_tool_registry, so it
         # can be forwarded to subagent tools at construction time.)
-        #: Last rendered plan status board. Ephemeral request state — see
-        #: _refresh_dynamic_context. Empty string means "nothing rendered yet".
-        self._board: str = ""
         self._emit_header(system, "resume" if initial_messages else "initial")
         if initial_messages:
             self._seed_from_messages(initial_messages)
@@ -438,14 +434,12 @@ class AgentLoop:
     def _build_request_messages(self) -> list[dict]:
         """The exact message list sent to the provider.
 
-        Envelope header first, conversation next, ephemeral board last.
+        Envelope header first, conversation next.
         Returns a fresh list: callers (including on_api_call observers) must
         not be able to mutate loop state through it.
         """
         messages = [self._header_message()]
         messages.extend(self._messages[1:])
-        if self._board:
-            messages.append({"role": "system", "content": self._board})
         return messages
 
     def _collect_steps(self) -> list[tuple[int, int]]:
@@ -563,8 +557,6 @@ class AgentLoop:
             while True:
                 iteration += 1
                 self.log.append(sev.STEP_START, {"turn": _turn, "step": iteration})
-                if not self._preserve_request_prefix:
-                    self._refresh_dynamic_context()
                 self.callbacks.on_iteration(iteration)
                 self._pause_checkpoint.set()
                 try:
@@ -867,25 +859,6 @@ class AgentLoop:
         )
         self._system_prefix = system
         return system
-
-    _DYNAMIC_CONTEXT_SENTINEL = DYNAMIC_CONTEXT_SENTINEL
-
-    def _build_dynamic_context(self) -> str:
-        return build_dynamic_context_with_affect(self.config, self.tracker.affect_controller)
-
-    def _refresh_dynamic_context(self) -> None:
-        """Re-render the board and log it if it changed.
-
-        The board is *ephemeral*: it is never a member of ``_messages`` and
-        never a surface node. ``_build_request_messages`` appends it as the
-        final message of each request, so the reusable prefix through the
-        last real message stays byte-identical from step to step.
-        """
-        board = self._build_dynamic_context()
-        if board == self._board:
-            return
-        self._board = board
-        self.log.append(sev.PLAN_WRITE, {"board": board})
 
     def _rebuild_for_normal_mode(self, dagi_root: Path) -> None:
         from agent._plan_mode import rebuild_for_normal_mode

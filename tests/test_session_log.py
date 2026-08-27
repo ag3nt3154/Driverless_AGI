@@ -23,7 +23,7 @@ class TestVocabulary:
             assert t not in ev.SURFACE_EVENT_TYPES
 
     def test_log_only_types_are_known_but_not_surface(self):
-        for t in (ev.TOOL_CALL, ev.REQUEST_HEADER, ev.PLAN_WRITE, ev.END_SEED):
+        for t in (ev.TOOL_CALL, ev.REQUEST_HEADER, ev.END_SEED):
             assert t in ev.KNOWN_EVENT_TYPES
             assert t not in ev.SURFACE_EVENT_TYPES
 
@@ -122,7 +122,7 @@ class TestSessionLogAppend:
         log = SessionLog()
         log.append(ev.TURN_START, {"turn": 1})
         with pytest.raises(InvariantError, match="not JSON-serialisable"):
-            log.append(ev.PLAN_WRITE, {"plan": object()})
+            log.append(ev.REQUEST_HEADER, {"header": object(), "reason": "initial"})
 
     def test_data_is_snapshotted_so_later_mutation_cannot_leak_in(self):
         log = SessionLog()
@@ -171,7 +171,7 @@ class TestTurnEnclosure:
         """
         log = SessionLog()
         log.append(ev.REQUEST_HEADER, {"header": {"system": "s"}, "reason": "initial"})
-        log.append(ev.PLAN_WRITE, {"plan": []})
+        log.append(ev.REQUEST_HEADER, {"header": {"system": "s2"}, "reason": "change"})
         assert log.seq == 2
 
     def test_open_turn_reports_the_live_turn(self):
@@ -223,7 +223,7 @@ class TestSurfaceOpPresence:
     def test_log_only_event_with_surface_op_is_rejected(self):
         log = SessionLog()
         with pytest.raises(InvariantError, match="must not carry surface_op"):
-            log.append(ev.PLAN_WRITE, {"plan": []}, surface_op="append")
+            log.append(ev.REQUEST_HEADER, {"header": {"system": "s"}, "reason": "initial"}, surface_op="append")
 
 
 class TestToolPairing:
@@ -278,7 +278,7 @@ class TestSurfaceIntegration:
     def test_boundary_events_contribute_no_messages(self):
         log = self._log_with_two_surface_nodes()
         log.append(ev.STEP_END, {"turn": 1, "step": 1})
-        log.append(ev.PLAN_WRITE, {"plan": [{"content": "x", "status": "pending"}]})
+        log.append(ev.REQUEST_HEADER, {"header": {"system": "s"}, "reason": "change"})
         assert len(log.derive_messages()) == 2
 
     def test_replace_over_a_dead_node_is_rejected(self):

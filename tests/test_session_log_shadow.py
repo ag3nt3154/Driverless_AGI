@@ -16,7 +16,6 @@ import pytest
 from agent import session_events as ev
 from agent.loop import AgentConfig, AgentLoop
 from agent.protocol import SideEffect, ToolResult
-from agent.session_log import is_status_board
 from agent.loop import CompactionResult
 
 
@@ -368,10 +367,6 @@ class TestDerivationHolds:
         loop.run("go")
         assert loop._messages[1:] == loop.log.derive_messages()
 
-    def test_the_status_board_predicate_still_identifies_a_board(self, tmp_path):
-        assert is_status_board({"role": "system", "content": "## Session Context\nx"})
-        assert not is_status_board({"role": "system", "content": "wiki index"})
-        assert not is_status_board({"role": "user", "content": "## Session Context"})
 
 
 class TestRequestHeader:
@@ -400,54 +395,6 @@ class TestRequestHeader:
         assert len(headers) == before + 1
         assert headers[-1].data["reason"] == "change"
         assert headers[-1].data["system"] == loop._messages[0]["content"]
-
-
-class TestEphemeralBoard:
-    """The plan status board is rendered per request, never stored.
-
-    Storing it made the reusable request prefix end wherever the board last
-    sat â€” roughly one full step behind the tail. Rendering it as a trailing
-    message keeps everything before it byte-identical between steps.
-    """
-
-    def test_board_is_not_a_member_of_messages(self, tmp_path):
-        loop = _make_loop(tmp_path)
-        loop._refresh_dynamic_context()
-        assert not any(is_status_board(m) for m in loop._messages)
-
-    def test_request_messages_end_with_the_board(self, tmp_path):
-        loop = _make_loop(tmp_path)
-        loop._refresh_dynamic_context()
-        request = loop._build_request_messages()
-        assert is_status_board(request[-1])
-        assert request[0] == loop._header_message()
-
-    def test_request_prefix_is_stable_across_refreshes(self, tmp_path):
-        loop = _make_loop(tmp_path)
-        loop._refresh_dynamic_context()
-        first = loop._build_request_messages()
-        loop._messages.append({"role": "user", "content": "next"})
-        loop._refresh_dynamic_context()
-        second = loop._build_request_messages()
-        # Everything the first request sent, minus its trailing board, is an
-        # exact prefix of the second request. This is the cache guarantee.
-        assert second[: len(first) - 1] == first[:-1]
-
-    def test_unchanged_board_logs_no_second_plan_write(self, tmp_path):
-        loop = _make_loop(tmp_path)
-        loop._refresh_dynamic_context()
-        loop._refresh_dynamic_context()
-        writes = [e for e in loop.log.events if e.type == ev.PLAN_WRITE]
-        assert len(writes) == 1
-
-    def test_changed_board_logs_a_second_plan_write(self, tmp_path):
-        loop = _make_loop(tmp_path)
-        loop._refresh_dynamic_context()
-        loop.config.python_env = "some-other-env"
-        loop._refresh_dynamic_context()
-        writes = [e for e in loop.log.events if e.type == ev.PLAN_WRITE]
-        assert len(writes) == 2
-        assert "some-other-env" in writes[-1].data["board"]
 
 
 def _compaction(summary: str, removed_count: int = 4) -> CompactionResult:

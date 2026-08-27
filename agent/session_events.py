@@ -35,7 +35,6 @@ CONTEXT_COMPACTION = "context/compaction"
 # ── Log-only events ───────────────────────────────────────────────────────
 TOOL_CALL = "tool/call"
 REQUEST_HEADER = "request/header"
-PLAN_WRITE = "plan/write"
 END_SEED = "session/end-seed"
 BRANCH_START = "branch/start"
 
@@ -57,7 +56,6 @@ KNOWN_EVENT_TYPES: frozenset[str] = frozenset(
         CONTEXT_COMPACTION,
         TOOL_CALL,
         REQUEST_HEADER,
-        PLAN_WRITE,
         END_SEED,
         BRANCH_START,
     }

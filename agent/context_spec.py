@@ -119,8 +119,8 @@ def reconstruct(
     header is the ``{"role": "system", "content": ...}`` envelope; the
     conversation messages are the surface projection in order.
 
-    The caller appends the ephemeral board (if any) after the returned
-    messages to form the complete API request.
+    The returned messages form the complete API request; the ephemeral
+    board is logged internally only and is not sent to the provider.
     """
     if not spec.segments or spec.segments[0].branch != "main":
         raise ValueError(
