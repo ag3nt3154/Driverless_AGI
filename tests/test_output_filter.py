@@ -147,7 +147,9 @@ class TestLoopIntegration:
 
     def test_large_result_filtered_in_messages(self, tmp_path):
         from unittest.mock import MagicMock, patch
-        from agent.loop import AgentLoop, AgentConfig, AWAIT_USER_FLAG
+        from types import SimpleNamespace as _SN
+        from agent.loop import AgentLoop, AgentConfig
+        from agent.protocol import SideEffect, ToolResult
 
         cfg = AgentConfig(
             model="gpt-4o", base_url="http://localhost",
@@ -160,7 +162,13 @@ class TestLoopIntegration:
         large_output = "z" * 500   # 500 chars = 125 tokens > reserve_tokens=100
 
         loop.registry = MagicMock()
-        loop.registry.dispatch.return_value = large_output
+
+        def _dispatch(name, args):
+            if name == "write_handoff":
+                return ToolResult(output="done", side_effect=SideEffect.END_TURN)
+            return large_output
+
+        loop.registry.dispatch.side_effect = _dispatch
         loop.registry._tools = {}
         loop.registry.get_openai_tools_list.return_value = []
 
@@ -188,12 +196,13 @@ class TestLoopIntegration:
         tool_response.choices = [MagicMock(message=message, finish_reason="tool_calls")]
         tool_response.usage = usage
 
-        # Second response ends the loop cleanly
+        # Second response ends the loop via write_handoff tool call
+        _wh_tc = _SN(id="call_end", function=_SN(name="write_handoff", arguments='{"content":"done"}'))
         end_msg = MagicMock()
-        end_msg.tool_calls = None
+        end_msg.tool_calls = [_wh_tc]
         end_msg.reasoning_content = None
         end_msg.model_extra = {}
-        end_msg.content = AWAIT_USER_FLAG
+        end_msg.content = None
         end_response = MagicMock()
         end_response.choices = [MagicMock(message=end_msg, finish_reason="stop")]
         end_response.usage = usage
@@ -206,16 +215,22 @@ class TestLoopIntegration:
         loop.run("test task")
 
         # _messages must contain the filtered (truncated) content, not the raw output
-        tool_messages = [m for m in loop._messages if m.get("role") == "tool"]
+        # (excludes the write_handoff tool result added at turn end)
+        tool_messages = [
+            m for m in loop._messages
+            if m.get("role") == "tool" and m.get("tool_call_id") != "call_end"
+        ]
         assert len(tool_messages) == 1
         content = tool_messages[0]["content"]
         assert isinstance(content, str)
         assert "OUTPUT TRUNCATED" in content
         assert large_output not in content  # not the full 500-char string
 
-        # Tracker must have received the FULL string
-        loop.tracker.record_tool_end.assert_called_once()
-        _name_arg, full_arg = loop.tracker.record_tool_end.call_args[0]
+        # Tracker must have received the FULL string for the large-output tool call
+        tool_end_calls = loop.tracker.record_tool_end.call_args_list
+        bash_calls = [c for c in tool_end_calls if c[0][0] == "bash"]
+        assert len(bash_calls) == 1
+        _name_arg, full_arg = bash_calls[0][0]
         assert full_arg == large_output
 
         # The warning callback must have fired at least once with the truncation notice

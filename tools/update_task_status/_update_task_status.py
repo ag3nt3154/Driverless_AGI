@@ -9,9 +9,8 @@ from __future__ import annotations
 from pathlib import Path
 
 from agent.base_tool import BaseTool
+from agent.protocol import SideEffect, ToolResult
 from tools._plan_parser import update_task_marker
-
-UPDATE_TASK_STATUS_SENTINEL = "__UPDATE_TASK_STATUS_ALL_RESOLVED__"
 
 _RESOLVED = {"complete", "failed"}
 
@@ -44,16 +43,16 @@ class UpdateTaskStatusTool(BaseTool):
         super().__init__()
         self._plan_path = plan_path
 
-    def run(self, task: int, status: str) -> str:
+    def run(self, task: int, status: str) -> ToolResult:
         if self._plan_path is None:
-            return "Error: no active plan file."
+            return ToolResult(output="Error: no active plan file.")
 
         try:
             statuses = update_task_marker(
                 self._plan_path, task_number=task, new_status=status,
             )
         except (ValueError, OSError) as exc:
-            return f"Error: {exc}"
+            return ToolResult(output=f"Error: {exc}")
 
         marker_map = {
             "pending": " ", "in_progress": "~",
@@ -67,8 +66,6 @@ class UpdateTaskStatusTool(BaseTool):
 
         all_resolved = all(s["status"] in _RESOLVED for s in statuses)
         if all_resolved:
-            board += (
-                "\n\nAll tasks resolved — plan complete."
-                f"\n{UPDATE_TASK_STATUS_SENTINEL}"
-            )
-        return board
+            board += "\n\nAll tasks resolved — plan complete."
+            return ToolResult(output=board, side_effect=SideEffect.ALL_TASKS_RESOLVED)
+        return ToolResult(output=board)

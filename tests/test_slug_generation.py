@@ -123,7 +123,8 @@ class TestSlugWiredIntoRun:
     """
 
     def _make_loop_for_run(self, tmp_path):
-        from agent.loop import AgentLoop, AgentConfig, TASK_END_FLAG
+        import json
+        from agent.loop import AgentLoop, AgentConfig
 
         config = AgentConfig(
             model="test-model",
@@ -139,11 +140,17 @@ class TestSlugWiredIntoRun:
 
         loop.tracker = fake_tracker
 
-        # Minimal LLM response that ends the session
+        # Minimal LLM response that ends the session via write_handoff tool call
+        _wh_tc = SimpleNamespace(
+            id="tc_end",
+            function=SimpleNamespace(
+                name="write_handoff", arguments=json.dumps({"content": "Done."})
+            ),
+        )
         end_response = MagicMock()
         end_choice = MagicMock()
-        end_choice.message.content = f"Done. {TASK_END_FLAG}"
-        end_choice.message.tool_calls = []
+        end_choice.message.content = None
+        end_choice.message.tool_calls = [_wh_tc]
         # MagicMock auto-creates any attribute; without these two the loop
         # would copy a Mock into the assistant message, which is not JSON data.
         end_choice.message.reasoning_content = None
@@ -174,7 +181,8 @@ class TestSlugWiredIntoRun:
 
     def test_rename_not_called_when_skip_slug_generation(self, tmp_path):
         """run() must NOT generate or apply a slug when resuming from history."""
-        from agent.loop import AgentLoop, AgentConfig, TASK_END_FLAG
+        import json
+        from agent.loop import AgentLoop, AgentConfig
 
         config = AgentConfig(
             model="test-model",
@@ -191,10 +199,16 @@ class TestSlugWiredIntoRun:
 
         loop.tracker = fake_tracker
 
+        _wh_tc = SimpleNamespace(
+            id="tc_end",
+            function=SimpleNamespace(
+                name="write_handoff", arguments=json.dumps({"content": "Done."})
+            ),
+        )
         end_response = MagicMock()
         end_choice = MagicMock()
-        end_choice.message.content = f"Done. {TASK_END_FLAG}"
-        end_choice.message.tool_calls = []
+        end_choice.message.content = None
+        end_choice.message.tool_calls = [_wh_tc]
         # MagicMock auto-creates any attribute; without these two the loop
         # would copy a Mock into the assistant message, which is not JSON data.
         end_choice.message.reasoning_content = None

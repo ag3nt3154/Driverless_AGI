@@ -1,4 +1,8 @@
 from abc import ABC, abstractmethod
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from agent.protocol import ToolResult
 
 
 class BaseTool(ABC):
@@ -17,4 +21,4 @@ class BaseTool(ABC):
         }
 
     @abstractmethod
-    def run(self, **kwargs) -> str | list: ...
+    def run(self, **kwargs) -> "str | list | ToolResult": ...

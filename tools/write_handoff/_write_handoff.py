@@ -1,27 +1,26 @@
-"""tools/write_handoff.py — Let a worker/review subagent submit its final handoff report.
+"""tools/write_handoff — submit a final report and end the current turn.
 
-Writes `content` verbatim to the handoff path baked in at construction. The model
-never sees or chooses the path — the tool's schema exposes only a `content`
-parameter. `agent/loop.py` scans tool results for the `<<HANDOFF_WRITTEN>>`
-sentinel returned here and terminates the subagent's turn the moment it appears
-(see `AgentLoop._handle_write_handoff`).
+For subagents: writes content to a baked-in file path.
+For the main agent (handoff_path=None): returns content for display in chat.
+Both cases return ToolResult with SideEffect.END_TURN, which causes
+agent/_tool_dispatch.handle_end_turn() to terminate the loop immediately.
 """
 from __future__ import annotations
 
 from pathlib import Path
 
 from agent.base_tool import BaseTool
+from agent.protocol import SideEffect, ToolResult
 
 
 class WriteHandoffTool(BaseTool):
-    """Write a subagent's final handoff report to its baked-in path."""
+    """Submit a final report and end the current turn."""
 
     name = "write_handoff"
     description = (
-        "Submit your final handoff report. Write your complete report as free-form "
-        "markdown in `content` — there is no required structure. This overwrites any "
-        "previous handoff you wrote. After calling this tool, immediately end your "
-        "turn — do not continue working."
+        "Submit your final report and end your turn. Write your complete report "
+        "as free-form markdown in `content`. After calling this tool your turn "
+        "ends immediately — do not continue working."
     )
 
     _parameters = {
@@ -29,19 +28,17 @@ class WriteHandoffTool(BaseTool):
         "properties": {
             "content": {
                 "type": "string",
-                "description": "The full handoff report, written verbatim to the handoff file.",
+                "description": "The full report in markdown.",
             },
         },
         "required": ["content"],
     }
 
-    def __init__(self, handoff_path: Path, display_content: bool = False) -> None:
-        self._handoff_path = Path(handoff_path)
-        self._display_content = display_content
+    def __init__(self, handoff_path: Path | None = None) -> None:
+        self._handoff_path = Path(handoff_path) if handoff_path is not None else None
 
-    def run(self, content: str) -> str:
-        self._handoff_path.parent.mkdir(parents=True, exist_ok=True)
-        self._handoff_path.write_text(content, encoding="utf-8")
-        if self._display_content:
-            return f"{content}\n\n<<HANDOFF_WRITTEN>>"
-        return "Handoff written. <<HANDOFF_WRITTEN>> Your turn ends now."
+    def run(self, content: str) -> ToolResult:
+        if self._handoff_path is not None:
+            self._handoff_path.parent.mkdir(parents=True, exist_ok=True)
+            self._handoff_path.write_text(content, encoding="utf-8")
+        return ToolResult(output=content, side_effect=SideEffect.END_TURN)

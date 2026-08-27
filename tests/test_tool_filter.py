@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import MagicMock
 import pytest
+from agent.protocol import SideEffect, ToolResult
 from agent.registry import ToolRegistry
 from agent.tools import create_tool_registry
 from tools.bash import BashTool
@@ -112,7 +113,7 @@ class TestConfigDrivenFilter:
         names = {n for n, _ in reg.list_tools()}
         assert names == {"read", "grep", "write_handoff"}
 
-    def test_main_write_handoff_persists_and_returns_markdown(self, tmp_path):
+    def test_main_write_handoff_returns_tool_result(self, tmp_path):
         cfg = self._config(tools=["read"])
         cfg.project_path = tmp_path
         tracker = MagicMock(thread_id="0123456789abcdef")
@@ -121,9 +122,9 @@ class TestConfigDrivenFilter:
         markdown = "## Result\n\nImplemented and verified."
         result = reg.dispatch("write_handoff", {"content": markdown})
 
-        handoff = next((tmp_path / ".dagi" / "handoffs").glob("main_*.md"))
-        assert handoff.read_text(encoding="utf-8") == markdown
-        assert result == f"{markdown}\n\n<<HANDOFF_WRITTEN>>"
+        assert isinstance(result, ToolResult)
+        assert result.output == markdown
+        assert result.side_effect is SideEffect.END_TURN
 
     def test_project_tool_cannot_replace_main_write_handoff(self, tmp_path, capsys):
         tools_dir = tmp_path / ".dagi" / "tools"
@@ -146,24 +147,22 @@ class TestConfigDrivenFilter:
         result = reg.dispatch("write_handoff", {"content": markdown})
 
         assert "reserved tool name 'write_handoff'" in capsys.readouterr().err
-        assert result == f"{markdown}\n\n<<HANDOFF_WRITTEN>>"
-        handoff = next((tmp_path / ".dagi" / "handoffs").glob("main_*.md"))
-        assert handoff.read_text(encoding="utf-8") == markdown
+        assert isinstance(result, ToolResult)
+        assert result.output == markdown
+        assert result.side_effect is SideEffect.END_TURN
 
-    def test_main_handoff_paths_are_safe_and_collision_resistant(self, tmp_path):
+    def test_main_write_handoff_returns_end_turn_side_effect(self, tmp_path):
         cfg = self._config(tools=["read"])
         cfg.project_path = tmp_path
         contents = ["first report", "second report"]
 
-        for thread_id, content in zip(("a/../../one", "a/../../two"), contents):
+        results = []
+        for thread_id, content in zip(("thread_aaa", "thread_bbb"), contents):
             tracker = MagicMock(thread_id=thread_id)
             reg = create_tool_registry(cwd=tmp_path, config=cfg, tracker=tracker)
-            reg.dispatch("write_handoff", {"content": content})
+            results.append(reg.dispatch("write_handoff", {"content": content}))
 
-        handoffs_dir = (tmp_path / ".dagi" / "handoffs").resolve()
-        files = list(handoffs_dir.glob("main_*.md"))
-        assert len(files) == 2
-        assert all(path.resolve().parent == handoffs_dir for path in files)
-        assert {path.read_text(encoding="utf-8") for path in files} == set(contents)
-        assert not (tmp_path / ".dagi" / "one").exists()
-        assert not (tmp_path / ".dagi" / "two").exists()
+        assert all(isinstance(r, ToolResult) for r in results)
+        assert all(r.side_effect is SideEffect.END_TURN for r in results)
+        assert {r.output for r in results} == set(contents)
+        assert not (tmp_path / ".dagi" / "handoffs").exists()

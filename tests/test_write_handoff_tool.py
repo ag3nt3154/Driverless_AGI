@@ -1,15 +1,24 @@
-"""tests/test_write_handoff_tool.py — Unit tests for tools/write_handoff.py."""
+"""tests/test_write_handoff_tool.py — Unit tests for WriteHandoffTool."""
 from __future__ import annotations
 
+from agent.protocol import SideEffect, ToolResult
 from tools.write_handoff import WriteHandoffTool
 
 
 class TestWriteHandoffTool:
-    def test_writes_content_verbatim(self, tmp_path):
+    def test_subagent_mode_writes_file(self, tmp_path):
         path = tmp_path / "worker_ab12.md"
-        out = WriteHandoffTool(handoff_path=path).run(content="# Anything\n\nfree form")
-        assert path.read_text(encoding="utf-8") == "# Anything\n\nfree form"
-        assert "<<HANDOFF_WRITTEN>>" in out
+        result = WriteHandoffTool(handoff_path=path).run(content="# Report\n\nDone.")
+        assert isinstance(result, ToolResult)
+        assert result.side_effect is SideEffect.END_TURN
+        assert path.read_text(encoding="utf-8") == "# Report\n\nDone."
+        assert "# Report" in result.output
+
+    def test_main_agent_mode_no_file_write(self, tmp_path):
+        result = WriteHandoffTool(handoff_path=None).run(content="Summary for user")
+        assert isinstance(result, ToolResult)
+        assert result.side_effect is SideEffect.END_TURN
+        assert result.output == "Summary for user"
 
     def test_creates_parent_dirs(self, tmp_path):
         path = tmp_path / "nested" / "deep" / "h.md"
@@ -32,6 +41,8 @@ class TestWriteHandoffTool:
         tool = WriteHandoffTool(handoff_path=tmp_path / "h.md")
         assert tool.name == "write_handoff"
 
-    def test_schema_requires_content(self, tmp_path):
-        tool = WriteHandoffTool(handoff_path=tmp_path / "h.md")
-        assert tool._parameters["required"] == ["content"]
+    def test_no_sentinel_in_output(self, tmp_path):
+        path = tmp_path / "h.md"
+        result = WriteHandoffTool(handoff_path=path).run(content="test")
+        assert "<<HANDOFF_WRITTEN>>" not in result.output
+        assert "<<END_OF_RESPONSE>>" not in result.output

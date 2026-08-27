@@ -1,9 +1,7 @@
 from __future__ import annotations
 
 from agent.base_tool import BaseTool
-
-ENTER_PLAN_MODE_SENTINEL = "__ENTER_PLAN_MODE__"
-EXIT_PLAN_MODE_SENTINEL = "__EXIT_PLAN_MODE__"
+from agent.protocol import SideEffect, ToolResult
 
 
 class EnterPlanModeTool(BaseTool):
@@ -31,8 +29,12 @@ class EnterPlanModeTool(BaseTool):
         "required": ["mode", "task_summary"],
     }
 
-    def run(self, mode: str, task_summary: str) -> str:  # noqa: ARG002
-        return f"{ENTER_PLAN_MODE_SENTINEL}:{mode}"
+    def run(self, mode: str, task_summary: str) -> ToolResult:  # noqa: ARG002
+        return ToolResult(
+            output=f"Entering plan mode ({mode}).",
+            side_effect=SideEffect.ENTER_PLAN_MODE,
+            side_effect_data={"mode": mode},
+        )
 
 
 class ExitPlanModeTool(BaseTool):
@@ -49,5 +51,8 @@ class ExitPlanModeTool(BaseTool):
         "required": ["summary"],
     }
 
-    def run(self, summary: str) -> str:  # noqa: ARG002
-        return EXIT_PLAN_MODE_SENTINEL
+    def run(self, summary: str) -> ToolResult:  # noqa: ARG002
+        return ToolResult(
+            output="Exiting plan mode.",
+            side_effect=SideEffect.EXIT_PLAN_MODE,
+        )

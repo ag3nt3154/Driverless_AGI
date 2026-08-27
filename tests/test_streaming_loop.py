@@ -1,6 +1,7 @@
 """tests/test_streaming_loop.py — _consume_stream accumulation + streaming run() path."""
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
@@ -9,7 +10,8 @@ import httpx
 import openai
 import pytest
 
-from agent.loop import AgentCallbacks, AgentConfig, AgentLoop, TASK_END_FLAG
+from agent.loop import AgentCallbacks, AgentConfig, AgentLoop
+from agent.protocol import SideEffect, ToolResult
 
 
 def _make_loop(callbacks=None, **config_kwargs) -> AgentLoop:
@@ -23,6 +25,15 @@ def _make_loop(callbacks=None, **config_kwargs) -> AgentLoop:
     fake_registry = MagicMock()
     fake_registry.get_openai_tools_list.return_value = []
     fake_registry.list_tools.return_value = []
+    fake_registry._tools = {"write_handoff": SimpleNamespace(description="submit handoff")}
+
+    def _dispatch(name, args):
+        if name == "write_handoff":
+            return ToolResult(output=args.get("content", ""), side_effect=SideEffect.END_TURN)
+        return "tool ran"
+
+    fake_registry.dispatch.side_effect = _dispatch
+
     fake_tracker = MagicMock()
     with (
         patch("agent.loop.SessionTracker", return_value=fake_tracker),
@@ -39,6 +50,15 @@ def _make_loop(callbacks=None, **config_kwargs) -> AgentLoop:
     loop.registry = fake_registry
     loop._skip_slug_generation = True
     return loop
+
+
+def _wh_chunks(content: str = "done"):
+    """Streaming chunks for a write_handoff tool call that exits the loop."""
+    args = json.dumps({"content": content})
+    return [
+        _chunk(tool_calls=[_tc_delta(0, id="tc_wh", name="write_handoff", arguments=args)]),
+        _chunk(no_choices=True, usage=_usage()),
+    ]
 
 
 # ── Chunk factories ──────────────────────────────────────────────────────────
@@ -191,14 +211,16 @@ class TestStreamingRun:
             on_token_update=lambda i, o, c, t, cached=0: tokens.append((i, o)),
         )
         loop = _make_loop(callbacks=cb, stream=True)
-        loop.client, calls = _stream_client([
-            _chunk(content="Done. "),
-            _chunk(content=TASK_END_FLAG),
-            _chunk(no_choices=True, usage=_usage(prompt=33, completion=9)),
-        ])
+        loop.client, calls = _stream_client(
+            [   # turn 1: text-only response
+                _chunk(content="Done. "),
+                _chunk(no_choices=True, usage=_usage(prompt=33, completion=9)),
+            ],
+            _wh_chunks("Done."),  # turn 2: write_handoff exits loop
+        )
         result = loop.run("do the thing")
         assert result == "Done."
-        assert deltas == ["Done. ", TASK_END_FLAG]
+        assert deltas == ["Done. "]
         assert any("Done." in f for f in finals)
         assert (33, 9) in tokens
         # The API call itself must request streaming + usage:
@@ -208,9 +230,13 @@ class TestStreamingRun:
     def test_non_streaming_config_never_passes_stream_kwarg(self):
         """config.stream=False (dataclass default) → identical call to today."""
         loop = _make_loop()  # stream defaults False
+        _wh_tc = SimpleNamespace(
+            id="tc_end",
+            function=SimpleNamespace(name="write_handoff", arguments=json.dumps({"content": "ok"})),
+        )
         response = SimpleNamespace(
             choices=[SimpleNamespace(message=SimpleNamespace(
-                content=f"ok {TASK_END_FLAG}", tool_calls=[], model_extra={},
+                content=None, tool_calls=[_wh_tc], model_extra={}, reasoning_content=None,
             ))],
             usage=_usage(),
         )
@@ -224,7 +250,16 @@ class TestStreamingRun:
     def test_streamed_tool_call_dispatches(self):
         """Tool-call deltas reassemble and dispatch through the registry."""
         loop = _make_loop(stream=True)
-        loop.registry.dispatch.return_value = "tool ran"
+
+        dispatched = []
+        _orig_dispatch = loop.registry.dispatch.side_effect
+
+        def _tracking_dispatch(name, args):
+            if name != "write_handoff":
+                dispatched.append((name, args))
+            return _orig_dispatch(name, args)
+
+        loop.registry.dispatch.side_effect = _tracking_dispatch
         loop.registry._tools = {}
         loop.client, _ = _stream_client(
             [   # turn 1: a tool call split across chunks
@@ -232,16 +267,11 @@ class TestStreamingRun:
                 _chunk(tool_calls=[_tc_delta(0, arguments='nd": "echo hi"}')]),
                 _chunk(no_choices=True, usage=_usage()),
             ],
-            [   # turn 2: finish
-                _chunk(content=f"finished {TASK_END_FLAG}"),
-                _chunk(no_choices=True, usage=_usage()),
-            ],
+            _wh_chunks("finished"),  # turn 2: write_handoff exits
         )
         result = loop.run("run echo")
         assert result == "finished"
-        loop.registry.dispatch.assert_called_once_with(
-            "bash", {"command": "echo hi"}
-        )
+        assert dispatched == [("bash", {"command": "echo hi"})]
 
     def test_midstream_connection_error_retries_whole_call(self):
         """A stream that dies mid-iteration is retried from scratch via the
@@ -255,10 +285,7 @@ class TestStreamingRun:
         loop = _make_loop(callbacks=cb, stream=True, api_error_retries=3)
         loop.client, calls = _stream_client(
             _dying,
-            [
-                _chunk(content=f"complete {TASK_END_FLAG}"),
-                _chunk(no_choices=True, usage=_usage()),
-            ],
+            _wh_chunks("complete"),
         )
         with patch("agent.loop.time.sleep"):  # skip the backoff delay
             result = loop.run("task")
@@ -273,10 +300,7 @@ class TestStreamingRun:
         loop = _make_loop(stream=True)
         loop.client, calls = _stream_client(
             [],  # ghost: zero chunks
-            [
-                _chunk(content=f"real {TASK_END_FLAG}"),
-                _chunk(no_choices=True, usage=_usage()),
-            ],
+            _wh_chunks("real"),
         )
         result = loop.run("task")
         assert result == "real"
@@ -294,10 +318,7 @@ class TestStreamingRun:
         loop = _make_loop(stream=True, api_error_retries=3)
         loop.client, calls = _stream_client(
             _dying,
-            [
-                _chunk(content=f"complete {TASK_END_FLAG}"),
-                _chunk(no_choices=True, usage=_usage()),
-            ],
+            _wh_chunks("complete"),
         )
         with patch("agent.loop.time.sleep"):
             result = loop.run("task")

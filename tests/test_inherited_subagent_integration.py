@@ -8,7 +8,7 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 from agent.base_tool import BaseTool
-from agent.loop import AgentConfig, AgentLoop, TASK_END_FLAG
+from agent.loop import AgentConfig, AgentLoop
 from agent.registry import ToolRegistry
 from tools.subagent_main import run_forked_subagent_mode
 from tools.write_handoff import WriteHandoffTool
@@ -117,7 +117,7 @@ def test_typed_subagent_inherits_triggering_prefix_and_returns_full_handoff(tmp_
                 _tool_call("sibling-call", "sibling", "{}"),
             ],
         ),
-        _response(f"Complete. {TASK_END_FLAG}"),
+        _response(None, [_tool_call("tc_done", "write_handoff", json.dumps({"content": "Complete."}))]),
     ]
     child_client.chat.completions.create.side_effect = [
         _response(

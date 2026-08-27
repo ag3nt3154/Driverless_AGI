@@ -1,19 +1,7 @@
 from __future__ import annotations
 
 from agent.base_tool import BaseTool
-
-SWITCH_MODEL_SENTINEL_PREFIX = "__SWITCH_MODEL_"
-
-
-def make_switch_sentinel(target: str) -> str:
-    return f"{SWITCH_MODEL_SENTINEL_PREFIX}{target}__"
-
-
-def parse_switch_sentinel(value: str) -> str | None:
-    """Return the tier name if value is a switch-model sentinel, else None."""
-    if value.startswith(SWITCH_MODEL_SENTINEL_PREFIX) and value.endswith("__"):
-        return value[len(SWITCH_MODEL_SENTINEL_PREFIX):-2]
-    return None
+from agent.protocol import SideEffect, ToolResult
 
 
 class SwitchModelTool(BaseTool):
@@ -46,5 +34,9 @@ class SwitchModelTool(BaseTool):
         "required": ["target", "reason"],
     }
 
-    def run(self, target: str, reason: str) -> str:  # noqa: ARG002
-        return make_switch_sentinel(target)
+    def run(self, target: str, reason: str) -> ToolResult:  # noqa: ARG002
+        return ToolResult(
+            output=f"Switching to {target} tier.",
+            side_effect=SideEffect.SWITCH_MODEL,
+            side_effect_data={"tier": target},
+        )

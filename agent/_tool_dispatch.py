@@ -2,9 +2,10 @@
 
 Extracted verbatim from AgentLoop methods in agent/loop.py (`self` became the
 explicit `loop` parameter) so the loop orchestrator stays under its size cap.
-Only agent/loop.py imports from this module. Sentinel short-circuit handling
-(write_handoff, plan-mode transitions, task-status, reload, model switch)
-lives in dispatch_tool_calls exactly as it did on the class.
+Only agent/loop.py imports from this module. Side-effect routing
+(write_handoff end-turn, plan-mode transitions, task-status, reload, model
+switch) lives in dispatch_tool_calls, driven by ToolResult.side_effect rather
+than magic string patterns.
 """
 from __future__ import annotations
 
@@ -17,13 +18,10 @@ from openai.types.chat.chat_completion_message_function_tool_call import (
 )
 
 from agent import session_events as sev
+from agent.protocol import LIST_ENCODING_PREFIX, SideEffect, ToolResult
 from agent.session import ToolCallRecord
-from agent._loop_helpers import WRITE_HANDOFF_SENTINEL, _escape_sentinels, _format_reload_notification
+from agent._loop_helpers import _format_reload_notification
 from tools.output_filter import filter_tool_output
-from tools.plan_mode import ENTER_PLAN_MODE_SENTINEL, EXIT_PLAN_MODE_SENTINEL
-from tools.reload_skills import RELOAD_SKILLS_SENTINEL
-from tools.switch_model import parse_switch_sentinel
-from tools.update_task_status import UPDATE_TASK_STATUS_SENTINEL
 
 if TYPE_CHECKING:
     from agent.loop import AgentLoop
@@ -37,9 +35,9 @@ def dispatch_tool_calls(
 ) -> str | None:
     """Dispatch every tool call in `message`, appending results to _messages.
 
-    Extracted verbatim from `run()`. Returns a non-None string only when
-    the write_handoff sentinel fired, in which case `run()` must return
-    that value immediately without a further API turn.
+    Returns a non-None string only when a tool returned SideEffect.END_TURN
+    (write_handoff), in which case `run()` must return that value immediately
+    without a further API turn.
 
     Deferred system messages are appended AFTER all tool results so they
     don't break the assistant→tool pairing that strict providers
@@ -68,29 +66,37 @@ def dispatch_tool_calls(
         )
         args = json.loads(tc.function.arguments)
         result = loop.registry.dispatch(tc.function.name, args)
-        if (
-            isinstance(result, str)
-            and WRITE_HANDOFF_SENTINEL in result
-            and tc.function.name == "write_handoff"
-        ):
-            return handle_write_handoff(
-                loop, tc, result, description, tool_records, (message, response)
-            )
-        if isinstance(result, str) and result.startswith(ENTER_PLAN_MODE_SENTINEL):
-            result = loop._handle_enter_plan_mode(args)
-        elif result == EXIT_PLAN_MODE_SENTINEL:
-            result = loop._handle_exit_plan_mode(args)
-        elif isinstance(result, str) and UPDATE_TASK_STATUS_SENTINEL in result:
-            result = loop._handle_all_tasks_resolved()
-        elif result == RELOAD_SKILLS_SENTINEL:
-            added, removed, errors = loop._rebuild_for_reload()
-            result = _format_reload_notification(len(loop.skills), added, removed, errors)
-            deferred_system_msgs.append(result)
-        else:
-            if isinstance(result, str):
-                _switch_target = parse_switch_sentinel(result)
-                if _switch_target is not None:
-                    result = loop._handle_switch_model(_switch_target, args)
+
+        # ── Typed side-effect dispatch ──────────────────────────────────────
+        if isinstance(result, ToolResult) and result.side_effect is not None:
+            effect = result.side_effect
+
+            if effect is SideEffect.END_TURN:
+                return handle_end_turn(
+                    loop, tc, result, description, tool_records, (message, response)
+                )
+            elif effect is SideEffect.ENTER_PLAN_MODE:
+                result = loop._handle_enter_plan_mode(
+                    result.side_effect_data or args
+                )
+            elif effect is SideEffect.EXIT_PLAN_MODE:
+                result = loop._handle_exit_plan_mode(args)
+            elif effect is SideEffect.ALL_TASKS_RESOLVED:
+                result = loop._handle_all_tasks_resolved()
+            elif effect is SideEffect.RELOAD_SKILLS:
+                added, removed, errors = loop._rebuild_for_reload()
+                result = _format_reload_notification(
+                    len(loop.skills), added, removed, errors
+                )
+                deferred_system_msgs.append(result)
+            elif effect is SideEffect.SWITCH_MODEL:
+                tier = (result.side_effect_data or {}).get("tier")
+                result = loop._handle_switch_model(tier, args)
+
+        # Unwrap plain ToolResult to string for bookkeeping
+        if isinstance(result, ToolResult):
+            result = result.output
+
         bookkeep_tool_call(loop, tc, result, description, tool_records)
         loop._lifecycle.tool_bookkeeping_finished()
 
@@ -108,7 +114,7 @@ def bookkeep_tool_call(
 ) -> str:
     """Filter, log, and record a single tool call's result, appending its
     tool message to self._messages. Shared by the normal per-tool-call
-    dispatch loop and the `_handle_write_handoff` short-circuit path so
+    dispatch loop and the `handle_end_turn` short-circuit path so
     the two can't drift (e.g. the list-safety conversion below must
     apply to both). Returns the full (unfiltered) result string.
     """
@@ -126,7 +132,7 @@ def bookkeep_tool_call(
     # ─────────────────────────────────────────────────────────
     result_str = (
         context_result if isinstance(context_result, str)
-        else "__list__:" + json.dumps(context_result)
+        else LIST_ENCODING_PREFIX + json.dumps(context_result)
     )
     loop.callbacks.on_tool_end(tc.function.name, result_str)   # filtered
     loop.tracker.record_tool_end(tc.function.name, full_str)    # full (JSONL)
@@ -137,18 +143,13 @@ def bookkeep_tool_call(
         input=tc.function.arguments,
         result=full_str,                                        # full (JSONL)
     ))
-    _tool_content = (
-        _escape_sentinels(context_result)
-        if isinstance(context_result, str)
-        else context_result
-    )
     loop.log.append(
         sev.TOOL_RESULT,
         {
             "turn": loop.log.open_turn,
             "step": loop.log.open_step,
             "call_id": tc.id,
-            "content": _tool_content,
+            "content": context_result,
             "meta": None,
         },
         surface_op="append",
@@ -161,7 +162,7 @@ def finalize_turn(loop: AgentLoop, message, response, tool_records: list[ToolCal
     """Record the assistant turn and emit the token-usage callback.
 
     Shared by the end of the normal per-tool-call loop and the
-    `_handle_write_handoff` short-circuit path.
+    `handle_end_turn` short-circuit path.
     """
     _thinking_tok = (
         getattr(getattr(response.usage, "completion_tokens_details", None), "reasoning_tokens", None)
@@ -184,25 +185,24 @@ def finalize_turn(loop: AgentLoop, message, response, tool_records: list[ToolCal
     )
 
 
-def handle_write_handoff(
+def handle_end_turn(
     loop: AgentLoop,
     tc: ChatCompletionMessageFunctionToolCall,
-    result: str,
+    result: ToolResult,
     description: str,
     tool_records: list[ToolCallRecord],
     message_response: tuple,
 ) -> str:
-    """Terminate the subagent's turn immediately on WRITE_HANDOFF_SENTINEL.
+    """Terminate the agent's turn on SideEffect.END_TURN.
 
-    Mirrors the tool-message bookkeeping the normal dispatch path performs
-    (via `_bookkeep_tool_call`/`_finalize_turn`), then short-circuits the
-    run() call — no further tool calls or API turns happen after this.
+    Works for both main agent and subagent — the tool itself decides
+    whether to write a file or just return content.
     """
     message, response = message_response
-    clean = result.replace(WRITE_HANDOFF_SENTINEL, "").strip()
+    output = result.output
 
     loop.callbacks.on_handoff()
-    full_str = bookkeep_tool_call(loop, tc, clean, description, tool_records)
+    full_str = bookkeep_tool_call(loop, tc, output, description, tool_records)
     loop._lifecycle.tool_bookkeeping_finished()
     finalize_turn(loop, message, response, tool_records)
 

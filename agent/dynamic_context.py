@@ -3,9 +3,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Protocol
 
+from agent.protocol import SESSION_CONTEXT_HEADER as SENTINEL
 from tools._plan_parser import parse_subtask_statuses
-
-SENTINEL = "## Session Context"
 
 
 class AgentConfigLike(Protocol):
