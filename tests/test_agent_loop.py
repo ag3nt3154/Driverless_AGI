@@ -12,11 +12,9 @@ import pytest
 
 from agent import session_events as sev
 from agent.base_tool import BaseTool
-from agent.loop import (
-    AgentCallbacks, AgentConfig, AgentLoop,
-    AWAIT_USER_FLAG, TASK_END_FLAG, WRITE_HANDOFF_SENTINEL,
-    _escape_sentinels,
-)
+from agent.loop import AgentCallbacks, AgentConfig, AgentLoop
+from agent.protocol import SideEffect, ToolResult
+from tools.write_handoff import WriteHandoffTool
 from agent.affect import AffectConfig, AffectController, AffectRestore, AffectVector
 from agent.expression_assets import ImageAsset
 from agent.registry import ToolRegistry
@@ -31,7 +29,7 @@ class FakeTool(BaseTool):
         self._result = result
         self.calls: list[dict] = []
 
-    def run(self, **kwargs) -> str:
+    def run(self, **kwargs) -> "str | ToolResult":
         self.calls.append(kwargs)
         return self._result
 
@@ -61,6 +59,8 @@ def _make_loop(registry=None, **config_overrides) -> AgentLoop:
     )
 
     real_registry = registry or ToolRegistry()
+    if "write_handoff" not in {name for name, _ in real_registry.list_tools()}:
+        real_registry.register(WriteHandoffTool(handoff_path=None))
 
     fake_tracker = MagicMock()
     fake_tracker.affect_controller = None
@@ -78,6 +78,16 @@ def _make_loop(registry=None, **config_overrides) -> AgentLoop:
     # mocked response at the front of their side_effect list.
     loop._skip_slug_generation = True
     return loop
+
+
+def _exit_response(content: str = "Done.", prompt_tokens: int = 10, completion_tokens: int = 5):
+    """A response where the model calls write_handoff to end the turn."""
+    return _make_response(
+        None,
+        tool_calls=[_make_tool_call("tc_exit", "write_handoff", json.dumps({"content": content}))],
+        prompt_tokens=prompt_tokens,
+        completion_tokens=completion_tokens,
+    )
 
 
 class _PauseAfterIsSet:
@@ -152,7 +162,7 @@ class TestToolDispatch:
         loop.client = MagicMock()
         loop.client.chat.completions.create.side_effect = [
             _make_response(None, tool_calls=[_make_tool_call("tc1", "echo", "{}")]),
-            _make_response(f"Done. {TASK_END_FLAG}"),
+            _exit_response("Done."),
         ]
 
         loop.run("do something")
@@ -167,12 +177,12 @@ class TestToolDispatch:
         loop.client = MagicMock()
         loop.client.chat.completions.create.side_effect = [
             _make_response(None, tool_calls=[_make_tool_call("tc1", "echo", "{}")]),
-            _make_response(f"Done. {TASK_END_FLAG}"),
+            _exit_response("Done."),
         ]
 
         loop.run("do something")
 
-        tool_msgs = [m for m in loop._messages if m.get("role") == "tool"]
+        tool_msgs = [m for m in loop._messages if m.get("role") == "tool" and m.get("tool_call_id") != "tc_exit"]
         assert len(tool_msgs) == 1
         assert tool_msgs[0]["tool_call_id"] == "tc1"
         assert tool_msgs[0]["content"] == "echoed!"
@@ -194,13 +204,15 @@ class TestToolDispatch:
         loop.client = MagicMock()
         loop.client.chat.completions.create.side_effect = [
             _make_response(None, tool_calls=[_make_tool_call("tc1", "echo", '{"x": 1}')]),
-            _make_response(f"Done. {TASK_END_FLAG}"),
+            _exit_response("Done."),
         ]
 
         loop.run("do something")
 
-        assert starts == [("echo", "Echoes input", '{"x": 1}')]
-        assert ends == [("echo", "echoed!")]
+        echo_starts = [(n, d, a) for n, d, a in starts if n != "write_handoff"]
+        echo_ends = [(n, r) for n, r in ends if n != "write_handoff"]
+        assert echo_starts == [("echo", "Echoes input", '{"x": 1}')]
+        assert echo_ends == [("echo", "echoed!")]
 
     def test_tracker_records_tool_start_and_end(self):
         tool = FakeTool(name="echo", result="echoed!")
@@ -210,13 +222,13 @@ class TestToolDispatch:
         loop.client = MagicMock()
         loop.client.chat.completions.create.side_effect = [
             _make_response(None, tool_calls=[_make_tool_call("tc1", "echo", "{}")]),
-            _make_response(f"Done. {TASK_END_FLAG}"),
+            _exit_response("Done."),
         ]
 
         loop.run("do something")
 
-        loop.tracker.record_tool_start.assert_called_once_with("echo", "Echoes input", "{}")
-        loop.tracker.record_tool_end.assert_called_once_with("echo", "echoed!")
+        loop.tracker.record_tool_start.assert_any_call("echo", "Echoes input", "{}")
+        loop.tracker.record_tool_end.assert_any_call("echo", "echoed!")
 
     def test_unknown_tool_call_yields_error_result_and_loop_continues(self):
         registry = ToolRegistry()
@@ -224,7 +236,7 @@ class TestToolDispatch:
         loop.client = MagicMock()
         loop.client.chat.completions.create.side_effect = [
             _make_response(None, tool_calls=[_make_tool_call("tc1", "nonexistent", "{}")]),
-            _make_response(f"Done. {TASK_END_FLAG}"),
+            _exit_response("Done."),
         ]
 
         loop.run("do something")
@@ -248,30 +260,28 @@ class TestToolDispatch:
                     _make_tool_call("tc2", "tool_b", "{}"),
                 ],
             ),
-            _make_response(f"Done. {TASK_END_FLAG}"),
+            _exit_response("Done."),
         ]
 
         loop.run("do something")
 
         assert tool_a.calls == [{}]
         assert tool_b.calls == [{}]
-        tool_msgs = [m for m in loop._messages if m.get("role") == "tool"]
+        tool_msgs = [m for m in loop._messages if m.get("role") == "tool" and m.get("tool_call_id") != "tc_exit"]
         assert [m["tool_call_id"] for m in tool_msgs] == ["tc1", "tc2"]
 
 
-class TestWriteHandoffSentinel:
-    """WRITE_HANDOFF_SENTINEL in a tool result must terminate the subagent's
-    turn immediately — no further API calls, transcript stays well-formed."""
+class TestWriteHandoffExit:
+    """write_handoff tool call must terminate the loop immediately — no further
+    API calls, transcript stays well-formed, content is returned."""
 
-    def test_run_returns_cleaned_text_and_makes_no_further_api_call(self):
-        tool = FakeTool(name="write_handoff", result=f"Handoff written. {WRITE_HANDOFF_SENTINEL}")
-        registry = ToolRegistry()
-        registry.register(tool)
-        loop = _make_loop(registry=registry)
+    def test_run_returns_content_and_makes_no_further_api_call(self):
+        loop = _make_loop()
         loop.client = MagicMock()
         loop.client.chat.completions.create.side_effect = [
-            _make_response(None, tool_calls=[_make_tool_call("tc1", "write_handoff", "{}")]),
-            _make_response(f"Done. {TASK_END_FLAG}"),
+            _make_response(None, tool_calls=[
+                _make_tool_call("tc1", "write_handoff", json.dumps({"content": "Handoff written."}))
+            ]),
         ]
 
         result = loop.run("do something")
@@ -279,28 +289,25 @@ class TestWriteHandoffSentinel:
         assert result == "Handoff written."
         assert loop.client.chat.completions.create.call_count == 1
 
-    def test_returned_text_does_not_contain_raw_sentinel(self):
-        tool = FakeTool(name="write_handoff", result=f"Handoff written. {WRITE_HANDOFF_SENTINEL}")
-        registry = ToolRegistry()
-        registry.register(tool)
-        loop = _make_loop(registry=registry)
+    def test_result_is_exactly_the_content_passed_to_write_handoff(self):
+        loop = _make_loop()
         loop.client = MagicMock()
-        loop.client.chat.completions.create.side_effect = [
-            _make_response(None, tool_calls=[_make_tool_call("tc1", "write_handoff", "{}")]),
-        ]
+        loop.client.chat.completions.create.return_value = _make_response(
+            None,
+            tool_calls=[_make_tool_call("tc1", "write_handoff", json.dumps({"content": "my content"}))],
+        )
 
         result = loop.run("do something")
 
-        assert WRITE_HANDOFF_SENTINEL not in result
+        assert result == "my content"
 
     def test_transcript_has_well_formed_tool_reply(self):
-        tool = FakeTool(name="write_handoff", result=f"Handoff written. {WRITE_HANDOFF_SENTINEL}")
-        registry = ToolRegistry()
-        registry.register(tool)
-        loop = _make_loop(registry=registry)
+        loop = _make_loop()
         loop.client = MagicMock()
         loop.client.chat.completions.create.side_effect = [
-            _make_response(None, tool_calls=[_make_tool_call("tc1", "write_handoff", "{}")]),
+            _make_response(None, tool_calls=[
+                _make_tool_call("tc1", "write_handoff", json.dumps({"content": "Handoff written."}))
+            ]),
         ]
 
         loop.run("do something")
@@ -310,19 +317,17 @@ class TestWriteHandoffSentinel:
         assert tool_msgs[0]["tool_call_id"] == "tc1"
         assert tool_msgs[0]["content"] == "Handoff written."
 
-    def test_on_done_callback_fires_with_cleaned_text(self):
-        tool = FakeTool(name="write_handoff", result=f"Handoff written. {WRITE_HANDOFF_SENTINEL}")
-        registry = ToolRegistry()
-        registry.register(tool)
-
+    def test_on_done_callback_fires_with_content(self):
         done_calls = []
         callbacks = AgentCallbacks(on_done=lambda r: done_calls.append(r))
 
-        loop = _make_loop(registry=registry)
+        loop = _make_loop()
         loop.callbacks = callbacks
         loop.client = MagicMock()
         loop.client.chat.completions.create.side_effect = [
-            _make_response(None, tool_calls=[_make_tool_call("tc1", "write_handoff", "{}")]),
+            _make_response(None, tool_calls=[
+                _make_tool_call("tc1", "write_handoff", json.dumps({"content": "Handoff written."}))
+            ]),
         ]
 
         loop.run("do something")
@@ -330,24 +335,20 @@ class TestWriteHandoffSentinel:
         assert done_calls == ["Handoff written."]
 
     def test_bookkeeping_fires_on_handoff_path(self):
-        """record_assistant and on_token_update must fire on the handoff
+        """record_assistant and on_token_update must fire on the write_handoff
         termination path, same as every other early-exit path."""
-        tool = FakeTool(name="write_handoff", result=f"Handoff written. {WRITE_HANDOFF_SENTINEL}")
-        registry = ToolRegistry()
-        registry.register(tool)
-
         token_updates = []
         callbacks = AgentCallbacks(
             on_token_update=lambda p, c, cost, t, cached=0: token_updates.append((p, c, cost, t))
         )
 
-        loop = _make_loop(registry=registry)
+        loop = _make_loop()
         loop.callbacks = callbacks
         loop.client = MagicMock()
         loop.client.chat.completions.create.side_effect = [
             _make_response(
                 None,
-                tool_calls=[_make_tool_call("tc1", "write_handoff", "{}")],
+                tool_calls=[_make_tool_call("tc1", "write_handoff", json.dumps({"content": "done"}))],
                 prompt_tokens=10,
                 completion_tokens=5,
             ),
@@ -362,11 +363,6 @@ class TestWriteHandoffSentinel:
         """A large handoff report must be routed through filter_tool_output,
         same as the normal per-tool-call path."""
         large_report = "x" * 100_000
-        tool = FakeTool(
-            name="write_handoff", result=f"{large_report}{WRITE_HANDOFF_SENTINEL}"
-        )
-        registry = ToolRegistry()
-        registry.register(tool)
 
         warnings = []
         done_calls = []
@@ -377,11 +373,13 @@ class TestWriteHandoffSentinel:
             on_handoff=lambda: handoff_calls.append(True),
         )
 
-        loop = _make_loop(registry=registry, reserve_tokens=10, project_path=tmp_path)
+        loop = _make_loop(reserve_tokens=10, project_path=tmp_path)
         loop.callbacks = callbacks
         loop.client = MagicMock()
         loop.client.chat.completions.create.side_effect = [
-            _make_response(None, tool_calls=[_make_tool_call("tc1", "write_handoff", "{}")]),
+            _make_response(None, tool_calls=[
+                _make_tool_call("tc1", "write_handoff", json.dumps({"content": large_report}))
+            ]),
         ]
 
         result = loop.run("do something")
@@ -394,25 +392,21 @@ class TestWriteHandoffSentinel:
         assert done_calls == [large_report]
         assert handoff_calls == [True]
 
-    def test_non_write_handoff_tool_containing_sentinel_does_not_short_circuit(self):
-        """A tool other than write_handoff (e.g. a subagent spawn tool inlining a handoff
-        file that contains <<HANDOFF_WRITTEN>>) must NOT trigger _handle_write_handoff."""
-        tool = FakeTool(
-            name="spawn_subagent",
-            result=f"Subagent done.\n--- Handoff ---\n{WRITE_HANDOFF_SENTINEL}\nreport text",
-        )
+    def test_non_write_handoff_tool_does_not_exit_loop(self):
+        """Only the write_handoff tool triggers END_TURN; other tools continue the loop."""
+        tool = FakeTool(name="spawn_subagent", result="Subagent done.\nreport text")
         registry = ToolRegistry()
         registry.register(tool)
         loop = _make_loop(registry=registry)
         loop.client = MagicMock()
         loop.client.chat.completions.create.side_effect = [
             _make_response(None, tool_calls=[_make_tool_call("tc1", "spawn_subagent", "{}")]),
-            _make_response(f"Done. {TASK_END_FLAG}"),
+            _exit_response("Done."),
         ]
 
         result = loop.run("spawn a subagent")
 
-        # Must have continued to the second LLM call — no false short-circuit.
+        # Must have continued to the second LLM call — spawn_subagent does not exit.
         assert loop.client.chat.completions.create.call_count == 2
         assert result == "Done."
 
@@ -426,7 +420,7 @@ class TestWriteHandoffSentinel:
         loop.client = MagicMock()
         loop.client.chat.completions.create.side_effect = [
             _make_response(None, tool_calls=[_make_tool_call("tc1", "echo", "{}")]),
-            _make_response(f"Done. {TASK_END_FLAG}"),
+            _exit_response("Done."),
         ]
 
         result = loop.run("do something")
@@ -453,7 +447,7 @@ class TestCompactionTrigger:
             _make_response(
                 None, tool_calls=[_make_tool_call("tc1", "echo", "{}")], prompt_tokens=950
             ),
-            _make_response(f"Done. {TASK_END_FLAG}", prompt_tokens=50),
+            _exit_response("Done.", prompt_tokens=50),
         ]
 
         from agent.loop import _NO_COMPACTION
@@ -472,7 +466,7 @@ class TestCompactionTrigger:
             _make_response(
                 None, tool_calls=[_make_tool_call("tc1", "echo", "{}")], prompt_tokens=50
             ),
-            _make_response(f"Done. {TASK_END_FLAG}", prompt_tokens=50),
+            _exit_response("Done.", prompt_tokens=50),
         ]
 
         from agent.loop import _NO_COMPACTION
@@ -491,7 +485,7 @@ class TestCompactionTrigger:
             _make_response(
                 None, tool_calls=[_make_tool_call("tc1", "echo", "{}")], prompt_tokens=999_999
             ),
-            _make_response(f"Done. {TASK_END_FLAG}", prompt_tokens=50),
+            _exit_response("Done.", prompt_tokens=50),
         ]
 
         from agent.loop import _NO_COMPACTION
@@ -512,51 +506,32 @@ class TestCompactionTrigger:
         assert any("compaction blew up" in w for w in warnings)
 
 
-class TestSentinelEscape:
-    """Sentinel strings in tool results must not leak into message history and
-    cause premature loop termination on the next LLM turn."""
+class TestToolResultIsolation:
+    """Tool result text never causes loop termination — only write_handoff does."""
 
-    def test_escape_sentinels_breaks_await_flag(self):
-        escaped = _escape_sentinels(f"prefix {AWAIT_USER_FLAG} suffix")
-        assert AWAIT_USER_FLAG not in escaped
-        assert "END_OF_RESPONSE" in escaped  # content still visible, just broken
-
-    def test_escape_sentinels_breaks_task_end_flag(self):
-        escaped = _escape_sentinels(f"prefix {TASK_END_FLAG} suffix")
-        assert TASK_END_FLAG not in escaped
-        assert "TASK_END" in escaped
-
-    def test_escape_sentinels_is_idempotent_on_clean_text(self):
-        text = "no sentinels here"
-        assert _escape_sentinels(text) == text
-
-    def test_tool_result_containing_sentinel_does_not_terminate_loop(self):
-        """A tool that returns <<END_OF_RESPONSE>> verbatim (e.g. ReadTool reading a
-        session log) must not break the parent loop — the loop should continue and
-        reach the explicit exit flag on the next turn."""
-        tool = FakeTool(name="read", result=f"file content\n{AWAIT_USER_FLAG}\nmore text")
+    def test_arbitrary_tool_result_does_not_terminate_loop(self):
+        """A tool that returns arbitrary text (even old-style sentinel strings) does
+        not exit the loop — only write_handoff with SideEffect.END_TURN does."""
+        tool = FakeTool(name="read", result="file content <<END_OF_RESPONSE>> more text")
         registry = ToolRegistry()
         registry.register(tool)
         loop = _make_loop(registry=registry)
         loop.client = MagicMock()
         loop.client.chat.completions.create.side_effect = [
             _make_response(None, tool_calls=[_make_tool_call("tc1", "read", "{}")]),
-            _make_response(f"All done. {TASK_END_FLAG}"),
+            _exit_response("All done."),
         ]
 
         result = loop.run("read a file")
 
-        # Must have made TWO LLM calls — tool call turn + final text turn.
+        # Must have made TWO LLM calls — tool result alone never exits.
         assert loop.client.chat.completions.create.call_count == 2
         assert result == "All done."
-        # Sentinel must be escaped in the tool message stored in history.
-        tool_msgs = [m for m in loop._messages if m.get("role") == "tool"]
-        assert AWAIT_USER_FLAG not in tool_msgs[0]["content"]
 
-    def test_on_tool_end_callback_receives_unescaped_result(self):
-        """The UI callback gets the original unescaped string — only the LLM message
-        history is sanitised."""
-        tool = FakeTool(name="read", result=f"data {AWAIT_USER_FLAG} end")
+    def test_on_tool_end_callback_receives_full_result(self):
+        """on_tool_end must receive the complete tool output string."""
+        specific_text = "data __some_marker__ end"
+        tool = FakeTool(name="read", result=specific_text)
         registry = ToolRegistry()
         registry.register(tool)
 
@@ -567,13 +542,12 @@ class TestSentinelEscape:
         loop.client = MagicMock()
         loop.client.chat.completions.create.side_effect = [
             _make_response(None, tool_calls=[_make_tool_call("tc1", "read", "{}")]),
-            _make_response(f"Done. {TASK_END_FLAG}"),
+            _exit_response("Done."),
         ]
 
         loop.run("read a file")
 
-        # on_tool_end receives the filtered (but not sentinel-escaped) string.
-        assert AWAIT_USER_FLAG in ends[0]
+        assert ends[0] == specific_text
 
 
 class TestSystemPromptRefresh:
@@ -652,8 +626,6 @@ class TestDispatchToolCallsExtraction:
         assert loop._messages[-1]["tool_call_id"] == "call_1"
 
     def test_deferred_system_messages_land_after_all_tool_results(self):
-        from agent.loop import RELOAD_SKILLS_SENTINEL
-
         loop = _make_loop()
         loop._messages = [{"role": "system", "content": "sys"}]
         tc_a = _make_tool_call("call_a", "reload_skills")
@@ -661,7 +633,10 @@ class TestDispatchToolCallsExtraction:
         message = SimpleNamespace(tool_calls=[tc_a, tc_b], content=None)
         response = _make_response(None, tool_calls=[tc_a, tc_b])
         loop.registry._tools = {}
-        loop.registry.dispatch = MagicMock(side_effect=[RELOAD_SKILLS_SENTINEL, "ok"])
+        loop.registry.dispatch = MagicMock(side_effect=[
+            ToolResult(output="", side_effect=SideEffect.RELOAD_SKILLS),
+            "ok",
+        ])
         loop._rebuild_for_reload = MagicMock(return_value=(set(), set(), []))
         self._open_turn(loop)
 
@@ -672,16 +647,16 @@ class TestDispatchToolCallsExtraction:
         assert roles.index("system", 1) > roles.index("tool")
         assert roles[-1] == "system"
 
-    def test_write_handoff_sentinel_short_circuits_with_a_string(self):
+    def test_write_handoff_tool_call_ends_dispatch(self):
         loop = _make_loop()
         self._open_turn(loop)
         loop._messages = [{"role": "system", "content": "sys"}]
-        tc = _make_tool_call("call_h", "write_handoff", "{}")
+        tc = _make_tool_call("call_h", "write_handoff", json.dumps({"content": "handoff body"}))
         message = SimpleNamespace(tool_calls=[tc], content=None)
         response = _make_response(None, tool_calls=[tc])
         loop.registry._tools = {}
         loop.registry.dispatch = MagicMock(
-            return_value=f"{WRITE_HANDOFF_SENTINEL}handoff body"
+            return_value=ToolResult(output="handoff body", side_effect=SideEffect.END_TURN)
         )
 
         result = loop._dispatch_tool_calls(message, response, [])
@@ -844,7 +819,7 @@ class TestProcessLifecycle:
         loop.client = MagicMock()
         loop.client.chat.completions.create.side_effect = [
             _make_response(None, tool_calls=[_make_tool_call("tc1", "echo", "{}")]),
-            _make_response(f"Done. {TASK_END_FLAG}"),
+            _exit_response("Done."),
         ]
 
         loop.run("do something")
@@ -859,6 +834,7 @@ class TestProcessLifecycle:
         tool = FakeTool(name="echo", result="echoed!")
         registry = ToolRegistry()
         registry.register(tool)
+        registry.register(WriteHandoffTool(handoff_path=None))
         config = AgentConfig(
             model="test-model",
             api_key="test-key",
@@ -884,7 +860,7 @@ class TestProcessLifecycle:
         loop.client = MagicMock()
         loop.client.chat.completions.create.side_effect = [
             _make_response(None, tool_calls=[_make_tool_call("tc1", "echo", "{}")]),
-            _make_response(f"Done. {TASK_END_FLAG}"),
+            _exit_response("Done."),
         ]
 
         loop.run("do something")
@@ -921,7 +897,7 @@ class TestProcessLifecycle:
         loop.client = MagicMock()
         loop.client.chat.completions.create.side_effect = [
             _make_response(None, tool_calls=[_make_tool_call("tc1", "echo", "{}")]),
-            _make_response(f"Done. {TASK_END_FLAG}"),
+            _exit_response("Done."),
         ]
         thread = threading.Thread(target=lambda: loop.run("do something"))
 
@@ -980,7 +956,7 @@ class TestProcessLifecycle:
         race_event = _PauseAfterIsSet(loop)
         loop._lifecycle.pause_event = race_event
 
-        loop._continuing_step_finished(1, 1)
+        loop._lifecycle.publish_affect_drift(loop.tracker.affect_controller)
         assert race_event.pause_finished.wait(timeout=1.0)
 
         if "process:paused" in events:
@@ -1016,7 +992,7 @@ class TestProcessLifecycle:
                     _make_tool_call("tc2", "tool_b", "{}"),
                 ],
             ),
-            _make_response(f"Done. {TASK_END_FLAG}"),
+            _exit_response("Done."),
         ]
         thread = threading.Thread(target=lambda: loop.run("do something"))
 
@@ -1125,7 +1101,7 @@ class TestProcessLifecycle:
         loop.log.append(sev.TURN_START, {"turn": 1})
         loop.log.append(sev.STEP_START, {"turn": 1, "step": 1})
         worker = threading.Thread(
-            target=lambda: loop._continuing_step_finished(1, 1),
+            target=lambda: loop._lifecycle.publish_affect_drift(loop.tracker.affect_controller),
             daemon=True,
         )
 
@@ -1201,9 +1177,9 @@ class TestProcessLifecycle:
             lambda snapshot: events.append(f"affect:{snapshot.reason}"),
             emit_current=False,
         )
-        loop.log.append(sev.TURN_START, {"turn": 1})
-        loop.log.append(sev.STEP_START, {"turn": 1, "step": 1})
-        worker = threading.Thread(target=lambda: loop._continuing_step_finished(1, 1))
+        worker = threading.Thread(
+            target=lambda: loop._lifecycle.publish_affect_drift(loop.tracker.affect_controller)
+        )
         worker.start()
         assert resolver_entered.wait(timeout=1.0)
 
@@ -1363,13 +1339,12 @@ class TestProcessLifecycle:
 class TestParentForkCapture:
     def test_spawn_fork_uses_request_before_assistant_tool_response(self):
         """A child spawned by a tool call must inherit the request prefix, not its response."""
-        tool = FakeTool(name="write_handoff", result=f"report {WRITE_HANDOFF_SENTINEL}")
-        registry = ToolRegistry()
-        registry.register(tool)
-        loop = _make_loop(registry=registry)
+        loop = _make_loop()
         loop.client = MagicMock()
         loop.client.chat.completions.create.side_effect = [
-            _make_response(None, tool_calls=[_make_tool_call("tc1", "write_handoff", "{}")]),
+            _make_response(None, tool_calls=[
+                _make_tool_call("tc1", "write_handoff", json.dumps({"content": "report"}))
+            ]),
         ]
 
         loop.run("delegate this")
@@ -1392,17 +1367,12 @@ class TestParentForkCapture:
         """An idle /wtf fork sees the last assistant reply, not a stale API snapshot."""
         loop = _make_loop()
         loop.client = MagicMock()
-        loop.client.chat.completions.create.return_value = _make_response(
-            f"Complete. {TASK_END_FLAG}"
-        )
+        loop.client.chat.completions.create.return_value = _exit_response("Complete.")
 
         loop.run("finish this")
         fork = loop.capture_parent_fork("worker_idle", "stable")
 
-        assert fork.request["messages"][1:3] == [
-            {"role": "user", "content": "finish this"},
-            {"role": "assistant", "content": f"Complete. {TASK_END_FLAG}"},
-        ]
+        assert fork.request["messages"][1] == {"role": "user", "content": "finish this"}
         assert loop.log.branch_event("worker_idle") is not None
         provider = loop.parent_context_provider
         assert provider.get_surface_generation() == loop.log.surface.generation

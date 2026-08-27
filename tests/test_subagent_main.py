@@ -927,16 +927,23 @@ def test_system_override_keeps_the_inherited_request_prefix_byte_identical(tmp_p
     """Adding local prompt text would turn a cache hit into a fresh provider request."""
     from types import SimpleNamespace
 
-    from agent.loop import AWAIT_USER_FLAG, AgentConfig, AgentLoop
+    from agent.loop import AgentConfig, AgentLoop
     from agent.registry import ToolRegistry
+    from tools.write_handoff import WriteHandoffTool
 
     inherited = [
         {"role": "system", "content": "parent system bytes"},
         {"role": "user", "content": "parent request"},
     ]
+    _wh_tc = SimpleNamespace(
+        id="tc_done",
+        function=SimpleNamespace(name="write_handoff", arguments=json.dumps({"content": "done"})),
+    )
     response = SimpleNamespace(
         choices=[SimpleNamespace(
-            message=SimpleNamespace(content=f"done {AWAIT_USER_FLAG}", tool_calls=[]),
+            message=SimpleNamespace(
+                content=None, tool_calls=[_wh_tc], reasoning_content=None, model_extra={},
+            ),
         )],
         usage=SimpleNamespace(
             prompt_tokens=1,
@@ -946,11 +953,13 @@ def test_system_override_keeps_the_inherited_request_prefix_byte_identical(tmp_p
             prompt_tokens_details=None,
         ),
     )
+    registry = ToolRegistry()
+    registry.register(WriteHandoffTool(handoff_path=None))
     with patch("openai.OpenAI"):
         loop = AgentLoop(
             config=AgentConfig(api_key="test", project_path=tmp_path, system_prompt="local prompt"),
             initial_messages=inherited,
-            _registry=ToolRegistry(),
+            _registry=registry,
             _system_prompt_override=inherited[0]["content"],
             _preserve_request_prefix=True,
         )
@@ -971,16 +980,23 @@ def test_inherited_run_skips_wiki_context_between_prefix_and_child_task(tmp_path
     """Configured wiki context must not break the inherited cache prefix."""
     from types import SimpleNamespace
 
-    from agent.loop import AWAIT_USER_FLAG, AgentConfig, AgentLoop
+    from agent.loop import AgentConfig, AgentLoop
     from agent.registry import ToolRegistry
+    from tools.write_handoff import WriteHandoffTool
 
     inherited = [
         {"role": "system", "content": "parent system bytes"},
         {"role": "user", "content": "parent request"},
     ]
+    _wh_tc = SimpleNamespace(
+        id="tc_done",
+        function=SimpleNamespace(name="write_handoff", arguments=json.dumps({"content": "done"})),
+    )
     response = SimpleNamespace(
         choices=[SimpleNamespace(
-            message=SimpleNamespace(content=f"done {AWAIT_USER_FLAG}", tool_calls=[]),
+            message=SimpleNamespace(
+                content=None, tool_calls=[_wh_tc], reasoning_content=None, model_extra={},
+            ),
         )],
         usage=SimpleNamespace(
             prompt_tokens=1,
@@ -990,6 +1006,8 @@ def test_inherited_run_skips_wiki_context_between_prefix_and_child_task(tmp_path
             prompt_tokens_details=None,
         ),
     )
+    registry = ToolRegistry()
+    registry.register(WriteHandoffTool(handoff_path=None))
     with patch("openai.OpenAI"):
         loop = AgentLoop(
             config=AgentConfig(
@@ -999,7 +1017,7 @@ def test_inherited_run_skips_wiki_context_between_prefix_and_child_task(tmp_path
                 memory_root=tmp_path / "wiki",
             ),
             initial_messages=inherited,
-            _registry=ToolRegistry(),
+            _registry=registry,
             _system_prompt_override=inherited[0]["content"],
             _preserve_request_prefix=True,
         )

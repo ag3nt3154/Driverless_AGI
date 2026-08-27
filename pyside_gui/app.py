@@ -15,9 +15,7 @@ from PySide6.QtWidgets import (
 )
 
 from agent import DAGI_ROOT
-from agent.loop import AgentConfig, AgentLoop, AWAIT_USER_FLAG, TASK_END_FLAG
-
-_LOOP_SENTINELS = (AWAIT_USER_FLAG, TASK_END_FLAG)
+from agent.loop import AgentConfig, AgentLoop
 
 from pyside_gui.bridge import AgentBridge, init_worker_logger, worker_log
 from pyside_gui.commands import SlashCommandHandler, UIWidgets
@@ -367,10 +365,7 @@ class DagiMainWindow(QMainWindow):
 
     @Slot()
     def _on_stream_ended(self) -> None:
-        text = self._bridge._stream_text
-        for s in _LOOP_SENTINELS:
-            text = text.replace(s, "")
-        text = text.strip()
+        text = self._bridge._stream_text.strip()
         if text:
             self._stream_had_content = True
             self._conversation.stream_end(render_markdown(text))

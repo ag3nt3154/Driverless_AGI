@@ -17,7 +17,7 @@ Plan → Act → Observe → Repeat
 
 When the conversation exceeds the model's context window, **context compaction** kicks in — the middle of the history is summarized by a dedicated `compact` subagent that inherits the parent's warm KV-cache prefix, then replaced with its summary, preserving the system prompt and recent messages. This lets the agent handle arbitrarily long tasks without crashing.
 
-Every agent response with no tool calls must end with `<<END_OF_RESPONSE>>` — this applies to greetings, answers, and completed tasks alike. If the flag is absent, the harness treats the response as accidentally truncated and injects a recovery prompt (`.dagi/prompts/main/continue.md`) as a user message to resume the loop. A safety valve (`max_continuations`, default 10, configurable in `config.yaml`) prevents runaway recovery loops. `<<TASK_END>>` is kept as a silent legacy alias.
+To end a turn the agent calls the **`write_handoff` tool** with its final response as `content`. The tool returns a typed `ToolResult(side_effect=SideEffect.END_TURN)` that the loop detects and uses to exit cleanly — no in-band string sentinels. If the agent produces a response with no tool calls and no `write_handoff`, the harness treats it as accidentally truncated and injects a recovery prompt (`.dagi/prompts/main/continue.md`) to resume the loop. A safety valve (`max_continuations`, default 10, configurable in `config.yaml`) prevents runaway recovery loops.
 
 At session start, **wiki index injection** automatically reads the root and section `.index.md` files
 from the memory wiki and prepends them as a system message before the first API call — giving the
@@ -699,8 +699,8 @@ Driverless_AGI/
 │   ├── switch_model/        # Swap models mid-session
 │   ├── ask_user/            # Prompt user for clarification
 │   ├── escalate_issue/      # Worker/review subagents: sidecar-file escalation to the main agent
-│   ├── write_handoff/       # Main-agent and subagent final-report tool — writes verbatim and
-│   │                        #   hard-terminates the turn via a sentinel handled in agent/loop.py
+│   ├── write_handoff/       # Main-agent and subagent final-report tool — main mode returns
+│   │                        #   ToolResult(side_effect=END_TURN); subagent mode writes file
 │   ├── _task_envelope.py  # wrap_envelope() — universal ## Instructions/## Output sections appended
 │   │                        #   to every spawned subagent's task (shared helper, not a tool folder)
 │   ├── _handoff_format.py # format_handoff_result() — shared "ok"/"ok_unverified" result rendering

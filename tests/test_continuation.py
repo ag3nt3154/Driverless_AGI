@@ -1,6 +1,7 @@
-"""tests/test_continuation.py — Unit tests for loop termination flags."""
+"""tests/test_continuation.py — Unit tests for loop termination and continuation."""
 from __future__ import annotations
 
+import json
 import threading
 import time
 from pathlib import Path
@@ -11,12 +12,24 @@ import httpx
 import openai
 import pytest
 
-from agent.loop import AgentConfig, AgentCallbacks, AgentLoop, TASK_END_FLAG, AWAIT_USER_FLAG
+from agent.loop import AgentConfig, AgentCallbacks, AgentLoop
+from agent.protocol import SideEffect, ToolResult
 
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+def _write_handoff_tc(content: str = "done"):
+    """A fake OpenAI tool call for write_handoff."""
+    return SimpleNamespace(
+        id="tc_handoff",
+        function=SimpleNamespace(
+            name="write_handoff",
+            arguments=json.dumps({"content": content}),
+        ),
+    )
+
 
 def _make_response(content: str, tool_calls=None):
     """Build a minimal fake OpenAI chat completion response."""
@@ -25,14 +38,21 @@ def _make_response(content: str, tool_calls=None):
         completion_tokens=5,
         cost=None,
         completion_tokens_details=None,
+        prompt_tokens_details=None,
     )
     message = SimpleNamespace(
         content=content,
         tool_calls=tool_calls or [],
         model_extra={},
+        reasoning_content=None,
     )
     choice = SimpleNamespace(message=message)
     return SimpleNamespace(choices=[choice], usage=usage)
+
+
+def _exit_response(content: str = "done"):
+    """Response where the model calls write_handoff to end the turn."""
+    return _make_response(content="", tool_calls=[_write_handoff_tc(content)])
 
 
 def _make_loop(max_continuations: int = 3) -> AgentLoop:
@@ -47,13 +67,24 @@ def _make_loop(max_continuations: int = 3) -> AgentLoop:
     fake_registry = MagicMock()
     fake_registry.get_openai_tools_list.return_value = []
     fake_registry.list_tools.return_value = []
+    fake_registry._tools = {"write_handoff": SimpleNamespace(description="submit handoff")}
+
+    def _dispatch(name, args):
+        if name == "write_handoff":
+            return ToolResult(
+                output=args.get("content", ""),
+                side_effect=SideEffect.END_TURN,
+            )
+        return f"result of {name}"
+
+    fake_registry.dispatch.side_effect = _dispatch
 
     fake_tracker = MagicMock()
     fake_tracker.record_system = MagicMock()
     fake_tracker.record_user = MagicMock()
     fake_tracker.record_assistant = MagicMock()
+    fake_tracker.thread_id = "test"
 
-    # Patch soul.md and agents.md to not exist, and OpenAI client
     with (
         patch("agent.loop.SessionTracker", return_value=fake_tracker),
         patch("openai.OpenAI"),
@@ -72,52 +103,65 @@ def _make_loop(max_continuations: int = 3) -> AgentLoop:
 
 
 # ---------------------------------------------------------------------------
-# Tests
+# Tests: write_handoff as exit mechanism
 # ---------------------------------------------------------------------------
 
-class TestTaskEndFlag:
-    def test_flag_triggers_clean_return(self):
-        """<<TASK_END>> in the response should be stripped before returning."""
+class TestWriteHandoffExit:
+    def test_write_handoff_exits_loop(self):
+        """write_handoff tool call exits the loop and returns content."""
         loop = _make_loop()
         loop.client = MagicMock()
-        loop.client.chat.completions.create.return_value = _make_response(
-            f"All done! {TASK_END_FLAG}"
-        )
+        loop.client.chat.completions.create.return_value = _exit_response("All done!")
 
         result = loop.run("do something")
 
-        assert TASK_END_FLAG not in result
+        assert loop.client.chat.completions.create.call_count == 1
         assert "All done!" in result
 
-    def test_flag_stripped_from_middle(self):
-        """Flag can appear anywhere in the response."""
+    def test_write_handoff_fires_on_done_callback(self):
+        """on_done callback must fire when write_handoff ends the turn."""
+        done_results = []
+        callbacks = AgentCallbacks(on_done=lambda r: done_results.append(r))
+
         loop = _make_loop()
         loop.client = MagicMock()
-        loop.client.chat.completions.create.return_value = _make_response(
-            f"Done {TASK_END_FLAG} with extra text"
-        )
+        loop.callbacks = callbacks
+        loop.client.chat.completions.create.return_value = _exit_response("Task complete.")
 
-        result = loop.run("do something")
+        loop.run("do something")
 
-        assert TASK_END_FLAG not in result
-        assert "Done" in result
+        assert len(done_results) == 1
+        assert "Task complete." in done_results[0]
 
-    def test_no_flag_injects_continue(self):
-        """Without <<TASK_END>>, the harness should inject 'continue' and loop."""
+    def test_write_handoff_does_not_inject_continue(self):
+        """No 'continue' user message must appear after write_handoff call."""
+        from agent.loop import CONTINUE_PROMPT
+        loop = _make_loop()
+        loop.client = MagicMock()
+        loop.client.chat.completions.create.return_value = _exit_response("Done.")
+
+        loop.run("do something")
+
+        continue_msgs = [m for m in loop._messages if m.get("content") == CONTINUE_PROMPT]
+        assert len(continue_msgs) == 0
+
+
+class TestContinuationMechanism:
+    def test_no_tool_calls_injects_continue(self):
+        """Without write_handoff, the harness should inject 'continue' and loop."""
         loop = _make_loop(max_continuations=1)
         loop.client = MagicMock()
 
-        # First call: no flag → triggers continuation
-        # Second call: has flag → clean return
+        # First call: no tool calls → triggers continuation
+        # Second call: write_handoff → clean return
         loop.client.chat.completions.create.side_effect = [
             _make_response("Still working..."),
-            _make_response(f"Finished. {TASK_END_FLAG}"),
+            _exit_response("Finished."),
         ]
 
         result = loop.run("do something")
 
         assert loop.client.chat.completions.create.call_count == 2
-        assert TASK_END_FLAG not in result
         assert "Finished." in result
 
     def test_continue_message_appended_to_history(self):
@@ -127,7 +171,7 @@ class TestTaskEndFlag:
         loop.client = MagicMock()
         loop.client.chat.completions.create.side_effect = [
             _make_response("Still working..."),
-            _make_response(f"Done. {TASK_END_FLAG}"),
+            _exit_response("Done."),
         ]
 
         loop.run("do something")
@@ -138,12 +182,12 @@ class TestTaskEndFlag:
         assert len(continue_msgs) == 1
 
     def test_safety_valve_exits_at_max_continuations(self):
-        """After max_continuations injections, the loop must exit without <<TASK_END>>."""
+        """After max_continuations injections, the loop must exit without write_handoff."""
         max_cont = 2
         loop = _make_loop(max_continuations=max_cont)
         loop.client = MagicMock()
 
-        # Always return without the flag
+        # Always return without tool calls
         loop.client.chat.completions.create.return_value = _make_response("Still stuck.")
 
         result = loop.run("do something")
@@ -159,88 +203,26 @@ class TestTaskEndFlag:
         loop.client.chat.completions.create.side_effect = [
             _make_response("Step 1"),
             _make_response("Step 2"),
-            _make_response(f"Done. {TASK_END_FLAG}"),
+            _exit_response("Done."),
         ]
 
         loop.run("do something")
 
         assert loop._continuation_count == 2
 
-    def test_on_done_fires_with_clean_result(self):
-        """on_done callback must receive the stripped result, not the raw flag."""
+    def test_on_done_fires_after_max_continuations(self):
+        """on_done must fire even when loop exits via max_continuations."""
         done_results = []
         callbacks = AgentCallbacks(on_done=lambda r: done_results.append(r))
 
-        loop = _make_loop()
+        loop = _make_loop(max_continuations=1)
         loop.client = MagicMock()
         loop.callbacks = callbacks
-        loop.client.chat.completions.create.return_value = _make_response(
-            f"Task complete. {TASK_END_FLAG}"
-        )
+        loop.client.chat.completions.create.return_value = _make_response("Still working.")
 
         loop.run("do something")
 
         assert len(done_results) == 1
-        assert TASK_END_FLAG not in done_results[0]
-
-
-class TestWaitForUserFlag:
-    def test_wait_flag_exits_loop_cleanly(self):
-        """<<WAIT_FOR_USER_RESPONSE>> must exit the loop without injecting 'continue'."""
-        loop = _make_loop()
-        loop.client = MagicMock()
-        loop.client.chat.completions.create.return_value = _make_response(
-            f"Please tell me your name. {AWAIT_USER_FLAG}"
-        )
-
-        result = loop.run("do something")
-
-        assert loop.client.chat.completions.create.call_count == 1
-        assert AWAIT_USER_FLAG not in result
-        assert "Please tell me your name." in result
-
-    def test_wait_flag_stripped_from_result(self):
-        """Flag must be stripped before the result is returned."""
-        loop = _make_loop()
-        loop.client = MagicMock()
-        loop.client.chat.completions.create.return_value = _make_response(
-            f"What is your goal? {AWAIT_USER_FLAG}"
-        )
-
-        result = loop.run("do something")
-
-        assert AWAIT_USER_FLAG not in result
-
-    def test_wait_flag_fires_on_done_callback(self):
-        """on_done must fire when the wait flag exits the loop."""
-        done_results = []
-        callbacks = AgentCallbacks(on_done=lambda r: done_results.append(r))
-
-        loop = _make_loop()
-        loop.client = MagicMock()
-        loop.callbacks = callbacks
-        loop.client.chat.completions.create.return_value = _make_response(
-            f"Awaiting your input. {AWAIT_USER_FLAG}"
-        )
-
-        loop.run("do something")
-
-        assert len(done_results) == 1
-        assert AWAIT_USER_FLAG not in done_results[0]
-
-    def test_wait_flag_does_not_inject_continue(self):
-        """No 'continue' user message must appear in history after wait flag."""
-        loop = _make_loop()
-        loop.client = MagicMock()
-        loop.client.chat.completions.create.return_value = _make_response(
-            f"Your move. {AWAIT_USER_FLAG}"
-        )
-
-        loop.run("do something")
-
-        from agent.loop import CONTINUE_PROMPT
-        continue_msgs = [m for m in loop._messages if m.get("content") == CONTINUE_PROMPT]
-        assert len(continue_msgs) == 0
 
 
 class TestApiErrorRetryConfig:
@@ -270,7 +252,7 @@ class TestApiErrorRetry:
         loop.client = MagicMock()
         loop.client.chat.completions.create.side_effect = [
             _make_api_status_error(500),
-            _make_response(f"Done. {TASK_END_FLAG}"),
+            _exit_response("Done."),
         ]
 
         with patch("agent.loop.time.sleep"):
@@ -309,7 +291,7 @@ class TestApiErrorRetry:
         loop.client = MagicMock()
         loop.client.chat.completions.create.side_effect = [
             _make_api_status_error(429, "Rate limited"),
-            _make_response(f"OK. {TASK_END_FLAG}"),
+            _exit_response("OK."),
         ]
 
         with patch("agent.loop.time.sleep"):
@@ -324,7 +306,7 @@ class TestApiErrorRetry:
         request = httpx.Request("POST", "https://api.example.com/v1/chat/completions")
         loop.client.chat.completions.create.side_effect = [
             openai.APIConnectionError(request=request),
-            _make_response(f"OK. {TASK_END_FLAG}"),
+            _exit_response("OK."),
         ]
 
         with patch("agent.loop.time.sleep"):
@@ -341,7 +323,7 @@ class TestApiErrorRetry:
             _make_api_status_error(500),
             _make_response("Still working..."),
             _make_api_status_error(502),
-            _make_response(f"Done. {TASK_END_FLAG}"),
+            _exit_response("Done."),
         ]
 
         with patch("agent.loop.time.sleep"):
@@ -359,7 +341,7 @@ class TestApiErrorRetry:
             _make_api_status_error(500),
             _make_api_status_error(500),
             _make_api_status_error(500),
-            _make_response(f"OK. {TASK_END_FLAG}"),
+            _exit_response("OK."),
         ]
 
         with patch("agent.loop.time.sleep") as mock_sleep:
@@ -378,7 +360,7 @@ class TestApiErrorRetry:
         loop.client = MagicMock()
         loop.client.chat.completions.create.side_effect = [
             _make_api_status_error(500, "Internal Server Error"),
-            _make_response(f"OK. {TASK_END_FLAG}"),
+            _exit_response("OK."),
         ]
 
         with patch("agent.loop.time.sleep"):
@@ -427,7 +409,7 @@ class TestErrorPause:
         loop.client = MagicMock()
         loop.client.chat.completions.create.side_effect = [
             _make_api_status_error(503),
-            _make_response(f"Recovered. {TASK_END_FLAG}"),
+            _exit_response("Recovered."),
         ]
 
         result_holder: list = []
@@ -451,4 +433,3 @@ class TestErrorPause:
         assert any(
             m.get("content") == "please retry" for m in loop._messages
         ), "injected message must appear in _messages"
-

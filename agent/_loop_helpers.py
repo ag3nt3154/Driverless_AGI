@@ -1,31 +1,12 @@
 """agent/_loop_helpers.py — module-level helpers for the agent loop.
 
-Extracted verbatim from agent/loop.py so the loop orchestrator stays under the
-500-line cap. Only agent/loop.py imports from this module; external importers
-keep using `from agent.loop import AWAIT_USER_FLAG, ...` (re-exported there).
+Extracted from agent/loop.py so the loop orchestrator stays under the
+500-line cap. Only agent/loop.py imports from this module.
 """
 from __future__ import annotations
 
 from pathlib import Path
 from agent.prompts import load_prompt
-
-TASK_END_FLAG = "<<TASK_END>>"           # legacy alias — still recognised
-AWAIT_USER_FLAG = "<<END_OF_RESPONSE>>"
-WRITE_HANDOFF_SENTINEL = "<<HANDOFF_WRITTEN>>"
-
-_LOOP_SENTINELS = (AWAIT_USER_FLAG, TASK_END_FLAG)
-
-
-def _escape_sentinels(text: str) -> str:
-    """Break loop-control sentinels so they cannot leak from tool results into the
-    LLM's message history and cause premature termination on the next turn.
-
-    Replaces '<<' with '< <' in each sentinel — visually similar but won't match
-    the substring checks in AgentLoop.run().
-    """
-    for sentinel in _LOOP_SENTINELS:
-        text = text.replace(sentinel, sentinel.replace("<<", "< <"))
-    return text
 
 
 def _build_wiki_index_context(memory_root: Path) -> str | None:
@@ -94,15 +75,6 @@ def _format_reload_notification(
 
 
 CONTINUE_PROMPT = load_prompt("main/continue.md")
-
-
-def _extract_reasoning(message) -> str:
-    """Get reasoning text from the response message, trying SDK attr then model_extra."""
-    text = getattr(message, "reasoning_content", None) or ""
-    if not text:
-        extras = getattr(message, "model_extra", None) or {}
-        text = extras.get("reasoning") or extras.get("reasoning_content") or ""
-    return text or ""
 
 
 def _extract_reasoning(message) -> str:

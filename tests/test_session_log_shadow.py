@@ -6,6 +6,7 @@ projection faithful BEFORE anything is allowed to depend on it.
 """
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
@@ -14,6 +15,7 @@ import pytest
 
 from agent import session_events as ev
 from agent.loop import AgentConfig, AgentLoop
+from agent.protocol import SideEffect, ToolResult
 from agent.session_log import is_status_board
 from agent.loop import CompactionResult
 
@@ -29,7 +31,14 @@ def _make_loop(project_path: Path, _initial: list | None = None, **overrides) ->
     fake_registry = MagicMock()
     fake_registry.get_openai_tools_list.return_value = []
     fake_registry.list_tools.return_value = []
-    fake_registry._tools = {}
+    fake_registry._tools = {"write_handoff": SimpleNamespace(description="submit handoff")}
+
+    def _dispatch(name, args):
+        if name == "write_handoff":
+            return ToolResult(output=args.get("content", ""), side_effect=SideEffect.END_TURN)
+        return "ok"
+
+    fake_registry.dispatch.side_effect = _dispatch
     fake_tracker = MagicMock()
 
     with (
@@ -62,6 +71,26 @@ def _text_response(content: str) -> SimpleNamespace:
     )
 
 
+def _wh_response(content: str = "done") -> SimpleNamespace:
+    """A completion that calls write_handoff to end the loop."""
+    tc = SimpleNamespace(
+        id="tc_end",
+        function=SimpleNamespace(
+            name="write_handoff", arguments=json.dumps({"content": content})
+        ),
+    )
+    return SimpleNamespace(
+        choices=[SimpleNamespace(message=SimpleNamespace(tool_calls=[tc], content=None))],
+        usage=SimpleNamespace(
+            prompt_tokens=10,
+            completion_tokens=5,
+            cost=None,
+            completion_tokens_details=None,
+            prompt_tokens_details=None,
+        ),
+    )
+
+
 class TestLogConstruction:
     def test_loop_owns_a_log_holding_only_the_initial_header(self, tmp_path):
         """Construction logs the request envelope and nothing else â€” no turn
@@ -76,9 +105,7 @@ class TestTurnBoundaries:
     def test_a_completed_run_opens_and_closes_exactly_one_turn(self, tmp_path):
         loop = _make_loop(tmp_path)
         loop.client = MagicMock()
-        loop.client.chat.completions.create.return_value = _text_response(
-            "all done <<END_OF_RESPONSE>>"
-        )
+        loop.client.chat.completions.create.return_value = _wh_response("all done")
 
         loop.run("do the thing")
 
@@ -94,9 +121,7 @@ class TestTurnBoundaries:
     def test_completed_run_records_the_completed_reason(self, tmp_path):
         loop = _make_loop(tmp_path)
         loop.client = MagicMock()
-        loop.client.chat.completions.create.return_value = _text_response(
-            "done <<END_OF_RESPONSE>>"
-        )
+        loop.client.chat.completions.create.return_value = _wh_response("done")
 
         loop.run("go")
 
@@ -114,9 +139,7 @@ class TestTurnBoundaries:
     def test_a_second_run_opens_turn_two(self, tmp_path):
         loop = _make_loop(tmp_path)
         loop.client = MagicMock()
-        loop.client.chat.completions.create.return_value = _text_response(
-            "done <<END_OF_RESPONSE>>"
-        )
+        loop.client.chat.completions.create.return_value = _wh_response("done")
 
         loop.run("first")
         loop.run("second")
@@ -141,9 +164,7 @@ class TestUserMessageEvents:
     def test_the_task_prompt_is_logged_as_a_human_user_message(self, tmp_path):
         loop = _make_loop(tmp_path)
         loop.client = MagicMock()
-        loop.client.chat.completions.create.return_value = _text_response(
-            "done <<END_OF_RESPONSE>>"
-        )
+        loop.client.chat.completions.create.return_value = _wh_response("done")
 
         loop.run("build the widget")
 
@@ -156,9 +177,7 @@ class TestUserMessageEvents:
     def test_user_messages_are_surface_events(self, tmp_path):
         loop = _make_loop(tmp_path)
         loop.client = MagicMock()
-        loop.client.chat.completions.create.return_value = _text_response(
-            "done <<END_OF_RESPONSE>>"
-        )
+        loop.client.chat.completions.create.return_value = _wh_response("done")
 
         loop.run("go")
 
@@ -172,7 +191,7 @@ class TestUserMessageEvents:
         loop.client = MagicMock()
         loop.client.chat.completions.create.side_effect = [
             _text_response("thinking out loud"),
-            _text_response("done <<END_OF_RESPONSE>>"),
+            _wh_response("done"),
         ]
 
         loop.run("go")
@@ -205,7 +224,7 @@ class TestStepBoundaries:
         loop.client = MagicMock()
         loop.client.chat.completions.create.side_effect = [
             _text_response("working"),
-            _text_response("done <<END_OF_RESPONSE>>"),
+            _wh_response("done"),
         ]
 
         loop.run("go")
@@ -218,9 +237,7 @@ class TestStepBoundaries:
     def test_steps_are_numbered_within_their_turn(self, tmp_path):
         loop = _make_loop(tmp_path)
         loop.client = MagicMock()
-        loop.client.chat.completions.create.return_value = _text_response(
-            "done <<END_OF_RESPONSE>>"
-        )
+        loop.client.chat.completions.create.return_value = _wh_response("done")
 
         loop.run("first")
         loop.run("second")
@@ -234,9 +251,7 @@ class TestAssistantAndToolEvents:
     def test_text_only_reply_is_logged_as_a_surface_assistant_message(self, tmp_path):
         loop = _make_loop(tmp_path)
         loop.client = MagicMock()
-        loop.client.chat.completions.create.return_value = _text_response(
-            "done <<END_OF_RESPONSE>>"
-        )
+        loop.client.chat.completions.create.return_value = _wh_response("done")
 
         loop.run("go")
 
@@ -253,11 +268,13 @@ class TestAssistantAndToolEvents:
         loop.client = MagicMock()
         loop.client.chat.completions.create.side_effect = [
             _tool_response("read", '{"file_path": "a.txt"}'),
-            _text_response("done <<END_OF_RESPONSE>>"),
+            _wh_response("done"),
         ]
 
         def _spy(name, args):
             seen_at_dispatch.append([e.type for e in loop.log.events])
+            if name == "write_handoff":
+                return ToolResult(output=args.get("content", ""), side_effect=SideEffect.END_TURN)
             return "file contents"
 
         loop.registry.dispatch = _spy
@@ -274,9 +291,13 @@ class TestAssistantAndToolEvents:
         loop.client = MagicMock()
         loop.client.chat.completions.create.side_effect = [
             _tool_response("read", raw),
-            _text_response("done <<END_OF_RESPONSE>>"),
+            _wh_response("done"),
         ]
-        loop.registry.dispatch = MagicMock(return_value="ok")
+        def _dispatch(name, args):
+            if name == "write_handoff":
+                return ToolResult(output=args.get("content", ""), side_effect=SideEffect.END_TURN)
+            return "ok"
+        loop.registry.dispatch = _dispatch
 
         loop.run("go")
 
@@ -288,9 +309,13 @@ class TestAssistantAndToolEvents:
         loop.client = MagicMock()
         loop.client.chat.completions.create.side_effect = [
             _tool_response("read", "{}", call_id="abc"),
-            _text_response("done <<END_OF_RESPONSE>>"),
+            _wh_response("done"),
         ]
-        loop.registry.dispatch = MagicMock(return_value="ok")
+        def _dispatch(name, args):
+            if name == "write_handoff":
+                return ToolResult(output=args.get("content", ""), side_effect=SideEffect.END_TURN)
+            return "ok"
+        loop.registry.dispatch = _dispatch
 
         loop.run("go")
 
@@ -310,9 +335,7 @@ class TestDerivationHolds:
     def test_text_only_conversation_matches(self, tmp_path):
         loop = _make_loop(tmp_path)
         loop.client = MagicMock()
-        loop.client.chat.completions.create.return_value = _text_response(
-            "done <<END_OF_RESPONSE>>"
-        )
+        loop.client.chat.completions.create.return_value = _wh_response("done")
         loop.run("go")
         assert loop._messages[1:] == loop.log.derive_messages()
 
@@ -322,12 +345,16 @@ class TestDerivationHolds:
         loop.client.chat.completions.create.side_effect = [
             _tool_response("read", '{"file_path": "a.txt"}', call_id="c1"),
             _tool_response("read", '{"file_path": "b.txt"}', call_id="c2"),
-            _text_response("done <<END_OF_RESPONSE>>"),
+            _wh_response("done"),
         ]
-        loop.registry.dispatch = MagicMock(return_value="contents")
+        def _dispatch(name, args):
+            if name == "write_handoff":
+                return ToolResult(output=args.get("content", ""), side_effect=SideEffect.END_TURN)
+            return "contents"
+        loop.registry.dispatch = _dispatch
         loop.run("go")
         assert [m["role"] for m in loop._messages] == [
-            "system", "user", "assistant", "tool", "assistant", "tool", "assistant",
+            "system", "user", "assistant", "tool", "assistant", "tool", "assistant", "tool",
         ]
 
     def test_continuation_injection_matches(self, tmp_path):
@@ -336,7 +363,7 @@ class TestDerivationHolds:
         loop.client.chat.completions.create.side_effect = [
             _text_response("thinking"),
             _text_response("still thinking"),
-            _text_response("done <<END_OF_RESPONSE>>"),
+            _wh_response("done"),
         ]
         loop.run("go")
         assert loop._messages[1:] == loop.log.derive_messages()
@@ -605,9 +632,13 @@ class TestDerivedMessages:
         loop.client = MagicMock()
         loop.client.chat.completions.create.side_effect = [
             _tool_response("read", '{"file_path": "x"}'),
-            _text_response("done <<END_OF_RESPONSE>>"),
+            _wh_response("done"),
         ]
-        loop.registry.dispatch = MagicMock(return_value="contents")
+        def _dispatch(name, args):
+            if name == "write_handoff":
+                return ToolResult(output=args.get("content", ""), side_effect=SideEffect.END_TURN)
+            return "contents"
+        loop.registry.dispatch = _dispatch
         loop.run("do the thing")
         assert loop._messages == [loop._header_message()] + loop.log.derive_messages()
 

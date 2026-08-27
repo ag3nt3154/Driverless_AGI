@@ -225,7 +225,7 @@ def _validate_final_handoff(text: str, required_sections: list[str]) -> tuple[bo
     clean = text.strip()
     if not clean:
         return False, "Empty final handoff text"
-    if any(flag in clean for flag in ("<<END_OF_RESPONSE>>", "<<TASK_END>>")):
+    if "<<TASK_END>>" in clean:
         return False, "Truncated final handoff text"
     if not required_sections:
         return True, ""

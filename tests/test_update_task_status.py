@@ -3,6 +3,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from agent.protocol import SideEffect, ToolResult
+
 PLAN_TEXT = """\
 # Plan: Test Feature
 
@@ -42,7 +44,8 @@ class TestUpdateTaskStatusTool:
 
         text = plan.read_text(encoding="utf-8")
         assert "### Task 2: [x] Second task" in text
-        assert "complete" in result.lower() or "[x]" in result
+        assert isinstance(result, ToolResult)
+        assert "complete" in result.output.lower() or "[x]" in result.output
 
     def test_returns_updated_status_board(self, tmp_path):
         from tools.update_task_status import UpdateTaskStatusTool
@@ -52,32 +55,31 @@ class TestUpdateTaskStatusTool:
 
         result = tool.run(task=3, status="in_progress")
 
-        assert "[~]" in result
-        assert "Third task" in result
+        assert isinstance(result, ToolResult)
+        assert "[~]" in result.output
+        assert "Third task" in result.output
 
     def test_auto_complete_sentinel_when_all_resolved(self, tmp_path):
-        from tools.update_task_status import (
-            UpdateTaskStatusTool, UPDATE_TASK_STATUS_SENTINEL,
-        )
+        from tools.update_task_status import UpdateTaskStatusTool
         plan = tmp_path / "plan.md"
         plan.write_text(ALMOST_DONE_PLAN, encoding="utf-8")
         tool = UpdateTaskStatusTool(plan_path=plan)
 
         result = tool.run(task=2, status="complete")
 
-        assert UPDATE_TASK_STATUS_SENTINEL in result
+        assert isinstance(result, ToolResult)
+        assert result.side_effect is SideEffect.ALL_TASKS_RESOLVED
 
     def test_no_sentinel_when_tasks_remain(self, tmp_path):
-        from tools.update_task_status import (
-            UpdateTaskStatusTool, UPDATE_TASK_STATUS_SENTINEL,
-        )
+        from tools.update_task_status import UpdateTaskStatusTool
         plan = tmp_path / "plan.md"
         plan.write_text(PLAN_TEXT, encoding="utf-8")
         tool = UpdateTaskStatusTool(plan_path=plan)
 
         result = tool.run(task=2, status="complete")
 
-        assert UPDATE_TASK_STATUS_SENTINEL not in result
+        assert isinstance(result, ToolResult)
+        assert result.side_effect is None
 
     def test_invalid_task_number(self, tmp_path):
         from tools.update_task_status import UpdateTaskStatusTool
@@ -87,7 +89,8 @@ class TestUpdateTaskStatusTool:
 
         result = tool.run(task=99, status="complete")
 
-        assert "not found" in result.lower() or "error" in result.lower()
+        assert isinstance(result, ToolResult)
+        assert "not found" in result.output.lower() or "error" in result.output.lower()
 
     def test_schema_exposes_task_and_status(self, tmp_path):
         from tools.update_task_status import UpdateTaskStatusTool
@@ -101,13 +104,12 @@ class TestUpdateTaskStatusTool:
         ]
 
     def test_all_failed_also_triggers_sentinel(self, tmp_path):
-        from tools.update_task_status import (
-            UpdateTaskStatusTool, UPDATE_TASK_STATUS_SENTINEL,
-        )
+        from tools.update_task_status import UpdateTaskStatusTool
         plan = tmp_path / "plan.md"
         plan.write_text(ALMOST_DONE_PLAN, encoding="utf-8")
         tool = UpdateTaskStatusTool(plan_path=plan)
 
         result = tool.run(task=2, status="failed")
 
-        assert UPDATE_TASK_STATUS_SENTINEL in result
+        assert isinstance(result, ToolResult)
+        assert result.side_effect is SideEffect.ALL_TASKS_RESOLVED

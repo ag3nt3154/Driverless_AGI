@@ -39,13 +39,8 @@ from tools.compact._tail_boundary import compute_tail_boundary
 from tools.output_filter import filter_tool_output
 
 from agent._loop_helpers import (  # noqa: F401
-    AWAIT_USER_FLAG,
     CONTINUE_PROMPT,
-    TASK_END_FLAG,
-    WRITE_HANDOFF_SENTINEL,
-    _LOOP_SENTINELS,
     _build_wiki_index_context,
-    _escape_sentinels,
     _extract_reasoning,
     _format_reload_notification,
 )
@@ -217,6 +212,7 @@ class AgentLoop:
         self._lifecycle = LifecyclePublisher(self._process)
         self._pause_event = self._lifecycle.pause_event
         self._pause_checkpoint = threading.Event()
+        self._drift_timer: threading.Timer | None = None
 
     def pause(self) -> None:
         self._lifecycle.pause()
@@ -239,6 +235,29 @@ class AgentLoop:
 
     def _continuing_step_finished(self, turn: int, step: int) -> None:
         self.log.append(sev.STEP_END, {"turn": turn, "step": step})
+
+    def _start_drift_timer(self) -> None:
+        controller = self.tracker.affect_controller
+        if controller is None:
+            return
+        interval = self.config.affect_drift_interval
+        if interval <= 0:
+            return
+
+        def tick() -> None:
+            self._lifecycle.publish_affect_drift(controller)
+            self._drift_timer = threading.Timer(interval, tick)
+            self._drift_timer.daemon = True
+            self._drift_timer.start()
+
+        self._drift_timer = threading.Timer(interval, tick)
+        self._drift_timer.daemon = True
+        self._drift_timer.start()
+
+    def _stop_drift_timer(self) -> None:
+        if self._drift_timer is not None:
+            self._drift_timer.cancel()
+            self._drift_timer = None
 
     def _freeze_request_snapshot(self, create_kwargs: Mapping[str, Any]) -> dict[str, Any]:
         """Copy request identity and the live surface boundary before a provider call."""
@@ -537,6 +556,7 @@ class AgentLoop:
                 self.tracker.rename_with_slug(slug)
 
         self._continuation_count = 0
+        self._start_drift_timer()
 
         try:
             iteration = 0
@@ -698,21 +718,7 @@ class AgentLoop:
                         cached_tokens=_cached_tok, thinking_tokens=_thinking_tok,
                     )
 
-                    # Check for either exit flag (TASK_END_FLAG kept as legacy alias)
-                    _exit_flag = (
-                        AWAIT_USER_FLAG if AWAIT_USER_FLAG in result else
-                        TASK_END_FLAG   if TASK_END_FLAG   in result else
-                        None
-                    )
-                    if _exit_flag:
-                        clean = result.replace(_exit_flag, "").strip()
-                        self.callbacks.on_assistant_text(clean)
-                        self._process.idle()
-                        self.callbacks.on_done(clean)
-                        self._close_turn(_turn, sev.reason_completed())
-                        return clean
-
-                    # Task not complete — inject "continue" and keep looping
+                    # No tool calls — inject "continue" to prompt model to call write_handoff
                     self.callbacks.on_assistant_text(result)
                     if self._continuation_count >= self.config.max_continuations:
                         self._process.idle()
@@ -781,6 +787,7 @@ class AgentLoop:
             self.callbacks.on_error(e)
             raise
         finally:
+            self._stop_drift_timer()
             # Defensive: any exit path added later without an explicit close
             # still leaves the log well-formed rather than half-open.
             self._close_turn(_turn, sev.reason_error("turn closed without a reason"))
