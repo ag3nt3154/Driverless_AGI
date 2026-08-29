@@ -20,6 +20,11 @@ function _scrollToBottom() {
     }
 }
 
+function scrollToBottom() {
+    _autoScroll = true;
+    _scrollToBottom();
+}
+
 function _escapeHtml(text) {
     const div = document.createElement('div');
     div.textContent = text;

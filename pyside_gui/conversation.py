@@ -81,6 +81,9 @@ class ConversationView(QWebEngineView):
     def clear(self) -> None:
         self._run_js("clearConversation()")
 
+    def scroll_to_bottom(self) -> None:
+        self._run_js("scrollToBottom()")
+
     def append_subagent_event(
         self, subagent_type: str, line: str
     ) -> None:

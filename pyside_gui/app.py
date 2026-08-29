@@ -104,6 +104,7 @@ class DagiMainWindow(QMainWindow):
             self._project_path,
             getattr(self._config, "memory_root", None),
         )
+        self._right_sidebar.scroll_to_bottom_requested.connect(self._conversation.scroll_to_bottom)
         self._splitter.addWidget(self._right_sidebar)
         self._splitter.setSizes([40, 800, 300])
         self.setCentralWidget(self._splitter)

@@ -2,9 +2,10 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QLabel,
+    QPushButton,
     QScrollArea,
     QSizePolicy,
     QVBoxLayout,
@@ -60,10 +61,20 @@ QLabel#section-header {
     letter-spacing: 1px;
     padding-top: 8px;
 }
+QPushButton#scroll-to-bottom-button {
+    background: #313244;
+    border: 1px solid #45475a;
+    border-radius: 4px;
+    color: #cdd6f4;
+    padding: 6px;
+}
+QPushButton#scroll-to-bottom-button:hover { background: #45475a; }
 """
 
 
 class RightSidebar(QScrollArea):
+    scroll_to_bottom_requested = Signal()
+
     def __init__(
         self,
         model_name: str,
@@ -149,6 +160,12 @@ class RightSidebar(QScrollArea):
         self._layout.addWidget(self._plan_label)
 
         self._layout.addStretch()
+        self._scroll_to_bottom_button = QPushButton("↓ Scroll to bottom")
+        self._scroll_to_bottom_button.setObjectName("scroll-to-bottom-button")
+        self._scroll_to_bottom_button.clicked.connect(
+            lambda _checked=False: self.scroll_to_bottom_requested.emit()
+        )
+        self._layout.addWidget(self._scroll_to_bottom_button)
         self.setWidget(container)
         self._refresh_all()
 
