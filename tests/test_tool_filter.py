@@ -69,7 +69,7 @@ class TestConfigDrivenFilter:
         reg = create_tool_registry(
             cwd=tmp_path,
             config=cfg,
-            affect_controller=object(),
+            expression_controller=object(),
         )
         names = {n for n, _ in reg.list_tools()}
         assert "emote" in names
@@ -80,7 +80,7 @@ class TestConfigDrivenFilter:
         reg = create_tool_registry(
             cwd=tmp_path,
             config=cfg,
-            affect_controller=object(),
+            expression_controller=object(),
         )
         names = {n for n, _ in reg.list_tools()}
         assert "emote" not in names
@@ -89,7 +89,7 @@ class TestConfigDrivenFilter:
         reg = create_tool_registry(
             cwd=tmp_path,
             config=cfg,
-            affect_controller=object(),
+            expression_controller=object(),
         )
         names = {n for n, _ in reg.list_tools()}
         assert "emote" in names
@@ -103,7 +103,7 @@ class TestConfigDrivenFilter:
             config=cfg,
             plan_mode=True,
             plan_file=plan_file,
-            affect_controller=object(),
+            expression_controller=object(),
         )
         names = {n for n, _ in reg.list_tools()}
         assert "emote" not in names

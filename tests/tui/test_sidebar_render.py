@@ -5,7 +5,7 @@ from pathlib import Path
 
 from rich.console import Group
 
-from agent.affect import AffectSnapshot, AffectVector
+from agent.expression import ExpressionSnapshot
 from agent.expression_assets import TextFallback
 from agent.process_state import ProcessSnapshot
 from tui.sidebar import Sidebar
@@ -36,34 +36,23 @@ def test_render_group_has_three_children() -> None:
     assert len(result.renderables) == 5
 
 
-def test_sidebar_renders_textual_affect_and_process_state() -> None:
+def test_sidebar_expression_does_not_replace_process_state() -> None:
     sb = _make_sidebar()
-    sb.update_affect(AffectSnapshot(
-        baseline=AffectVector(0.0, 0.0, 0.0),
-        current=AffectVector(0.25, -0.50, 0.75),
+    sb.update_expression(ExpressionSnapshot(
         emote_id="focused",
         asset=TextFallback(Path("default.md"), "test", "DAGI"),
-        reason="adjust",
     ))
     sb.update_process_state(ProcessSnapshot(
         state="tool:read",
         asset=TextFallback(Path("default.md"), "test", "DAGI"),
     ))
 
-    assert sb._emote_name == "focused"
-    assert "V=+0.25 A=-0.50 D=+0.75" in sb._emote_display
-    assert "process=tool:read" in sb._emote_display
+    assert sb._emote_name == ""
+    assert sb._emote_display == "process=tool:read"
 
 
-def test_sidebar_renders_manifest_ids_as_plain_text() -> None:
+def test_sidebar_renders_process_state_as_plain_text() -> None:
     sb = _make_sidebar()
-    sb.update_affect(AffectSnapshot(
-        baseline=AffectVector(0.0, 0.0, 0.0),
-        current=AffectVector(0.25, -0.50, 0.75),
-        emote_id="[/red]",
-        asset=TextFallback(Path("default.md"), "test", "DAGI"),
-        reason="adjust",
-    ))
     sb.update_process_state(ProcessSnapshot(
         state="tool:[/red]",
         asset=TextFallback(Path("default.md"), "test", "DAGI"),
@@ -71,7 +60,6 @@ def test_sidebar_renders_manifest_ids_as_plain_text() -> None:
 
     status_group = sb.render().renderables[0]
     face_group = status_group.renderables[0]
-    face_text, emote_text = face_group.renderables
+    (face_text,) = face_group.renderables
 
     assert face_text.plain.endswith("process=tool:[/red]")
-    assert emote_text.plain == "[/red]"

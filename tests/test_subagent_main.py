@@ -8,7 +8,34 @@ from unittest.mock import MagicMock, patch
 import pytest
 import yaml
 
-from tools.subagent_main import _ensure_handoff, _HANDOFF_RETRY_PROMPT, _build_subagent_system_prompt
+from agent.loop import AgentConfig
+from tools.subagent_main import (
+    _HANDOFF_RETRY_PROMPT,
+    _apply_advanced_config,
+    _apply_worker_config,
+    _build_subagent_system_prompt,
+    _ensure_handoff,
+)
+
+
+@pytest.mark.parametrize(
+    ("apply_config", "tier_field"),
+    [
+        (_apply_worker_config, "worker_config"),
+        (_apply_advanced_config, "advanced_config"),
+    ],
+)
+def test_tier_flattening_preserves_expression_interval(apply_config, tier_field):
+    selected = AgentConfig(model="selected", expression_interval=0.25)
+    config = AgentConfig(model="default")
+    setattr(config, tier_field, selected)
+
+    flattened = apply_config(config)
+
+    assert flattened.model == "selected"
+    assert flattened.expression_interval == 0.25
+    assert flattened.worker_config is None
+    assert flattened.advanced_config is None
 
 
 class _FakeLoop:

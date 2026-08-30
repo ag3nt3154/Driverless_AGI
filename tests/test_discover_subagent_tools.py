@@ -30,7 +30,8 @@ def test_discovers_tool_from_main_py(tmp_path, monkeypatch):
         "    name = 'test_type_tool'\n"
         "    description = 'Test'\n"
         "    _parameters = {'type': 'object', 'properties': {}}\n"
-        "    def __init__(self, config=None, callbacks=None, tracker=None, session_log=None):\n"
+        "    def __init__(self, config=None, callbacks=None, tracker=None, "
+        "session_log=None, parent_context=None):\n"
         "        self._session_log = session_log\n"
         "    def run(self, **kw): return 'ok'\n",
         encoding="utf-8",

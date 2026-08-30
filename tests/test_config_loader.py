@@ -6,7 +6,7 @@ from unittest.mock import patch
 
 import pytest
 
-from agent.config_loader import _build_config_from_entry, _load_affect_config
+from agent.config_loader import _build_config_from_entry, _load_expression_interval
 
 
 def test_direct_api_key_used_when_present():
@@ -57,32 +57,18 @@ def test_tools_list_parsed_from_raw():
     assert cfg.tools == ["read", "grep", "bash"]
 
 
-def test_affect_config_defaults_when_absent():
-    """A missing affect block keeps the controller's documented defaults."""
-    cfg = _load_affect_config({})
-    assert cfg.drift_pull == 0.05
-    assert cfg.drift_noise == 0.02
-    assert cfg.emote_hysteresis == 0.05
+def test_expression_interval_defaults_when_absent():
+    assert _load_expression_interval({}) == 1.0
 
 
-@pytest.mark.parametrize("affect_value", [[], False, 0, "", None])
-def test_affect_config_rejects_present_non_mapping_blocks(affect_value):
-    """Present but malformed affect blocks must not be masked as defaults."""
-    with pytest.raises(ValueError, match="affect"):
-        _load_affect_config({"affect": affect_value})
-
-
-def test_affect_config_preserves_raw_values_on_all_model_tiers(tmp_path):
-    """Changing construction to omit worker/advanced affect values must fail here."""
+def test_expression_interval_preserved_on_all_model_tiers(tmp_path):
     cfg_file = tmp_path / "config.yaml"
     cfg_file.write_text(
         "default_model: default\n"
         "worker_model: worker\n"
         "advanced_model: advanced\n"
-        "affect:\n"
-        "  drift_pull: 0.12\n"
-        "  drift_noise: 0.34\n"
-        "  emote_hysteresis: 0.56\n"
+        "expression:\n"
+        "  interval: 0.25\n"
         "models:\n"
         "  default:\n"
         "    model: test/default\n"
@@ -105,25 +91,26 @@ def test_affect_config_preserves_raw_values_on_all_model_tiers(tmp_path):
     configs = [cfg, cfg.worker_config, cfg.advanced_config]
     for tier in configs:
         assert tier is not None
-        assert tier.affect_drift_pull == 0.12
-        assert tier.affect_drift_noise == 0.34
-        assert tier.affect_emote_hysteresis == 0.56
-        assert tier.affect_wander_volatility == 0.08
+        assert tier.expression_interval == 0.25
 
 
 @pytest.mark.parametrize(
-    ("raw", "field"),
+    "value",
     [
-        ({"affect": {"drift_pull": -0.01}}, "drift_pull"),
-        ({"affect": {"drift_noise": float("inf")}}, "drift_noise"),
-        ({"affect": {"drift_noise": 1.01}}, "drift_noise"),
-        ({"affect": {"emote_hysteresis": -0.01}}, "emote_hysteresis"),
+        -0.01,
+        float("inf"),
+        "fast",
     ],
 )
-def test_affect_config_rejects_invalid_values_with_field_name(raw, field):
-    """Bad affect values must fail loudly at config load, naming the bad field."""
-    with pytest.raises(ValueError, match=field):
-        _load_affect_config(raw)
+def test_expression_interval_rejects_invalid_values(value):
+    with pytest.raises(ValueError, match="expression interval"):
+        _load_expression_interval({"expression": {"interval": value}})
+
+
+def test_legacy_affect_config_warns_and_is_ignored():
+    with pytest.warns(UserWarning, match="legacy affect config is ignored"):
+        interval = _load_expression_interval({"affect": {"drift_pull": 0.12}})
+    assert interval == 1.0
 
 
 # def test_tools_none_when_absent():

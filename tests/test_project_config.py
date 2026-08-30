@@ -8,14 +8,14 @@ import pytest
 
 # ── Prompt resolution ────────────────────────────────────────────────────────
 
-def test_load_main_system_prompt_falls_back_to_dagi_root(tmp_path):
-    """When no project prompt exists, load from dagi root."""
+def test_root_main_prompt_requires_write_handoff_for_turn_completion(tmp_path):
+    """The fallback prompt must teach the typed turn-completion contract."""
     from agent.prompts import load_main_system_prompt
     dagi_root = Path(__file__).parent.parent
     # tmp_path has no .dagi/prompts/main_system.md
     result = load_main_system_prompt(dagi_root, tmp_path)
-    # Should be the real dagi system prompt (non-empty, contains known marker)
-    assert "<<END_OF_RESPONSE>>" in result or "<<TASK_END>>" in result
+    assert "call the `write_handoff` tool" in result
+    assert "<<END_OF_RESPONSE>>" not in result
 
 
 def test_load_main_system_prompt_uses_project_prompt_when_present(tmp_path):

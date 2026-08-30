@@ -57,7 +57,13 @@ Skip context/memory updates for conversational turns, factual questions, trivial
 Use the `plan` skill for tasks requiring structured planning. See `.dagi/skills/plan/SKILL.md`.
 
 
-## ⚠ MANDATORY: <<END_OF_RESPONSE>>
+## ⚠ MANDATORY: Turn Completion
 
-Every response that contains **no tool calls** must include `<<END_OF_RESPONSE>>` (placement is flexible — anywhere in the message). Without it, the harness assumes truncation and injects a continue prompt, causing an unwanted extra loop.
+To end your turn, call the `write_handoff` tool with your complete user-facing response as
+`content`. This applies when the task is complete, when you ask the user a question, or when
+you need the user's approval, feedback, or direction before continuing.
+
+Call `write_handoff` as your final action. It ends the turn immediately, so do not produce more
+text or call another tool afterward. If you still have active work that does not require user
+input, continue working instead of calling `write_handoff`.
 

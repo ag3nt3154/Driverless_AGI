@@ -15,10 +15,7 @@ from agent.base_tool import BaseTool
 from agent.loop import AgentCallbacks, AgentConfig, AgentLoop
 from agent.protocol import SideEffect, ToolResult
 from tools.write_handoff import WriteHandoffTool
-from agent.affect import AffectConfig, AffectController, AffectRestore, AffectVector
-from agent.expression_assets import ImageAsset
 from agent.registry import ToolRegistry
-from agent.session import SessionTracker
 
 
 class FakeTool(BaseTool):
@@ -63,7 +60,7 @@ def _make_loop(registry=None, **config_overrides) -> AgentLoop:
         real_registry.register(WriteHandoffTool(handoff_path=None))
 
     fake_tracker = MagicMock()
-    fake_tracker.affect_controller = None
+    fake_tracker.expression_controller = None
 
     with (
         patch("agent.loop.SessionTracker", return_value=fake_tracker),
@@ -721,9 +718,9 @@ class TestSessionLogWiring:
         assert "session_log" in captured_kwargs
         assert captured_kwargs["session_log"] is loop.log
 
-    def test_main_loop_binds_affect_controller_before_registry_build(self, tmp_path):
+    def test_main_loop_binds_expression_controller_before_registry_build(self, tmp_path):
         """A normal main loop must expose emote when config allowlists it."""
-        from agent.affect import AffectController
+        from agent.expression import ExpressionController
 
         config = AgentConfig(
             api_key="test-key",
@@ -736,83 +733,8 @@ class TestSessionLogWiring:
             loop = AgentLoop(config=config)
 
         names = {name for name, _description in loop.registry.list_tools()}
-        assert isinstance(loop.tracker.affect_controller, AffectController)
+        assert isinstance(loop.tracker.expression_controller, ExpressionController)
         assert "emote" in names
-
-    def test_initial_affect_restore_reuses_state_without_init_record(self, tmp_path):
-        """Restoring history must carry affect forward without inventing a new baseline."""
-        seen = []
-        restore = AffectRestore(
-            baseline=AffectVector(0.1, -0.2, 0.3),
-            current=AffectVector(0.2, -0.1, 0.4),
-            emote_id="steady",
-        )
-        callbacks = AgentCallbacks(on_affect_changed=seen.append)
-        config = AgentConfig(
-            api_key="test-key",
-            project_path=tmp_path,
-            system_prompt="{tools_and_skills}",
-        )
-
-        with patch("openai.OpenAI"):
-            loop = AgentLoop(config=config, callbacks=callbacks, initial_affect=restore)
-
-        affect_records = [
-            json.loads(line)
-            for line in loop.tracker._path.read_text(encoding="utf-8").splitlines()
-            if json.loads(line).get("type", "").startswith("affect_")
-        ]
-        assert [record["type"] for record in affect_records] == []
-        assert loop.tracker.affect_controller.baseline == restore.baseline
-        assert loop.tracker.affect_controller.current == restore.current
-        assert seen[-1].current == restore.current
-
-    def test_child_loop_cannot_rebind_expose_or_drift_root_affect(self, tmp_path):
-        """Legacy in-process child loops must not mutate parent-owned affect."""
-
-        class RootAffect:
-            def __init__(self) -> None:
-                self.listener_rebinds = 0
-                self.drift_calls = 0
-
-            def set_listener(self, _listener) -> None:
-                self.listener_rebinds += 1
-
-            def context_line(self) -> str:
-                return "Affect: root"
-
-            def drift_without_notify(self):
-                self.drift_calls += 1
-                return object()
-
-            def emit(self, _snapshot) -> None:
-                raise AssertionError("child loop must not emit root affect")
-
-        parent = SessionTracker(model="test-model", logs_dir=tmp_path / "logs")
-        root_affect = RootAffect()
-        parent.bind_affect_controller(root_affect)
-        config = AgentConfig(
-            api_key="test-key",
-            project_path=tmp_path,
-            system_prompt="{tools_and_skills}",
-            tools=["emote"],
-        )
-
-        with patch("openai.OpenAI"):
-            loop = AgentLoop(
-                config=config,
-                _parent_tracker=parent,
-                _subagent_id="child1",
-            )
-
-        names = {name for name, _description in loop.registry.list_tools()}
-        assert loop.tracker.affect_controller is None
-        assert "emote" not in names
-        assert root_affect.listener_rebinds == 0
-
-        loop._continuing_step_finished(1, 1)
-
-        assert root_affect.drift_calls == 0
 
 
 class TestProcessLifecycle:
@@ -862,58 +784,13 @@ class TestProcessLifecycle:
         assert events.index("tool_end:echo") < events.index("process:thinking", 3)
         assert events[-2:] == ["process:idle", "done"]
 
-    def test_affect_drift_is_timer_based_not_step_based(self, tmp_path):
-        """Affect drift fires from a periodic timer, not from step completion."""
-        tool = FakeTool(name="echo", result="echoed!")
-        registry = ToolRegistry()
-        registry.register(tool)
-        registry.register(WriteHandoffTool(handoff_path=None))
-        config = AgentConfig(
-            model="test-model",
-            api_key="test-key",
-            system_prompt="You are a test agent.",
-            project_path=tmp_path,
-            affect_drift_pull=0.0,
-            affect_drift_noise=0.0,
-            affect_wander_volatility=0.0,
-            affect_drift_interval=0.0,
-        )
-        with (
-            patch("openai.OpenAI"),
-            patch.object(Path, "exists", return_value=False),
-        ):
-            loop = AgentLoop(config=config)
-        loop.registry = registry
-        loop._skip_slug_generation = True
-        order: list[str] = []
-        loop.tracker.affect_controller.set_listener(
-            lambda snapshot: order.append(snapshot.reason),
-            emit_current=False,
-        )
-        loop.client = MagicMock()
-        loop.client.chat.completions.create.side_effect = [
-            _make_response(None, tool_calls=[_make_tool_call("tc1", "echo", "{}")]),
-            _exit_response("Done."),
-        ]
-
-        loop.run("do something")
-
-        assert order.count("drift") == 0
-
-    def test_pause_during_tool_suppresses_post_tool_thinking_and_drift(self):
+    def test_pause_during_tool_suppresses_post_tool_thinking(self):
         """Pausing inside a tool turn must leave the visible state paused until resume."""
         tool = FakeTool(name="echo", result="echoed!")
         registry = ToolRegistry()
         registry.register(tool)
         events: list[str] = []
         loop = _make_loop(registry=registry)
-
-        class _Affect:
-            def context_line(self) -> str:
-                return "Affect: test"
-
-            def drift(self) -> None:
-                events.append("drift")
 
         def on_tool_start(_name, _desc, _args) -> None:
             events.append("tool_start")
@@ -926,7 +803,6 @@ class TestProcessLifecycle:
         )
         loop.callbacks = callbacks
         loop._process.set_listener(loop.callbacks.on_process_state_changed)
-        loop.tracker.affect_controller = _Affect()
         loop.client = MagicMock()
         loop.client.chat.completions.create.side_effect = [
             _make_response(None, tool_calls=[_make_tool_call("tc1", "echo", "{}")]),
@@ -949,7 +825,6 @@ class TestProcessLifecycle:
         assert not thread.is_alive()
         pause_index = snapshot.index("process:paused")
         assert "process:thinking" not in snapshot[pause_index + 1:]
-        assert "drift" not in snapshot[pause_index + 1:]
 
     def test_pause_race_cannot_publish_post_tool_thinking_after_paused(self):
         """Pause state and post-tool thinking must be ordered by one shared gate."""
@@ -970,31 +845,6 @@ class TestProcessLifecycle:
         if "process:paused" in events:
             pause_index = events.index("process:paused")
             assert "process:thinking" not in events[pause_index + 1:]
-
-    def test_pause_race_cannot_drift_after_paused(self):
-        """Affect drift must be serialized with pause, same as process transitions."""
-        loop = _make_loop()
-        events: list[str] = []
-
-        class _Affect:
-            def drift(self) -> None:
-                events.append("drift")
-
-        loop.tracker.affect_controller = _Affect()
-        loop.callbacks = AgentCallbacks(
-            on_process_state_changed=lambda snap: events.append(f"process:{snap.state}")
-        )
-        loop._process.set_listener(loop.callbacks.on_process_state_changed)
-        events.clear()
-        race_event = _PauseAfterIsSet(loop)
-        loop._lifecycle.pause_event = race_event
-
-        loop._lifecycle.publish_affect_drift(loop.tracker.affect_controller)
-        assert race_event.pause_finished.wait(timeout=1.0)
-
-        if "process:paused" in events:
-            pause_index = events.index("process:paused")
-            assert "drift" not in events[pause_index + 1:]
 
     def test_paused_multi_tool_turn_does_not_start_later_tool_process_state(self):
         """A pause between tool calls must keep the process channel paused."""
@@ -1108,42 +958,6 @@ class TestProcessLifecycle:
         assert not worker.is_alive()
         assert "inject_returned" in events
 
-    def test_affect_listener_can_reenter_inject_and_resume(self):
-        """Affect drift publication must not hold a lock across affect listeners."""
-        loop = _make_loop()
-        events: list[str] = []
-
-        class _Library:
-            def resolve(self, vector, _current_id, _hysteresis):
-                return "steady", ImageAsset("steady", Path("steady.png"))
-
-        def on_affect(snapshot) -> None:
-            events.append(f"affect:{snapshot.reason}")
-            if snapshot.reason == "drift":
-                loop.inject_and_resume("continue from affect")
-                events.append("inject_returned")
-
-        loop.tracker.affect_controller = AffectController(
-            _Library(),
-            config=AffectConfig(drift_pull=0.1, drift_noise=0.0),
-            baseline=AffectVector(0.0, 0.0, 0.0),
-            current=AffectVector(0.5, 0.0, 0.0),
-            on_change=lambda _snapshot: None,
-        )
-        loop.tracker.affect_controller.set_listener(on_affect, emit_current=False)
-        loop.log.append(sev.TURN_START, {"turn": 1})
-        loop.log.append(sev.STEP_START, {"turn": 1, "step": 1})
-        worker = threading.Thread(
-            target=lambda: loop._lifecycle.publish_affect_drift(loop.tracker.affect_controller),
-            daemon=True,
-        )
-
-        worker.start()
-        worker.join(timeout=1.0)
-
-        assert not worker.is_alive()
-        assert events == ["affect:drift", "inject_returned"]
-
     def test_pause_during_tool_resolution_prevents_late_tool_after_pause_returns(self):
         """Pause must serialize invalidation with tool-state mutation, not just dequeue."""
         loop = _make_loop()
@@ -1185,52 +999,6 @@ class TestProcessLifecycle:
         assert "pause_returned" in events
         pause_index = events.index("pause_returned")
         assert "process:tool:echo" not in events[pause_index + 1:]
-
-    def test_pause_during_affect_resolution_prevents_late_drift_after_pause_returns(self):
-        """Pause must serialize invalidation with affect drift mutation."""
-        loop = _make_loop()
-        events: list[str] = []
-        resolver_entered = threading.Event()
-        release_resolver = threading.Event()
-
-        class _BlockingVadLibrary:
-            def resolve(self, vector, _current_id, _hysteresis):
-                resolver_entered.set()
-                release_resolver.wait(timeout=2.0)
-                return "steady", ImageAsset("steady", Path("steady.png"))
-
-        loop.tracker.affect_controller = AffectController(
-            _BlockingVadLibrary(),
-            config=AffectConfig(drift_pull=0.1, drift_noise=0.0),
-            baseline=AffectVector(0.0, 0.0, 0.0),
-            current=AffectVector(0.5, 0.0, 0.0),
-            on_change=lambda _snapshot: None,
-        )
-        loop.tracker.affect_controller.set_listener(
-            lambda snapshot: events.append(f"affect:{snapshot.reason}"),
-            emit_current=False,
-        )
-        worker = threading.Thread(
-            target=lambda: loop._lifecycle.publish_affect_drift(loop.tracker.affect_controller)
-        )
-        worker.start()
-        assert resolver_entered.wait(timeout=1.0)
-
-        def pause_from_ui_thread() -> None:
-            loop.pause()
-            events.append("pause_returned")
-
-        pause_thread = threading.Thread(target=pause_from_ui_thread)
-        pause_thread.start()
-        release_resolver.set()
-        worker.join(timeout=2.0)
-        pause_thread.join(timeout=2.0)
-
-        assert not worker.is_alive()
-        assert not pause_thread.is_alive()
-        assert "pause_returned" in events
-        pause_index = events.index("pause_returned")
-        assert "affect:drift" not in events[pause_index + 1:]
 
     def test_pause_waits_until_accepted_callback_is_ordered_not_completed(self):
         """Pause may not return in the post-unlock/pre-callback publication window."""
@@ -1325,48 +1093,6 @@ class TestProcessLifecycle:
 
         assert not worker.is_alive()
         assert not pause_thread.is_alive()
-
-    def test_legacy_affect_drift_is_not_published_after_pause_returns(self):
-        """One-piece legacy drift cannot safely mutate outside lifecycle acceptance."""
-        loop = _make_loop()
-        events: list[str] = []
-        barrier_lock = _ExitBarrierLock()
-        loop._lifecycle._state_lock = barrier_lock
-
-        class _LegacyAffect:
-            @property
-            def drift(self):
-                barrier_lock.arm_current_exit()
-
-                def callback() -> None:
-                    events.append("legacy_drift")
-
-                return callback
-
-        loop.tracker.affect_controller = _LegacyAffect()
-        loop.log.append(sev.TURN_START, {"turn": 1})
-        loop.log.append(sev.STEP_START, {"turn": 1, "step": 1})
-        worker = threading.Thread(target=lambda: loop._continuing_step_finished(1, 1))
-        worker.start()
-        if not barrier_lock.entered.wait(timeout=0.2):
-            worker.join(timeout=2.0)
-            assert not worker.is_alive()
-            assert events == []
-            return
-
-        pause_thread = threading.Thread(
-            target=lambda: (loop.pause(), events.append("pause_returned"))
-        )
-        pause_thread.start()
-        assert not any(event == "pause_returned" for event in events)
-        barrier_lock.release.set()
-        worker.join(timeout=2.0)
-        pause_thread.join(timeout=2.0)
-
-        assert not worker.is_alive()
-        assert not pause_thread.is_alive()
-        pause_index = events.index("pause_returned")
-        assert "legacy_drift" not in events[pause_index + 1:]
 
 
 class TestParentForkCapture:

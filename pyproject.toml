@@ -28,7 +28,6 @@ web = ["ddgs>=2.0", "crawl4ai>=0.8.7"]
 
 [project.scripts]
 dagi = "main:main"
-dagi-gui-sidecar = "dagi_gui.__main__:main"
 
 [build-system]
 requires = ["setuptools"]
