@@ -10,7 +10,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable
 
-from agent.affect import AffectSnapshot
+from agent.expression import ExpressionSnapshot
 from agent.process_state import ProcessSnapshot
 
 
@@ -97,12 +97,7 @@ class AgentConfig:
     # External service URLs (e.g. {"doc_converter": "http://localhost:8100"}).
     # Loaded from the `services` block in .dagi/config.yaml.
     services: dict[str, str] = field(default_factory=dict)
-    # Affect controller tuning. Loaded from the top-level `affect:` config block.
-    affect_drift_pull: float = 0.05
-    affect_drift_noise: float = 0.02
-    affect_emote_hysteresis: float = 0.05
-    affect_wander_volatility: float = 0.08
-    affect_drift_interval: float = 1.0
+    expression_interval: float = 1.0
     # Active Python environment detected at startup (e.g. "conda:dagi" or "venv:/path")
     # Set by config_loader._detect_python_env()
     python_env: str = ""
@@ -124,7 +119,7 @@ class AgentCallbacks:
     on_reasoning:      Callable[[str], None]                    = field(default=lambda text: None)
     on_compaction:     Callable[[int, int], None]               = field(default=lambda kept, removed: None)
     on_model_switch:   Callable[[str, str], None]               = field(default=lambda f, t: None)
-    on_affect_changed: Callable[[AffectSnapshot], None] = field(
+    on_expression_changed: Callable[[ExpressionSnapshot], None] = field(
         default=lambda snapshot: None
     )
     on_process_state_changed: Callable[[ProcessSnapshot], None] = field(

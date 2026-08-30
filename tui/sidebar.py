@@ -84,7 +84,7 @@ class Sidebar(Widget):
         self._plan_title = title
         self.refresh()
 
-    def update_affect(self, snapshot: AffectSnapshot) -> None:
+    def update_expression(self, snapshot) -> None:
         current = snapshot.current
         self._emote_name = snapshot.emote_id
         self._emote_display = (

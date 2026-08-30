@@ -27,7 +27,7 @@ def _asset(path: Path) -> Path:
     return path
 
 
-def test_vad_library_selects_nearest_entry_and_keeps_current_with_hysteresis(
+def test_vad_library_random_selection_avoids_repeating_current_emote(
     tmp_path: Path,
 ) -> None:
     root = tmp_path / ".dagi" / "emotes"
@@ -50,13 +50,42 @@ def test_vad_library_selects_nearest_entry_and_keeps_current_with_hysteresis(
 
     library = VadLibrary.load(root / "vad", root / "default.md")
 
-    emote_id, asset = library.resolve((0.11, 0.0, 0.0), "calm", 0.05)
-    assert emote_id == "calm"
-    assert asset == ImageAsset("calm", root / "vad" / "calm.PNG")
-
-    emote_id, asset = library.resolve((0.11, 0.0, 0.0), "calm", 0.01)
+    emote_id, asset = library.resolve((0.0, 0.0, 0.0), "calm", 0.05)
     assert emote_id == "focused"
     assert asset == ImageAsset("focused", root / "vad" / "focused.jpg")
+
+
+def test_vad_library_random_selection_ignores_vector(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    root = tmp_path / ".dagi" / "emotes"
+    _write(root / "default.md", "fallback")
+    _asset(root / "vad" / "calm.png")
+    _asset(root / "vad" / "focused.png")
+    _write(
+        root / "vad" / "manifest.yaml",
+        (
+            "version: 1\n"
+            "emotes:\n"
+            "  - id: calm\n"
+            "    file: calm.png\n"
+            "    vad: [0.0, 0.0, 0.0]\n"
+            "  - id: focused\n"
+            "    file: focused.png\n"
+            "    vad: [1.0, 1.0, 1.0]\n"
+        ),
+    )
+    monkeypatch.setattr(
+        "agent.expression_assets.random.choice",
+        lambda candidates: candidates[-1],
+    )
+    library = VadLibrary.load(root / "vad", root / "default.md")
+
+    emote_id, asset = library.resolve((0.0, 0.0, 0.0), None, 0.05)
+
+    assert emote_id == "focused"
+    assert asset == ImageAsset("focused", root / "vad" / "focused.png")
 
 
 @pytest.mark.parametrize(
@@ -140,7 +169,9 @@ def test_invalid_utf8_manifest_uses_default_text_fallback(tmp_path: Path) -> Non
     assert asset.text == "fallback"
 
 
-def test_invalid_selected_vad_asset_falls_back_and_warns_once(tmp_path: Path) -> None:
+def test_random_vad_selection_skips_invalid_assets_and_warns_once(
+    tmp_path: Path,
+) -> None:
     root = tmp_path / ".dagi" / "emotes"
     warnings: list[str] = []
     _write(root / "default.md", "fallback")
@@ -166,16 +197,16 @@ def test_invalid_selected_vad_asset_falls_back_and_warns_once(tmp_path: Path) ->
     assert asset == ImageAsset("calm", root / "vad" / "calm.png")
 
     first_id, first_asset = library.resolve((1.0, 1.0, 1.0), None, 0.05)
-    second_id, second_asset = library.resolve((1.0, 1.0, 1.0), None, 0.05)
-    assert first_id == second_id == "escaped"
-    assert isinstance(first_asset, TextFallback)
-    assert isinstance(second_asset, TextFallback)
+    second_id, second_asset = library.resolve((-1.0, -1.0, -1.0), None, 0.05)
+    assert first_id == second_id == "calm"
+    expected = ImageAsset("calm", root / "vad" / "calm.png")
+    assert first_asset == second_asset == expected
     assert [warning for warning in warnings if "../outside.png" in warning] == [
-        warnings[-1]
+        warnings[0]
     ]
 
 
-def test_vad_library_ignores_invalid_current_asset_for_hysteresis(
+def test_vad_library_ignores_invalid_current_asset_when_avoiding_repeats(
     tmp_path: Path,
 ) -> None:
     root = tmp_path / ".dagi" / "emotes"

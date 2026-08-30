@@ -19,12 +19,13 @@ from __future__ import annotations
 
 import os
 import sys
+import math
 from dataclasses import dataclass, field
 from pathlib import Path
 
 import yaml
 
-from agent.affect import AffectConfig
+import warnings
 # Imported here to avoid a circular import — config_loader must not import AgentLoop.
 # AgentConfig is a plain dataclass with no side effects.
 from agent.loop import AgentConfig
@@ -129,26 +130,13 @@ def _merge_configs(root_raw: dict, project_raw: dict) -> dict:
     return merged
 
 
-def _load_affect_config(raw: dict) -> AffectConfig:
-    """Return validated affect-controller tuning from the top-level config."""
-    if "affect" not in raw:
-        affect_raw = {}
-    else:
-        affect_raw = raw["affect"]
-    if not isinstance(affect_raw, dict):
-        raise ValueError("affect must be a mapping")
-
-    values = {
-        "drift_pull": affect_raw.get("drift_pull", 0.05),
-        "drift_noise": affect_raw.get("drift_noise", 0.02),
-        "emote_hysteresis": affect_raw.get("emote_hysteresis", 0.05),
-        "wander_volatility": affect_raw.get("wander_volatility", 0.08),
-        "drift_interval": affect_raw.get("drift_interval", 1.0),
-    }
-    try:
-        return AffectConfig(**values)
-    except (TypeError, ValueError) as exc:
-        raise ValueError(f"Invalid affect config: {exc}") from exc
+def _load_expression_interval(raw: dict) -> float:
+    if "affect" in raw:
+        warnings.warn("legacy affect config is ignored", UserWarning, stacklevel=2)
+    value = (raw.get("expression") or {}).get("interval", 1.0)
+    if not isinstance(value, (int, float)) or not math.isfinite(value) or value < 0:
+        raise ValueError("expression interval must be finite and non-negative")
+    return float(value)
 
 
 def _build_config_from_entry(
@@ -182,7 +170,7 @@ def _build_config_from_entry(
     system_prompt_preamble = str(raw.get("system_prompt_preamble", "") or "")
     provider_order: list[str] | None = entry.get("provider_order") or None
     services = raw.get("services") or {}
-    affect_config = _load_affect_config(raw)
+    expression_interval = _load_expression_interval(raw)
 
     return AgentConfig(
         model=entry["model"],
@@ -206,11 +194,7 @@ def _build_config_from_entry(
         system_prompt_preamble=system_prompt_preamble,
         provider_order=provider_order,
         services=services,
-        affect_drift_pull=affect_config.drift_pull,
-        affect_drift_noise=affect_config.drift_noise,
-        affect_emote_hysteresis=affect_config.emote_hysteresis,
-        affect_wander_volatility=affect_config.wander_volatility,
-        affect_drift_interval=affect_config.drift_interval,
+        expression_interval=expression_interval,
         python_env=python_env,
     )
 

@@ -124,7 +124,7 @@ def create_tool_registry(
     bash_tool: "object | None" = None,
     session_log: "SessionLog | None" = None,
     parent_context: "ParentContextProvider | None" = None,
-    affect_controller: "AffectController | None" = None,
+    expression_controller=None,
 ) -> ToolRegistry:
     """Build a fresh ToolRegistry with all tools bound to *cwd*.
 
@@ -230,10 +230,10 @@ def create_tool_registry(
             reg.register(SwitchModelTool())
         from tools.reload_skills import ReloadSkillsTool
         reg.register(ReloadSkillsTool())
-        if affect_controller is not None:
+        if expression_controller is not None:
             from tools.emote import EmoteTool
             memes_root = _DAGI_ROOT / ".dagi" / "emotes" / "memes"
-            reg.register(EmoteTool(controller=affect_controller, memes_root=memes_root))
+            reg.register(EmoteTool(controller=expression_controller, memes_root=memes_root))
         if config is not None:
             # Auto-discover predefined subagent types from .dagi/subagents/
             # A valid type directory must contain both prompt.md and subagent_config.yaml.

@@ -58,6 +58,7 @@ class SessionTracker:
         self._depth: int = 0
         self._subagent_stats: list[dict] = []
         self._affect_controller: Any = None
+        self._expression_controller: Any = None
 
         self._logs_dir.mkdir(parents=True, exist_ok=True)
         self._renamed: bool = False
@@ -85,6 +86,7 @@ class SessionTracker:
         child._subagent_id = subagent_id
         child._depth = self._depth + 1
         child._subagent_stats = []  # unused for children but keeps attr access safe
+        child._expression_controller = None
         child._path = None
         child._logs_dir = None
         child._renamed = False
@@ -108,6 +110,18 @@ class SessionTracker:
         if not self.owns_affect_controller:
             return
         self._affect_controller = controller
+
+    @property
+    def expression_controller(self):
+        return self._expression_controller
+
+    @property
+    def owns_expression_controller(self) -> bool:
+        return self._parent is None
+
+    def bind_expression_controller(self, controller) -> None:
+        if self.owns_expression_controller:
+            self._expression_controller = controller
 
     def rename_with_slug(self, slug: str) -> None:
         """Rename the session file to include a human-readable slug.

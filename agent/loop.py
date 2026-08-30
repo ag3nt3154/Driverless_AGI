@@ -21,9 +21,8 @@ from openai.types.chat.chat_completion_message_function_tool_call import (
 
 from agent import DAGI_ROOT
 from agent._git_branch import create_task_branch, get_current_branch
-from agent.affect import AffectRestore, AffectSnapshot
 from agent.lifecycle import LifecyclePublisher
-from agent.lifecycle import ensure_affect_controller, load_process_library
+from agent.lifecycle import ensure_expression_controller, load_process_library
 from agent.process_state import ProcessSnapshot, ProcessStateController
 from agent.prompts import load_prompt, load_main_system_prompt, load_soul
 from agent.registry import ToolRegistry
@@ -65,7 +64,7 @@ class AgentLoop:
         config: AgentConfig,
         callbacks: AgentCallbacks | None = None,
         initial_messages: list | None = None,
-        initial_affect: AffectRestore | None = None,
+        initial_affect=None,
         _registry: "ToolRegistry | None" = None,
         _parent_tracker: "SessionTracker | None" = None,
         _subagent_id: str | None = None,
@@ -112,10 +111,10 @@ class AgentLoop:
             # Sub-agent path: use the provided registry, skip skill loading
             self.registry = _registry
             self.skills = []
-            if self.tracker.affect_controller is not None:
-                self.tracker.affect_controller.set_listener(self.callbacks.on_affect_changed)
+            if self.tracker.expression_controller is not None:
+                self.tracker.expression_controller.set_listener(self.callbacks.on_expression_changed)
         else:
-            ensure_affect_controller(
+            ensure_expression_controller(
                 self.tracker, config, dagi_root, self.callbacks, initial_affect
             )
             # ── Load skills ───────────────────────────────────────────────────
@@ -140,7 +139,7 @@ class AgentLoop:
                 bash_tool=_bash_tool,
                 session_log=self.log,
                 parent_context=self.parent_context_provider,
-                affect_controller=self.tracker.affect_controller,
+                expression_controller=self.tracker.expression_controller,
             )
 
         self.config = config
@@ -208,7 +207,8 @@ class AgentLoop:
         self._lifecycle = LifecyclePublisher(self._process)
         self._pause_event = self._lifecycle.pause_event
         self._pause_checkpoint = threading.Event()
-        self._drift_timer: threading.Timer | None = None
+        self._expression_timer: threading.Timer | None = None
+        self._expression_controller = self.tracker.expression_controller
 
     def pause(self) -> None:
         self._lifecycle.pause()
@@ -232,28 +232,28 @@ class AgentLoop:
     def _continuing_step_finished(self, turn: int, step: int) -> None:
         self.log.append(sev.STEP_END, {"turn": turn, "step": step})
 
-    def _start_drift_timer(self) -> None:
-        controller = self.tracker.affect_controller
+    def _start_expression_timer(self) -> None:
+        controller = self._expression_controller
         if controller is None:
             return
-        interval = self.config.affect_drift_interval
+        interval = self.config.expression_interval
         if interval <= 0:
             return
 
         def tick() -> None:
-            self._lifecycle.publish_affect_drift(controller)
-            self._drift_timer = threading.Timer(interval, tick)
-            self._drift_timer.daemon = True
-            self._drift_timer.start()
+            self._lifecycle.publish_expression_advance(controller)
+            self._expression_timer = threading.Timer(interval, tick)
+            self._expression_timer.daemon = True
+            self._expression_timer.start()
 
-        self._drift_timer = threading.Timer(interval, tick)
-        self._drift_timer.daemon = True
-        self._drift_timer.start()
+        self._expression_timer = threading.Timer(interval, tick)
+        self._expression_timer.daemon = True
+        self._expression_timer.start()
 
-    def _stop_drift_timer(self) -> None:
-        if self._drift_timer is not None:
-            self._drift_timer.cancel()
-            self._drift_timer = None
+    def _stop_expression_timer(self) -> None:
+        if self._expression_timer is not None:
+            self._expression_timer.cancel()
+            self._expression_timer = None
 
     def _freeze_request_snapshot(self, create_kwargs: Mapping[str, Any]) -> dict[str, Any]:
         """Copy request identity and the live surface boundary before a provider call."""
@@ -550,7 +550,7 @@ class AgentLoop:
                 self.tracker.rename_with_slug(slug)
 
         self._continuation_count = 0
-        self._start_drift_timer()
+        self._start_expression_timer()
 
         try:
             iteration = 0
@@ -779,7 +779,7 @@ class AgentLoop:
             self.callbacks.on_error(e)
             raise
         finally:
-            self._stop_drift_timer()
+            self._stop_expression_timer()
             # Defensive: any exit path added later without an explicit close
             # still leaves the log well-formed rather than half-open.
             self._close_turn(_turn, sev.reason_error("turn closed without a reason"))

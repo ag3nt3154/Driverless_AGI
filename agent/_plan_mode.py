@@ -162,7 +162,7 @@ def rebuild_for_normal_mode(loop, dagi_root: Path) -> None:
             bash_tool=loop._injected_bash_tool,
             session_log=loop.log,
             parent_context=loop.parent_context_provider,
-            affect_controller=loop.tracker.affect_controller,
+            expression_controller=loop.tracker.expression_controller,
         )
 
         _system = loop._assemble_system_string(dagi_root)

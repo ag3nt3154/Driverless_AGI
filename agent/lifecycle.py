@@ -4,8 +4,7 @@ import threading
 from pathlib import Path
 from typing import Any, Callable
 
-from agent.affect import AffectConfig, AffectController
-from agent.expression_assets import ProcessStateLibrary, VadLibrary
+from agent.expression_assets import ProcessStateLibrary, RandomEmoteLibrary
 from agent.process_state import ProcessStateController
 
 LifecycleCallback = Callable[[], None]
@@ -14,45 +13,30 @@ LifecycleItem = tuple[str, int, LifecyclePrepare]
 AcceptedCallback = tuple[LifecycleCallback, threading.Event]
 
 
-def load_vad_library(dagi_root: Path) -> VadLibrary:
-    """Load the current VAD library, falling back to text when assets are absent."""
+def load_expression_library(dagi_root: Path) -> RandomEmoteLibrary:
     emotes_root = dagi_root / ".dagi" / "emotes"
-    return VadLibrary.load(
+    return RandomEmoteLibrary.load(
         emotes_root / "vad",
         emotes_root / "default.md",
     )
 
 
-def ensure_affect_controller(
+def ensure_expression_controller(
     tracker: Any,
     config: Any,
     dagi_root: Path,
     callbacks: Any,
     initial_affect: Any,
 ) -> None:
-    """Bind the root affect controller early enough for main registry construction."""
-    if not getattr(tracker, "owns_affect_controller", True):
+    """Bind the root expression controller early enough for main registry construction."""
+    if not getattr(tracker, "owns_expression_controller", True):
         return
-    if tracker.affect_controller is not None:
-        tracker.affect_controller.set_listener(callbacks.on_affect_changed)
+    if tracker.expression_controller is not None:
+        tracker.expression_controller.set_listener(callbacks.on_expression_changed)
         return
-    affect_config = AffectConfig(
-        drift_pull=config.affect_drift_pull,
-        drift_noise=config.affect_drift_noise,
-        emote_hysteresis=config.affect_emote_hysteresis,
-        wander_volatility=config.affect_wander_volatility,
-        drift_interval=config.affect_drift_interval,
-    )
-    controller = AffectController(
-        load_vad_library(dagi_root),
-        config=affect_config,
-        baseline=initial_affect.baseline if initial_affect else None,
-        current=initial_affect.current if initial_affect else None,
-        current_emote_id=initial_affect.emote_id if initial_affect else None,
-        record=tracker.record_affect,
-        on_change=callbacks.on_affect_changed,
-    )
-    tracker.bind_affect_controller(controller)
+    from agent.expression import ExpressionController
+    controller = ExpressionController(load_expression_library(dagi_root), callbacks.on_expression_changed)
+    tracker.bind_expression_controller(controller)
 
 
 def load_process_library(dagi_root: Path) -> ProcessStateLibrary:
@@ -116,8 +100,8 @@ class LifecyclePublisher:
     def tool_bookkeeping_finished(self) -> None:
         self.publish_running(self._prepare_process_state("thinking"))
 
-    def publish_affect_drift(self, controller) -> None:
-        self.publish_running(self._prepare_affect_drift(controller))
+    def publish_expression_advance(self, controller) -> None:
+        self.publish_running(lambda: (lambda: controller.advance()))
 
     def enqueue(
         self,
@@ -147,17 +131,6 @@ class LifecyclePublisher:
             if snapshot is None:
                 return None
             return lambda: self._process.emit(snapshot)
-
-        return prepare
-
-    def _prepare_affect_drift(self, controller) -> LifecyclePrepare:
-        def prepare() -> LifecycleCallback | None:
-            drift_without_notify = getattr(controller, "drift_without_notify", None)
-            emit = getattr(controller, "emit", None)
-            if not callable(drift_without_notify) or not callable(emit):
-                return None
-            snapshot = drift_without_notify()
-            return lambda: emit(snapshot)
 
         return prepare
 

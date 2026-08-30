@@ -1,6 +1,6 @@
 # AGENTS.md
 
-> Last updated: 2026-08-26 (context compressed; maintenance contract revised) | [README](README.md) | [TODO](TODO.md)
+> Last updated: 2026-08-30 | [README](README.md) | [TODO](TODO.md)
 
 
 
@@ -119,6 +119,8 @@ Use `bash` for Git operations.
 
 ## Errors Log (recent)
 
+- **2026-08-29**: Toasts fail in restricted sandboxes despite working on host → verify outside sandbox.
+- **2026-08-29**: Malformed tool-argument JSON orphaned the assistant `tool_calls` message, making the next provider request fail with HTTP 400 → convert `JSONDecodeError` into a normally-bookkept tool error result.
 - **2026-08-26**: RAM-watchdog `tests/conftest.py` errors every long test at setup when ambient machine RAM ≥70% (hardcoded warn threshold) → gate runs need `--noconftest`.
 - **2026-08-26**: The 08-23 `_pending_ask` fix only covered done/paused, and the TUI never got it → both UIs now ignore a stale sink at submit time (`_ask_is_live`) and retire it in `_agent_work`'s `finally`.
 - **2026-08-26**: DeepSeek cache hits plateaued because the ephemeral Session Context board breaks the growing request prefix → board removed entirely: `dynamic_context.py` deleted, `PLAN_WRITE` event removed, `_board`/`_refresh_dynamic_context`/`_build_dynamic_context` stripped from `AgentLoop` (2026-08-27).
@@ -131,7 +133,7 @@ Use `bash` for Git operations.
 - **Sentinel display sanitization**: agent tool-output views escape loop sentinels (`<<` → `< <`) before showing them; byte-check source before any sentinel-related edit — displayed strings lie.
 - **agent/_\* loop modules**: `loop.py` delegates to internal modules (`_loop_config`, `_loop_helpers`, `_system_prompt`, `_plan_mode`, `_model_switch`, `_streaming`, `_compaction`, `_tool_dispatch`) re-exported via `agent.loop`; white-box test patches must target the owning module (e.g. `agent._compaction.run_subagent`).
 - **Prompt-cache boundary**: the entire prior provider input must prefix the next request; ignoring a trailing dynamic board is not cache-safe.
-- **AGENTS.md loading**: re-read for each `AgentLoop`; edits take effect in the next session.
+- **Expression media**: expression rotation uses `RandomEmoteLibrary` and `ExpressionController`; VAD vectors are no longer part of the display path.
 - **Termination**: assistant text uses `<<END_OF_RESPONSE>>`; child completion requires `write_handoff`.
 - **Tool filtering**: `config.yaml` removes tools outside `tools:` except mandatory `write_handoff`.
 - **Subagent API**: import `tools/subagent_api.py`, never private `_subagent_runner.py`.

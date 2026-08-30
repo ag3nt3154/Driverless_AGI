@@ -148,8 +148,8 @@ def build_callbacks(app: DagiApp, loop_ref: list) -> AgentCallbacks:
             f"[dim yellow]↩ No exit flag — continue prompt injected ({cur}/{mx})[/dim yellow]",
         )
 
-    def on_affect_changed(snapshot) -> None:
-        app.call_from_thread(sidebar.update_affect, snapshot)
+    def on_expression_changed(snapshot) -> None:
+        app.call_from_thread(sidebar.update_expression, snapshot)
 
     def on_process_state_changed(snapshot) -> None:
         app.call_from_thread(sidebar.update_process_state, snapshot)
@@ -180,7 +180,7 @@ def build_callbacks(app: DagiApp, loop_ref: list) -> AgentCallbacks:
         on_api_call=on_api_call, on_reasoning=on_reasoning,
         on_compaction=on_compaction, on_model_switch=on_model_switch,
         on_ask_user=on_ask_user,
-        on_affect_changed=on_affect_changed,
+        on_expression_changed=on_expression_changed,
         on_process_state_changed=on_process_state_changed,
         on_subagent_event_factory=on_subagent_event_factory,
         on_pause=on_pause, supports_pause=True,
