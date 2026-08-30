@@ -64,7 +64,15 @@ def dispatch_tool_calls(
                 "arguments": tc.function.arguments,  # raw, unparsed
             },
         )
-        args = json.loads(tc.function.arguments)
+        try:
+            args = json.loads(tc.function.arguments)
+        except json.JSONDecodeError as exc:
+            result = (
+                f"Error: invalid JSON arguments for tool {tc.function.name!r}: {exc}"
+            )
+            bookkeep_tool_call(loop, tc, result, description, tool_records)
+            loop._lifecycle.tool_bookkeeping_finished()
+            continue
         result = loop.registry.dispatch(tc.function.name, args)
 
         # ── Typed side-effect dispatch ──────────────────────────────────────

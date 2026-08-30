@@ -244,6 +244,39 @@ class TestToolDispatch:
         tool_msgs = [m for m in loop._messages if m.get("role") == "tool"]
         assert tool_msgs[0]["content"] == "Error: unknown tool 'nonexistent'"
 
+    def test_malformed_tool_arguments_yield_error_result_and_loop_continues(self):
+        tool = FakeTool(name="ask_user")
+        registry = ToolRegistry()
+        registry.register(tool)
+        loop = _make_loop(registry=registry)
+        loop.client = MagicMock()
+        loop.client.chat.completions.create.side_effect = [
+            _make_response(
+                None,
+                tool_calls=[
+                    _make_tool_call(
+                        "tc_bad_json",
+                        "ask_user",
+                        '{"question": "Choose", "options" [{"label": "A"}]}',
+                    )
+                ],
+            ),
+            _exit_response("Recovered."),
+        ]
+
+        result = loop.run("ask me something")
+
+        assert result == "Recovered."
+        assert tool.calls == []
+        retry_messages = loop.client.chat.completions.create.call_args_list[1].kwargs["messages"]
+        error_reply = next(
+            msg for msg in retry_messages if msg.get("tool_call_id") == "tc_bad_json"
+        )
+        assert error_reply["role"] == "tool"
+        assert error_reply["content"].startswith(
+            "Error: invalid JSON arguments for tool 'ask_user':"
+        )
+
     def test_multiple_tool_calls_in_one_response_all_dispatch(self):
         tool_a = FakeTool(name="tool_a", result="result a")
         tool_b = FakeTool(name="tool_b", result="result b")
