@@ -171,8 +171,8 @@ class DagiMainWindow(QMainWindow):
         b.agent_done.connect(self._on_agent_done)
         b.agent_paused.connect(self._on_agent_paused)
         b.ask_user_requested.connect(self._on_ask_user)
-        b.affect_changed.connect(
-            self._right_sidebar.expression_widget.update_affect
+        b.expression_changed.connect(
+            self._right_sidebar.expression_widget.update_expression
         )
         b.process_state_changed.connect(
             self._right_sidebar.expression_widget.update_process
@@ -192,21 +192,6 @@ class DagiMainWindow(QMainWindow):
         self._plan_timer = QTimer(self)
         self._plan_timer.timeout.connect(self._poll_plan)
         self._plan_timer.start(2000)
-        drift_ms = int(self._config.affect_drift_interval * 1000)
-        if drift_ms > 0:
-            self._drift_timer = QTimer(self)
-            self._drift_timer.timeout.connect(self._tick_drift)
-            self._drift_timer.start(drift_ms)
-
-    @Slot()
-    def _tick_drift(self) -> None:
-        loop = self._active_loop
-        if loop is None:
-            return
-        controller = loop.tracker.affect_controller
-        if controller is None:
-            return
-        controller.drift()
 
     def _show_welcome(self) -> None:
         self._conversation.append_info(

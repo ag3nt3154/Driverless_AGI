@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import sys
 import threading
+from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
@@ -10,7 +11,7 @@ import pyside_gui  # noqa: F401 — must be imported before any PySide6 import
 
 from PySide6.QtWidgets import QApplication
 
-from agent.affect import AffectSnapshot, AffectVector
+from agent.expression import ExpressionSnapshot
 from agent.expression_assets import TextFallback
 from agent.process_state import ProcessSnapshot
 from pyside_gui.bridge import AgentBridge
@@ -18,6 +19,21 @@ from pyside_gui.bridge import AgentBridge
 # PySide6 requires a QApplication to exist for QObject/Signal to work.
 # Create one at module level for the test session.
 _app = QApplication.instance() or QApplication(sys.argv)
+
+
+def test_start_timers_does_not_require_removed_affect_config(monkeypatch):
+    from pyside_gui.app import DagiMainWindow
+
+    timer = MagicMock()
+    monkeypatch.setattr("pyside_gui.app.QTimer", MagicMock(return_value=timer))
+    window = DagiMainWindow.__new__(DagiMainWindow)
+    window._config = SimpleNamespace(expression_interval=1.0)
+    window._tick_spinner = MagicMock()
+    window._poll_plan = MagicMock()
+
+    DagiMainWindow._start_timers(window)
+
+    assert timer.start.call_count == 2
 
 
 def test_tool_started_signal_emits():
@@ -155,29 +171,23 @@ def test_token_update_accumulates():
     assert received[1][1] == 130  # output
 
 
-def test_affect_and_process_snapshots_emit_as_objects(tmp_path) -> None:
+def test_expression_and_process_snapshots_emit_as_objects(tmp_path) -> None:
     bridge = AgentBridge()
     received = []
-    bridge.affect_changed.connect(lambda s: received.append(("affect", s)))
+    bridge.expression_changed.connect(lambda s: received.append(("expression", s)))
     bridge.process_state_changed.connect(
         lambda s: received.append(("process", s))
     )
     callbacks = bridge.build_callbacks()
     asset = TextFallback(tmp_path / "default.md", "test", "fallback")
-    affect = AffectSnapshot(
-        baseline=AffectVector(0.0, 0.0, 0.0),
-        current=AffectVector(0.1, 0.2, 0.3),
-        emote_id="focused",
-        asset=asset,
-        reason="init",
-    )
+    expression = ExpressionSnapshot("focused", asset)
     process = ProcessSnapshot("thinking", asset)
 
-    callbacks.on_affect_changed(affect)
+    callbacks.on_expression_changed(expression)
     callbacks.on_process_state_changed(process)
     _app.processEvents()
 
-    assert received == [("affect", affect), ("process", process)]
+    assert received == [("expression", expression), ("process", process)]
 
 
 def test_pyside_app_stays_under_file_cap():

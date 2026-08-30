@@ -8,7 +8,7 @@ import pyside_gui  # noqa: F401 - must be imported before any PySide6 import
 from PySide6.QtGui import QColor, QImage, QMovie
 from PySide6.QtWidgets import QApplication, QLabel
 
-from agent.affect import AffectSnapshot, AffectVector
+from agent.expression import ExpressionSnapshot
 from agent.expression_assets import ImageAsset, TextFallback
 from agent.process_state import ProcessSnapshot
 from pyside_gui.expression_widget import ExpressionWidget
@@ -22,14 +22,8 @@ def _fallback(path: Path, text: str) -> TextFallback:
     return TextFallback(path=path, reason="test", text=text)
 
 
-def _affect(asset, emote_id: str = "focused") -> AffectSnapshot:
-    return AffectSnapshot(
-        baseline=AffectVector(0.0, 0.0, 0.0),
-        current=AffectVector(0.1, -0.2, 0.3),
-        emote_id=emote_id,
-        asset=asset,
-        reason="init",
-    )
+def _expression(asset, emote_id: str = "focused") -> ExpressionSnapshot:
+    return ExpressionSnapshot(emote_id, asset)
 
 
 def _image_label(widget: ExpressionWidget) -> QLabel:
@@ -44,31 +38,29 @@ def _caption_label(widget: ExpressionWidget) -> QLabel:
     return label
 
 
-def test_updates_keep_initial_vad_until_timer_rotates(tmp_path: Path) -> None:
+def test_updates_keep_expression_until_timer_rotates(tmp_path: Path) -> None:
     root = tmp_path / "emotes"
     root.mkdir()
     (root / "default.md").write_text("default", encoding="utf-8")
     affect_asset = _fallback(tmp_path / "affect.md", "AFFECT  text\n")
     process_asset = _fallback(tmp_path / "process.md", "PROCESS text")
     widget = ExpressionWidget(root)
-    timer_id = widget._rotation_timer.timerId()
 
-    widget.update_affect(_affect(affect_asset))
+    widget.update_expression(_expression(affect_asset))
     widget.update_process(ProcessSnapshot("tool:bash", process_asset))
     _app.processEvents()
 
     assert widget._rotation_timer.isActive()
-    assert widget._rotation_timer.interval() == 3000
-    assert widget._rotation_timer.timerId() == timer_id
+    assert widget._rotation_timer.interval() == 5000
     assert _image_label(widget).text() == "AFFECT  text\n"
-    assert _caption_label(widget).text() == "VAD focused | V=+0.10 A=-0.20 D=+0.30"
+    assert _caption_label(widget).text() == "PROCESS tool:bash"
 
     widget._rotate_channel()
 
     assert _image_label(widget).text() == "PROCESS text"
     assert _caption_label(widget).text() == "PROCESS tool:bash"
 
-    widget.update_affect(_affect(_fallback(tmp_path / "new.md", "NEW"), "new"))
+    widget.update_expression(_expression(_fallback(tmp_path / "new.md", "NEW"), "new"))
 
     assert _image_label(widget).text() == "PROCESS text"
     assert _caption_label(widget).text() == "PROCESS tool:bash"
@@ -76,7 +68,7 @@ def test_updates_keep_initial_vad_until_timer_rotates(tmp_path: Path) -> None:
     widget._rotate_channel()
 
     assert _image_label(widget).text() == "NEW"
-    assert _caption_label(widget).text() == "VAD new | V=+0.10 A=-0.20 D=+0.30"
+    assert _caption_label(widget).text() == "PROCESS tool:bash"
 
 
 def test_initial_rotation_has_idle_process_channel(tmp_path: Path) -> None:
@@ -85,7 +77,7 @@ def test_initial_rotation_has_idle_process_channel(tmp_path: Path) -> None:
     (root / "default.md").write_text("default", encoding="utf-8")
     widget = ExpressionWidget(root)
 
-    assert _caption_label(widget).text() == "VAD default | V=+0.00 A=+0.00 D=+0.00"
+    assert _caption_label(widget).text() == "PROCESS idle"
 
     widget._rotate_channel()
 
@@ -102,7 +94,7 @@ def test_invalid_image_asset_uses_default_text_with_monospace_font(
     (root / "default.md").write_text(expected, encoding="utf-8")
     widget = ExpressionWidget(root)
 
-    widget.update_affect(_affect(ImageAsset("missing", root / "missing.png")))
+    widget.update_expression(_expression(ImageAsset("missing", root / "missing.png")))
     _app.processEvents()
 
     label = _image_label(widget)
@@ -121,7 +113,7 @@ def test_static_images_are_scaled_with_aspect_ratio(tmp_path: Path) -> None:
     widget = ExpressionWidget(root)
     widget.resize(180, 180)
 
-    widget.update_affect(_affect(ImageAsset("wide", image_path)))
+    widget.update_expression(_expression(ImageAsset("wide", image_path)))
     _app.processEvents()
 
     pixmap = _image_label(widget).pixmap()
@@ -142,14 +134,14 @@ def test_gif_movie_stops_before_replacement(tmp_path: Path) -> None:
     )
     widget = ExpressionWidget(root)
 
-    widget.update_affect(_affect(ImageAsset("idle", gif_path)))
+    widget.update_expression(_expression(ImageAsset("idle", gif_path)))
     _app.processEvents()
     movie = widget._movie
 
     assert movie is not None
     assert movie.state() == QMovie.MovieState.Running
 
-    widget.update_affect(_affect(_fallback(tmp_path / "fallback.md", "fallback")))
+    widget.update_expression(_expression(_fallback(tmp_path / "fallback.md", "fallback")))
     _app.processEvents()
 
     assert movie.state() == QMovie.MovieState.NotRunning
@@ -169,15 +161,15 @@ def test_invalid_media_decode_warns_once_per_channel_operation_and_path(
     widget = ExpressionWidget(root)
 
     with caplog.at_level("WARNING", logger="pyside_gui.expression_widget"):
-        widget.update_affect(_affect(ImageAsset("bad", bad_png)))
-        widget.update_affect(_affect(ImageAsset("bad", bad_png)))
+        widget.update_expression(_expression(ImageAsset("bad", bad_png)))
+        widget.update_expression(_expression(ImageAsset("bad", bad_png)))
         widget._rotate_channel()
         widget.update_process(ProcessSnapshot("tool:bad", ImageAsset("bad", bad_png)))
         _app.processEvents()
 
     matching = [message for message in caplog.messages if str(bad_png) in message]
     assert len(matching) == 2
-    assert any("vad pixmap decode failed" in message for message in matching)
+    assert any("expression pixmap decode failed" in message for message in matching)
     assert any("process pixmap decode failed" in message for message in matching)
 
 

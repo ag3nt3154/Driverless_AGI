@@ -7,7 +7,6 @@ from rich.table import Table
 from rich.text import Text
 from textual.widget import Widget
 
-from agent.affect import AffectSnapshot
 from agent.process_state import ProcessSnapshot
 
 from .utils import _system_breakdown
@@ -49,8 +48,8 @@ class Sidebar(Widget):
         self._memory_root = memory_root
         self._subtasks: list[dict] = []
         self._plan_title: str = ""
-        self._emote_display: str = "V=+0.00 A=+0.00 D=+0.00"
-        self._emote_name: str = "default"
+        self._emote_display: str = "process=idle"
+        self._emote_name: str = ""
         self._process_state: str = "idle"
 
     def set_status(self, status: str) -> None:
@@ -85,19 +84,11 @@ class Sidebar(Widget):
         self.refresh()
 
     def update_expression(self, snapshot) -> None:
-        current = snapshot.current
-        self._emote_name = snapshot.emote_id
-        self._emote_display = (
-            f"V={current.valence:+.2f} A={current.arousal:+.2f} "
-            f"D={current.dominance:+.2f}\nprocess={self._process_state}"
-        )
-        self.refresh()
+        del snapshot
 
     def update_process_state(self, snapshot: ProcessSnapshot) -> None:
         self._process_state = snapshot.state
-        self._emote_display = (
-            f"{self._emote_display.strip().splitlines()[0]}\nprocess={self._process_state}"
-        )
+        self._emote_display = f"process={self._process_state}"
         self.refresh()
 
     def render(self):

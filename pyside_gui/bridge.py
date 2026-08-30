@@ -43,7 +43,7 @@ class AgentBridge(QObject):
     agent_done = Signal(str)               # result
     agent_paused = Signal()
     ask_user_requested = Signal(str, object, object)  # q, opts, timeout
-    affect_changed = Signal(object)
+    expression_changed = Signal(object)
     process_state_changed = Signal(object)
     continue_injected = Signal(int, int)   # cur, max
     plan_shown = Signal()
@@ -172,8 +172,8 @@ class AgentBridge(QObject):
         def on_plan_shown() -> None:
             self.plan_shown.emit()
 
-        def on_affect_changed(snapshot) -> None:
-            self.affect_changed.emit(snapshot)
+        def on_expression_changed(snapshot) -> None:
+            self.expression_changed.emit(snapshot)
 
         def on_process_state_changed(snapshot) -> None:
             self.process_state_changed.emit(snapshot)
@@ -197,7 +197,7 @@ class AgentBridge(QObject):
             on_compaction=on_compaction,
             on_model_switch=on_model_switch,
             on_ask_user=self._ask_user,
-            on_affect_changed=on_affect_changed,
+            on_expression_changed=on_expression_changed,
             on_process_state_changed=on_process_state_changed,
             on_subagent_event_factory=on_subagent_factory,
             on_pause=on_pause,

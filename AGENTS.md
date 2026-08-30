@@ -119,6 +119,7 @@ Use `bash` for Git operations.
 
 ## Errors Log (recent)
 
+- **2026-08-30**: Removing affect config left PySide's GUI-owned drift timer and callback names behind, breaking startup/first turn → expression timing belongs to `AgentLoop`; keep GUI wiring on `on_expression_changed` only.
 - **2026-08-29**: Toasts fail in restricted sandboxes despite working on host → verify outside sandbox.
 - **2026-08-29**: Malformed tool-argument JSON orphaned the assistant `tool_calls` message, making the next provider request fail with HTTP 400 → convert `JSONDecodeError` into a normally-bookkept tool error result.
 - **2026-08-26**: RAM-watchdog `tests/conftest.py` errors every long test at setup when ambient machine RAM ≥70% (hardcoded warn threshold) → gate runs need `--noconftest`.
