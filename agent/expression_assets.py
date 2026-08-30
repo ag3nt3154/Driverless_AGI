@@ -27,6 +27,8 @@ class TextFallback:
 
 
 AssetRef: TypeAlias = ImageAsset | TextFallback
+# Compatibility type for legacy affect records; no runtime VAD computation uses it.
+VadPoint: TypeAlias = tuple[float, float, float]
 
 
 def _load_fallback(path: Path, reason: str, warn_once) -> TextFallback:
