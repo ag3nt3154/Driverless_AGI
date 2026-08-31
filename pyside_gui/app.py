@@ -53,6 +53,7 @@ class DagiMainWindow(QMainWindow):
         self._pending_ask_container: list | None = None
         self._compose_mode = False
         self._stream_had_content = False  # suppresses duplicate assistant_text after streaming
+        self._streaming_active = False  # suppresses duplicate reasoning during streaming
 
         self.setWindowTitle(f"Driverless AGI — {config.display_name}")
         self.setMinimumSize(1200, 700)
@@ -347,6 +348,7 @@ class DagiMainWindow(QMainWindow):
     @Slot()
     def _on_stream_started(self) -> None:
         self._stream_had_content = False
+        self._streaming_active = True
         self._conversation.stream_start()
 
     @Slot()
@@ -357,10 +359,11 @@ class DagiMainWindow(QMainWindow):
             self._conversation.stream_end(render_markdown(text))
         else:
             self._conversation.stream_end("")
+        self._streaming_active = False
 
     @Slot(str)
     def _on_reasoning(self, text: str) -> None:
-        if not self._stream_had_content:
+        if not self._streaming_active and not self._stream_had_content:
             self._conversation.append_reasoning(text)
 
     @Slot(str)
