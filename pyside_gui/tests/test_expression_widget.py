@@ -122,7 +122,7 @@ def test_static_images_are_scaled_with_aspect_ratio(tmp_path: Path) -> None:
     assert round(pixmap.width() / pixmap.height(), 1) == 2.0
 
 
-def test_gif_movie_stops_before_replacement(tmp_path: Path) -> None:
+def test_gif_keeps_playing_when_new_expression_arrives(tmp_path: Path) -> None:
     root = tmp_path / "emotes"
     root.mkdir()
     (root / "default.md").write_text("default", encoding="utf-8")
@@ -144,9 +144,8 @@ def test_gif_movie_stops_before_replacement(tmp_path: Path) -> None:
     widget.update_expression(_expression(_fallback(tmp_path / "fallback.md", "fallback")))
     _app.processEvents()
 
-    assert movie.state() == QMovie.MovieState.NotRunning
-    assert movie.parent() is None
-    assert widget._movie is None
+    assert movie.state() == QMovie.MovieState.Running
+    assert widget._movie is movie
 
 
 def test_invalid_media_decode_warns_once_per_channel_operation_and_path(

@@ -82,6 +82,8 @@ class ExpressionWidget(QWidget):
                 self._render_current()
             return
         if self._channel == "expression":
+            if self._movie is not None:
+                return
             self._render_current()
 
     @Slot(object)

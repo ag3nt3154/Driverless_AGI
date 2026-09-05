@@ -1,6 +1,6 @@
 # AGENTS.md
 
-> Last updated: 2026-09-05 (remove plan mode, replace with /plan skill + create_plan tool) | [README](README.md) | [TODO](TODO.md)
+> Last updated: 2026-09-05 (fix 4 PySide GUI bugs: sidebar bg, emote timing, thinking duplication, status lines) | [README](README.md) | [TODO](TODO.md)
 
 
 
@@ -120,28 +120,23 @@ Use `bash` for Git operations.
 
 ## Errors Log (recent)
 
+- **2026-09-05**: PySide GUI 4 bugs → (1) right sidebar white on some Windows themes: viewport lacked explicit bg — set `viewport().setStyleSheet("background: #1e1e2e")` and give container the `right-sidebar` object name; (2) VAD emotes shown ~1s instead of full GIF loop: expression timer `advance()` at 1s interval restarted GIF — skip re-render in `update_expression` while `_movie` is playing; (3) thinking block duplicated in streaming: `_on_assistant_text` reset `_stream_had_content` flag before `_on_reasoning` checked it — stop resetting the flag (let `_on_stream_started` reset it); (4) debug stage-trace lines cluttered conversation — removed `stage_trace` signal and `stage()` UI emissions, kept `worker_log` file logging.
 - **2026-09-05**: Plan mode removed as system-level feature → replaced with `/plan` skill + `create_plan` tool. `AgentConfig` fields `plan_mode`, `plan_file`, `plan_mode_initiated_by`, `previous_branch` removed; `plan_mode_initiated_by` replaced by `autonomous` bool. `SideEffect.ENTER_PLAN_MODE`/`EXIT_PLAN_MODE` removed. Registry no longer rebuilds or restricts tools during planning.
 - **2026-09-05**: 7 integration failures found in `b64b5c4` deliver-workflow commit → fixed: (1) `config.yaml` had stale `spawn_*` tool names; (2) `UpdateTaskStatusTool` captured plan path at construction — now reads `config.active_plan_file` dynamically; (3) `check_active_plan` returned plain string on success — now returns `ToolResult(SET_ACTIVE_PLAN)`; (4+5) subagent wrappers discarded error diagnostics — patched; (6) deliver skill `ESCALATE` said "enter plan mode" — fixed; (7) `SetActivePlanTool` containment check didn't call `.resolve()`.
 - **2026-08-30**: Typed turn termination left `main_system.md` requiring `<<END_OF_RESPONSE>>`, causing a corrective continuation after every text-only reply → make `write_handoff` the prompt's sole final action and regression-test the contract.
-- **2026-08-30**: Random-expression migration left stale VAD tests,
-  archived `dagi_gui` tests in the active suite, and subagent reads of removed
-  `affect_*` fields → archive unsupported tests, migrate active coverage, and
-  flatten `expression_interval` only.
+- **2026-08-30**: Random-expression migration left stale VAD tests, archived `dagi_gui` tests in the active suite, and subagent reads of removed `affect_*` fields → archive unsupported tests, migrate active coverage, and flatten `expression_interval` only.
 - **2026-08-29**: Toasts fail in restricted sandboxes despite working on host → verify outside sandbox.
 - **2026-08-29**: Malformed tool-argument JSON orphaned the assistant `tool_calls` message, making the next provider request fail with HTTP 400 → convert `JSONDecodeError` into a normally-bookkept tool error result.
 - **2026-08-26**: RAM-watchdog `tests/conftest.py` errors every long test at setup when ambient machine RAM ≥70% (hardcoded warn threshold) → gate runs need `--noconftest`.
 - **2026-08-26**: The 08-23 `_pending_ask` fix only covered done/paused, and the TUI never got it → both UIs now ignore a stale sink at submit time (`_ask_is_live`) and retire it in `_agent_work`'s `finally`.
 - **2026-08-26**: DeepSeek cache hits plateaued because the ephemeral Session Context board breaks the growing request prefix → board removed entirely: `dynamic_context.py` deleted, `PLAN_WRITE` event removed, `_board`/`_refresh_dynamic_context`/`_build_dynamic_context` stripped from `AgentLoop` (2026-08-27).
-- **2026-08-25**: PySide `/clear` retained old token totals → reset `AgentBridge` stats with the session.
-- **2026-08-24**: PySide `/wd` and `/model` updated handler-only state → propagate config changes to `DagiWindow`.
-- **2026-08-24**: `pytestqt` cannot load `PySide6.QtCore` in the `dagi` environment → run Qt tests directly with Python.
 
 ## Notes & Terms
 
 - **Sentinel display sanitization**: agent tool-output views escape loop sentinels (`<<` → `< <`) before showing them; byte-check source before any sentinel-related edit — displayed strings lie.
 - **agent/_\* loop modules**: `loop.py` delegates to internal modules (`_loop_config`, `_loop_helpers`, `_system_prompt`, `_reload`, `_model_switch`, `_streaming`, `_compaction`, `_tool_dispatch`) re-exported via `agent.loop`; white-box test patches must target the owning module (e.g. `agent._compaction.run_subagent`).
 - **Prompt-cache boundary**: the entire prior provider input must prefix the next request; ignoring a trailing dynamic board is not cache-safe.
-- **Expression media**: expression rotation uses `RandomEmoteLibrary` and `ExpressionController`; VAD vectors are no longer part of the display path.
+- **Expression media**: expression rotation uses `RandomEmoteLibrary` and `ExpressionController`; GIF emotes play one full loop before rotating (new expressions are deferred while a movie is playing); VAD vectors are no longer part of the display path.
 - **Termination**: main and child turns end through `write_handoff`; bare assistant text triggers the corrective continuation prompt.
 - **Tool filtering**: `config.yaml` removes tools outside `tools:` except mandatory `write_handoff`.
 - **Subagent API**: import `tools/subagent_api.py`, never private `_subagent_runner.py`.

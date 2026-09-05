@@ -109,6 +109,8 @@ class RightSidebar(QScrollArea):
         self.setStyleSheet(_SIDEBAR_CSS)
 
         container = QWidget()
+        container.setObjectName("right-sidebar")
+        self.viewport().setStyleSheet("background: #1e1e2e;")
         self._layout = QVBoxLayout(container)
         self._layout.setAlignment(Qt.AlignmentFlag.AlignTop)
         self._layout.setSpacing(4)
