@@ -18,6 +18,7 @@ class SideEffect(Enum):
     ALL_TASKS_RESOLVED = auto()
     RELOAD_SKILLS = auto()
     SWITCH_MODEL = auto()
+    SET_ACTIVE_PLAN = auto()
 
 
 @dataclass(frozen=True, slots=True)

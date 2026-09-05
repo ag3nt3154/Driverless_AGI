@@ -15,6 +15,7 @@ class TestSideEffect:
             "ALL_TASKS_RESOLVED",
             "RELOAD_SKILLS",
             "SWITCH_MODEL",
+            "SET_ACTIVE_PLAN",
         }
         assert set(SideEffect.__members__) == expected
 

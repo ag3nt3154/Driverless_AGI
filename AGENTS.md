@@ -1,6 +1,6 @@
 # AGENTS.md
 
-> Last updated: 2026-08-30 | [README](README.md) | [TODO](TODO.md)
+> Last updated: 2026-09-05 (deliver-workflow implementation) | [README](README.md) | [TODO](TODO.md)
 
 
 
@@ -146,3 +146,22 @@ Use `bash` for Git operations.
 - **Windows / conda**: use `conda run -n dagi python`; hooks use `envs/dagi/python.exe` because `conda run` drops stdin.
 - **PySide6 imports**: add the package directory with `os.add_dll_directory` before importing PySide6.
 - **Qt threading**: background work reaches widgets only through queued signals or `QMetaObject.invokeMethod`.
+
+## Workflow Reference
+
+- **Primary entry point:** `/deliver` (`tools/active_plan/_active_plan.py` + `.dagi/skills/deliver/SKILL.md`).
+- Planning: `.dagi/skills/plan/SKILL.md` — returns to caller on exit. Standalone `/plan` still works.
+- Execution resume: `.dagi/skills/dagi-execute/SKILL.md` — compatibility shim for interrupted deliveries.
+- Worker/reviewer contracts: `.dagi/subagents/{worker,review}/prompt.md`.
+  - Worker outcomes: `READY_FOR_REVIEW` | `ESCALATE`. Workers may run their task tests.
+  - Reviewer outcomes: `PASS` | `ESCALATE`. Reviewer is general-purpose; caller supplies criteria.
+- Active plan: persisted via sidecar at `.dagi/session-state/<thread_id>/active-plan.json`.
+  - Set/check via `set_active_plan` / `check_active_plan` tools.
+  - `exit_plan_mode` writes the sidecar automatically on successful exit (not on cancel).
+  - `handle_all_tasks_resolved` does NOT clear the association — plan stays for final verification.
+  - Explicit detach: `set_active_plan(null)` after delivery accepted.
+- Subagent error diagnostics: `SubagentResult` carries `message`, `exit_code`, `output_tail`,
+  `output_log_path`. Full output is tee'd to `<handoff_stem>.output.log` by the runner.
+- `review_work` interface: `(material, passing_criteria, context="", verification="")`.
+  No active plan required. Caller supplies all context and criteria explicitly.
+- Implementation plan (completed 2026-09-05): `docs/superpowers/plans/2026-09-05-deliver-workflow.md`.

@@ -27,4 +27,5 @@ When shared understanding is reached, produce a closing summary covering:
 - what was weak, missing, or unresolved
 - concrete actions before proceeding
 
-Then chain: **invoke `plan` next.**
+Then return control to the caller. If grilling was invoked via `/grilling` directly
+(not from `deliver`), suggest invoking `/plan` or `/deliver` next.

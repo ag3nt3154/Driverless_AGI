@@ -35,7 +35,7 @@ def compose_worker_task(plan_text: str, subtask_name: str) -> str:
         if global_ctx:
             sections.append(f"## Plan Context\n{global_ctx}")
 
-        subtask_ctx = extract_subtask(plan_text, subtask_name, include_tests=False)
+        subtask_ctx = extract_subtask(plan_text, subtask_name, include_tests=True)
         if subtask_ctx:
             sections.append(f"## Subtask\n{subtask_ctx}")
 

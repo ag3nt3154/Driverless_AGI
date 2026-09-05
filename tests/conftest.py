@@ -1,4 +1,4 @@
-"""tests/conftest.py — pytest plugin: RAM watchdog.
+"""tests/conftest.py — pytest plugin: RAM watchdog + DLL path bootstrap.
 
 Monitors system RAM during every test. If usage exceeds
 RAM_WARN_PCT (70%), the running test is interrupted with a clear
@@ -14,6 +14,13 @@ import time
 
 import psutil
 import pytest
+
+# Add PySide6 DLL directory early so pytestqt can load QtCore on Windows.
+_pyside6_dir = os.path.join(
+    os.path.dirname(os.__file__), "site-packages", "PySide6"
+)
+if os.path.isdir(_pyside6_dir) and hasattr(os, "add_dll_directory"):
+    os.add_dll_directory(_pyside6_dir)
 
 RAM_WARN_PCT = 70.0
 RAM_KILL_PCT = 90.0

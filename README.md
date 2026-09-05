@@ -421,7 +421,8 @@ All slash commands work identically in the TUI and CLI.
 | `/clear` | Clear conversation context and reset the session |
 | `/wd [path]` | Show the current working directory, or change it to `path` |
 | `/model [id]` | List available models, or switch to `id` immediately |
-| `/plan` | Enter plan mode — agent explores and writes a structured plan |
+| `/deliver` | Full delivery lifecycle — grilling, planning, per-task worker/review, integrated verification, detach |
+| `/plan` | Enter plan mode — agent explores and writes a structured plan (standalone or chained from deliver) |
 | `/compact` | Force-compact the current conversation context |
 | `/tools` | List all registered tools for the active session |
 | `/skills` | List all loaded skills |
@@ -467,10 +468,11 @@ Or as a slash command if the skill is loaded:
 | `memory-refresh` | Lint sweep + interactive triage: validates frontmatter, links, overdue todos, indexes |
 | `create-skill` | Scaffold a new skill document |
 | `review-session` | Analyse sessions described in free text (folder, files, time window) into one running cross-session review report |
-| `grilling` | Adversarial interrogation of a plan or idea before implementation; chains to `plan` |
+| `grilling` | Adversarial interrogation of a plan or idea before implementation; returns control to caller when done |
 | `to-spec` | Synthesize the current conversation into a written spec (`spec.md`); invoked by `plan`, not user-triggered |
-| `plan` | Orchestrate the planning lifecycle: spec synthesis, codebase exploration, plan-file authoring, and user approval; chains to `dagi-execute` |
-| `dagi-execute` | Execute an approved plan task by task via the worker/review subagent cycle, with retry and escalation handling; calls `update_task_status` to mark tasks in-progress/complete/failed (auto-completes plan when all tasks resolved) |
+| `plan` | Orchestrate the planning lifecycle: spec synthesis, codebase exploration, plan-file authoring, and user approval; returns control to caller on exit |
+| `deliver` | **Primary delivery entry point.** Full lifecycle: grilling → planning → plan review → per-task worker/review cycle → integrated verification → final review → detach. Use `/deliver` for any non-trivial implementation request |
+| `dagi-execute` | Compatibility shim — resumes an interrupted delivery from an already-associated plan. Use `/deliver` for new work |
 | `update-project-context` | Update `AGENTS.md` with current project state |
 
 Add a project-specific skill by creating `.dagi/skills/<name>/SKILL.md` in your project directory.

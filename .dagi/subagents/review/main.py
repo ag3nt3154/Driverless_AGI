@@ -1,8 +1,6 @@
 # .dagi/subagents/review/main.py
 from __future__ import annotations
 
-import importlib.util
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 import tools.subagent_api as _subagent_api
@@ -14,53 +12,47 @@ if TYPE_CHECKING:
     from agent.session_log import SessionLog
     from agent.parent_context import ParentContextProvider
 
-_REVIEW_UTILS_PATH = Path(__file__).parent / "review_utils.py"
-
-# Load review_utils once at import time; re-executing spec.loader.exec_module per run() is wasteful.
-_spec = importlib.util.spec_from_file_location("_review_utils", _REVIEW_UTILS_PATH)
-_review_utils_mod = importlib.util.module_from_spec(_spec)
-_spec.loader.exec_module(_review_utils_mod)  # type: ignore[union-attr]
-
-
-def _load_plan_text(config: "AgentConfig") -> str:
-    for attr in ("active_plan_file", "plan_file"):
-        p = getattr(config, attr, None)
-        if p is not None:
-            try:
-                return Path(p).read_text(encoding="utf-8")
-            except (FileNotFoundError, OSError):
-                pass
-    return ""
-
 
 class ReviewWorkTool(BaseTool):
     name = "review_work"
     description = (
-        "Review a worker's implementation against the plan's subtask "
-        "requirements. Reads the worker handoff and runs tests."
+        "General-purpose reviewer. Evaluates any material (plan, diff, "
+        "worker handoff, document) against explicit passing criteria. "
+        "Returns PASS or ESCALATE with structured findings. "
+        "Does not require an active plan or prior worker run."
     )
     _parameters = {
         "type": "object",
         "properties": {
-            "subtask_name": {
+            "material": {
                 "type": "string",
-                "description": "Name of the subtask being reviewed.",
+                "description": (
+                    "What to review: exact file paths, diff base/revision "
+                    "(e.g. 'git diff HEAD~1'), or inline content. "
+                    "The reviewer will read paths before evaluating."
+                ),
             },
-            "worker_handoff_path": {
-                "type": "string",
-                "description": "Path to the worker's handoff report.",
-            },
-            "unit_test_paths": {
+            "passing_criteria": {
                 "type": "array",
                 "items": {"type": "string"},
-                "description": "Paths to unit test files.",
+                "description": "Explicit list of criteria that must all be met for PASS.",
             },
-            "custom_instructions": {
+            "context": {
                 "type": "string",
-                "description": "Additional review guidance. Optional.",
+                "description": (
+                    "Background the reviewer needs: plan context, subtask goal, "
+                    "prior attempt notes. Optional but strongly recommended."
+                ),
+            },
+            "verification": {
+                "type": "string",
+                "description": (
+                    "Expected verification steps (e.g. test commands to run, "
+                    "invariants to check). Optional."
+                ),
             },
         },
-        "required": ["subtask_name", "worker_handoff_path", "unit_test_paths"],
+        "required": ["material", "passing_criteria"],
     }
 
     def __init__(
@@ -79,20 +71,19 @@ class ReviewWorkTool(BaseTool):
 
     def run(
         self,
-        subtask_name: str,
-        worker_handoff_path: str,
-        unit_test_paths: list[str] | str = "",
-        custom_instructions: str = "",
+        material: str,
+        passing_criteria: list[str],
+        context: str = "",
+        verification: str = "",
     ) -> str:
         from tools._handoff_format import dispatch_status_result, format_handoff_result
 
-        if isinstance(unit_test_paths, str):
-            unit_test_paths = [unit_test_paths] if unit_test_paths else []
+        if not material or not material.strip():
+            return "Error: material must not be empty — provide file paths, a diff spec, or inline content."
+        if not passing_criteria:
+            return "Error: passing_criteria must be a non-empty list."
 
-        plan_text = _load_plan_text(self._config)
-        task_body = _review_utils_mod.compose_review_task(
-            plan_text, subtask_name, worker_handoff_path, unit_test_paths,
-        )
+        task_body = _compose_review_task(material, passing_criteria, context, verification)
 
         on_event = None
         if self._callbacks and self._callbacks.on_subagent_event_factory:
@@ -101,7 +92,6 @@ class ReviewWorkTool(BaseTool):
         result = _subagent_api.run_subagent(
             task=task_body,
             preset="review",
-            custom_instructions=custom_instructions,
             project_path=self._config.project_path,
             on_event=on_event,
             parent_log=self._session_log,
@@ -115,7 +105,32 @@ class ReviewWorkTool(BaseTool):
             {
                 "status": result.status,
                 "pid": result.pid,
-                "message": "",
+                "message": result.message,
+                "exit_code": result.exit_code,
+                "output_tail": result.output_tail,
             },
             "review",
         )
+
+
+def _compose_review_task(
+    material: str,
+    passing_criteria: list[str],
+    context: str,
+    verification: str,
+) -> str:
+    """Build the review task body from explicit caller-supplied fields."""
+    sections: list[str] = []
+
+    if context and context.strip():
+        sections.append(f"## Context\n{context.strip()}")
+
+    criteria_block = "\n".join(f"- {c}" for c in passing_criteria)
+    sections.append(f"## Passing Criteria\n{criteria_block}")
+
+    sections.append(f"## Material to Review\n{material.strip()}")
+
+    if verification and verification.strip():
+        sections.append(f"## Verification Steps\n{verification.strip()}")
+
+    return "\n\n---\n\n".join(sections)

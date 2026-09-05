@@ -100,6 +100,10 @@ def dispatch_tool_calls(
             elif effect is SideEffect.SWITCH_MODEL:
                 tier = (result.side_effect_data or {}).get("tier")
                 result = loop._handle_switch_model(tier, args)
+            elif effect is SideEffect.SET_ACTIVE_PLAN:
+                path = (result.side_effect_data or {}).get("path")
+                loop.config.active_plan_file = path
+                result = result.output
 
         # Unwrap plain ToolResult to string for bookkeeping
         if isinstance(result, ToolResult):

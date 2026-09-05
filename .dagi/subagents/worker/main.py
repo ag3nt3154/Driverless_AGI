@@ -97,7 +97,9 @@ class RunWorkerTool(BaseTool):
             {
                 "status": result.status,
                 "pid": result.pid,
-                "message": "",
+                "message": result.message,
+                "exit_code": result.exit_code,
+                "output_tail": result.output_tail,
             },
             "worker",
         )

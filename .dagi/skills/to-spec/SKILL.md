@@ -35,14 +35,11 @@ The problem that the user is facing, from the user's perspective.
 
 The solution to the problem, from the user's perspective.
 
-### User Stories
+### Requirements
 
-A LONG, numbered list of user stories. Each user story should be in the format of:
-
-1. As an \<actor\>, I want a \<feature\>, so that \<benefit\>
-
-This list of user stories should be extremely extensive and cover all aspects of the
-feature.
+Scope-appropriate requirements covering what must be true when the work is done.
+Include only requirements that reflect user decisions or important constraints —
+do not list obvious implementation details that will be decided during planning.
 
 ### Implementation Decisions
 

@@ -1,118 +1,36 @@
 ---
 name: dagi-execute
-description: Execute an approved plan via the work-review cycle — main agent writes tests, worker subagent implements, review subagent grades, main agent commits. Handles retry logic, escalation, completion, and branch cleanup.
-triggers: /execute, execute plan, start execution
+description: Compatibility entry point — if an active plan is already associated, resumes execution from where deliver left off. Use /deliver for new work; this is for resuming an interrupted delivery.
+triggers: /execute, /dagi-execute, execute plan, resume execution
 ---
 
 # dagi-execute
 
-Execute the approved plan task by task. Delegate implementation to worker
-subagents and evaluation to review subagents. The main agent writes tests and
-commits.
+**This skill is a compatibility shim.** For new work, invoke `/deliver` instead.
 
-## Prerequisites
+Use this only when an approved plan is already associated and delivery was interrupted
+mid-execution (e.g. by a user stop, session end, or context compaction).
 
-- A plan file must be active (`config.active_plan_file` is set)
-- The plan must have been approved and plan mode exited
-- Read the plan file in full before starting
+## Process
 
-## Per-Task Cycle
+1. Call `check_active_plan()`. If no plan is associated, tell the user to use `/deliver`
+   to start a new delivery, then stop.
 
-For each `[ ] pending` task in the plan:
+2. Read the plan file in full. Identify the first subtask that is not `[x]` (complete)
+   or `[!]` (failed).
 
-### Step 1 — Write Tests
+3. If all tasks are already resolved, report the current state and suggest running final
+   integrated verification. Do not re-run completed tasks.
 
-Before spawning the worker, write the test file(s) for this task:
-- Read the task's **Acceptance Criteria** and **Test snippets**
-- Expand them into full test files
-- Save to `.dagi/plans/{plan_dir}/tests/`
-- Edit `plan.md` to fill in the task's `#### Tests` subsection with test file
-  paths and a one-line description of what each test verifies
-- Do NOT pass test paths to the worker — tests are a hidden oracle for review only
+4. Proceed with Phase 4 (execution) of the `deliver` skill from the first pending task.
+   Follow the same per-task worker → review cycle, observations, and update-task-status
+   protocol defined in `deliver`.
 
-### Step 2 — Spawn Worker
+5. After all tasks are accepted, proceed with Phase 5 (integrated verification and final
+   review) and Phase 6 (report and detach) from the `deliver` skill.
 
-Call `update_task_status(task=N, status="in_progress")` to mark the task.
+## Constraints
 
-Call `run_worker(subtask_name, briefing)`. The tool
-automatically injects plan context and task details. Keep the returned handoff
-path for Step 3.
-
-### Step 3 — Spawn Review
-
-Call `review_work(subtask_name, worker_handoff_path, unit_test_paths)`.
-The tool automatically injects plan context and the task block (including
-Tests section). Read the returned review report.
-
-### Step 4 — Evaluate and Decide
-
-Pass/fail is determined by the review subagent's verdict — not your own judgment.
-
-**If ESCALATED:** The subagent raised a blocking question (tool result starts with
-`[worker escalated]` or `[review escalated]`).
-- Read the question in full
-- Decide the answer yourself if you can — you have full repo access and
-  conversation context the subagent doesn't
-- Only call `ask_user` for genuine product decisions
-- Re-spawn the same subagent type with the answer via `briefing`
-- This does NOT consume a retry attempt — go back to Step 2 or 3
-
-**If PASS:**
-- Call `update_task_status(task=N, status="complete")`
-- `git add` the files this task touched, then `git commit` with a message
-  summarizing the task
-- Append a PASS entry to `cycle_log.md` in the plan directory
-- Update the `## Notes` section of `plan.md` with salient findings
-- Proceed to the next task
-
-**If FAIL:**
-- Append a FAIL entry to `cycle_log.md` with: verdict, artifact file names,
-  issue summary, action taken
-- Update `## Notes` in `plan.md` with salient findings
-- Decide retry strategy:
-  - **Worker fell into a trap** (plan is sound): retry with augmented
-    briefing
-  - **Plan is flawed** (task requirements wrong): edit the task in plan.md,
-    then retry
-
-**If 2 attempts exhausted** (1 initial + 1 retry; escalations free):
-- Call `update_task_status(task=N, status="failed")`
-- Stop the cycle
-- Present structured escalation report:
-  - Summary of all attempt handoff/review artifacts
-  - Root cause diagnosis
-  - Proposed solutions
-- Wait for user guidance before continuing
-
-## Completion
-
-The plan auto-completes when all tasks are resolved (`[x]` or `[!]`).
-The `update_task_status` tool handles this automatically — when the last
-task is marked, it clears the active plan and restores full tools.
-
-After auto-completion:
-
-1. Invoke `skill("update-project-context")`
-3. Commit context updates
-4. If `config.previous_branch` is set, run `git checkout <previous_branch>` to
-   return to the branch the user was on before plan mode. If it is `None` (e.g.
-   the task started outside a git repo), skip this step and note in the summary
-   that no checkout was performed. Do NOT merge, force-push, or delete the task
-   branch.
-5. Report summary:
-   - Branch name
-   - Number of commits and files changed
-   - Reminder that the branch is ready for user review and merge
-
-## cycle_log.md Format
-
-Maintain `cycle_log.md` in the plan directory. Append one block per attempt:
-
-```
-## Task N: <name>
-### Attempt N — PASS/FAIL
-- Worker: .dagi/handoffs/worker_<id>.md
-- Review: .dagi/handoffs/review_<id>.md
-- Issue: <one-line summary, or "None">
-- Action: <what you did next, or "Task complete">
-```
+- Do not re-grill an already understood and approved request.
+- Do not enter plan mode unless explicitly asked — the plan is already approved.
+- Follow the same no-fixed-attempt-count, always-read-handoff rules as deliver.

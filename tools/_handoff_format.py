@@ -61,6 +61,31 @@ def format_handoff_result(handoff_path: str, unverified: bool = False) -> str:
     )
 
 
+_MISSING_HANDOFF_NOTICE = (
+    "⚠️ MISSING HANDOFF — the subagent exited without writing a report. "
+    "The output below (if any) is raw process output, not a structured handoff.\n\n"
+)
+
+
+def format_error_result(result: dict, error_prefix: str) -> str:
+    """Format a non-ok, non-timeout subagent result including diagnostics.
+
+    Includes exit code, output tail, and full-log pointer when available.
+    """
+    msg = result.get("message", "unknown error")
+    parts = [f"[{error_prefix} error] {msg}"]
+    exit_code = result.get("exit_code")
+    if exit_code is not None:
+        parts.append(f"exit code: {exit_code}")
+    output_tail = result.get("output_tail", "")
+    if output_tail:
+        # If it already contains the truncation prefix, emit as-is
+        parts.append(f"--- process output ---\n{output_tail}")
+    elif not output_tail and "without writing handoff" in msg:
+        parts[0] = _MISSING_HANDOFF_NOTICE + parts[0]
+    return "\n".join(parts)
+
+
 def dispatch_status_result(
     result: dict,
     error_prefix: str,
@@ -81,4 +106,4 @@ def dispatch_status_result(
         return format_handoff_result(result["handoff"], unverified=True)
     if include_timeout and status == "timeout":
         return json.dumps({"status": "timeout", "pid": result["pid"]})
-    return f"[{error_prefix} error] {result.get('message', 'unknown error')}"
+    return format_error_result(result, error_prefix)

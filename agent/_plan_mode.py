@@ -106,10 +106,16 @@ def handle_enter_plan_mode(loop, args: dict) -> str:
 
 def handle_exit_plan_mode(loop, args: dict) -> str:
         saved_plan = loop.config.plan_file
+        summary = (args.get("summary") or "").strip().lower()
+        cancelled = summary == "cancelled"
         dagi_root = DAGI_ROOT
         loop._handle_switch_model("default", {"reason": "plan complete, returning to normal mode"})
-        loop.config.active_plan_file = saved_plan
+        if not cancelled and saved_plan:
+            loop.config.active_plan_file = saved_plan
+            _persist_active_plan(loop, Path(saved_plan))
         loop._rebuild_for_normal_mode(dagi_root)
+        if cancelled:
+            return "Plan mode cancelled. Full tools restored. No active plan set."
         if saved_plan and _is_plan_empty(Path(saved_plan)):
             return (
                 "The plan document is empty. "
@@ -126,14 +132,26 @@ def handle_exit_plan_mode(loop, args: dict) -> str:
         )
 
 
+def _persist_active_plan(loop, plan_path: Path) -> None:
+        """Write the sidecar so the active-plan association survives across sessions."""
+        from tools.active_plan._active_plan import _sidecar_path, _thread_id, _write_atomic
+        tid = _thread_id(loop.config, loop.tracker)
+        sidecar = _sidecar_path(Path(loop.config.project_path), tid)
+        branch = get_current_branch(loop.config.project_path)
+        _write_atomic(sidecar, {
+            "version": 1,
+            "repo_root": str(loop.config.project_path),
+            "plan_path": str(plan_path),
+            "expected_branch": branch,
+        })
+
+
 def handle_all_tasks_resolved(loop) -> str:
-        cleared = loop.config.active_plan_file
-        loop.config.active_plan_file = None
-        loop._rebuild_for_normal_mode(DAGI_ROOT)
+        plan = loop.config.active_plan_file
         return (
-            f"Active plan cleared (was: {cleared}). "
-            "Handoffs will now go to .dagi/handoffs/. "
-            "The plan document is preserved on disk — reference it by path if needed."
+            f"All tasks resolved. Active plan remains associated: {plan}\n\n"
+            "Next: run integrated verification and a final review before accepting delivery. "
+            "Call set_active_plan(null) to detach explicitly after the final review is accepted."
         )
 
 

@@ -53,9 +53,8 @@ def _run_with_minimal_arguments(tool, type_name: str) -> None:
         tool.run(subtask_name="Implement it")
     elif type_name == "review":
         tool.run(
-            subtask_name="Review it",
-            worker_handoff_path="/tmp/worker.md",
-            unit_test_paths=["tests/test_worker.py"],
+            material="/tmp/worker.md",
+            passing_criteria=["All criteria met"],
         )
     else:
         tool.run(task="Do the task")
@@ -165,25 +164,179 @@ class TestWorkerSubagentTool:
 
 
 class TestReviewSubagentTool:
-    def test_review_includes_worker_handoff_path(self):
+    def _make_ok_result(self, path="/tmp/review.md"):
+        r = MagicMock()
+        r.status = "ok"
+        r.is_ok = True
+        r.handoff_text = "LGTM."
+        r.handoff_path = Path(path)
+        return r
+
+    def test_review_material_appears_in_task(self):
+        """material path must appear in the composed task sent to run_subagent."""
         cls = _load_tool_class("review")
         config, cb, tr = _make_runtime_args()
         tool = cls(config=config, callbacks=cb, tracker=tr)
 
-        mock_result = MagicMock()
-        mock_result.status = "ok"
-        mock_result.handoff_text = "LGTM."
-        mock_result.handoff_path = Path("/tmp/review.md")
-        with patch("tools.subagent_api.run_subagent", return_value=mock_result) as mock_run:
+        with patch("tools.subagent_api.run_subagent", return_value=self._make_ok_result()) as mock_run:
             tool.run(
-                subtask_name="Do it",
-                worker_handoff_path="/tmp/worker.md",
-                unit_test_paths=["tests/test_a.py"],
+                material="/tmp/worker.md",
+                passing_criteria=["No regressions", "All tests green"],
             )
 
-        call_kwargs = mock_run.call_args.kwargs
-        assert "/tmp/worker.md" in call_kwargs.get("custom_instructions", "") or \
-               "/tmp/worker.md" in call_kwargs.get("task", "")
+        task_text = mock_run.call_args.kwargs["task"]
+        assert "/tmp/worker.md" in task_text
+        assert "No regressions" in task_text
+        assert "All tests green" in task_text
+
+    def test_review_standalone_plan_no_active_plan(self):
+        """Reviewer can evaluate a plan document with no active plan or worker report."""
+        cls = _load_tool_class("review")
+        config, cb, tr = _make_runtime_args()
+        config.plan_file = None
+        config.active_plan_file = None
+        tool = cls(config=config, callbacks=cb, tracker=tr)
+
+        with patch("tools.subagent_api.run_subagent", return_value=self._make_ok_result()) as mock_run:
+            result = tool.run(
+                material="docs/plan.md",
+                passing_criteria=["Plan covers rollback"],
+                context="Reviewing the delivery plan before implementation.",
+            )
+
+        task_text = mock_run.call_args.kwargs["task"]
+        assert "docs/plan.md" in task_text
+        assert "Plan covers rollback" in task_text
+        assert "Reviewing the delivery plan" in task_text
+        assert mock_run.call_args.kwargs["preset"] == "review"
+
+    def test_review_explicit_diff_preserves_criteria_and_verification(self):
+        """Diff-based review must include all caller-supplied fields in the task."""
+        cls = _load_tool_class("review")
+        config, cb, tr = _make_runtime_args()
+        tool = cls(config=config, callbacks=cb, tracker=tr)
+
+        with patch("tools.subagent_api.run_subagent", return_value=self._make_ok_result()) as mock_run:
+            tool.run(
+                material="git diff HEAD~1",
+                passing_criteria=["No secrets committed", "Tests not deleted"],
+                context="Post-merge diff check.",
+                verification="Run: pytest tests/ -q",
+            )
+
+        task_text = mock_run.call_args.kwargs["task"]
+        assert "git diff HEAD~1" in task_text
+        assert "No secrets committed" in task_text
+        assert "Tests not deleted" in task_text
+        assert "pytest tests/ -q" in task_text
+
+    def test_review_empty_material_returns_error(self):
+        """Empty material must return an actionable error without calling run_subagent."""
+        cls = _load_tool_class("review")
+        config, cb, tr = _make_runtime_args()
+        tool = cls(config=config, callbacks=cb, tracker=tr)
+
+        with patch("tools.subagent_api.run_subagent") as mock_run:
+            result = tool.run(material="   ", passing_criteria=["All good"])
+
+        mock_run.assert_not_called()
+        assert "material" in result.lower()
+
+    def test_review_empty_criteria_returns_error(self):
+        """Empty passing_criteria must return an actionable error without calling run_subagent."""
+        cls = _load_tool_class("review")
+        config, cb, tr = _make_runtime_args()
+        tool = cls(config=config, callbacks=cb, tracker=tr)
+
+        with patch("tools.subagent_api.run_subagent") as mock_run:
+            result = tool.run(material="/tmp/plan.md", passing_criteria=[])
+
+        mock_run.assert_not_called()
+        assert "passing_criteria" in result.lower()
+
+
+class TestReviewOutcomeRouting:
+    """Verify that ESCALATE and PASS reviewer outcomes reach the caller correctly."""
+
+    def _make_review_tool(self):
+        cls = _load_tool_class("review")
+        config, cb, tr = _make_runtime_args()
+        config.plan_file = None
+        config.active_plan_file = None
+        return cls(config=config, callbacks=cb, tracker=tr)
+
+    def _result(self, status, handoff_text="", handoff_path="/tmp/review.md"):
+        r = MagicMock()
+        r.status = status
+        r.is_ok = status in ("ok", "ok_unverified")
+        r.handoff_text = handoff_text
+        r.handoff_path = Path(handoff_path)
+        r.message = ""
+        r.exit_code = 0
+        r.output_tail = ""
+        r.output_log_path = None
+        return r
+
+    def test_escalate_report_reaches_caller(self, tmp_path):
+        """ESCALATE handoff content must flow through format_handoff_result to the caller."""
+        escalate_content = (
+            "## Outcome\nESCALATE\n\n"
+            "## Blocking Findings\n1. Missing error handling in parser.\n"
+        )
+        handoff_path = tmp_path / "review_abc.md"
+        handoff_path.write_text(escalate_content, encoding="utf-8")
+        tool = self._make_review_tool()
+
+        with patch("tools.subagent_api.run_subagent",
+                   return_value=self._result("ok", handoff_path=str(handoff_path))):
+            result = tool.run(
+                material="src/parser.py",
+                passing_criteria=["Error paths handled"],
+            )
+
+        assert "ESCALATE" in result
+        assert "Missing error handling" in result
+
+    def test_pass_with_observations_includes_full_report(self, tmp_path):
+        """PASS with non-blocking observations must retain all observation text."""
+        pass_content = (
+            "## Outcome\nPASS\n\n"
+            "## Non-blocking Observations\n- Minor: variable name could be clearer.\n"
+        )
+        handoff_path = tmp_path / "review_pass.md"
+        handoff_path.write_text(pass_content, encoding="utf-8")
+        tool = self._make_review_tool()
+
+        with patch("tools.subagent_api.run_subagent",
+                   return_value=self._result("ok", handoff_path=str(handoff_path))):
+            result = tool.run(
+                material="src/parser.py",
+                passing_criteria=["All criteria met"],
+            )
+
+        assert "PASS" in result
+        assert "Non-blocking Observations" in result or "variable name" in result
+
+    def test_child_crash_diagnostics_reach_caller(self):
+        """A child crash (no handoff) must include output_tail and exit code in result."""
+        tool = self._make_review_tool()
+        crashed = MagicMock()
+        crashed.status = "error"
+        crashed.is_ok = False
+        crashed.message = "reviewer exited without writing handoff"
+        crashed.exit_code = 1
+        crashed.output_tail = "Traceback (most recent call last):\n  File 'main.py'"
+        crashed.output_log_path = None
+        crashed.pid = 999
+
+        with patch("tools.subagent_api.run_subagent", return_value=crashed):
+            result = tool.run(
+                material="plan.md",
+                passing_criteria=["Plan is complete"],
+            )
+
+        assert "Traceback" in result or "main.py" in result
+        assert "1" in result  # exit code present
 
 
 class TestSessionLogThreading:

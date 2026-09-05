@@ -37,6 +37,10 @@ class SubagentResult:
     session_log_path: Path | None
     pid: int | None
     branch_id: str | None = None
+    message: str = ""
+    exit_code: int | None = None
+    output_tail: str = ""
+    output_log_path: Path | None = None
 
     @property
     def is_ok(self) -> bool:
@@ -112,12 +116,17 @@ def _build_result(raw: dict, handoff_path: Path) -> SubagentResult:
         text = _auto_read_handoff(raw.get("handoff", ""))
     else:
         text = ""
+    output_log = raw.get("output_log_path")
     return SubagentResult(
         status=status,
         handoff_text=text,
         handoff_path=handoff_path,
         session_log_path=None,  # resolved by caller if tracker present
         pid=raw.get("pid"),
+        message=raw.get("message", ""),
+        exit_code=raw.get("exit_code"),
+        output_tail=raw.get("output_tail", ""),
+        output_log_path=Path(output_log) if output_log else None,
     )
 
 

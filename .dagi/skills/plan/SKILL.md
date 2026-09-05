@@ -1,6 +1,6 @@
 ---
 name: plan
-description: Full planning lifecycle — enters plan mode, generates spec from conversation, explores codebase, writes implementation plan, gets approval, exits plan mode. Invoke directly via /plan or chained from grilling.
+description: Full planning lifecycle — enters plan mode, generates spec from conversation, explores codebase, writes implementation plan, gets approval, exits plan mode. Invoke directly via /plan or chained from deliver/grilling.
 triggers: /plan, plan this, create a plan
 ---
 
@@ -8,6 +8,8 @@ triggers: /plan, plan this, create a plan
 
 This skill owns the planning phase: entering plan mode, generating a spec,
 exploring the codebase, writing the implementation plan, and getting approval.
+When invoked from `deliver`, it returns control to `deliver` on exit. Standalone
+`/plan` is fully supported.
 
 ## Direct invocation
 
@@ -26,41 +28,31 @@ Call `enter_plan_mode(mode, task_summary)` where:
   (e.g. `"fix-login-bug"`)
 
 This is a pure infrastructure call — it enters plan-mode state, creates a git
-branch, restricts tools to read-only plus plan-file write, and switches to the
-advanced model.
+branch, restricts tools to read-only plus plan-file/spec-file write, and switches
+to the advanced model.
 
 ### Step 2 — Generate Spec
 
 Invoke `skill("to-spec")`. This synthesizes the conversation context into a spec
-(Problem Statement, Solution, User Stories, Implementation Decisions, Testing
-Decisions, Out of Scope) and saves it to `.dagi/plans/<plan_dir>/spec.md`.
-
-Wait for the user to confirm the test seams before proceeding.
+(Problem Statement, Solution, key implementation decisions, testing approach, out of
+scope) and saves it to `.dagi/plans/<plan_dir>/spec.md`.
 
 ### Step 3 — Explore Codebase
 
-Call `explore_files(...)` with a task informed by the spec's
-Implementation Decisions and Testing Decisions sections. The subagent maps
-relevant files, architecture, and patterns. Read its handoff when it returns.
+Call `explore_files(...)` with a task informed by the spec's implementation and
+testing decisions. The subagent maps relevant files, architecture, and patterns.
+Read its handoff when it returns.
 
 ### Step 4 — Write Implementation Plan
 
-Write `plan.md` in the plan directory. Use the current plan format:
-
-- **Context** — why this change is needed
-- **Approach** — high-level strategy and key decisions
-- **Files to Modify** — exact paths
-- **Subtasks** — each with:
-  - `### Subtask N: [ ] <name>` (status marker in heading)
-  - **Goal:** one sentence
-  - **Requirements:** bulleted list
-  - **Acceptance Criteria:** bulleted list
-  - **Test snippets:** key assertions and approach hints (not full test code — the
-    main agent expands these into full test files at execution time)
-  - Each subtask's execution protocol: write tests → worker implements → review
-    grades
-- **Notes** — findings from exploration, traps to avoid
-- **Verification** — how to verify end-to-end
+Write `plan.md` in the plan directory. Use the plan format defined in the `deliver`
+skill's plan template section:
+- **Objective and Acceptance** — what the delivery achieves and how it will be verified
+- **Scope and Decisions** — what is in scope, what is not, key decisions
+- **Workspace** — branch name, expected repository state
+- **Subtasks** — each with status marker, goal, requirements, acceptance criteria, tests
+- **Context/Approach/Notes** — findings, traps, architectural constraints
+- **Verification** — end-to-end verification commands and criteria
 
 ### Step 5 — Show and Approve
 
@@ -69,13 +61,17 @@ Write `plan.md` in the plan directory. Use the current plan format:
    to modify, or [cancel] to abort.")`
    - **approve** → proceed to Step 6
    - **modify** → edit plan.md, go back to Step 5
-   - **cancel** → call `exit_plan_mode`, stop
+   - **cancel** → call `exit_plan_mode(summary="cancelled")`, stop
 
 ### Step 6 — Exit Plan Mode
 
-Call `exit_plan_mode(summary)` to restore full tools.
+Call `exit_plan_mode(summary)` with a one-sentence summary of what the plan covers.
+Full tools are restored and the plan is set as the active plan automatically.
 
-### Step 7 — Chain to Execution
+### Step 7 — Return control
 
-Invoke `skill("dagi-execute")` or tell the user: "Plan approved and saved. Invoke
-`dagi-execute` to begin implementation."
+If invoked from `deliver`: return control to `deliver`. It will review the plan and
+begin execution.
+
+If invoked standalone: report the plan is ready and suggest `/deliver` or
+`/dagi-execute` to begin implementation.

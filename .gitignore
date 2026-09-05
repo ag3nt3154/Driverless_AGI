@@ -193,6 +193,7 @@ dagi-memory/*
 .dagi/plans/*
 .dagi/hash_cache/*
 .dagi/handoffs/*
+.dagi/session-state/*
 snapshots/
 benchmarks/jobs/*
 jobs/*

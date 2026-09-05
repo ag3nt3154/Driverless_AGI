@@ -1,24 +1,41 @@
 """tests/test_subagent_runner.py — Unit tests for tools/_subagent_runner.py."""
 from __future__ import annotations
 
+import collections
+import threading
 from pathlib import Path
 from unittest.mock import MagicMock
 
 from tools import _subagent_runner
-from tools._subagent_runner import _poll_until, _SubagentState
+from tools._subagent_runner import _OUTPUT_MAXLINES, _poll_until, _SubagentState
 
 
-def _make_state(tmp_path: Path, poll_side_effect) -> tuple[_SubagentState, MagicMock]:
+def _make_state(
+    tmp_path: Path,
+    poll_side_effect,
+    output_lines: list[str] | None = None,
+) -> tuple[_SubagentState, MagicMock]:
     proc = MagicMock()
     proc.pid = 4242
     proc.poll.side_effect = poll_side_effect
     handoff_path = tmp_path / "worker_ab12cd34.md"
+
+    buf: collections.deque[str] = collections.deque(maxlen=_OUTPUT_MAXLINES)
+    total_ref: list[int] = [0]
+    if output_lines:
+        for line in output_lines:
+            buf.append(line)
+            total_ref[0] += 1
+
     state = _SubagentState(
         proc=proc,
         handoff_path=handoff_path,
         task_file=tmp_path / "task.txt",
         subagent_type="worker",
         on_event=None,
+        output_buf=buf,
+        total_output_ref=total_ref,
+        output_log_path=handoff_path.with_suffix(".output.log"),
     )
     (tmp_path / "task.txt").write_text("task", encoding="utf-8")
     return state, proc
@@ -248,3 +265,106 @@ class TestForceKillActiveSubagents:
         finally:
             with _subagent_runner._active_lock:
                 _subagent_runner._active.pop(proc.pid, None)
+
+
+class TestOutputCapture:
+    def test_crash_without_handoff_includes_output_in_result(self, tmp_path):
+        """A child that prints output and exits 1 without a handoff returns that output."""
+        state, proc = _make_state(
+            tmp_path,
+            poll_side_effect=[1],
+            output_lines=["failure detail", "traceback line"],
+        )
+        result = _poll_until(state, extra_seconds=10)
+
+        assert result["status"] == "error"
+        assert result["exit_code"] == 1
+        assert "failure detail" in result["output_tail"]
+        assert "traceback line" in result["output_tail"]
+
+    def test_crash_with_missing_handoff_notice_in_error(self, tmp_path):
+        """An error result for a crash with no handoff uses the 'without writing handoff' message."""
+        state, proc = _make_state(tmp_path, poll_side_effect=[2])
+        result = _poll_until(state, extra_seconds=10)
+
+        assert result["status"] == "error"
+        assert "without writing handoff" in result["message"]
+        assert result["exit_code"] == 2
+
+    def test_successful_handoff_includes_exit_code_zero(self, tmp_path):
+        """An ok result also carries exit_code=0 for completeness."""
+        state, proc = _make_state(tmp_path, poll_side_effect=[0])
+        state.handoff_path.write_text("# Handoff\n\ndone\n", encoding="utf-8")
+
+        result = _poll_until(state, extra_seconds=10)
+
+        assert result["status"] == "ok"
+        assert result["exit_code"] == 0
+
+    def test_truncated_output_adds_full_log_prefix(self, tmp_path):
+        """When more lines were written than the ring buffer holds, output_tail is prefixed."""
+        handoff_path = tmp_path / "worker_xx.md"
+        buf: collections.deque[str] = collections.deque(maxlen=2)
+        total_ref = [5]  # 5 lines written, only 2 in buffer
+        buf.append("line4")
+        buf.append("line5")
+
+        log_path = handoff_path.with_suffix(".output.log")
+        log_path.write_text("all lines\n", encoding="utf-8")
+
+        proc = MagicMock()
+        proc.pid = 9999
+        proc.poll.side_effect = [1]
+        state = _SubagentState(
+            proc=proc,
+            handoff_path=handoff_path,
+            task_file=tmp_path / "task.txt",
+            subagent_type="worker",
+            on_event=None,
+            output_buf=buf,
+            total_output_ref=total_ref,
+            output_log_path=log_path,
+        )
+        (tmp_path / "task.txt").write_text("task", encoding="utf-8")
+
+        result = _poll_until(state, extra_seconds=10)
+
+        assert "truncated" in result["output_tail"]
+        assert str(log_path) in result["output_tail"]
+        assert result["output_log_path"] == str(log_path)
+
+    def test_reader_thread_joined_before_result(self, tmp_path):
+        """output_tail is populated even when the reader thread finishes after poll()."""
+        state, proc = _make_state(tmp_path, poll_side_effect=[0])
+        state.handoff_path.write_text("# Handoff\ndone\n", encoding="utf-8")
+
+        completed = []
+
+        def slow_appender():
+            import time
+            time.sleep(0.05)
+            state.output_buf.append("late line")
+            state.total_output_ref[0] += 1
+            completed.append(True)
+
+        t = threading.Thread(target=slow_appender)
+        state.reader_thread = t
+        t.start()
+
+        result = _poll_until(state, extra_seconds=10)
+
+        assert completed, "reader thread never finished"
+        assert "late line" in result["output_tail"]
+
+    def test_escalate_report_with_exit_zero_returns_ok(self, tmp_path):
+        """A child that writes an ESCALATE report and exits 0 returns the full report."""
+        state, proc = _make_state(tmp_path, poll_side_effect=[0])
+        state.handoff_path.write_text(
+            "## Outcome\nESCALATE\n## Findings/Blockers\nblocker detail\n",
+            encoding="utf-8",
+        )
+
+        result = _poll_until(state, extra_seconds=10)
+
+        assert result["status"] == "ok"
+        assert result["exit_code"] == 0

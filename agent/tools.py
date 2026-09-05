@@ -161,8 +161,9 @@ def create_tool_registry(
     reg.register(FindTool(cwd=cwd, allowed_roots=effective_roots))
     if plan_mode:
         if plan_file:
-            reg.register(WriteTool(cwd=cwd, allowed_roots=[plan_file]))
-            reg.register(EditTool(cwd=cwd, allowed_roots=[plan_file]))
+            _plan_dir_writes = [plan_file, plan_file.parent / "spec.md"]
+            reg.register(WriteTool(cwd=cwd, allowed_roots=_plan_dir_writes))
+            reg.register(EditTool(cwd=cwd, allowed_roots=_plan_dir_writes))
         # BashTool always omitted in plan mode
         from tools.ask_user import AskUserTool
         from tools.plan_mode import ExitPlanModeTool
@@ -210,7 +211,10 @@ def create_tool_registry(
             reg.register(bash_tool)
         from tools.plan_mode import EnterPlanModeTool
         from tools.update_task_status import UpdateTaskStatusTool
+        from tools.active_plan import CheckActivePlanTool, SetActivePlanTool
         reg.register(EnterPlanModeTool())
+        reg.register(SetActivePlanTool(config=config, callbacks=callbacks, tracker=tracker))
+        reg.register(CheckActivePlanTool(config=config, callbacks=callbacks, tracker=tracker))
         _plan_path = (
             Path(config.active_plan_file)
             if config and config.active_plan_file
