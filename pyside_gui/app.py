@@ -494,10 +494,13 @@ class DagiMainWindow(QMainWindow):
             return
         try:
             text = Path(path).read_text(encoding="utf-8")
+        except FileNotFoundError:
+            # Plan file was deleted — clear the view immediately.
+            self._left_sidebar.update_plan([])
+            return
         except OSError:
-            # Deleted plan file → clear the view; transient errors retry next poll.
-            if not Path(path).exists():
-                self._left_sidebar.update_plan([])
+            # Transient I/O error (locked file, permission issue, etc.) —
+            # leave the current view intact and retry on the next poll tick.
             return
         from tools._plan_parser import parse_subtask_statuses
         subtasks = parse_subtask_statuses(text)

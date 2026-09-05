@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 from pathlib import Path
-from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -277,7 +276,9 @@ class TestAllTasksResolved:
             thread_id=thread_id,
             active_plan_file=str(plan_file),
         )
-        return SimpleNamespace(config=config), plan_file
+        loop = MagicMock(spec=AgentLoop)
+        loop.config = config
+        return loop, plan_file
 
     def test_all_tasks_resolved_does_not_clear_active_plan(self, tmp_path):
         loop, plan_file = self._make_loop(tmp_path)

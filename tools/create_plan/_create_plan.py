@@ -53,7 +53,7 @@ class CreatePlanTool(BaseTool):
         # second would silently overwrite each other. A short uuid suffix
         # guarantees a distinct directory per call.
         plan_dir = plans_dir / f"plan_{ts}_{uuid.uuid4().hex[:8]}"
-        plan_dir.mkdir(parents=True, exist_ok=True)
+        plan_dir.mkdir(parents=True, exist_ok=False)
         plan_file = plan_dir / "plan.md"
         plan_file.write_text(
             f"# Plan: {task_summary}\n\n"
