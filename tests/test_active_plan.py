@@ -10,6 +10,11 @@ from agent.protocol import SideEffect, ToolResult
 from tools.active_plan import CheckActivePlanTool, SetActivePlanTool
 
 
+def _check_text(result: "ToolResult | str") -> str:
+    """Return the text output from either a ToolResult or a plain string."""
+    return result.output if isinstance(result, ToolResult) else result
+
+
 def _make_config(project_path: Path, thread_id: str = "thread-abc") -> MagicMock:
     config = MagicMock()
     config.project_path = project_path
@@ -160,8 +165,12 @@ class TestCheckActivePlanTool:
         with patch("tools.active_plan._active_plan._current_branch", return_value="main"):
             result = tool.run()
 
-        assert "My Plan" in result
-        assert str(plan) in result
+        assert isinstance(result, ToolResult)
+        assert result.side_effect is SideEffect.SET_ACTIVE_PLAN
+        assert result.side_effect_data["path"] == str(plan)
+        text = _check_text(result)
+        assert "My Plan" in text
+        assert str(plan) in text
 
     def test_check_after_file_edit_returns_new_contents(self, tmp_path):
         plan = tmp_path / "plan.md"
@@ -173,8 +182,9 @@ class TestCheckActivePlanTool:
         with patch("tools.active_plan._active_plan._current_branch", return_value="main"):
             result = tool.run()
 
-        assert "Updated" in result
-        assert "Original" not in result
+        text = _check_text(result)
+        assert "Updated" in text
+        assert "Original" not in text
 
     def test_stale_pointer_after_rename(self, tmp_path):
         plan = tmp_path / "plan.md"
@@ -198,8 +208,9 @@ class TestCheckActivePlanTool:
         with patch("tools.active_plan._active_plan._current_branch", return_value="feature-x"):
             result = tool.run()
 
-        assert "mismatch" in result.lower()
-        assert "feature-x" in result
+        text = _check_text(result)
+        assert "mismatch" in text.lower()
+        assert "feature-x" in text
 
     def test_branch_match_is_confirmed(self, tmp_path):
         plan = tmp_path / "plan.md"
@@ -210,7 +221,7 @@ class TestCheckActivePlanTool:
         with patch("tools.active_plan._active_plan._current_branch", return_value="main"):
             result = tool.run()
 
-        assert "mismatch" not in result.lower()
+        assert "mismatch" not in _check_text(result).lower()
 
     def test_two_threads_see_different_plans(self, tmp_path):
         plan_a = tmp_path / "a.md"
@@ -221,8 +232,8 @@ class TestCheckActivePlanTool:
         config_b, tracker_b = self._attach(tmp_path, plan_b, thread_id="tid-b")
 
         with patch("tools.active_plan._active_plan._current_branch", return_value=None):
-            result_a = CheckActivePlanTool(config=config_a, tracker=tracker_a).run()
-            result_b = CheckActivePlanTool(config=config_b, tracker=tracker_b).run()
+            result_a = _check_text(CheckActivePlanTool(config=config_a, tracker=tracker_a).run())
+            result_b = _check_text(CheckActivePlanTool(config=config_b, tracker=tracker_b).run())
 
         assert "Plan A" in result_a
         assert "Plan B" not in result_a
@@ -242,7 +253,7 @@ class TestCheckActivePlanTool:
         with patch("tools.active_plan._active_plan._current_branch", return_value=None):
             result = tool.run()
 
-        assert "Persistent Plan" in result
+        assert "Persistent Plan" in _check_text(result)
 
 
 class TestPlanModeCompat:
@@ -401,4 +412,4 @@ class TestFailedTaskRetention:
         with patch("tools.active_plan._active_plan._current_branch", return_value="main"):
             result = check_tool.run()
 
-        assert "My Delivery Plan" in result
+        assert "My Delivery Plan" in _check_text(result)

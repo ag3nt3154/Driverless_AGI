@@ -8,9 +8,14 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from typing import TYPE_CHECKING
+
 from agent.base_tool import BaseTool
 from agent.protocol import SideEffect, ToolResult
 from tools._plan_parser import update_task_marker
+
+if TYPE_CHECKING:
+    from agent.loop import AgentConfig
 
 _RESOLVED = {"complete", "failed"}
 
@@ -39,17 +44,28 @@ class UpdateTaskStatusTool(BaseTool):
         "required": ["task", "status"],
     }
 
-    def __init__(self, plan_path: Path | None = None) -> None:
+    def __init__(
+        self,
+        plan_path: Path | None = None,
+        config: "AgentConfig | None" = None,
+        **_: object,
+    ) -> None:
         super().__init__()
-        self._plan_path = plan_path
+        self._static_plan_path = plan_path
+        self._config = config
 
     def run(self, task: int, status: str) -> ToolResult:
-        if self._plan_path is None:
+        # Config-based path is preferred so SET_ACTIVE_PLAN side effects propagate.
+        if self._config is not None and self._config.active_plan_file:
+            plan_path: Path | None = Path(self._config.active_plan_file)
+        else:
+            plan_path = self._static_plan_path
+        if plan_path is None:
             return ToolResult(output="Error: no active plan file.")
 
         try:
             statuses = update_task_marker(
-                self._plan_path, task_number=task, new_status=status,
+                plan_path, task_number=task, new_status=status,
             )
         except (ValueError, OSError) as exc:
             return ToolResult(output=f"Error: {exc}")

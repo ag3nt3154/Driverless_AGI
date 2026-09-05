@@ -125,15 +125,17 @@ class MemoryAddTool(BaseTool):
 
         if result.is_ok:
             unverified = result.status == "ok_unverified"
-            return format_handoff_result(
-                str(result.handoff_path),
-                unverified=unverified,
-            )
+            text = format_handoff_result(str(result.handoff_path), unverified=unverified)
+            if result.exit_code not in (None, 0):
+                text += f"\n\n⚠️ Process exited code {result.exit_code} despite writing handoff."
+            return text
         return dispatch_status_result(
             {
                 "status": result.status,
                 "pid": result.pid,
-                "message": "",
+                "message": result.message,
+                "exit_code": result.exit_code,
+                "output_tail": result.output_tail,
             },
             "memory-add",
         )

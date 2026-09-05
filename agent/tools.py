@@ -215,12 +215,7 @@ def create_tool_registry(
         reg.register(EnterPlanModeTool())
         reg.register(SetActivePlanTool(config=config, callbacks=callbacks, tracker=tracker))
         reg.register(CheckActivePlanTool(config=config, callbacks=callbacks, tracker=tracker))
-        _plan_path = (
-            Path(config.active_plan_file)
-            if config and config.active_plan_file
-            else None
-        )
-        reg.register(UpdateTaskStatusTool(plan_path=_plan_path))
+        reg.register(UpdateTaskStatusTool(config=config))
         from tools.ask_user import AskUserTool
         _on_ask = callbacks.on_ask_user if callbacks else _default_ask_user
         _ask_timeout = (

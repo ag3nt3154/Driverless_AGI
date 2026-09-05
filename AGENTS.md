@@ -1,6 +1,6 @@
 # AGENTS.md
 
-> Last updated: 2026-09-05 (deliver-workflow implementation) | [README](README.md) | [TODO](TODO.md)
+> Last updated: 2026-09-05 (deliver-workflow integration fixes) | [README](README.md) | [TODO](TODO.md)
 
 
 
@@ -120,6 +120,7 @@ Use `bash` for Git operations.
 
 ## Errors Log (recent)
 
+- **2026-09-05**: 7 integration failures found in `b64b5c4` deliver-workflow commit → fixed: (1) `config.yaml` had stale `spawn_*` tool names — replaced with current names and added `set_active_plan`/`check_active_plan`; (2) `UpdateTaskStatusTool` captured plan path at construction — now reads `config.active_plan_file` dynamically; (3) `check_active_plan` returned plain string on success — now returns `ToolResult(SET_ACTIVE_PLAN)` to restore `config.active_plan_file` on resume; (4+5) subagent wrappers discarded `exit_code`/`output_tail`/`message` in error path and ignored nonzero exit code in ok path — all 6 simple wrappers patched; (6) deliver skill `ESCALATE` said "enter plan mode" for revisions which creates new scaffold — fixed to "use edit to revise the existing plan file"; (7) `SetActivePlanTool` containment check didn't call `.resolve()` — both sides now resolved before `relative_to`.
 - **2026-08-30**: Typed turn termination left `main_system.md` requiring `<<END_OF_RESPONSE>>`, causing a corrective continuation after every text-only reply → make `write_handoff` the prompt's sole final action and regression-test the contract.
 - **2026-08-30**: Random-expression migration left stale VAD tests,
   archived `dagi_gui` tests in the active suite, and subagent reads of removed
@@ -165,3 +166,5 @@ Use `bash` for Git operations.
 - `review_work` interface: `(material, passing_criteria, context="", verification="")`.
   No active plan required. Caller supplies all context and criteria explicitly.
 - Implementation plan (completed 2026-09-05): `docs/superpowers/plans/2026-09-05-deliver-workflow.md`.
+
+- Review of `b64b5c4` (2026-09-05): active-plan registration/rebinding/restoration and failure-diagnostic propagation still need fixes; 106 focused tests passed with `--noconftest` and workspace temp storage.

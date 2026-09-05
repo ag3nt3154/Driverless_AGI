@@ -66,8 +66,10 @@ When intent is clear, proceed directly to Phase 3.
 
 4. Read the review handoff.
    - **PASS**: proceed to Phase 4.
-   - **ESCALATE**: enter plan mode, address blocking findings, exit, then repeat from
-     step 3. Ask the user only if a finding requires a decision outside the original scope.
+   - **ESCALATE**: use `edit` to revise the existing plan file in place (do NOT invoke
+     `enter_plan_mode` — that creates a new scaffold and branch, orphaning the current
+     association). Address each blocking finding, then repeat from step 3. Ask the user
+     only if a finding requires a decision outside the original scope.
 
 ## Phase 4 — Execute with per-task review
 
@@ -85,8 +87,9 @@ For each pending subtask in the plan (in order):
    c. **PASS**: Call `update_task_status(task=N, status="complete")`. Incorporate any
       non-blocking observations into the plan's Notes section.
    d. **ESCALATE**: Diagnose the findings. Either: assign a targeted repair to a new
-      worker call, or enter plan mode to revise the subtask, then repeat from step 1.
-      Worker debugging continues locally — no fixed attempt count.
+      worker call, or use `edit` to revise the subtask in the existing plan file in place
+      (do NOT invoke `enter_plan_mode` — that creates a new scaffold, not a revision).
+      Then repeat from step 1. Worker debugging continues locally — no fixed attempt count.
 
 3. If `ESCALATE` from the worker: resolve the blocker or revise the plan. Ask the user
    only when a decision is needed that is outside the agreed scope.

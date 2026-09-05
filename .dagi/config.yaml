@@ -42,18 +42,20 @@ tools:                      # Restrict the main agent to a specific subset of to
   - tmux_bash               # Run commands in a persistent tmux session
   # ── Planning tools ───────────────────────────────────────────────────────────
   - enter_plan_mode         # Switch agent into plan-writing mode
-  - complete_plan           # Mark a plan step as done and continue
+  - update_task_status      # Mark a plan task complete/failed/in-progress
+  - set_active_plan         # Attach or detach the active plan for this session
+  - check_active_plan       # Read current active plan and restore association on resume
   # ── Agent / subagent tools ───────────────────────────────────────────────────
   - ask_user                # Pause and prompt the user for input
-  - spawn_worker_subagent           # Spawn a worker subagent
-  - spawn_review_subagent           # Spawn a code-review subagent
-  - spawn_web_research_subagent     # Spawn a web-research subagent
-  - spawn_explore_files_subagent    # Spawn a file-exploration subagent
-  - spawn_long-reader_subagent       # Spawn a long-file summariser subagent
-  - spawn_memory-add_subagent       # Spawn a memory-add subagent
-  - spawn_memory-query_subagent     # Spawn a memory-query subagent
-  - spawn_memory-refresh_subagent     # Spawn a memory-refresh subagent
-  - extend_subagent_timeout         # Extend timeout for an in-flight subagent
+  - run_worker              # Spawn a worker subagent for one subtask
+  - review_work             # Spawn a general-purpose reviewer
+  - web_research            # Spawn a web-research subagent
+  - explore_files           # Spawn a file-exploration subagent
+  - read_large_text         # Spawn a long-file summariser subagent
+  - memory_add              # Spawn a memory-add subagent
+  - memory_query            # Spawn a memory-query subagent
+  - memory_refresh          # Spawn a memory-refresh subagent
+  - extend_subagent_timeout # Extend timeout for an in-flight subagent
   # ── Model tools ──────────────────────────────────────────────────────────────
   - switch_model            # Switch between default / worker / advanced models
   # ── Skill tools ──────────────────────────────────────────────────────────────
@@ -64,7 +66,7 @@ tools:                      # Restrict the main agent to a specific subset of to
   - web_search              # Search the web (fallback when no config subagents)
   - web_fetch               # Fetch a URL (fallback when no config subagents)
   # ── Affect tools ─────────────────────────────────────────────────────────────
-  - emote                    # Express emotion via VAD adjustment and/or meme display
+  - emote                   # Express emotion via VAD adjustment and/or meme display
 sandbox_mode: false     # true = file tools have no path restrictions (allowed_roots=None)
 
 # ── Affect ────────────────────────────────────────────────────────────────────

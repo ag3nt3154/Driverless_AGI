@@ -95,16 +95,13 @@ class SetActivePlanTool(BaseTool):
                 side_effect_data={"path": None},
             )
 
-        resolved = (
-            Path(path) if Path(path).is_absolute()
-            else (project_path / path).resolve()
-        )
+        resolved = (project_path / path).resolve() if not Path(path).is_absolute() else Path(path).resolve()
         if not resolved.exists():
             return f"Error: plan file not found: {resolved}"
         if not resolved.is_file():
             return f"Error: path is not a file: {resolved}"
         try:
-            resolved.relative_to(project_path)
+            resolved.relative_to(project_path.resolve())
         except ValueError:
             return f"Error: path escapes project root: {resolved}"
 
@@ -144,7 +141,7 @@ class CheckActivePlanTool(BaseTool):
         self._config = config
         self._tracker = tracker
 
-    def run(self) -> str:
+    def run(self) -> "ToolResult | str":
         project_path = Path(self._config.project_path)
         tid = _thread_id(self._config, self._tracker)
         sidecar = _sidecar_path(project_path, tid)
@@ -179,9 +176,17 @@ class CheckActivePlanTool(BaseTool):
                 f"actual: {current or '(unknown)'}"
             )
         )
-        return (
+        output = (
             f"Active plan: {plan_path}\n"
             f"{branch_note}\n"
             f"Thread: {tid}\n\n"
             f"--- Plan contents ---\n{contents}"
+        )
+        # Emit SET_ACTIVE_PLAN so the loop restores config.active_plan_file on
+        # resume — critical when the previous session set the plan but the new
+        # one hasn't called set_active_plan yet.
+        return ToolResult(
+            output=output,
+            side_effect=SideEffect.SET_ACTIVE_PLAN,
+            side_effect_data={"path": str(plan_path)},
         )
