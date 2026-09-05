@@ -104,7 +104,7 @@ models:
   current-free-openrouter:
     api_key_env: OPENROUTER_API_KEY
     api_url: https://openrouter.ai/api/v1
-    model: stealth/ox-alpha
+    model: nvidia/nemotron-3-ultra-550b-a55b:free
     name: Current Free (OpenRouter)
   nemotron-ultra-free-openrouter:
     api_key_env: OPENROUTER_API_KEY
