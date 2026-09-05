@@ -52,8 +52,6 @@ class SubAgentRunner:
             context_window=w.context_window,
             reserve_tokens=w.reserve_tokens,
             keep_recent_tokens=w.keep_recent_tokens,
-            plan_mode=False,
-            plan_file=None,
             worker_config=None,    # prevent further nesting
             advanced_config=None,  # prevent advanced_config nesting in generic sub-agents
         )

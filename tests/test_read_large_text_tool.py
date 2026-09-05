@@ -34,7 +34,6 @@ def _load_tool_class() -> type:
 def _make_runtime_args():
     config = MagicMock()
     config.project_path = Path("/tmp/project")
-    config.plan_file = None
     config.active_plan_file = None
     callbacks = MagicMock()
     callbacks.on_subagent_event_factory = None

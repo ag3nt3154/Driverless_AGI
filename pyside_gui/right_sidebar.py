@@ -98,8 +98,6 @@ class RightSidebar(QScrollArea):
         self._cached_tok = 0
         self._cost: float | None = None
         self._buckets: dict[str, int] = {}
-        self._subtasks: list[dict] = []
-        self._plan_title = ""
 
         self.setObjectName("right-sidebar")
         self.setWidgetResizable(True)
@@ -152,13 +150,6 @@ class RightSidebar(QScrollArea):
         self._context_label = QLabel()
         self._layout.addWidget(self._context_label)
 
-        # Plan header
-        plan_header = QLabel("PLAN")
-        plan_header.setObjectName("section-header")
-        self._layout.addWidget(plan_header)
-        self._plan_label = QLabel()
-        self._layout.addWidget(self._plan_label)
-
         self._layout.addStretch()
         self._scroll_to_bottom_button = QPushButton("↓ Scroll to bottom")
         self._scroll_to_bottom_button.setObjectName("scroll-to-bottom-button")
@@ -196,19 +187,11 @@ class RightSidebar(QScrollArea):
         self._project_path = path
         self._refresh_paths()
 
-    def update_plan(
-        self, subtasks: list[dict], title: str = ""
-    ) -> None:
-        self._subtasks = subtasks
-        self._plan_title = title
-        self._refresh_plan()
-
     def _refresh_all(self) -> None:
         self._refresh_status()
         self._refresh_paths()
         self._refresh_tokens()
         self._refresh_context()
-        self._refresh_plan()
 
     def _refresh_status(self) -> None:
         dot, colour, label = _STATUS_DOTS.get(
@@ -268,19 +251,3 @@ class RightSidebar(QScrollArea):
         usage = total / W if W else 0
         lines.append(f"{'total':<11}~{total:>6,} {usage*100:.0f}%")
         self._context_label.setText("\n".join(lines))
-
-    def _refresh_plan(self) -> None:
-        if not self._subtasks:
-            self._plan_label.setText("")
-            return
-        icons = {
-            "pending": "[ ]", "in_progress": "[~]",
-            "complete": "[x]", "failed": "[!]",
-        }
-        lines: list[str] = []
-        if self._plan_title:
-            lines.append(self._plan_title)
-        for sub in self._subtasks:
-            icon = icons.get(sub["status"], "[?]")
-            lines.append(f"{icon} {sub['name']}")
-        self._plan_label.setText("\n".join(lines))

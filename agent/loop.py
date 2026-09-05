@@ -44,9 +44,6 @@ from agent._loop_helpers import (  # noqa: F401
 )
 
 
-# Plan-mode lifecycle moved verbatim to agent/_plan_mode.py;
-# _is_plan_empty re-exported here for backward compatibility.
-from agent._plan_mode import _is_plan_empty  # noqa: F401,E402
 
 # Compaction/config/callback dataclasses moved verbatim to agent/_loop_config.py;
 # re-exported here for backward compatibility with existing importers.
@@ -129,9 +126,6 @@ class AgentLoop:
                 cwd=config.project_path,
                 allowed_roots=[dagi_root, config.project_path, self._effective_memory_root],
                 skill_roots=skill_roots,
-                plan_mode=config.plan_mode,
-                plan_file=Path(config.plan_file) if config.plan_file else None,
-                plan_mode_initiated_by=config.plan_mode_initiated_by,
                 config=config,
                 callbacks=self.callbacks,
                 tracker=self.tracker,
@@ -199,10 +193,6 @@ class AgentLoop:
         #: Captured at the API call site, before the provider returns.
         #: Used by compact() to build the fork-context file.
         self._last_request_snapshot: dict | None = None
-
-        # Switch to plan tier immediately when starting in user-initiated plan mode
-        if config.plan_mode and config.advanced_config is not None:
-            self._handle_switch_model("plan", {"reason": "user-initiated plan mode"})
 
         self._lifecycle = LifecyclePublisher(self._process)
         self._pause_event = self._lifecycle.pause_event
@@ -818,22 +808,15 @@ class AgentLoop:
 
         return handle_write_handoff(self, tc, result, description, tool_records, message_response)
 
-    # ── Plan mode transitions ─────────────────────────────────────────────────
-
-    def _handle_enter_plan_mode(self, args: dict) -> str:
-        from agent._plan_mode import handle_enter_plan_mode
-
-        return handle_enter_plan_mode(self, args)
-
-    def _handle_exit_plan_mode(self, args: dict) -> str:
-        from agent._plan_mode import handle_exit_plan_mode
-
-        return handle_exit_plan_mode(self, args)
+    # ── Side-effect handlers ────────────────────────────────────────────────
 
     def _handle_all_tasks_resolved(self) -> str:
-        from agent._plan_mode import handle_all_tasks_resolved
-
-        return handle_all_tasks_resolved(self)
+        plan = self.config.active_plan_file
+        return (
+            f"All tasks resolved. Active plan remains associated: {plan}\n\n"
+            "Next: run integrated verification and a final review before accepting delivery. "
+            "Call set_active_plan(null) to detach explicitly after the final review is accepted."
+        )
 
     def _handle_switch_model(self, target: str, args: dict) -> str:
         from agent._model_switch import handle_switch_model
@@ -860,19 +843,9 @@ class AgentLoop:
         self._system_prefix = system
         return system
 
-    def _rebuild_for_normal_mode(self, dagi_root: Path) -> None:
-        from agent._plan_mode import rebuild_for_normal_mode
-
-        rebuild_for_normal_mode(self, dagi_root)
-
-    def _rebuild_for_plan_mode(self, dagi_root: Path, plan_file: Path, interactive: bool = True) -> None:
-        from agent._plan_mode import rebuild_for_plan_mode
-
-        rebuild_for_plan_mode(self, dagi_root, plan_file, interactive)
-
     def _rebuild_for_reload(self) -> tuple[set[str], set[str], list[tuple[str, str]]]:
-        """Hot-reload skills; body moved to agent/_plan_mode.rebuild_for_reload."""
-        from agent._plan_mode import rebuild_for_reload
+        """Hot-reload skills from disk, rebuild registry + system prompt."""
+        from agent._reload import rebuild_for_reload
 
         return rebuild_for_reload(self)
 

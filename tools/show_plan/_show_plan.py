@@ -37,14 +37,14 @@ class ShowPlanTool(BaseTool):
             return "Plan rendered. Auto-approved (autonomous mode). Proceed to execution."
 
         if self._callbacks is None:
-            return "Plan approved by the user. Call exit_plan_mode, then proceed to Phase 2 execution."
+            return "Plan approved by the user. Call set_active_plan to attach, then proceed to execution."
 
         self._callbacks.on_plan_shown()
         answer = self._callbacks.on_ask_user("Do you have any modifications?", [], None)
         answer_clean = answer.strip().lower()
         if answer_clean in {"", "n", "no", "nope", "none", "no modifications", "no changes",
                             "looks good", "good", "proceed", "ok", "okay", "approved", "approve"}:
-            return "Plan approved by the user. Call exit_plan_mode, then proceed to Phase 2 execution."
+            return "Plan approved by the user. Call set_active_plan to attach, then proceed to execution."
         return (
             f"Modifications requested: {answer}\n\n"
             "Revise the plan file to incorporate the above feedback, "

@@ -1,10 +1,8 @@
-"""agent/_git_branch.py — Auto-branch creation for plan-mode tasks.
+"""agent/_git_branch.py — Git branch helpers.
 
-Isolated helper functions used by AgentLoop._handle_enter_plan_mode() to create
-and check out a dedicated `dagi/<slug>_<plan_id>` branch for every plan-mode
-task, so plan-mode work never lands directly on main/master. Kept separate
-from agent/loop.py so it can be unit-tested without constructing a full
-AgentLoop.
+Isolated helper functions for creating task branches and querying
+the current branch. Used by the /plan skill to create dedicated
+`dagi/<slug>_<plan_id>` branches for planned tasks.
 """
 from __future__ import annotations
 

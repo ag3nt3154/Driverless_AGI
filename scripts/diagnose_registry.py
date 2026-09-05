@@ -24,6 +24,7 @@ def _config():
     cfg.sandbox_mode = False
     cfg.advanced_config = None
     cfg.worker_config = None
+    cfg.autonomous = False
     return cfg
 
 

@@ -34,7 +34,6 @@ def _load_tool_class(type_name: str) -> type:
 def _make_runtime_args():
     config = MagicMock()
     config.project_path = Path("/tmp/project")
-    config.plan_file = None
     config.active_plan_file = None
     callbacks = MagicMock()
     callbacks.on_subagent_event_factory = None
@@ -117,9 +116,7 @@ class TestWorkerSubagentTool:
     def test_worker_extracts_subtask_from_plan(self):
         cls = _load_tool_class("worker")
         config, cb, tr = _make_runtime_args()
-        plan_file = Path("/tmp/plan.md")
-        config.plan_file = plan_file
-        config.active_plan_file = None
+        config.active_plan_file = "/tmp/plan.md"
         tool = cls(config=config, callbacks=cb, tracker=tr)
 
         mock_result = MagicMock()
@@ -139,8 +136,7 @@ class TestWorkerSubagentTool:
         """ok_unverified must route through format_handoff_result so the banner is prepended."""
         cls = _load_tool_class("worker")
         config, cb, tr = _make_runtime_args()
-        config.plan_file = Path("/tmp/plan.md")
-        config.active_plan_file = None
+        config.active_plan_file = "/tmp/plan.md"
         tool = cls(config=config, callbacks=cb, tracker=tr)
 
         mock_result = MagicMock()
@@ -193,7 +189,6 @@ class TestReviewSubagentTool:
         """Reviewer can evaluate a plan document with no active plan or worker report."""
         cls = _load_tool_class("review")
         config, cb, tr = _make_runtime_args()
-        config.plan_file = None
         config.active_plan_file = None
         tool = cls(config=config, callbacks=cb, tracker=tr)
 
@@ -261,7 +256,6 @@ class TestReviewOutcomeRouting:
     def _make_review_tool(self):
         cls = _load_tool_class("review")
         config, cb, tr = _make_runtime_args()
-        config.plan_file = None
         config.active_plan_file = None
         return cls(config=config, callbacks=cb, tracker=tr)
 

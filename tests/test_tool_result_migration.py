@@ -5,21 +5,29 @@ import pytest
 from agent.protocol import SideEffect, ToolResult
 
 
-class TestPlanModeTools:
-    def test_enter_plan_mode_returns_tool_result(self):
-        from tools.plan_mode._plan_mode import EnterPlanModeTool
+class TestCreatePlanTool:
+    def test_creates_plan_file(self, tmp_path):
+        from tools.create_plan._create_plan import CreatePlanTool
+        from unittest.mock import MagicMock
 
-        result = EnterPlanModeTool().run(mode="interactive", task_summary="test")
-        assert isinstance(result, ToolResult)
-        assert result.side_effect is SideEffect.ENTER_PLAN_MODE
-        assert result.side_effect_data == {"mode": "interactive"}
+        config = MagicMock()
+        config.project_path = tmp_path
 
-    def test_exit_plan_mode_returns_tool_result(self):
-        from tools.plan_mode._plan_mode import ExitPlanModeTool
+        result = CreatePlanTool(config=config).run(task_summary="fix-login-bug")
+        assert "Plan scaffolded at:" in result
+        plans = list((tmp_path / ".dagi" / "plans").glob("plan_*/plan.md"))
+        assert len(plans) == 1
+        assert "# Plan: fix-login-bug" in plans[0].read_text(encoding="utf-8")
 
-        result = ExitPlanModeTool().run(summary="done")
-        assert isinstance(result, ToolResult)
-        assert result.side_effect is SideEffect.EXIT_PLAN_MODE
+    def test_requires_task_summary(self, tmp_path):
+        from tools.create_plan._create_plan import CreatePlanTool
+        from unittest.mock import MagicMock
+
+        config = MagicMock()
+        config.project_path = tmp_path
+
+        result = CreatePlanTool(config=config).run(task_summary="")
+        assert "Error" in result
 
 
 class TestReloadSkillsTool:

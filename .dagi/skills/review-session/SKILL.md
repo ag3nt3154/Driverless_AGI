@@ -229,9 +229,10 @@ skipped and why.
 
 Skip this step entirely if no sessions were analysed (see Step 4).
 
-### 5a — Enter plan mode
+### 5a — Create plan
+
 ```
-enter_plan_mode(reason="Synthesising cross-session shortcomings and improvements from {N} reviewed sessions")
+create_plan(task_summary="cross-session-analysis")
 ```
 
 ### 5b — Draft the analysis
@@ -263,9 +264,10 @@ several.
 - Each item should specify what to change, where (file/tool/prompt), and why.
 - Determine whether each item needs an architectural change or a simple edit/addition.
 
-### 5c — Exit plan mode
+### 5c — Set active plan
+
 ```
-exit_plan_mode(summary="Cross-session analysis: {N} shortcomings, {N} improvement items across {N} sessions")
+set_active_plan(path="{plan_file_path}")
 ```
 
 ### 5d — Append synthesis to the report
@@ -302,7 +304,7 @@ The plan file is retained as a permanent artifact alongside the report.
 | All resolved sessions are trivial | Write the report header + Sessions Skipped list + note "no meaningful sessions found"; skip Step 5 entirely |
 | A session's simplified log doesn't fit in context | Windowed read via `chunk_session.py` (Step 3b), unchanged |
 | `parse_jsonl_logs.py` fails on a corrupt file | Fall back to reading the raw JSONL with the `read` tool; note degraded quality for that session in its report entries |
-| `enter_plan_mode` unavailable | Skip Step 5's plan-mode wrapping; write Shortcomings/Areas of Improvement/Suggested Improvements directly into the report from the accumulated findings, note the limitation |
+| `create_plan` fails | Write Shortcomings/Areas of Improvement/Suggested Improvements directly into the report from the accumulated findings, note the limitation |
 | Session ID/path not found | Note it in "Sessions Skipped" with reason "file not found", continue with the rest of the list |
 | `/tmp/dagi_simplified.jsonl` already exists | Overwrite — it is a per-session temp file |
 | Report file already exists at the target path (re-run within the same second) | Extremely unlikely given second-resolution timestamps; if it happens, overwrite |

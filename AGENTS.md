@@ -1,6 +1,6 @@
 # AGENTS.md
 
-> Last updated: 2026-09-05 (deliver-workflow integration fixes) | [README](README.md) | [TODO](TODO.md)
+> Last updated: 2026-09-05 (remove plan mode, replace with /plan skill + create_plan tool) | [README](README.md) | [TODO](TODO.md)
 
 
 
@@ -120,7 +120,8 @@ Use `bash` for Git operations.
 
 ## Errors Log (recent)
 
-- **2026-09-05**: 7 integration failures found in `b64b5c4` deliver-workflow commit → fixed: (1) `config.yaml` had stale `spawn_*` tool names — replaced with current names and added `set_active_plan`/`check_active_plan`; (2) `UpdateTaskStatusTool` captured plan path at construction — now reads `config.active_plan_file` dynamically; (3) `check_active_plan` returned plain string on success — now returns `ToolResult(SET_ACTIVE_PLAN)` to restore `config.active_plan_file` on resume; (4+5) subagent wrappers discarded `exit_code`/`output_tail`/`message` in error path and ignored nonzero exit code in ok path — all 6 simple wrappers patched; (6) deliver skill `ESCALATE` said "enter plan mode" for revisions which creates new scaffold — fixed to "use edit to revise the existing plan file"; (7) `SetActivePlanTool` containment check didn't call `.resolve()` — both sides now resolved before `relative_to`.
+- **2026-09-05**: Plan mode removed as system-level feature → replaced with `/plan` skill + `create_plan` tool. `AgentConfig` fields `plan_mode`, `plan_file`, `plan_mode_initiated_by`, `previous_branch` removed; `plan_mode_initiated_by` replaced by `autonomous` bool. `SideEffect.ENTER_PLAN_MODE`/`EXIT_PLAN_MODE` removed. Registry no longer rebuilds or restricts tools during planning.
+- **2026-09-05**: 7 integration failures found in `b64b5c4` deliver-workflow commit → fixed: (1) `config.yaml` had stale `spawn_*` tool names; (2) `UpdateTaskStatusTool` captured plan path at construction — now reads `config.active_plan_file` dynamically; (3) `check_active_plan` returned plain string on success — now returns `ToolResult(SET_ACTIVE_PLAN)`; (4+5) subagent wrappers discarded error diagnostics — patched; (6) deliver skill `ESCALATE` said "enter plan mode" — fixed; (7) `SetActivePlanTool` containment check didn't call `.resolve()`.
 - **2026-08-30**: Typed turn termination left `main_system.md` requiring `<<END_OF_RESPONSE>>`, causing a corrective continuation after every text-only reply → make `write_handoff` the prompt's sole final action and regression-test the contract.
 - **2026-08-30**: Random-expression migration left stale VAD tests,
   archived `dagi_gui` tests in the active suite, and subagent reads of removed
@@ -138,7 +139,7 @@ Use `bash` for Git operations.
 ## Notes & Terms
 
 - **Sentinel display sanitization**: agent tool-output views escape loop sentinels (`<<` → `< <`) before showing them; byte-check source before any sentinel-related edit — displayed strings lie.
-- **agent/_\* loop modules**: `loop.py` delegates to internal modules (`_loop_config`, `_loop_helpers`, `_system_prompt`, `_plan_mode`, `_model_switch`, `_streaming`, `_compaction`, `_tool_dispatch`) re-exported via `agent.loop`; white-box test patches must target the owning module (e.g. `agent._compaction.run_subagent`).
+- **agent/_\* loop modules**: `loop.py` delegates to internal modules (`_loop_config`, `_loop_helpers`, `_system_prompt`, `_reload`, `_model_switch`, `_streaming`, `_compaction`, `_tool_dispatch`) re-exported via `agent.loop`; white-box test patches must target the owning module (e.g. `agent._compaction.run_subagent`).
 - **Prompt-cache boundary**: the entire prior provider input must prefix the next request; ignoring a trailing dynamic board is not cache-safe.
 - **Expression media**: expression rotation uses `RandomEmoteLibrary` and `ExpressionController`; VAD vectors are no longer part of the display path.
 - **Termination**: main and child turns end through `write_handoff`; bare assistant text triggers the corrective continuation prompt.
@@ -147,24 +148,22 @@ Use `bash` for Git operations.
 - **Windows / conda**: use `conda run -n dagi python`; hooks use `envs/dagi/python.exe` because `conda run` drops stdin.
 - **PySide6 imports**: add the package directory with `os.add_dll_directory` before importing PySide6.
 - **Qt threading**: background work reaches widgets only through queued signals or `QMetaObject.invokeMethod`.
+- **Plan UI location**: the active-plan panel lives in the PySide left sidebar as the 4th rail view (`pyside_gui/sidebars/plan_view.py`, `PlanView`); `RightSidebar` no longer has a PLAN section. Route plan updates through `LeftSidebar.update_plan(subtasks, title)` (fed by `DagiMainWindow._poll_plan`, 2 s poll of the bound loop's `active_plan_file`).
 
 ## Workflow Reference
 
-- **Primary entry point:** `/deliver` (`tools/active_plan/_active_plan.py` + `.dagi/skills/deliver/SKILL.md`).
-- Planning: `.dagi/skills/plan/SKILL.md` — returns to caller on exit. Standalone `/plan` still works.
+- **Primary entry point:** `/deliver` (`.dagi/skills/deliver/SKILL.md`).
+- Planning: `/plan` skill (`.dagi/skills/plan/SKILL.md`) — uses `create_plan` tool for scaffolding, instructs git branching and model switching via bash/`switch_model`, sets active plan via `set_active_plan`. No system-level plan mode or tool restriction.
+- Plan scaffolding: `create_plan` tool (`tools/create_plan/`) — creates `.dagi/plans/plan_{timestamp}/plan.md`.
 - Execution resume: `.dagi/skills/dagi-execute/SKILL.md` — compatibility shim for interrupted deliveries.
 - Worker/reviewer contracts: `.dagi/subagents/{worker,review}/prompt.md`.
   - Worker outcomes: `READY_FOR_REVIEW` | `ESCALATE`. Workers may run their task tests.
   - Reviewer outcomes: `PASS` | `ESCALATE`. Reviewer is general-purpose; caller supplies criteria.
 - Active plan: persisted via sidecar at `.dagi/session-state/<thread_id>/active-plan.json`.
   - Set/check via `set_active_plan` / `check_active_plan` tools.
-  - `exit_plan_mode` writes the sidecar automatically on successful exit (not on cancel).
   - `handle_all_tasks_resolved` does NOT clear the association — plan stays for final verification.
   - Explicit detach: `set_active_plan(null)` after delivery accepted.
 - Subagent error diagnostics: `SubagentResult` carries `message`, `exit_code`, `output_tail`,
   `output_log_path`. Full output is tee'd to `<handoff_stem>.output.log` by the runner.
 - `review_work` interface: `(material, passing_criteria, context="", verification="")`.
   No active plan required. Caller supplies all context and criteria explicitly.
-- Implementation plan (completed 2026-09-05): `docs/superpowers/plans/2026-09-05-deliver-workflow.md`.
-
-- Review of `b64b5c4` (2026-09-05): active-plan registration/rebinding/restoration and failure-diagnostic propagation still need fixes; 106 focused tests passed with `--noconftest` and workspace temp storage.

@@ -255,7 +255,7 @@ class DagiApp(SlashCommandsMixin, App[None]):
         if not self._current_loop_ref:
             return
         loop = self._current_loop_ref[0]
-        path = loop.config.plan_file or loop.config.active_plan_file
+        path = loop.config.active_plan_file
         if not path:
             sidebar.update_plan([])
             return

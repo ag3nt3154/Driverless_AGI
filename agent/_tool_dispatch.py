@@ -83,12 +83,6 @@ def dispatch_tool_calls(
                 return handle_end_turn(
                     loop, tc, result, description, tool_records, (message, response)
                 )
-            elif effect is SideEffect.ENTER_PLAN_MODE:
-                result = loop._handle_enter_plan_mode(
-                    result.side_effect_data or args
-                )
-            elif effect is SideEffect.EXIT_PLAN_MODE:
-                result = loop._handle_exit_plan_mode(args)
             elif effect is SideEffect.ALL_TASKS_RESOLVED:
                 result = loop._handle_all_tasks_resolved()
             elif effect is SideEffect.RELOAD_SKILLS:

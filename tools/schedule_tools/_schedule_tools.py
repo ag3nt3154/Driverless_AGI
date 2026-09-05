@@ -6,9 +6,9 @@ Three tools registered only in interactive (non-autonomous) sessions:
   - list_scheduled_tasks   Show all tasks with last-finish and next-due info
   - remove_scheduled_task  Remove a task by name from schedule.yaml
 
-These tools are intentionally absent from the autonomous scheduler's
-registry (plan_mode_initiated_by == "dagi"), preventing scheduled tasks
-from modifying the schedule themselves.
+These tools are intentionally absent from autonomous sessions
+(config.autonomous == True), preventing scheduled tasks from
+modifying the schedule themselves.
 """
 from __future__ import annotations
 

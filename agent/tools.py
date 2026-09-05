@@ -114,9 +114,6 @@ def create_tool_registry(
     cwd: Path = Path("."),
     allowed_roots: list[Path] | None = None,
     skill_roots: list[Path] | None = None,
-    plan_mode: bool = False,
-    plan_file: Path | None = None,
-    plan_mode_initiated_by: str = "user",
     config: "AgentConfig | None" = None,
     callbacks: "AgentCallbacks | None" = None,
     tracker: "SessionTracker | None" = None,
@@ -132,10 +129,6 @@ def create_tool_registry(
     *allowed_roots* (defaults to [dagi_root, cwd]). BashTool is excluded
     from path sandboxing by design. If *skills* is provided, a SkillTool
     is registered so the agent can load skill documents on demand.
-
-    When *plan_mode* is True, BashTool is omitted and WriteTool/EditTool are
-    registered with *plan_file* as their sole allowed path so the agent can
-    only write to the plan document.
 
     When *config* is provided, web research and file exploration are handled
     by delegate tools that spin up sub-agents. Without *config* (e.g. in
@@ -159,146 +152,99 @@ def create_tool_registry(
     ))
     reg.register(GrepTool(cwd=cwd, allowed_roots=effective_roots))
     reg.register(FindTool(cwd=cwd, allowed_roots=effective_roots))
-    if plan_mode:
-        if plan_file:
-            _plan_dir_writes = [plan_file, plan_file.parent / "spec.md"]
-            reg.register(WriteTool(cwd=cwd, allowed_roots=_plan_dir_writes))
-            reg.register(EditTool(cwd=cwd, allowed_roots=_plan_dir_writes))
-        # BashTool always omitted in plan mode
-        from tools.ask_user import AskUserTool
-        from tools.plan_mode import ExitPlanModeTool
-        from tools.show_plan import ShowPlanTool
-        _on_ask = callbacks.on_ask_user if callbacks else _default_ask_user
-        interactive = plan_mode_initiated_by == "user"
-        reg.register(AskUserTool(on_ask_user=_on_ask, timeout=None if interactive else 60))
-        reg.register(ExitPlanModeTool())
-        if plan_file:
-            reg.register(ShowPlanTool(plan_file=plan_file, callbacks=callbacks, interactive=interactive))
+    reg.register(WriteTool(cwd=cwd, allowed_roots=effective_roots))
+    reg.register(EditTool(cwd=cwd, allowed_roots=effective_roots))
+    reg.register(CopyTool(cwd=cwd, allowed_roots=effective_roots))
+    reg.register(BashTool(cwd=cwd))
+    if bash_tool is not None:
+        reg.register(bash_tool)
+    from tools.update_task_status import UpdateTaskStatusTool
+    from tools.active_plan import CheckActivePlanTool, SetActivePlanTool
+    from tools.create_plan import CreatePlanTool
+    reg.register(SetActivePlanTool(config=config, callbacks=callbacks, tracker=tracker))
+    reg.register(CheckActivePlanTool(config=config, callbacks=callbacks, tracker=tracker))
+    reg.register(UpdateTaskStatusTool(config=config))
+    reg.register(CreatePlanTool(config=config))
+    from tools.ask_user import AskUserTool
+    _on_ask = callbacks.on_ask_user if callbacks else _default_ask_user
+    _ask_timeout = (
+        config.ask_user_timeout
+        if (config and config.ask_user_timeout is not None)
+        else None
+    )
+    reg.register(AskUserTool(on_ask_user=_on_ask, timeout=_ask_timeout))
+    if config is not None and (config.advanced_config is not None or config.worker_config is not None):
+        from tools.switch_model import SwitchModelTool
+        reg.register(SwitchModelTool())
+    from tools.reload_skills import ReloadSkillsTool
+    reg.register(ReloadSkillsTool())
+    if expression_controller is not None:
+        from tools.emote import EmoteTool
+        memes_root = _DAGI_ROOT / ".dagi" / "emotes" / "memes"
+        reg.register(EmoteTool(controller=expression_controller, memes_root=memes_root))
+    if config is not None:
+        for spawn_tool in _discover_subagent_tools(
+            cwd=cwd, config=config, callbacks=callbacks,
+            tracker=tracker, session_log=session_log, parent_context=parent_context,
+        ):
+            try:
+                reg.register(spawn_tool)
+            except Exception as exc:  # noqa: BLE001
+                print(
+                    f"[tools] Warning: could not register subagent tool "
+                    f"{spawn_tool.name!r}: {exc}",
+                    file=sys.stderr,
+                )
+
+        from tools.extend_timeout import ExtendSubagentTimeoutTool
+        reg.register(ExtendSubagentTimeoutTool())
+
+        for pt in _load_project_tools(cwd):
+            try:
+                reg.register(pt)
+            except Exception as exc:  # noqa: BLE001
+                print(
+                    f"[tools] Warning: could not register project tool "
+                    f"{pt.name!r}: {exc}",
+                    file=sys.stderr,
+                )
+
         if skill_roots:
             _effective_memory_root = memory_root or cwd / "dagi-memory"
             reg.register(SkillTool(skill_roots=skill_roots, dagi_root=_DAGI_ROOT, cwd=cwd, memory_root=_effective_memory_root))
             from tools.run_skill_script import RunSkillScriptTool
             reg.register(RunSkillScriptTool(skill_roots=skill_roots, dagi_root=_DAGI_ROOT))
-        # Direct web tools always available in plan mode
+
+        # Schedule management tools — interactive sessions only.
+        # Autonomous tasks cannot see or call these, preventing
+        # self-modification of the schedule.
+        _is_autonomous = getattr(config, "autonomous", False)
+        if not _is_autonomous:
+            from tools.schedule_tools import (
+                ListScheduledTasksTool,
+                RemoveScheduledTaskTool,
+                ScheduleTaskTool,
+            )
+            _sched_path = cwd / ".dagi" / "scheduler" / "schedule.yaml"
+            _runs_path = cwd / ".dagi" / "scheduler" / "runs.jsonl"
+            reg.register(ScheduleTaskTool(schedule_path=_sched_path))
+            reg.register(ListScheduledTasksTool(
+                schedule_path=_sched_path, runs_path=_runs_path,
+            ))
+            reg.register(RemoveScheduledTaskTool(schedule_path=_sched_path))
+    else:
+        # Fallback for callers that do not supply config (e.g. tests)
         from tools.web_fetch import WebFetchTool
         from tools.web_search import WebSearchTool
         reg.register(WebSearchTool())
         reg.register(WebFetchTool())
-        # Subagents available in plan mode: web_research + explore_files
-        if config is not None:
-            _plan_mode_names = {
-                "web_research",
-                "explore_files",
-            }
-            for spawn_tool in _discover_subagent_tools(
-                cwd=cwd, config=config, callbacks=callbacks,
-                tracker=tracker, session_log=session_log, parent_context=parent_context,
-            ):
-                if spawn_tool.name in _plan_mode_names:
-                    try:
-                        reg.register(spawn_tool)
-                    except Exception as exc:  # noqa: BLE001
-                        print(
-                            f"[tools] Warning: {spawn_tool.name!r}: {exc}",
-                            file=sys.stderr,
-                        )
-    else:
-        reg.register(WriteTool(cwd=cwd, allowed_roots=effective_roots))
-        reg.register(EditTool(cwd=cwd, allowed_roots=effective_roots))
-        reg.register(CopyTool(cwd=cwd, allowed_roots=effective_roots))
-        reg.register(BashTool(cwd=cwd))
-        if bash_tool is not None:
-            reg.register(bash_tool)
-        from tools.plan_mode import EnterPlanModeTool
-        from tools.update_task_status import UpdateTaskStatusTool
-        from tools.active_plan import CheckActivePlanTool, SetActivePlanTool
-        reg.register(EnterPlanModeTool())
-        reg.register(SetActivePlanTool(config=config, callbacks=callbacks, tracker=tracker))
-        reg.register(CheckActivePlanTool(config=config, callbacks=callbacks, tracker=tracker))
-        reg.register(UpdateTaskStatusTool(config=config))
-        from tools.ask_user import AskUserTool
-        _on_ask = callbacks.on_ask_user if callbacks else _default_ask_user
-        _ask_timeout = (
-            config.ask_user_timeout
-            if (config and config.ask_user_timeout is not None)
-            else None
-        )
-        reg.register(AskUserTool(on_ask_user=_on_ask, timeout=_ask_timeout))
-        if config is not None and (config.advanced_config is not None or config.worker_config is not None):
-            from tools.switch_model import SwitchModelTool
-            reg.register(SwitchModelTool())
-        from tools.reload_skills import ReloadSkillsTool
-        reg.register(ReloadSkillsTool())
-        if expression_controller is not None:
-            from tools.emote import EmoteTool
-            memes_root = _DAGI_ROOT / ".dagi" / "emotes" / "memes"
-            reg.register(EmoteTool(controller=expression_controller, memes_root=memes_root))
-        if config is not None:
-            # Auto-discover predefined subagent types from .dagi/subagents/
-            # A valid type directory must contain both prompt.md and subagent_config.yaml.
-            for spawn_tool in _discover_subagent_tools(
-                cwd=cwd, config=config, callbacks=callbacks,
-                tracker=tracker, session_log=session_log, parent_context=parent_context,
-            ):
-                try:
-                    reg.register(spawn_tool)
-                except Exception as exc:  # noqa: BLE001
-                    print(
-                        f"[tools] Warning: could not register subagent tool "
-                        f"{spawn_tool.name!r}: {exc}",
-                        file=sys.stderr,
-                    )
-
-            # Timeout extension for in-flight subagents
-            from tools.extend_timeout import ExtendSubagentTimeoutTool
-            reg.register(ExtendSubagentTimeoutTool())
-
-            # Load project-local API tools generated by scripts/build_api_tools.py
-            for pt in _load_project_tools(cwd):
-                try:
-                    reg.register(pt)
-                except Exception as exc:  # noqa: BLE001
-                    print(
-                        f"[tools] Warning: could not register project tool "
-                        f"{pt.name!r}: {exc}",
-                        file=sys.stderr,
-                    )
-
-            if skill_roots:
-                _effective_memory_root = memory_root or cwd / "dagi-memory"
-                reg.register(SkillTool(skill_roots=skill_roots, dagi_root=_DAGI_ROOT, cwd=cwd, memory_root=_effective_memory_root))
-                from tools.run_skill_script import RunSkillScriptTool
-                reg.register(RunSkillScriptTool(skill_roots=skill_roots, dagi_root=_DAGI_ROOT))
-
-            # Schedule management tools — interactive sessions only.
-            # Autonomous tasks (plan_mode_initiated_by == "dagi") cannot see or
-            # call these, preventing self-modification of the schedule.
-            if plan_mode_initiated_by == "user":
-                from tools.schedule_tools import (
-                    ListScheduledTasksTool,
-                    RemoveScheduledTaskTool,
-                    ScheduleTaskTool,
-                )
-                _sched_path = cwd / ".dagi" / "scheduler" / "schedule.yaml"
-                _runs_path = cwd / ".dagi" / "scheduler" / "runs.jsonl"
-                reg.register(ScheduleTaskTool(schedule_path=_sched_path))
-                reg.register(ListScheduledTasksTool(
-                    schedule_path=_sched_path, runs_path=_runs_path,
-                ))
-                reg.register(RemoveScheduledTaskTool(schedule_path=_sched_path))
-        else:
-            # Fallback for callers that do not supply config (e.g. tests)
-            from tools.web_fetch import WebFetchTool
-            from tools.web_search import WebSearchTool
-            reg.register(WebSearchTool())
-            reg.register(WebFetchTool())
-            if skill_roots:
-                _effective_memory_root = memory_root or cwd / "dagi-memory"
-                reg.register(SkillTool(skill_roots=skill_roots, dagi_root=_DAGI_ROOT, cwd=cwd, memory_root=_effective_memory_root))
-        if config is not None and config.tools is not None:
-            reg.filter_to(config.tools)
-        if config is not None and config.disabled_tools:
-            reg.filter_out(config.disabled_tools)
+        if skill_roots:
+            _effective_memory_root = memory_root or cwd / "dagi-memory"
+            reg.register(SkillTool(skill_roots=skill_roots, dagi_root=_DAGI_ROOT, cwd=cwd, memory_root=_effective_memory_root))
+    if config is not None and config.tools is not None:
+        reg.filter_to(config.tools)
+    if config is not None and config.disabled_tools:
+        reg.filter_out(config.disabled_tools)
     # write_handoff is a lifecycle tool, not a general file-write capability.
     # Keep it provider-visible even when config.tools restricts ordinary tools so
     # inherited children can reuse the parent's exact schema without invalidating

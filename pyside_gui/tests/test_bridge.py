@@ -139,6 +139,10 @@ def test_stale_pending_ask_cleared_on_agent_done():
     app._conversation = MagicMock()
     app._right_sidebar = MagicMock()
     app._prompt = MagicMock()
+    # The window is built via __new__ (no QMainWindow.__init__), so any path
+    # reaching the C++ base (e.g. _notify -> isActiveWindow) would raise.
+    # Notifications are not this test's target — stub them out.
+    app._notify = MagicMock()
     app._run_start_time = None
     app._running_label = MagicMock()
     app._running_label.isVisible.return_value = False

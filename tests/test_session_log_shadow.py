@@ -387,10 +387,10 @@ class TestRequestHeader:
         loop = _make_loop(tmp_path)
         assert loop._header_message() == loop._messages[0]
 
-    def test_leaving_plan_mode_emits_a_change_header(self, tmp_path):
-        loop = _make_loop(tmp_path, plan_mode=True)
+    def test_reload_emits_a_change_header(self, tmp_path):
+        loop = _make_loop(tmp_path)
         before = len([e for e in loop.log.events if e.type == ev.REQUEST_HEADER])
-        loop._rebuild_for_normal_mode(Path(__file__).resolve().parents[1])
+        loop._rebuild_for_reload()
         headers = [e for e in loop.log.events if e.type == ev.REQUEST_HEADER]
         assert len(headers) == before + 1
         assert headers[-1].data["reason"] == "change"

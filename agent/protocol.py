@@ -13,8 +13,6 @@ class SideEffect(Enum):
     """Side effects a tool can request from the agent loop."""
 
     END_TURN = auto()
-    ENTER_PLAN_MODE = auto()
-    EXIT_PLAN_MODE = auto()
     ALL_TASKS_RESOLVED = auto()
     RELOAD_SKILLS = auto()
     SWITCH_MODEL = auto()
@@ -29,8 +27,7 @@ class ToolResult:
     ``side_effect`` (optional) tells the dispatch layer to trigger a
     loop-level action without in-band string matching.
     ``side_effect_data`` carries parameters for the side effect
-    (e.g. ``{"tier": "plan"}`` for SWITCH_MODEL, ``{"mode": "interactive"}``
-    for ENTER_PLAN_MODE).
+    (e.g. ``{"tier": "plan"}`` for SWITCH_MODEL).
     """
 
     output: str

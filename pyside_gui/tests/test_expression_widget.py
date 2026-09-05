@@ -193,4 +193,4 @@ def test_right_sidebar_preserves_sections_with_expression_widget(
     assert sidebar.findChild(QLabel, "status-label") is not None
     assert sidebar.findChild(QLabel, "model-label").text() == "test-model"
     headers = [label.text() for label in sidebar.findChildren(QLabel, "section-header")]
-    assert headers == ["TOKENS", "CONTEXT", "PLAN"]
+    assert headers == ["TOKENS", "CONTEXT"]

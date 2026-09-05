@@ -2,10 +2,12 @@
 from __future__ import annotations
 
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
 
+from agent.loop import AgentConfig, AgentLoop
 from agent.protocol import SideEffect, ToolResult
 from tools.active_plan import CheckActivePlanTool, SetActivePlanTool
 
@@ -256,85 +258,43 @@ class TestCheckActivePlanTool:
         assert "Persistent Plan" in _check_text(result)
 
 
-class TestPlanModeCompat:
-    """Behavioural tests for Task 4 plan-mode compatibility changes."""
+class TestAllTasksResolved:
+    """Behavioural tests for the ALL_TASKS_RESOLVED handler.
+
+    These exercise the real ``AgentLoop._handle_all_tasks_resolved``
+    implementation on a lightweight stand-in so a regression in the handler
+    itself fails the test.
+    """
 
     def _make_loop(self, tmp_path, thread_id="tid-loop"):
-        """Build a minimal mock loop with enough attributes for _plan_mode handlers."""
         plan_dir = tmp_path / ".dagi" / "plans" / "plan_001"
         plan_dir.mkdir(parents=True)
         plan_file = plan_dir / "plan.md"
         plan_file.write_text("# Plan\n\n## Subtasks\n\n### Subtask 1: [ ] Do it\n")
 
-        config = MagicMock()
-        config.project_path = tmp_path
-        config.plan_file = str(plan_file)
-        config.active_plan_file = str(plan_file)
-        config.thread_id = thread_id
-
-        tracker = MagicMock()
-        tracker._thread_id = thread_id
-
-        loop = MagicMock()
-        loop.config = config
-        loop.tracker = tracker
-        return loop, plan_file
+        config = AgentConfig(
+            project_path=tmp_path,
+            thread_id=thread_id,
+            active_plan_file=str(plan_file),
+        )
+        return SimpleNamespace(config=config), plan_file
 
     def test_all_tasks_resolved_does_not_clear_active_plan(self, tmp_path):
-        from agent._plan_mode import handle_all_tasks_resolved
-
         loop, plan_file = self._make_loop(tmp_path)
-        result = handle_all_tasks_resolved(loop)
+        result = AgentLoop._handle_all_tasks_resolved(loop)
 
-        # active_plan_file must not be cleared
-        assert loop.config.active_plan_file is not None
-        assert "verification" in result.lower() or "final review" in result.lower()
-        # Must NOT rebuild — no auto-clear
-        loop._rebuild_for_normal_mode.assert_not_called()
+        # The association must survive the call (handler reads, never clears).
+        assert loop.config.active_plan_file == str(plan_file)
+        assert str(plan_file) in result
 
     def test_all_tasks_resolved_references_plan_in_message(self, tmp_path):
-        from agent._plan_mode import handle_all_tasks_resolved
-
         loop, plan_file = self._make_loop(tmp_path)
-        result = handle_all_tasks_resolved(loop)
-        assert str(plan_file) in result or "active plan" in result.lower()
+        result = AgentLoop._handle_all_tasks_resolved(loop)
 
-    def test_exit_plan_mode_cancelled_does_not_set_active_plan(self, tmp_path):
-        from agent._plan_mode import handle_exit_plan_mode
-
-        loop, plan_file = self._make_loop(tmp_path)
-        loop.config.active_plan_file = None
-        with patch("agent._plan_mode.get_current_branch", return_value="main"):
-            result = handle_exit_plan_mode(loop, {"summary": "cancelled"})
-
-        assert loop.config.active_plan_file is None
-        assert "cancel" in result.lower()
-        sidecar = tmp_path / ".dagi" / "session-state" / "tid-loop" / "active-plan.json"
-        assert not sidecar.exists()
-
-    def test_exit_plan_mode_success_writes_sidecar(self, tmp_path):
-        from agent._plan_mode import handle_exit_plan_mode
-
-        loop, plan_file = self._make_loop(tmp_path)
-        loop.config.active_plan_file = None
-        with patch("agent._plan_mode.get_current_branch", return_value="main"):
-            handle_exit_plan_mode(loop, {"summary": "Plan complete."})
-
-        sidecar = tmp_path / ".dagi" / "session-state" / "tid-loop" / "active-plan.json"
-        assert sidecar.exists()
-        import json
-        data = json.loads(sidecar.read_text())
-        assert data["plan_path"] == str(plan_file)
-        assert data["expected_branch"] == "main"
-
-    def test_exit_plan_mode_success_sets_active_plan_file(self, tmp_path):
-        from agent._plan_mode import handle_exit_plan_mode
-
-        loop, plan_file = self._make_loop(tmp_path)
-        loop.config.active_plan_file = None
-        with patch("agent._plan_mode.get_current_branch", return_value="main"):
-            handle_exit_plan_mode(loop, {"summary": "Done."})
-
+        assert str(plan_file) in result
+        assert "remains associated" in result.lower()
+        assert "set_active_plan(null)" in result
+        # The handler must not mutate or detach the association.
         assert loop.config.active_plan_file == str(plan_file)
 
 
@@ -360,54 +320,17 @@ class TestFailedTaskRetention:
         assert isinstance(result, ToolResult)
         assert result.side_effect is SideEffect.ALL_TASKS_RESOLVED
 
-    def test_handle_all_tasks_resolved_message_mentions_verification(self, tmp_path):
-        """ALL_TASKS_RESOLVED message must not say 'cleared' — must say verification."""
-        from agent._plan_mode import handle_all_tasks_resolved
-
-        plan_dir = tmp_path / ".dagi" / "plans"
-        plan_dir.mkdir(parents=True)
-        plan_file = plan_dir / "plan.md"
-        plan_file.write_text("# Plan\n")
-
-        config = MagicMock()
-        config.project_path = tmp_path
-        config.active_plan_file = str(plan_file)
-        config.thread_id = "tid"
-
-        loop = MagicMock()
-        loop.config = config
-        loop.tracker = MagicMock()
-
-        result = handle_all_tasks_resolved(loop)
-
-        assert "cleared" not in result.lower()
-        assert "verification" in result.lower() or "final review" in result.lower()
-        assert loop.config.active_plan_file is not None
-
     def test_active_plan_still_readable_after_all_tasks_resolved(self, tmp_path):
         """After all tasks resolve, check_active_plan must still return plan contents."""
-        from agent._plan_mode import handle_all_tasks_resolved
-
         plan = tmp_path / "plan.md"
         plan.write_text("# My Delivery Plan\n\n## Verification\nRun tests.\n")
 
-        # Attach via SetActivePlanTool
         config = _make_config(tmp_path, "tid-delivery")
         tracker = _make_tracker("tid-delivery")
         set_tool = SetActivePlanTool(config=config, tracker=tracker)
         with patch("tools.active_plan._active_plan._current_branch", return_value="main"):
             set_tool.run(str(plan))
 
-        # Simulate ALL_TASKS_RESOLVED (must not clear association)
-        loop_config = MagicMock()
-        loop_config.project_path = tmp_path
-        loop_config.active_plan_file = str(plan)
-        loop_config.thread_id = "tid-delivery"
-        loop = MagicMock()
-        loop.config = loop_config
-        handle_all_tasks_resolved(loop)
-
-        # Plan must still be readable via check_active_plan
         check_tool = CheckActivePlanTool(config=config, tracker=tracker)
         with patch("tools.active_plan._active_plan._current_branch", return_value="main"):
             result = check_tool.run()

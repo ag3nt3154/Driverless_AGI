@@ -42,18 +42,15 @@ class AgentConfig:
     # Memory root — absolute path to dagi-memory directory.
     # None means "resolve at loop init time to project_path / dagi-memory".
     memory_root: Path | None = None
-    # Plan mode
-    plan_mode: bool = False
-    plan_file: str | None = None  # absolute path to the active plan document
-    plan_mode_initiated_by: str = "user"  # "user" | "dagi"
+    # Autonomous mode: True when the session is running as a scheduled/autonomous task.
+    # Prevents self-modification of the schedule (schedule tools hidden).
+    autonomous: bool = False
     # Worker model (cheaper LLM for sub-agents); None = use this config as-is
     worker_config: AgentConfig | None = field(default=None)
-    # Advanced model (dedicated LLM for plan mode); None = use this config as-is
+    # Advanced model (stronger LLM for planning/complex reasoning); None = use this config as-is
     advanced_config: AgentConfig | None = field(default=None)
-    # Active plan file persisted in system prompt after plan mode exits
+    # Active plan file persisted in system prompt
     active_plan_file: str | None = None
-    # Branch the user was on before entering plan mode — used for checkout-back at task end
-    previous_branch: str | None = None
     # Human-readable label from the config catalog (e.g. "GPT-4o (OpenAI)")
     display_name: str = ""
     # Resolved model ID from the catalog (e.g. "gpt-4o-openai"). Set by resolve_model_config.

@@ -158,7 +158,6 @@ def build_subagent_registry(
     subagent_type: str,
     config: "AgentConfig",
     project_path: Path,
-    plan_file: Path | None = None,
     callbacks: "AgentCallbacks | None" = None,
     tracker: "SessionTracker | None" = None,
     memory_root: Path | None = None,
@@ -175,7 +174,6 @@ def build_subagent_registry(
         subagent_type:      Type name matching a .dagi/subagents/<type>/ directory.
         config:             Resolved AgentConfig for this subagent.
         project_path:       Project root; used for cwd and allowed_roots.
-        plan_file:          Unused; kept for signature compatibility.
         callbacks:          Subprocess-side callbacks.
         tracker:            Optional session tracker.
         memory_root:        Resolved memory root; used when subagent_config.yaml sets

@@ -54,6 +54,7 @@ class TestConfigDrivenFilter:
         cfg.sandbox_mode = False
         cfg.advanced_config = None
         cfg.worker_config = None
+        cfg.autonomous = False
         cfg.project_path = Path(".").resolve()
         return cfg
 
@@ -93,20 +94,6 @@ class TestConfigDrivenFilter:
         )
         names = {n for n, _ in reg.list_tools()}
         assert "emote" in names
-
-    def test_plan_mode_never_exposes_emote(self, tmp_path):
-        cfg = self._config(tools=None)
-        cfg.project_path = tmp_path
-        plan_file = tmp_path / "PLAN.md"
-        reg = create_tool_registry(
-            cwd=tmp_path,
-            config=cfg,
-            plan_mode=True,
-            plan_file=plan_file,
-            expression_controller=object(),
-        )
-        names = {n for n, _ in reg.list_tools()}
-        assert "emote" not in names
 
     def test_tools_list_filters_registry(self):
         reg = create_tool_registry(cwd=Path("."), config=self._config(tools=["read", "grep"]))

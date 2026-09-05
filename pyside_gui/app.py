@@ -488,19 +488,22 @@ class DagiMainWindow(QMainWindow):
         if not self._current_loop_ref:
             return
         loop = self._current_loop_ref[0]
-        path = loop.config.plan_file or loop.config.active_plan_file
+        path = loop.config.active_plan_file
         if not path:
-            self._right_sidebar.update_plan([])
+            self._left_sidebar.update_plan([])
             return
         try:
             text = Path(path).read_text(encoding="utf-8")
         except OSError:
+            # Deleted plan file → clear the view; transient errors retry next poll.
+            if not Path(path).exists():
+                self._left_sidebar.update_plan([])
             return
         from tools._plan_parser import parse_subtask_statuses
         subtasks = parse_subtask_statuses(text)
         title = next((l.lstrip("# ").removeprefix("Plan — ").strip()
                       for l in text.splitlines() if l.startswith("# Plan")), "")
-        self._right_sidebar.update_plan(subtasks, title)
+        self._left_sidebar.update_plan(subtasks, title)
 
     def _toggle_compose(self) -> None:
         if self._worker and self._worker.is_alive():

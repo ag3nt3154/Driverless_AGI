@@ -45,8 +45,6 @@ def _apply_worker_config(config: AgentConfig) -> AgentConfig:
         reserve_tokens=w.reserve_tokens,
         keep_recent_tokens=w.keep_recent_tokens,
         expression_interval=w.expression_interval,
-        plan_mode=False,
-        plan_file=None,
         worker_config=None,
         advanced_config=None,
     )
@@ -65,8 +63,6 @@ def _apply_advanced_config(config: AgentConfig) -> AgentConfig:
         reserve_tokens=a.reserve_tokens,
         keep_recent_tokens=a.keep_recent_tokens,
         expression_interval=a.expression_interval,
-        plan_mode=False,
-        plan_file=None,
         worker_config=None,
         advanced_config=None,
     )

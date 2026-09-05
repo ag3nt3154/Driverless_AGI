@@ -10,14 +10,13 @@ if TYPE_CHECKING:
 
 
 def load_plan_text(config: "AgentConfig") -> str:
-    """Read plan text from config.active_plan_file or config.plan_file."""
-    for attr in ("active_plan_file", "plan_file"):
-        plan_path = getattr(config, attr, None)
-        if plan_path is not None:
-            try:
-                return Path(plan_path).read_text(encoding="utf-8")
-            except (FileNotFoundError, OSError):
-                pass
+    """Read plan text from config.active_plan_file."""
+    plan_path = getattr(config, "active_plan_file", None)
+    if plan_path is not None:
+        try:
+            return Path(plan_path).read_text(encoding="utf-8")
+        except (FileNotFoundError, OSError):
+            pass
     return ""
 
 

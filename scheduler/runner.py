@@ -87,7 +87,7 @@ def _run_task(task: ScheduledTask, tracker: RunTracker) -> None:
         tracker.record_run(task.name, started_at, datetime.now(), "error", str(exc))
         return
 
-    config.plan_mode_initiated_by = "dagi"   # auto-approve plan mode
+    config.autonomous = True
     config.ask_user_timeout = _ASK_USER_TIMEOUT
 
     tracker_session = SessionTracker(

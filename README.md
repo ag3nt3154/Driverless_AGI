@@ -371,7 +371,7 @@ Fix it so it returns 400 with {"error": "password required"}.
 The handler is in api/auth.py."
 ```
 
-**Scope the task to one concern at a time.** If you have a large feature, use plan mode (see below) to break it into subtasks first — then implement each subtask individually.
+**Scope the task to one concern at a time.** If you have a large feature, use `/plan` to break it into subtasks first — then implement each subtask individually.
 
 **Give context the agent can't see.** If there's a known constraint, a related PR, or a quirk of the codebase, include it:
 
@@ -382,9 +382,9 @@ in db/pool.py. Refactor the user service to use it."
 
 ---
 
-### Plan Mode
+### Planning
 
-For complex multi-step tasks, invoke plan mode before implementation. The agent explores the codebase in read-only mode, writes a structured plan with subtasks, asks you to approve it, and then begins implementation.
+For complex multi-step tasks, invoke the plan skill before implementation. The agent explores the codebase, writes a structured plan with subtasks, asks you to approve it, and then begins implementation.
 
 ```
 /plan
@@ -398,11 +398,11 @@ Or ask naturally:
 
 **How it works:**
 
-1. The agent explores relevant files (read-only — no writes except to the plan document)
-2. It writes a plan with numbered subtasks, each marked `[ ]` pending
+1. The agent calls `create_plan(task_summary)` to scaffold a plan file under `.dagi/plans/`
+2. It explores relevant files and writes a plan with numbered subtasks, each marked `[ ]` pending
 3. It calls `show_plan` and asks you for revisions
 4. You respond with changes or say "looks good"
-5. On approval, it calls `exit_plan_mode` and begins implementation
+5. On approval, it calls `set_active_plan` to associate the plan, then begins implementation
 6. The **Plan** panel in the TUI header tracks subtask status in real time:
    `[ ]` pending · `[~]` in-progress · `[x]` complete · `[!]` failed
 
@@ -422,7 +422,7 @@ All slash commands work identically in the TUI and CLI.
 | `/wd [path]` | Show the current working directory, or change it to `path` |
 | `/model [id]` | List available models, or switch to `id` immediately |
 | `/deliver` | Full delivery lifecycle — grilling, planning, per-task worker/review, integrated verification, detach |
-| `/plan` | Enter plan mode — agent explores and writes a structured plan (standalone or chained from deliver) |
+| `/plan` | Invoke the plan skill — agent explores and writes a structured plan (standalone or chained from deliver) |
 | `/compact` | Force-compact the current conversation context |
 | `/tools` | List all registered tools for the active session |
 | `/skills` | List all loaded skills |
@@ -502,7 +502,7 @@ The context carries over — no need to restart.
 ### Tips for Best Results
 
 - **Start sessions with a specific project.** Using `--project` scopes file access and loads project-local skills, workflows, and the project wiki automatically.
-- **Use plan mode for anything non-trivial.** It prevents the agent from making opinionated implementation choices before you've agreed on the approach.
+- **Use `/plan` for anything non-trivial.** It prevents the agent from making opinionated implementation choices before you've agreed on the approach.
 - **Build the memory wiki over time.** The more domain knowledge in `dagi-memory/wiki/`, the less you need to re-explain project context each session.
 - **Pause instead of cancelling.** `Esc` in the TUI preserves the agent's full context; you can inject corrections and resume rather than restarting from scratch.
 - **Review sessions with `/hist`.** Session summaries in `.dagi/logs/` capture token counts, cost, and what the agent did. The `review-session` skill accepts a free-text description of which sessions to look at and accumulates findings from all of them into one report, so patterns that recur across sessions surface as a single insight.
@@ -650,7 +650,8 @@ Driverless_AGI/
 │   ├── _loop_config.py    # AgentConfig, AgentCallbacks, CompactionResult dataclasses
 │   ├── _loop_helpers.py   # Loop sentinels, CONTINUE_PROMPT, wiki-index + reload helpers
 │   ├── _system_prompt.py  # System-prompt assembly (single source of truth)
-│   ├── _plan_mode.py      # Plan-mode lifecycle handlers (enter/exit/rebuild/reload)
+│   ├── _plan_mode.py      # DEPRECATED stub — re-exports rebuild_for_reload from _reload.py
+│   ├── _reload.py         # Hot-reload: rebuild tool registry and system prompt after skill changes
 │   ├── _model_switch.py   # LLM tier switching + shared extra_body builder
 │   ├── _streaming.py      # Streaming chat-completions consumer
 │   ├── _compaction.py     # Context compaction via forked compact subagent
@@ -667,7 +668,7 @@ Driverless_AGI/
 │   ├── workflows.py       # WorkflowLoader — loads .dagi/workflow/
 │   ├── sub_agent.py       # SubAgentRunner — legacy in-process subagent (used by cli_subagent)
 │   ├── cli_utils.py       # Shared TUI helpers (_cmd_init, _skill_invocation_message) — extracted from archives/cli.py
-│   └── _git_branch.py     # Plan-mode auto-branching — creates/checks out dagi/<slug>_<plan_id> from HEAD
+│   └── _git_branch.py     # Plan branching helper — creates/checks out dagi/<slug>_<plan_id> from HEAD
 │
 ├── tools/                  # Every tool is a subfolder: tools/<name>/__init__.py re-exports
 │   │                       #   from tools/<name>/_<name>.py (the underscore-prefixed module is
@@ -683,7 +684,7 @@ Driverless_AGI/
 │   ├── git/                # git_status, git_diff, git_log, git_branch, git_checkout, git_add, git_commit, git_reset
 │   │                       #   (git_add/git_commit/git_reset are whitelist-guarded to dagi/* branches only;
 │   │                       #   git_commit requires explicit git_add staging first — no implicit add -A;
-│   │                       #   entering plan mode auto-creates/checks out a dagi/<slug>_<plan_id> branch)
+│   │                       #   the /plan skill instructs branching to dagi/<slug>_<plan_id>)
 │   ├── grep/               # Regex search across files (ripgrep)
 │   ├── find/                # Glob-pattern file finder
 │   ├── skill/               # Load a .dagi/skills/ guidance document
@@ -697,7 +698,7 @@ Driverless_AGI/
 │   ├── subagent_main.py   # Piped subagent entry point (spawned via `python -m tools.subagent_main`)
 │   ├── extend_timeout/      # ExtendSubagentTimeoutTool — resume in-flight subagent deadline
 │   ├── compact/             # Trigger context compaction
-│   ├── plan_mode/           # Enter / exit read-only plan mode
+│   ├── create_plan/         # Scaffold a new plan directory under .dagi/plans/
 │   ├── switch_model/        # Swap models mid-session
 │   ├── ask_user/            # Prompt user for clarification
 │   ├── escalate_issue/      # Worker/review subagents: sidecar-file escalation to the main agent
@@ -773,7 +774,8 @@ Driverless_AGI/
 | `compact` | Manually trigger Pi-style context compaction |
 | `switch_model` | Swap to a different model (from `config.yaml`) mid-session |
 | `ask_user` | Pause and ask the user a clarifying question with optional choices |
-| `show_plan` | In plan mode: render the current plan document and ask the user for revisions. Returns "Plan approved" (call `exit_plan_mode`) or "Modifications requested" (revise and call `show_plan` again). In autonomous mode, auto-approves immediately |
+| `show_plan` | Render the current plan document and ask the user for revisions. Returns "Plan approved" (call `set_active_plan`) or "Modifications requested" (revise and call `show_plan` again). In autonomous mode, auto-approves immediately |
+| `create_plan` | Create a new plan directory under `.dagi/plans/` with a scaffolded `plan.md` file. Takes `task_summary` |
 | `escalate_issue` | Worker/review subagent only: raise a blocking question to the main agent instead of guessing. Writes a sidecar file next to the subagent's handoff report; the main agent's subprocess poll loop detects it, terminates the subagent, and surfaces `"[worker escalated]"` / `"[review escalated]"` with the question and context — does not consume a `dagi-execute` retry attempt |
 | `write_handoff` | Always visible to the main agent and auto-injected into every subagent with a `handoff_path`. It writes `content` verbatim to a baked-in path and its sentinel immediately ends the turn, so no `END_OF_RESPONSE` is needed. Main-agent calls save `.dagi/handoffs/main_<thread-hash12>.md` and render the full Markdown in the TUI; inherited children reuse the exact parent-visible schema but write to their assigned child path. The lifecycle name is reserved against project-tool collisions. |
 
