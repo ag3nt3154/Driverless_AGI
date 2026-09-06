@@ -1,27 +1,26 @@
 ---
 name: deliver
-description: Full delivery lifecycle — grilling, planning with review, execution with per-task review, integrated verification, final review, and explicit detach. Invoke via /deliver for any non-trivial implementation request.
+description: Full delivery lifecycle — grill-me, planning with review, execution with per-task review, integrated verification, final review, and explicit detach. Invoke via /deliver for any non-trivial implementation request.
 triggers: /deliver, deliver this, implement this, build this
 ---
 
 # deliver
 
 This skill owns the complete delivery lifecycle: from clarifying intent through final
-integrated verification. It orchestrates grilling, planning, work, review, and verification
+integrated verification. It orchestrates grill-me, planning, work, review, and verification
 without a fixed attempt count or time budget. The main agent reads every subagent handoff
 before deciding the next step.
 
 ## When to invoke
 
 Use `/deliver` for any non-trivial implementation request. Use `/plan` alone when you only
-need a plan without executing it. Use `dagi-execute` when a plan already exists and is
-associated.
+need a plan without executing it.
 
 ## Routing overview
 
 ```
 deliver -> check active plan / inspect request
-        -> grilling when intent remains unresolved
+        -> grill-me when intent remains unresolved
         -> plan -> general reviewer -> revise until satisfactory
         -> agreed execution authority -> set active plan
         -> worker -> ALWAYS read handoff
@@ -35,15 +34,20 @@ deliver -> check active plan / inspect request
 
 ## Phase 1 — Orient
 
+Only the main agent orchestrates. Invoke `wiki-query` once for this overall substantive
+task unless it already ran in this context. Retry a required lookup failure once, then
+block dependent work. An initialized empty wiki permits project investigation. Chained
+grill-me/planning and individual subtasks do not automatically repeat the query.
+
 1. Call `check_active_plan()`.
    - If a plan is already associated and matches the request, jump to Phase 4.
    - If a different plan is associated, confirm with the user before overriding.
    - If no plan exists, proceed to Phase 2.
 
-## Phase 2 — Clarify (grilling)
+## Phase 2 — Clarify (grill-me)
 
 If the request has unresolved ambiguity — missing requirements, unclear scope, or
-conflicting constraints — invoke `skill("grilling")`. Grilling returns control here
+conflicting constraints — invoke `skill("grill-me")`. Grill-me returns control here
 when done; it does not launch implementation. Do not re-grill aspects already resolved
 in the current conversation.
 
@@ -51,8 +55,8 @@ When intent is clear, proceed directly to Phase 3.
 
 ## Phase 3 — Plan and plan review
 
-1. Invoke `skill("plan")`. The plan skill enters plan mode, generates a spec, explores
-   the codebase, writes the implementation plan, gets user approval, and exits plan mode.
+1. Invoke `skill("plan")`. It generates a spec, explores the codebase, writes the
+   implementation plan, gets user approval, and saves selected decisions via `wiki-add`.
    Plan returns control here on exit — it does not launch execution.
 
 2. After plan exits, call `check_active_plan()` to confirm the plan is associated.
@@ -62,7 +66,7 @@ When intent is clear, proceed directly to Phase 3.
    - `passing_criteria`: completeness (all subtasks have criteria), testability
      (acceptance criteria are checkable), consistency (approach matches requirements),
      and absence of obvious implementation traps
-   - `context`: the request and key decisions from grilling
+   - `context`: the request and key decisions from grill-me
 
 4. Read the review handoff.
    - **PASS**: proceed to Phase 4.
@@ -72,6 +76,12 @@ When intent is clear, proceed directly to Phase 3.
      only if a finding requires a decision outside the original scope.
 
 ## Phase 4 — Execute with per-task review
+
+Before the first worker, verify successful approval wiki-add evidence in the plan notes
+or prior handoff. If missing, select approved decisions/user choices and invoke wiki-add;
+retry once, then block implementation if it fails. Do not assume approval itself saved knowledge.
+All subagents must not launch subagents. Read their `Wiki requests` and discretionarily
+initiate queries/adds for substantial findings, bugs or fixes. No default per-subtask calls.
 
 For each pending subtask in the plan (in order):
 
@@ -116,9 +126,16 @@ After all subtasks are accepted:
 1. Write a delivery summary to the plan's Verification section: what was built, what
    tests pass, any deferred items, and the final review outcome.
 
-2. Present the outcome to the user.
+2. Invoke `wiki-add` with main-agent-selected actual implementation, verification evidence,
+   and full-plan completion status. Read the handoff and record success in plan notes.
+   Retry failure once; on continued failure report implementation status honestly but keep
+   the workflow incomplete and the plan associated. Do not detach or claim delivery complete.
+   On partial writes reread through the writer before retrying to avoid duplicated findings.
 
-3. Call `set_active_plan(null)` to detach explicitly. The plan document is preserved on
+3. Present the outcome to the user. Main agent checks `update-project-context`; only
+   change AGENTS when its operational briefing changed. Durable knowledge belongs in wiki.
+
+4. Call `set_active_plan(null)` to detach explicitly. The plan document is preserved on
    disk — reference it by path if needed later.
 
 ## Constraints
@@ -127,8 +144,11 @@ After all subtasks are accepted:
   Workers receive assignments; they do not edit the plan.
 - No fixed attempt count, implementation budget, or time limit on any phase.
   Unresolved blockers or invalid assignments return a handoff; the main agent decides.
+  Required wiki operations are the exception: one retry, then the failure policy above.
+- `wiki-refresh` runs only on explicit user request, directly in the main agent.
+- Personal memory access requires an explicit user request; project wiki never falls back to it.
 - User stop is always respected. If the user stops mid-delivery, the plan remains
-  associated for resumption via `dagi-execute`.
+  associated for resumption via `deliver`.
 - Standalone `/plan` remains fully usable without `/deliver`.
 - Grilling and plan return to this skill's control flow — they do not recursively
   launch execution or call deliver.
@@ -147,7 +167,7 @@ What this delivery achieves and how success will be verified end-to-end.
 
 ## Scope and Decisions
 What is in scope, what is explicitly out of scope, and key decisions made
-during grilling/planning (link to spec.md if generated).
+during grill-me/planning (link to spec.md if generated).
 
 ## Workspace
 - **Branch:** `<branch-name>`

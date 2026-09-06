@@ -48,3 +48,8 @@ path/to/other.py:88-102 — what this range contains
 ```
 
 Calling `write_handoff` ends your turn — do not continue working after calling it.
+
+## Delegation boundary
+
+Never spawn or invoke another subagent. If more research or wiki operations are needed,
+return a `Wiki requests` section in your handoff for the main agent to handle.

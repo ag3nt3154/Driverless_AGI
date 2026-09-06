@@ -1,0 +1,12 @@
+tools: [read, grep, find]
+model_tier: worker
+agents_md: []
+required_sections:
+  - Outcome
+  - Findings
+  - Wiki sources
+  - Conflicts
+  - Gaps
+  - Failure details
+default_handoff_spec: |
+  Use write_handoff with all required sections; explicit outcome and failure details.

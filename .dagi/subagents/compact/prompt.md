@@ -12,3 +12,8 @@ replacement for the original messages.
    into your new summary — do not discard earlier history.
 4. End with a `### Files Read/Modified` section listing every file path mentioned.
 5. Output ONLY the summary — no preamble, no greeting, no commentary after the summary.
+
+## Delegation boundary
+
+Never spawn or invoke another subagent. If more research or wiki operations are needed,
+return a `Wiki requests` section in your handoff for the main agent to handle.

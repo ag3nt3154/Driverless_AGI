@@ -1,0 +1,12 @@
+tools: [read, grep, find, write, edit]
+model_tier: worker
+agents_md: []
+required_sections:
+  - Outcome
+  - Created/updated paths
+  - Change summary
+  - Dated conflicts
+  - Partial writes
+  - Failure details
+default_handoff_spec: |
+  Use write_handoff with all required sections; explicit outcome and failure details.

@@ -1,75 +1,63 @@
 # AGENTS.md
 
-> Last updated: 2026-09-05 (fix 4 PySide GUI bugs: sidebar bg, emote timing, thinking duplication, status lines) | [README](README.md) | [TODO](TODO.md)
-
-
-
+> Last updated: 2026-09-05 | [README](README.md) | [Wiki](wiki/index.md)
 
 ---
 
 ## Overview
 
-Driverless AGI (dagi) is a Python agentic coding assistant. 
+Driverless AGI (dagi) is a Python agentic coding assistant with tool use, subagent delegation,
+session persistence, and multi-UI support (TUI, PySide desktop, Telegram). Architecture,
+workflows, errors, and notes live in [wiki/](wiki/index.md).
 
 ## Rules
 
-- Use `DEFAULT_PYTHON_ENV` for all Python scripts and package installs.
-- Always update `AGENTS.md` after completing a task.
+- Use `DEFAULT_PYTHON_ENV` (`dagi`) for all Python scripts and package installs.
+- Always update `AGENTS.md` and `wiki/` after completing a task.
+- Architecture, workflows, errors, and project notes belong in the wiki, not AGENTS.md.
 
 ## Behavioral Guidelines
 
-> This section is stable protocol/standards content — preserve verbatim across
-> routine `update-project-context` runs; only edit it when the user gives an
-> explicit standing behavioral instruction.
+> Stable protocol/standards content — preserve verbatim across routine `update-project-context`
+> runs; only edit when the user gives an explicit standing behavioral instruction.
 
 ### Coding standards
 
-- Functions: <= 100 lines
-- Cyclomatic complexity: <= 8
-- Positional parameters: <= 5
-- Line length: 100 characters
-- Files: <= 500 lines
+- Functions: ≤ 100 lines | Cyclomatic complexity: ≤ 8 | Positional parameters: ≤ 5
+- Line length: 100 characters | Files: ≤ 500 lines
 
 ### Calibrate to Ambiguity
 
-- **High ambiguity** (vague or conceptual): ask clarifying questions before acting
+- **High ambiguity**: ask clarifying questions before acting
 - **Medium ambiguity**: ask targeted questions on gaps, then proceed
-- **Low ambiguity**: verify quickly and proceed
-- **Trivial changes**: trust user intent — don't over-process obvious requests (e.g. "fix typo", "add tooltip")
+- **Low ambiguity**: verify quickly and proceed; **Trivial changes**: trust user intent
 
 ### Before Acting
 
-- **State assumptions.** Don't smuggle them. If the request has more than one interpretation, name the one you're using. If it could materially change the answer, ask first.
-- **Read before write.** Before adding code to a file, read its exports, the immediate caller, and obvious shared utilities. "Looks orthogonal" is the warning sign.
-- **Project consequences.** Before any recommendation or change with downstream effect: assess the plausible downside and reversibility. If material, escalate care.
+- **State assumptions.** Don't smuggle them.
+- **Read before write.** Read exports, immediate caller, obvious shared utilities first.
+- **Project consequences.** Assess plausible downside and reversibility before risky changes.
 
 ### During Execution
 
-- **Simplicity first.** Minimum code that solves the problem. Nothing speculative. No abstractions for single-use code. No features beyond what was asked.
-- **Surgical scope.** Touch only what the task requires. Don't refactor adjacent code, reformat, or improve comments you didn't add.
-- **Match conventions.** Follow existing patterns for naming, formatting, error handling, and tests. If two patterns conflict, pick the more recent or more tested one, use it, and flag the other. Conformance over taste.
-- **Model for judgment; code for determinism.** Use the model for classification, drafting, summarization, extraction. Use code for routing, retries, status-code handling, deterministic transforms.
-- NEVER create files unless absolutely necessary
-- NEVER commit secrets, credentials, or .env files
+- **Simplicity first.** Minimum code that solves the problem. Nothing speculative.
+- **Surgical scope.** Touch only what the task requires. Match conventions over taste.
+- NEVER create files unless absolutely necessary. NEVER commit secrets or .env files.
 
 ### Verify Invariants Before Shipping
 
-For non-trivial changes, confirm before shipping:
-
-- [ ]  State ownership and consistency clear?
-- [ ]  Feedback / observability in place?
-- [ ]  Blast radius understood?
-- [ ]  Timing and ordering safe?
-- [ ]  Follows existing patterns (or intentionally breaks them)?
-- [ ]  Security / obvious risks addressed?
-
-If any are unclear → flag explicitly, ask, or defer.
+- [ ] State ownership and consistency clear?
+- [ ] Feedback / observability in place?
+- [ ] Blast radius understood?
+- [ ] Timing and ordering safe?
+- [ ] Follows existing patterns (or intentionally breaks them)?
+- [ ] Security / obvious risks addressed?
 
 ### After Acting
 
-- **Ground claims.** Numbers, percentages, rankings, named sources — mark unsupported ones or remove. Bounded language over invented specificity.
-- **Fail loud.** "Done" is wrong if anything was skipped silently. "Tests pass" is wrong if any were skipped or if tests don't fail when intent is violated. Surface uncertainty — don't hide it.
-- **Checkpoint.** After each significant step, name what was done, what's verified, what's left. Don't continue from a state you can't describe back.
+- **Ground claims.** Mark unsupported numbers or remove them.
+- **Fail loud.** "Done" is wrong if anything was skipped silently.
+- **Checkpoint.** Name what was done, what's verified, what's left.
 
 ### Tests
 
@@ -78,87 +66,120 @@ If any are unclear → flag explicitly, ask, or defer.
 
 ### Hard Stops
 
-Stop and flag when:
+Stop and flag when: state ownership unclear, blast radius unknown, timing/race hazards,
+security issues, or complexity debt would be significant.
 
-- State ownership is unclear
-- Blast radius is unknown
-- Timing or race condition hazards are present
-- Security issues are identified
-- Complexity debt would be significant
+### Error Handling
 
-### Memory
-
-- **Memory query:** After receiving a substantive task (anything beyond a greeting or quick factual question), invoke `skill("memory-query")` before taking any action. Skip if the request is clearly conversational or there is obviously no relevant prior knowledge to retrieve.
-- **Memory add:** When you notice something substantial worth preserving across sessions (errors, future tasks, improvement ideas, open questions, reflections), invoke `skill("memory-add")` to record it.
-
-### Error handling
-
-- Fail fast with clear, actionable messages
-- Never swallow exceptions silently
-- Include context (what operation, what input, suggested fix)
+- Fail fast with clear, actionable messages. Never swallow exceptions silently.
 
 ## Git Workflow
 
-Use `bash` for Git operations.
-
 - Start with `git status --short` and `git branch --show-current`; never discard existing work.
-- If unrelated changes overlap files needed for the task, stop and ask.
-- Stay on the current branch for small, low-risk work.
-- Use `dagi/<task-name>` for risky, experimental, multi-file, or explicitly isolated work.
+- Stay on current branch for low-risk work; use `dagi/<task-name>` for risky/multi-file work.
 - Commit coherent changes with Conventional Commit prefixes.
 - Never commit, merge, push, stash, switch branches, or create a branch without user approval.
-- At completion, report the branch, changed files, tests, and remaining dirty files.
 
 ## Process Flow
 
-1. An entry point starts `AgentLoop` with configuration, tools, session state, and UI callbacks.
-2. `AgentLoop` assembles stable instructions plus dynamic context, calls the provider, and dispatches tool requests through `ToolRegistry`.
-3. `SessionTracker` and `SessionLog` persist conversation, usage, and subagent
-   branch events.
-4. Subagents run through `tools/subagent_api.py`; inherited children reuse the captured parent request prefix and finish through `write_handoff`.
-5. TUI, PySide, Telegram, and CLI entry points translate the same callbacks and agent state; the Electron/`dagi_gui` frontend is archived.
+1. Entry point starts `AgentLoop` with config, tools, session state, and UI callbacks.
+2. `AgentLoop` assembles system prompt, calls provider, dispatches tools via `ToolRegistry`.
+3. `SessionTracker`/`SessionLog` persist conversation, usage, and subagent branch events.
+4. Subagents run via `tools/subagent_api.py`; inherited children reuse parent prefix; end via `write_handoff`.
+5. TUI, PySide, Telegram, CLI share the same callback/agent-state interface.
 
-## Errors Log (recent)
+## Architecture
 
-- **2026-09-05**: PySide GUI 4 bugs → (1) right sidebar white on some Windows themes: viewport lacked explicit bg — set `viewport().setStyleSheet("background: #1e1e2e")` and give container the `right-sidebar` object name; (2) VAD emotes shown ~1s instead of full GIF loop: expression timer `advance()` at 1s interval restarted GIF — skip re-render in `update_expression` while `_movie` is playing; (3) thinking block duplicated in streaming: `_on_assistant_text` reset `_stream_had_content` flag before `_on_reasoning` checked it — stop resetting the flag (let `_on_stream_started` reset it); (4) debug stage-trace lines cluttered conversation — removed `stage_trace` signal and `stage()` UI emissions, kept `worker_log` file logging.
-- **2026-09-05**: Plan mode removed as system-level feature → replaced with `/plan` skill + `create_plan` tool. `AgentConfig` fields `plan_mode`, `plan_file`, `plan_mode_initiated_by`, `previous_branch` removed; `plan_mode_initiated_by` replaced by `autonomous` bool. `SideEffect.ENTER_PLAN_MODE`/`EXIT_PLAN_MODE` removed. Registry no longer rebuilds or restricts tools during planning.
-- **2026-09-05**: 7 integration failures found in `b64b5c4` deliver-workflow commit → fixed: (1) `config.yaml` had stale `spawn_*` tool names; (2) `UpdateTaskStatusTool` captured plan path at construction — now reads `config.active_plan_file` dynamically; (3) `check_active_plan` returned plain string on success — now returns `ToolResult(SET_ACTIVE_PLAN)`; (4+5) subagent wrappers discarded error diagnostics — patched; (6) deliver skill `ESCALATE` said "enter plan mode" — fixed; (7) `SetActivePlanTool` containment check didn't call `.resolve()`.
-- **2026-08-30**: Typed turn termination left `main_system.md` requiring `<<END_OF_RESPONSE>>`, causing a corrective continuation after every text-only reply → make `write_handoff` the prompt's sole final action and regression-test the contract.
-- **2026-08-30**: Random-expression migration left stale VAD tests, archived `dagi_gui` tests in the active suite, and subagent reads of removed `affect_*` fields → archive unsupported tests, migrate active coverage, and flatten `expression_interval` only.
-- **2026-08-29**: Toasts fail in restricted sandboxes despite working on host → verify outside sandbox.
-- **2026-08-29**: Malformed tool-argument JSON orphaned the assistant `tool_calls` message, making the next provider request fail with HTTP 400 → convert `JSONDecodeError` into a normally-bookkept tool error result.
-- **2026-08-26**: RAM-watchdog `tests/conftest.py` errors every long test at setup when ambient machine RAM ≥70% (hardcoded warn threshold) → gate runs need `--noconftest`.
-- **2026-08-26**: The 08-23 `_pending_ask` fix only covered done/paused, and the TUI never got it → both UIs now ignore a stale sink at submit time (`_ask_is_live`) and retire it in `_agent_work`'s `finally`.
-- **2026-08-26**: DeepSeek cache hits plateaued because the ephemeral Session Context board breaks the growing request prefix → board removed entirely: `dynamic_context.py` deleted, `PLAN_WRITE` event removed, `_board`/`_refresh_dynamic_context`/`_build_dynamic_context` stripped from `AgentLoop` (2026-08-27).
+- **AgentLoop** (`agent/loop.py`) delegates to `_loop_config/_helpers/_system_prompt/_streaming/_compaction/_tool_dispatch/_reload/_model_switch`.
+- **ToolRegistry** dispatches `ToolResult(output, side_effect)` instead of string sentinels.
+- **Subagents**: typed presets in `.dagi/subagents/*/`; public API `tools/subagent_api.py`.
+- **Wiki**: `wiki/` Git-tracked Markdown; delegated via `wiki_query`/`wiki_add` tools.
+- **Personal memory**: `G:/My Drive/black_grimoire/dagi-memory`; explicit user requests only.
+
+## Key Files & Directories
+
+| Path | Purpose |
+|------|---------|
+| `agent/loop.py` | Core agent loop; re-exports internal `_*` modules |
+| `agent/cli_utils.py` | `_cmd_init` — project wiki scaffold creation |
+| `agent/_init_templates.py` | `build_init_files` — wiki + AGENTS scaffold content |
+| `tools/_wiki_tools.py` | Wiki delegation logic (scope guard, protocol inject, handoff validate) |
+| `tools/subagent_api.py` | Public subagent API; `SubagentResult` dataclass |
+| `tools/_handoff_format.py` | `format_error_result`, `MISSING_HANDOFF_NOTICE` |
+| `.dagi/subagents/wiki-{query,add}/` | Wiki subagent presets (file-tool-only, no nesting) |
+| `.dagi/skills/deliver/SKILL.md` | Primary delivery lifecycle orchestration |
+| `.dagi/skills/plan/SKILL.md` | Planning lifecycle (spec, explore, approve, wiki-add) |
+| `.dagi/prompts/main/main_system.md` | Main agent system prompt template |
+| `.dagi/config.yaml` | Tool allowlist, model config, memory root, affect config |
+| `tests/test_wiki_tools.py` | Wiki delegation contract tests (33 tests) |
+| `tests/test_project_init.py` | Init preservation and scaffold tests |
+| `wiki/` | Project knowledge wiki (architecture, workflows, errors, notes) |
+
+## Errors Log
+
+- **2026-09-05**: pytest-qt entry point name is `pytest-qt` not `qt`; `-p no:pytest-qt` required → documented in wiki/errors/index.md and wiki/workflows.md.
+- **2026-09-05**: 4 PySide GUI bugs (sidebar bg, emote timing, thinking duplication, status lines) → all fixed; details in wiki/errors/index.md.
+- **2026-09-05**: 7 deliver-workflow integration failures (stale tool names, dynamic plan read, etc.) → all fixed; details in wiki/errors/index.md.
+- **2026-09-05**: Plan mode removed → `/plan` skill + `create_plan` tool; `AgentConfig` plan fields removed.
+- **2026-08-30**: Typed turn termination left `main_system.md` requiring `<<END_OF_RESPONSE>>` → `write_handoff` sole final action.
+- **2026-08-29**: Toasts fail in restricted sandboxes → verify outside sandbox.
+- **2026-08-26**: RAM-watchdog errors every long test (≥70% RAM) → `--noconftest -p no:pytest-qt` for isolated runs.
+- **2026-08-26**: stale `ask_user` sink swallowed next message in TUI and PySide → fixed with `_ask_is_live` + `finally` retirement.
+- **2026-08-26**: DeepSeek cache plateaued due to ephemeral Session Context board → board deleted entirely.
+- **2026-08-23**: `pyside_gui/app.py` file cap stale (547+ lines vs ≤500 assertion) → open; raise cap or split module.
 
 ## Notes & Terms
 
-- **Sentinel display sanitization**: agent tool-output views escape loop sentinels (`<<` → `< <`) before showing them; byte-check source before any sentinel-related edit — displayed strings lie.
-- **agent/_\* loop modules**: `loop.py` delegates to internal modules (`_loop_config`, `_loop_helpers`, `_system_prompt`, `_reload`, `_model_switch`, `_streaming`, `_compaction`, `_tool_dispatch`) re-exported via `agent.loop`; white-box test patches must target the owning module (e.g. `agent._compaction.run_subagent`).
-- **Prompt-cache boundary**: the entire prior provider input must prefix the next request; ignoring a trailing dynamic board is not cache-safe.
-- **Expression media**: expression rotation uses `RandomEmoteLibrary` and `ExpressionController`; GIF emotes play one full loop before rotating (new expressions are deferred while a movie is playing); VAD vectors are no longer part of the display path.
-- **Termination**: main and child turns end through `write_handoff`; bare assistant text triggers the corrective continuation prompt.
-- **Tool filtering**: `config.yaml` removes tools outside `tools:` except mandatory `write_handoff`.
-- **Subagent API**: import `tools/subagent_api.py`, never private `_subagent_runner.py`.
-- **Windows / conda**: use `conda run -n dagi python`; hooks use `envs/dagi/python.exe` because `conda run` drops stdin.
-- **PySide6 imports**: add the package directory with `os.add_dll_directory` before importing PySide6.
-- **Qt threading**: background work reaches widgets only through queued signals or `QMetaObject.invokeMethod`.
-- **Plan UI location**: the active-plan panel lives in the PySide left sidebar as the 4th rail view (`pyside_gui/sidebars/plan_view.py`, `PlanView`); `RightSidebar` no longer has a PLAN section. Route plan updates through `LeftSidebar.update_plan(subtasks, title)` (fed by `DagiMainWindow._poll_plan`, 2 s poll of the bound loop's `active_plan_file`).
+- **pytest-qt entry point**: name is `pytest-qt` (not `qt`); use `-p "no:pytest-qt"` to disable.
+- **Sentinel display sanitization**: escape loop sentinels (`<<` → `< <`) before showing; byte-check source before editing.
+- **agent/_* loop modules**: white-box test patches must target owning module (e.g. `agent._compaction`).
+- **Prompt-cache boundary**: entire prior provider input must prefix next request; no dynamic board.
+- **Termination**: main and child turns end through `write_handoff`; bare assistant text triggers corrective continuation.
+- **Tool filtering**: `config.yaml` `tools:` restricts main agent; mandatory `write_handoff` always injected.
+- **Subagent API**: import `tools/subagent_api.py`; never private `_subagent_runner.py`.
+- **Windows / conda**: `conda run -n dagi python`; hooks use `envs/dagi/python.exe` (conda run drops stdin).
+- **Plan UI location**: active-plan panel in PySide left sidebar, 4th rail view (`PlanView`); `LeftSidebar.update_plan()`.
+- **Wiki subagents**: tool allowlists are `[read,grep,find]` (query) or `+[write,edit]` (add); no shell/delegation.
 
-## Workflow Reference
+## Wiki Use
 
-- **Primary entry point:** `/deliver` (`.dagi/skills/deliver/SKILL.md`).
-- Planning: `/plan` skill (`.dagi/skills/plan/SKILL.md`) — uses `create_plan` tool for scaffolding, instructs git branching and model switching via bash/`switch_model`, sets active plan via `set_active_plan`. No system-level plan mode or tool restriction.
-- Plan scaffolding: `create_plan` tool (`tools/create_plan/`) — creates `.dagi/plans/plan_{timestamp}/plan.md`.
-- Execution resume: `.dagi/skills/dagi-execute/SKILL.md` — compatibility shim for interrupted deliveries.
-- Worker/reviewer contracts: `.dagi/subagents/{worker,review}/prompt.md`.
-  - Worker outcomes: `READY_FOR_REVIEW` | `ESCALATE`. Workers may run their task tests.
-  - Reviewer outcomes: `PASS` | `ESCALATE`. Reviewer is general-purpose; caller supplies criteria.
-- Active plan: persisted via sidecar at `.dagi/session-state/<thread_id>/active-plan.json`.
-  - Set/check via `set_active_plan` / `check_active_plan` tools.
-  - `handle_all_tasks_resolved` does NOT clear the association — plan stays for final verification.
-  - Explicit detach: `set_active_plan(null)` after delivery accepted.
-- Subagent error diagnostics: `SubagentResult` carries `message`, `exit_code`, `output_tail`,
-  `output_log_path`. Full output is tee'd to `<handoff_stem>.output.log` by the runner.
-- `review_work` interface: `(material, passing_criteria, context="", verification="")`.
-  No active plan required. Caller supplies all context and criteria explicitly.
+Only the main agent delegates wiki operations. Personal `memory-*` for explicit user requests only.
+
+- **Before each overall substantive task**: call `wiki_query`. Empty wiki permits investigation;
+  missing wiki requires `/init`. Chained skills share the lookup.
+- **After plan approval**: select approved decisions/user choices → `wiki_add`. Retry once;
+  failure blocks implementation.
+- **After completion and verification**: select actual results/completion → `wiki_add`. Retry once;
+  failure leaves workflow incomplete.
+- **Discretionary**: query substantial questions; add bugs, fixes, findings. Report optional failures.
+- **Workers**: receive wiki findings, return `Wiki requests` in handoffs. Never delegate themselves.
+- **`wiki-refresh`**: explicit, main-agent-only; inspects project evidence and asks user when needed.
+- **`/init`**: code-based scaffold at project root; preserves all existing files; no knowledge population.
+
+---
+
+## User Insights
+
+### User Tendencies
+
+- Prefers adversarial design review (/grill) before implementation on major features.
+- Runs dagi on Windows with conda; comfortable with direct env paths when conda run has limitations.
+- Approves plans before implementation; expects wiki-add for approvals and completions.
+- Tight on test discipline: only tests that can actually fail on broken logic are acceptable.
+- Keeps AGENTS.md compact intentionally; durable knowledge belongs in the wiki.
+
+### Project Shortcomings
+
+- Provider call has no timeout — worker can block silently for up to ~30 min (open issue).
+- `pyside_gui/app.py` file cap assertion is stale (547+ lines vs ≤500 cap test).
+- PySide6 QtCore DLL fails to load without full conda env activation (Windows DLL chain issue).
+- No parallel subagent dispatch support despite earlier plan for `spawn_parallel_subagents`.
+- Wiki is new (2026-09-05); no project-specific knowledge accumulated yet beyond scaffold and contract.
+
+### Potential Areas of Exploration
+
+- Config-backed `request_timeout` for the OpenAI client to surface stalls as retryable errors.
+- Split `pyside_gui/app.py` to bring it under the 500-line cap.
+- Parallel subagent dispatch (`spawn_parallel_subagents` / `wait_subagents` tools).
+- Automated wiki health checks (stale dates, broken links) triggered on commit or session start.
+- Provider cost/usage dashboard surfaced in the sidebar.

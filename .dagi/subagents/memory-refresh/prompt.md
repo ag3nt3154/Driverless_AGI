@@ -28,3 +28,8 @@ Do NOT auto-fix anything without explicit approval.
 
 Call `write_handoff` with a summary of all changes made (or "No changes —
 all issues skipped or no issues found").
+
+## Delegation boundary
+
+Never spawn or invoke another subagent. If more research or wiki operations are needed,
+return a `Wiki requests` section in your handoff for the main agent to handle.

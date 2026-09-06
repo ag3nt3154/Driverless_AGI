@@ -17,6 +17,8 @@ SUBAGENTS_DIR = REPO_ROOT / ".dagi" / "subagents"
 # Parameter names that would indicate a path is being handed to the model.
 PATH_LIKE_PARAM_NAMES = {"handoff_file", "handoff_path", "output_file", "output_path"}
 TYPED_SUBAGENT_NAMES = {
+    "wiki-query",
+    "wiki-add",
     "explore_files",
     "memory-add",
     "memory-query",
@@ -86,3 +88,14 @@ def test_wtf_preset_is_read_only_and_requires_structured_sections():
     assert data["tools"] == ["read", "grep", "find"]
     assert data["required_sections"] == ["Description", "Error Report", "Suggested Fix"]
     assert data["agents_md"] == ["cwd"]
+
+
+def test_wiki_presets_have_only_file_tools_and_no_parent_instructions():
+    for operation in ("query", "add"):
+        path = SUBAGENTS_DIR / f"wiki-{operation}" / "subagent_config.yaml"
+        data = yaml.safe_load(path.read_text(encoding="utf-8"))
+        assert data["agents_md"] == []
+        assert data["tools"] == ["read", "grep", "find"] + (
+            ["write", "edit"] if operation == "add" else [])
+        assert len(data["required_sections"]) == 6
+        assert "root" not in data

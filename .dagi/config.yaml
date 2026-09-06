@@ -55,6 +55,8 @@ tools:                      # Restrict the main agent to a specific subset of to
   - memory_add              # Spawn a memory-add subagent
   - memory_query            # Spawn a memory-query subagent
   - memory_refresh          # Spawn a memory-refresh subagent
+  - wiki_query              # Query this project's wiki
+  - wiki_add                # Store selected project knowledge
   - extend_subagent_timeout # Extend timeout for an in-flight subagent
   # ── Model tools ──────────────────────────────────────────────────────────────
   - switch_model            # Switch between default / worker / advanced models

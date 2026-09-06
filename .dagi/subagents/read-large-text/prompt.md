@@ -49,3 +49,8 @@ Use read(path, offset, limit) for verbatim content from any section.
 - Note `[Figure N]` or `[Table N]` placeholders when you encounter them
 - Section boundaries: prefer markdown headings (`#`, `##`) and `<!-- Page N -->` markers; fall back to ~2000-line windows for unstructured text
 - Token estimate: count characters in the chunk and divide by 4
+
+## Delegation boundary
+
+Never spawn or invoke another subagent. If more research or wiki operations are needed,
+return a `Wiki requests` section in your handoff for the main agent to handle.

@@ -1,6 +1,6 @@
 ---
 name: plan
-description: Full planning lifecycle — creates a plan file, explores codebase, writes implementation plan, gets approval, and sets the active plan. Invoke via /plan or chained from deliver/grilling.
+description: Full planning lifecycle — creates a plan file, explores codebase, writes implementation plan, gets approval, and sets the active plan. Invoke via /plan or chained from deliver/grill-me.
 triggers: /plan, plan this, create a plan
 ---
 
@@ -14,10 +14,14 @@ When invoked from `deliver`, it returns control to `deliver` on exit. Standalone
 ## Direct invocation
 
 `/plan` can be invoked directly when requirements are already clear (skipping
-`grilling`). When chained from `grilling`, the conversation context from the
+`grill-me`). When chained from `grill-me`, the conversation context from the
 interrogation is already available — no re-gathering needed.
 
 ## Process
+
+Only the main agent runs this lifecycle. Before this overall substantive task, invoke
+`wiki-query` unless the enclosing delivery already completed that lookup. No subtask
+queries by default. Workers request further wiki operations in their handoffs.
 
 ### Step 1 — Create Plan Scaffold
 
@@ -76,6 +80,12 @@ Write `plan.md` in the plan directory. Use the plan format:
 Call `set_active_plan(path)` with the plan file path to associate it with this
 session.
 
+Before returning execution authority, invoke `wiki-add` with the main agent's explicitly
+selected approved design decisions and user choices. Do not pass an exact plan path as
+a substitute for these points. Read its handoff. Retry a failure once; if it still fails,
+keep the plan associated but do not begin implementation. Record successful approval-write
+evidence in the plan notes so resume can avoid duplicating it. Standalone `/plan` also does this.
+
 ### Step 9 — Switch Back to Default Model
 
 If you switched models in Step 3, call `switch_model(tier="default")` to return
@@ -86,5 +96,5 @@ to the normal model.
 If invoked from `deliver`: return control to `deliver`. It will review the plan and
 begin execution.
 
-If invoked standalone: report the plan is ready and suggest `/deliver` or
-`/dagi-execute` to begin implementation.
+If invoked standalone: report the plan is ready and suggest `/deliver` to begin
+implementation.

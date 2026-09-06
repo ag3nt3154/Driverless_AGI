@@ -21,3 +21,8 @@ The parent passes these in the task envelope:
 
 Call `write_handoff` with your result when done. Format per the canonical
 SKILL.md handoff section.
+
+## Delegation boundary
+
+Never spawn or invoke another subagent. If more research or wiki operations are needed,
+return a `Wiki requests` section in your handoff for the main agent to handle.

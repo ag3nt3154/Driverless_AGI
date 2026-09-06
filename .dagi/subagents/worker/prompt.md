@@ -69,3 +69,8 @@ Write "None" if no issues were found.
 ## Recommended Next Action
 One sentence: what the reviewer or main agent should do next.
 ```
+
+## Delegation boundary
+
+Never spawn or invoke another subagent. If more research or wiki operations are needed,
+return a `Wiki requests` section in your handoff for the main agent to handle.
