@@ -1,10 +1,10 @@
 ---
-name: grilling
+name: grill-me
 description: Grill the user relentlessly about a plan, decision, or idea. Use when the user wants to stress-test their thinking, or uses any 'grill' trigger phrases.
-triggers: grill, /grill, /grilling, stress-test this, grill my plan, grill my idea
+triggers: grill, /grill, /grill-me, stress-test this, grill my plan, grill my idea
 ---
 
-# grilling
+# grill-me
 
 Interview me relentlessly about every aspect of this until we reach a shared
 understanding. Walk down each branch of the decision tree, resolving dependencies
@@ -27,5 +27,5 @@ When shared understanding is reached, produce a closing summary covering:
 - what was weak, missing, or unresolved
 - concrete actions before proceeding
 
-Then return control to the caller. If grilling was invoked via `/grilling` directly
+Then return control to the caller. If grill-me was invoked via `/grill-me` directly
 (not from `deliver`), suggest invoking `/plan` or `/deliver` next.
