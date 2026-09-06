@@ -1,0 +1,21 @@
+# Original LangChain stack and supporting packages; unused by the active agent loop.
+# Preserved for optional installation rather than silently discarded.
+# Exact versions preserved from the original requirements.txt.
+jsonpatch==1.33
+jsonpointer==3.1.1
+langchain==1.3.13
+langchain-core==1.4.9
+langchain-openai==1.3.5
+langchain-protocol==0.0.18
+langgraph==1.2.9
+langgraph-checkpoint==4.1.1
+langgraph-prebuilt==1.1.0
+langgraph-sdk==0.4.2
+langsmith==0.10.2
+orjson==3.11.9
+ormsgpack==1.12.2
+requests-toolbelt==1.0.0
+tiktoken==0.13.0
+uuid-utils==0.17.0
+xxhash==3.8.1
+zstandard==0.25.0

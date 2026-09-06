@@ -44,9 +44,9 @@ OPENROUTER_API_KEY=sk-or-...
 
 Install dependencies. Use whichever environment manager you prefer:
 
-**conda (fresh env, fully pinned):**
+**conda (fresh core environment):**
 ```bash
-conda env create -f environment.yml   # creates the `dagi` env with every dependency pinned to a known-working version
+conda env create -f environment.yml   # run from repository root; creates the core `dagi` env
 conda activate dagi
 pip install -e .
 ```
@@ -68,14 +68,30 @@ source .venv/bin/activate
 pip install -e .
 ```
 
-Core install covers the CLI/TUI entry points. Optional feature groups (installed as needed):
+The original pinned package list is split into installable requirements files.
+Choose the core alone, or combine it with the groups you need:
 
 ```bash
-pip install -e ".[web]"        # primary web_search/web_fetch backends (ddgs, crawl4ai)
-pip install -e ".[telegram]"   # Telegram bot entry point (telegram_bot.py)
-pip install -e ".[benchmark]"  # benchmarks/dagi_eval (numpy, pandas, scipy, scikit-learn)
-pip install -e ".[web,telegram,benchmark]"  # everything
+pip install -r requirements-core.txt                           # core agent loop + CLI
+pip install -r requirements-core.txt -r requirements-gui.txt    # add PySide GUI
+pip install -r requirements-core.txt -r requirements-tui.txt    # add terminal UI
+pip install -r requirements-core.txt -r requirements-tools.txt  # add other tools
+pip install -r requirements-dev.txt                            # test/dev utilities
+pip install -r requirements-pdf.txt                            # PDF/Office/ML packages
+pip install -r requirements-legacy.txt                         # old LangChain stack
+pip install -r requirements.txt                                # entire original package set
 ```
+
+Every original package pin is preserved in exactly one group. These files contain
+package names and versions, not editable-install wrappers. The GUI file also includes
+the TUI file because the GUI imports shared helpers through the TUI package.
+Pip can still install transitive dependencies required by the selected packages;
+the original snapshot was not a complete cross-platform lockfile.
+
+`pyproject.toml` separately declares dagi's direct dependencies and optional extras
+for editable installation. The original snapshot did not contain ddgs or crawl4ai;
+use `pip install -e ".[web]"` for those web backends and run `crawl4ai-setup` for browser
+setup. Telegram and benchmark extras remain available too.
 
 PDF/DOCX/XLSX/PPTX reading no longer requires any dagi-side extras — it's handled entirely by the standalone doc-converter service, set up separately. See [Document Conversion Service](#document-conversion-service).
 
@@ -961,26 +977,26 @@ for the implementation plan.
 
 ## Dependencies
 
-All dependencies are declared in `pyproject.toml` — `pip install -e .` installs the required core set; optional feature groups are extras (see [Setup](#setup)).
+Direct application dependencies are declared in `pyproject.toml`. The requirements files separately preserve the original environment's exact package pins by feature (see [Setup](#setup)).
 
-For a fully reproducible conda environment, `environment.yml` pins every package in dagi's core `dagi` env (generated via `conda env export -n dagi --no-builds`) to the exact version known to work — `conda env create -f environment.yml`. It doesn't include the `web`/`telegram`/`benchmark` extras; install those separately with `pip install -e ".[web,telegram,benchmark]"` if needed. Document conversion (PDF/docx/xlsx/pptx) has its own **separate** conda env — see `services/doc_converter/environment.yml` and [Document Conversion Service](#document-conversion-service); its dependencies (docling, torch, pymupdf, ocrmypdf, markitdown) are not part of `dagi`'s `pyproject.toml` or `environment.yml` at all.
+`environment.yml` creates the same core environment as `requirements-core.txt`.
+Neither is a fully pinned lockfile. Add UI/tool groups explicitly; see [Setup](#setup).
 
-Core (required):
+| Group | Direct dependencies / purpose |
+|---|---|
+| Core | openai, pyyaml, python-dotenv, rich, httpx |
+| `tui` | textual, typer |
+| `gui` | TUI helpers, pyside6, markdown-it-py, pygments |
+| `web` | ddgs, crawl4ai, beautifulsoup4 |
+| `notifications` | win11toast on Windows only |
+| `telegram` | python-telegram-bot, typer |
+| `benchmark` | numpy, pandas, scipy, scikit-learn |
+| `dev` | pytest, psutil, ruff |
 
-- `openai` — API client (any OpenAI-compatible endpoint)
-- `pyyaml` — config parsing
-- `python-dotenv` — `.env` loading
-- `rich` + `typer` + `textual` — CLI/TUI framework
-- `langchain` + `langchain-openai` — LLM orchestration
-- `httpx` — HTTP client, also used by `tools/read/_doc_service.py` to call the doc-converter service
-- `win11toast` — Windows toast notifications (see below)
-- `beautifulsoup4` — fallback HTML parsing (used when the `web` extra's `crawl4ai` isn't installed)
-
-Optional extras (`pip install -e ".[extra]"`):
-
-- `web` — `ddgs` + `crawl4ai`, the primary (non-fallback) backends for `web_search`/`web_fetch`
-- `telegram` — `python-telegram-bot`, required for the `telegram_bot.py` entry point
-- `benchmark` — `numpy`, `pandas`, `scipy`, `scikit-learn` for `benchmarks/dagi_eval`
+LangChain and the PDF/ML stack are not required by the core agent. Their original pins
+are retained in `requirements-legacy.txt` and `requirements-pdf.txt`. The read tool
+calls the document converter over HTTP; prefer the service's own environment recipe
+for a complete converter installation, including its server and system dependencies.
 
 Document conversion service (separate env, `services/doc_converter/environment.yml`):
 
@@ -990,4 +1006,4 @@ Document conversion service (separate env, `services/doc_converter/environment.y
 
 ### Windows notifications (TUI, optional)
 
-- `win11toast` — native Windows 10/11 toast notifications, a core dependency. `tui.py` fires a toast (`tui/notifications.py::notify()`) when DAGI asks a question, presents a plan for interactive review, or reaches end-of-response. The toast is skipped when the TUI's own console window already has OS focus (`_tui_window_is_foreground()`), so you're only notified when you've alt-tabbed away; if that focus check itself fails, it fails open and still notifies. Lazily imported and exception-guarded — degrades silently to a no-op on non-Windows hosts or if the package is missing, never blocking the TUI. Not used by `cli.py`, `telegram_bot.py`, subagents, or the scheduler. Independent of the toast, every end-of-response also writes a `— turn complete —` marker directly into the conversation pane (`tui/callbacks.py::on_done`) — this stays visible even when the toast is suppressed (window focused) or the model's final response text was empty, so a normal turn ending is never mistaken for a stalled agent.
+- `win11toast` — native Windows 10/11 toast notifications, an optional `notifications` extra whose original pins are included in the GUI requirements file. `tui.py` fires a toast (`tui/notifications.py::notify()`) when DAGI asks a question, presents a plan for interactive review, or reaches end-of-response. The toast is skipped when the TUI's own console window already has OS focus (`_tui_window_is_foreground()`), so you're only notified when you've alt-tabbed away; if that focus check itself fails, it fails open and still notifies. Lazily imported and exception-guarded — degrades silently to a no-op on non-Windows hosts or if the package is missing, never blocking the TUI. Not used by `cli.py`, `telegram_bot.py`, subagents, or the scheduler. Independent of the toast, every end-of-response also writes a `— turn complete —` marker directly into the conversation pane (`tui/callbacks.py::on_done`) — this stays visible even when the toast is suppressed (window focused) or the model's final response text was empty, so a normal turn ending is never mistaken for a stalled agent.

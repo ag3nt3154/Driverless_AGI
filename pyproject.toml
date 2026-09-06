@@ -3,35 +3,45 @@ name = "driverless-agi"
 version = "0.1.0"
 requires-python = ">=3.11"
 dependencies = [
-    "openai>=1.0.0",       # OpenAI-compatible API client — used for all model providers
+    "openai>=2.45.0",      # Includes the typed tool-call API used by AgentLoop
     "pyyaml>=6.0",         # config.yaml parsing
     "python-dotenv>=1.2.2", # .env file loading for API keys; floor fixes CVE-2026-28684 (symlink file overwrite)
     "rich>=13.0",          # Rich text rendering in the CLI (markdown, panels, tables)
-    "typer<0.25.0",        # CLI framework for tui.py entry point; ceiling required by docling-core (typer<0.25.0)
-    "textual>=0.80.0",     # TUI framework for the full-canvas terminal UI (tui.py)
-    "langchain>=1.3.4",    # Core LLM orchestration and agent framework
-    "langchain-openai>=1.2.2", # OpenAI provider for LangChain
-    "psutil>=5.9.0",       # RAM/CPU introspection — used by tests/conftest.py RAM watchdog
-    "win11toast>=0.35",    # Native Windows 10/11 toast notifications; degrades to a silent no-op on non-Windows hosts or if missing
-    "httpx>=0.27",         # HTTP client used as the fallback web fetcher
-    "beautifulsoup4>=4.12", # HTML parser used alongside httpx when crawl4ai is unavailable
+    "httpx>=0.27",         # Provider errors and document-service client
 ]
 
 [project.optional-dependencies]
+tui = ["textual>=0.80.0", "typer>=0.24,<0.25"]
+# GUI currently imports tui helpers; tui/__init__.py imports the Textual app.
+gui = [
+    "driverless-agi[tui]",
+    "pyside6>=6.11.2",
+    "markdown-it-py>=4.0",
+    "pygments>=2.20",
+]
+notifications = ["win11toast>=0.35; sys_platform == 'win32'"]
+dev = ["pytest>=9.0", "psutil>=5.9", "ruff"]
 # Install to run benchmarks/dagi_eval (coding speedup + DS scorecard tasks).
 benchmark = ["numpy>=1.26", "pandas>=2.0", "scipy>=1.11", "scikit-learn>=1.4"]
 # Install to enable the telegram_bot.py entry point.
-telegram = ["python-telegram-bot>=21.0"]
+telegram = ["python-telegram-bot>=21.0", "typer>=0.24,<0.25"]
 # Install to enable the web_search and web_fetch tools' primary (non-fallback) path.
 # dagi starts and runs without these; affected tools return a friendly error message.
-web = ["ddgs>=2.0", "crawl4ai>=0.8.7"]
+web = ["ddgs>=2.0", "crawl4ai>=0.8.7", "beautifulsoup4>=4.12"]
 
 [project.scripts]
 dagi = "main:main"
 
 [build-system]
 requires = ["setuptools"]
-build-backend = "setuptools.backends.legacy:build"
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+py-modules = ["main", "dagi_launch", "hist"]
+
+[tool.setuptools.packages.find]
+include = ["agent*", "tools*", "scheduler*", "tui*", "pyside_gui*", "tg*"]
+exclude = ["*.tests", "*.tests.*"]
 
 [tool.pytest.ini_options]
 pythonpath = ["."]

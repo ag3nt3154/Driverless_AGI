@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import re
 import sys
-from dataclasses import dataclass, field, asdict
+from dataclasses import dataclass, asdict
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -301,13 +301,6 @@ class SessionTracker:
             record["raw_messages"] = raw_messages
         self._write(record)
 
-        # stderr summary
-        cost_str = f"  cost=${total_cost:.5f}" if total_cost is not None else ""
-        tools_str = ""
-        if tool_call_counts:
-            tools_str = "  tools: " + " ".join(
-                f"{name}\u00d7{count}" for name, count in tool_call_counts.items()
-            )
         print(f"[dagi] session saved \u2192 {self._path}", file=sys.stderr)
 
     # ---------------------------------------------------------------- internal

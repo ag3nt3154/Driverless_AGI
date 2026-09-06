@@ -1,0 +1,10 @@
+# Textual terminal UI and Typer entry points. Add requirements-core.txt to run dagi.
+# Exact versions preserved from the original requirements.txt.
+annotated-doc==0.0.4
+click==8.4.2
+linkify-it-py==2.1.0
+mdit-py-plugins==0.6.1
+shellingham==1.5.4
+textual==8.2.8
+typer==0.24.2
+uc-micro-py==2.0.0

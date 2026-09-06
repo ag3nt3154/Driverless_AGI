@@ -1,6 +1,6 @@
 # AGENTS.md
 
-> Last updated: 2026-09-05 | [README](README.md) | [Wiki](wiki/index.md)
+> Last updated: 2026-09-06 | [README](README.md) | [Wiki](wiki/index.md)
 
 ---
 
@@ -13,6 +13,8 @@ workflows, errors, and notes live in [wiki/](wiki/index.md).
 ## Rules
 
 - Use `DEFAULT_PYTHON_ENV` (`dagi`) for all Python scripts and package installs.
+- Install from the repo root: `python -m pip install -r requirements-core.txt` (core);
+  add `-r requirements-gui.txt`, `-r requirements-tui.txt`, or `-r requirements-tools.txt` as needed.
 - Always update `AGENTS.md` and `wiki/` after completing a task.
 - Architecture, workflows, errors, and project notes belong in the wiki, not AGENTS.md.
 

@@ -70,6 +70,23 @@ increments on success. Surface-aware step collection skips already-summarized st
 - `switch_model(tier="default")` → back to default model after planning.
 - `switch_model(tier="worker")` → cheaper model for subagents.
 
+## Dependency installation
+
+Use the `dagi` Python environment and run installation from the repository root:
+`python -m pip install -r requirements-core.txt` installs core alone. Add other feature files
+with multiple `-r` arguments: GUI, TUI, tools, PDF, legacy, or dev. GUI includes TUI because
+GUI imports it. `requirements.txt` is the full aggregate, including TUI transitively through GUI.
+
+The seven files preserve all 166 original `package==version` entries exactly once: core (20),
+GUI (19), TUI (8), tools (16), PDF (77), legacy (18), and dev (8). PDF retains document/ML pins;
+legacy retains the old LangChain stack, unused by core. The unchanged converter service
+`environment.yml` remains recommended for complete converter server/system setup.
+`pyproject.toml` retains direct-dependency extras separately; the optional web extra provides
+originally omitted ddgs/crawl4ai. Root `environment.yml` references `requirements-core.txt`.
+The earlier editable-extras wrappers were superseded by this split after user correction.
+See the [housekeeping review](notes/housekeeping-2026-09-06.md) for history and parser verification;
+no installation or network resolution was performed for the corrected files.
+
 ## Testing
 
 Run isolated tests (avoids RAM watchdog and pytest-qt DLL issue):

@@ -1,0 +1,24 @@
+# PySide desktop and Windows integration. Add requirements-core.txt to run dagi.
+# Exact versions preserved from the original requirements.txt.
+# GUI imports TUI helpers, so it also needs the TUI group.
+-r requirements-tui.txt
+
+pyside6==6.11.2
+pyside6-addons==6.11.2
+pyside6-essentials==6.11.2
+pywin32==312
+shiboken6==6.11.2
+win11toast==0.36.3
+winrt-runtime==3.2.1
+winrt-windows-data-xml-dom==3.2.1
+winrt-windows-foundation==3.2.1
+winrt-windows-foundation-collections==3.2.1
+winrt-windows-globalization==3.2.1
+winrt-windows-graphics-imaging==3.2.1
+winrt-windows-media-core==3.2.1
+winrt-windows-media-ocr==3.2.1
+winrt-windows-media-playback==3.2.1
+winrt-windows-media-speechsynthesis==3.2.1
+winrt-windows-storage==3.2.1
+winrt-windows-storage-streams==3.2.1
+winrt-windows-ui-notifications==3.2.1

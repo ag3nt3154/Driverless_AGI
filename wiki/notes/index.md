@@ -4,6 +4,9 @@ Navigation to useful findings and open questions.
 
 > Last updated: 2026-09-06
 
+- [Dependency and housekeeping review](housekeeping-2026-09-06.md): dependency split,
+  conservative Markdown cleanup, retained dead-code candidates, and verification limits.
+
 - [Approved project wiki contract](wiki-contract.md): storage, delegation, lifecycle,
   failure handling, and refresh decisions approved 2026-09-05; implementation complete 2026-09-05.
 - [Project TODOs](project-todos.md): open and completed tasks; relocated from TODO.md 2026-09-05.
