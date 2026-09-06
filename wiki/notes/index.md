@@ -4,6 +4,8 @@ Navigation to useful findings and open questions.
 
 > Last updated: 2026-09-06
 
+- [Broad repository review](broad-review-2026-09-06.md): six unfixed scheduler, session,
+  Telegram, and CLI findings; reproductions and verification limits.
 - [Dependency and housekeeping review](housekeeping-2026-09-06.md): dependency split,
   conservative Markdown cleanup, retained dead-code candidates, and verification limits.
 

@@ -2,7 +2,7 @@
 
 Navigation to observed issues and verified fixes.
 
-> Last updated: 2026-09-05
+> Last updated: 2026-09-06
 
 ## Recent confirmed issues (2026-09)
 
@@ -34,6 +34,10 @@ Registry no longer rebuilds or restricts tools during planning.
 (7) `SetActivePlanTool` containment check didn't call `.resolve()`.
 
 ## Open issues
+
+- [Broad repository review (2026-09-06)](../notes/broad-review-2026-09-06.md): five P1
+  findings (scheduler constructor and timeout, session restore, Telegram final delivery and
+  user-answer dispatch) and one P2 finding (CLI project configuration); all unfixed.
 
 **Provider call has no timeout — worker can block for ~30 min** · `open` · found 2026-08-26:
 `AgentLoop` builds `openai.OpenAI(api_key=…, base_url=…)` with no `timeout`, so a stalled
