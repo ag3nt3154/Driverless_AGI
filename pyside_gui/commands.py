@@ -46,6 +46,7 @@ class SlashCommandHandler:
         self._worker_alive: Callable[[], bool] = lambda: False
         self._on_config_changed: Callable[["AgentConfig", Path], None] | None = None
         self._on_session_cleared: Callable[[], None] | None = None
+        self._desktop_pet: "QWidget | None" = None
 
     def set_active_loop(self, loop) -> None:
         self._active_loop = loop
@@ -60,6 +61,9 @@ class SlashCommandHandler:
 
     def set_on_session_cleared(self, fn: Callable[[], None]) -> None:
         self._on_session_cleared = fn
+
+    def set_desktop_pet(self, pet) -> None:
+        self._desktop_pet = pet
 
     def load_maps(self) -> None:
         from agent.skills import SkillLoader
@@ -114,6 +118,8 @@ class SlashCommandHandler:
             return self._cmd_copy()
         elif cmd == "/hist":
             return self._cmd_hist(arg)
+        elif cmd == "/show-pet":
+            return self._cmd_show_pet()
         elif cmd == "/init":
             return self._cmd_init()
         elif cmd in self._skill_map:
@@ -245,6 +251,18 @@ class SlashCommandHandler:
 
     def _cmd_hist(self, arg: str | None) -> None:
         self._w.left_sidebar.activate_view("history")
+        return None
+
+    def _cmd_show_pet(self) -> None:
+        if self._desktop_pet is None:
+            self._w.conversation.append_error("Desktop pet not available")
+            return None
+        if self._desktop_pet.isVisible():
+            self._desktop_pet.hide()
+            self._w.conversation.append_info("Desktop pet hidden")
+        else:
+            self._desktop_pet.show()
+            self._w.conversation.append_info("Desktop pet shown")
         return None
 
     def _cmd_init(self) -> None:

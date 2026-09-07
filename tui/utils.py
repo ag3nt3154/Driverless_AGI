@@ -18,6 +18,7 @@ _SLASH_HELP = {
     "/copy": "Copy last assistant response to clipboard",
     "/plan": "Enter plan mode", "/model": "Switch model  (/model <id>)",
     "/wtf": "Diagnose the active conversation  (/wtf [description])",
+    "/show-pet": "Toggle desktop pet visibility",
 }
 
 

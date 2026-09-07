@@ -137,6 +137,7 @@ class DagiMainWindow(QMainWindow):
         self._cmd_handler.set_worker_alive_check(alive)
         self._cmd_handler.set_on_config_changed(self._on_config_changed)
         self._cmd_handler.set_on_session_cleared(self._on_session_cleared)
+        self._cmd_handler.set_desktop_pet(self._desktop_pet)
         self._cmd_handler.load_maps()
 
     def _on_config_changed(self, config: AgentConfig, project_path: Path) -> None:
