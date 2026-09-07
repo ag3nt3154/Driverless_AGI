@@ -53,6 +53,7 @@ class DagiMainWindow(QMainWindow):
         self._pending_ask_container: list | None = None
         self._compose_mode = False
         self._stream_had_content = False
+        self._stream_had_reasoning = False
         self._streaming_active = False
 
         self.setWindowTitle(f"Driverless AGI — {config.display_name}")
@@ -319,12 +320,15 @@ class DagiMainWindow(QMainWindow):
     @Slot()
     def _on_stream_started(self) -> None:
         self._stream_had_content = False
+        self._stream_had_reasoning = False
         self._streaming_active = True
         self._conversation.stream_start()
 
     @Slot()
     def _on_stream_ended(self) -> None:
         text = self._bridge._stream_text.strip()
+        if self._bridge._stream_reasoning.strip():
+            self._stream_had_reasoning = True
         if text:
             self._stream_had_content = True
             self._conversation.stream_end(render_markdown(text))
@@ -334,7 +338,7 @@ class DagiMainWindow(QMainWindow):
 
     @Slot(str)
     def _on_reasoning(self, text: str) -> None:
-        if not self._streaming_active and not self._stream_had_content:
+        if not self._streaming_active and not self._stream_had_content and not self._stream_had_reasoning:
             self._conversation.append_reasoning(text)
 
     @Slot(str)

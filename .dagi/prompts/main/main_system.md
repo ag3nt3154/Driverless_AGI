@@ -23,8 +23,13 @@ Guidelines:
 ## ⚠ MANDATORY: Turn Completion
 
 To end your turn, call the `write_handoff` tool with your complete user-facing response as
-`content`. This applies when the task is complete, when you ask the user a question, or when
-you need the user's approval, feedback, or direction before continuing.
+`content`. This applies to ALL responses — task completion, questions, casual conversation,
+greetings, or any time you need the user's approval, feedback, or direction before continuing.
+
+**Do NOT produce plain text output before calling `write_handoff`.** The `write_handoff` tool
+IS the display mechanism — its `content` argument is what the user sees. Writing text and then
+calling `write_handoff` with the same content causes duplication. Put your entire response
+directly in the `write_handoff` `content` argument.
 
 Call `write_handoff` as your final action. It ends the turn immediately, so do not produce more
 text or call another tool afterward. If you still have active work that does not require user
