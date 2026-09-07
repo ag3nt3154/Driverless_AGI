@@ -64,24 +64,28 @@ class TestConfigDrivenFilter:
         assert "bash" in names and "read" in names
         assert "emote" not in names
 
-    def test_emote_registered_only_in_normal_mode_with_controller(self, tmp_path):
+    def test_emote_registered_only_in_normal_mode_with_callbacks(self, tmp_path):
+        from agent._loop_config import AgentCallbacks
         cfg = self._config(tools=None)
         cfg.project_path = tmp_path
+        cb = AgentCallbacks(on_message_board_post=lambda *a: None)
         reg = create_tool_registry(
             cwd=tmp_path,
             config=cfg,
-            expression_controller=object(),
+            callbacks=cb,
         )
         names = {n for n, _ in reg.list_tools()}
         assert "emote" in names
 
     def test_emote_allowlist_must_name_tool_explicitly(self, tmp_path):
+        from agent._loop_config import AgentCallbacks
         cfg = self._config(tools=["read"])
         cfg.project_path = tmp_path
+        cb = AgentCallbacks(on_message_board_post=lambda *a: None)
         reg = create_tool_registry(
             cwd=tmp_path,
             config=cfg,
-            expression_controller=object(),
+            callbacks=cb,
         )
         names = {n for n, _ in reg.list_tools()}
         assert "emote" not in names
@@ -90,7 +94,7 @@ class TestConfigDrivenFilter:
         reg = create_tool_registry(
             cwd=tmp_path,
             config=cfg,
-            expression_controller=object(),
+            callbacks=cb,
         )
         names = {n for n, _ in reg.list_tools()}
         assert "emote" in names
