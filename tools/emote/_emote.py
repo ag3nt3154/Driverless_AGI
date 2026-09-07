@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+from datetime import datetime
 from pathlib import Path
+from typing import Callable
 
 from agent.base_tool import BaseTool
-from agent.expression_assets import ImageAsset
 
 _SUPPORTED_SUFFIXES = frozenset({".gif", ".png", ".jpg", ".jpeg"})
 
@@ -19,7 +20,9 @@ def _scan_memes(memes_root: Path) -> dict[str, Path]:
 
 
 def _build_description(meme_stems: list[str]) -> str:
-    base = "Display one available meme for two expression cycles."
+    base = (
+        "Post a message to the message board with a meme and a text line."
+    )
     if not meme_stems:
         return base + " No memes currently available."
     listing = ", ".join(meme_stems)
@@ -31,10 +34,10 @@ class EmoteTool(BaseTool):
 
     def __init__(
         self,
-        controller,
+        on_post: Callable[[str, str, str, str], None],
         memes_root: Path,
     ) -> None:
-        self._controller = controller
+        self._on_post = on_post
         self._meme_map = _scan_memes(memes_root)
         self.description = _build_description(sorted(self._meme_map))
 
@@ -46,16 +49,23 @@ class EmoteTool(BaseTool):
                 "meme": {
                     "type": "string",
                     "description": (
-                        "Meme name (filename without extension) to display for 2 cycles."
+                        "Meme name (filename without extension) to display."
+                    ),
+                },
+                "text": {
+                    "type": "string",
+                    "description": (
+                        "What you want to say on the message board."
                     ),
                 },
             },
-            "required": ["meme"],
+            "required": ["meme", "text"],
         }
 
     def run(
         self,
         meme: str,
+        text: str,
     ) -> str:
         path = self._meme_map.get(meme)
         if path is None:
@@ -63,6 +73,6 @@ class EmoteTool(BaseTool):
             raise ValueError(
                 f"Meme {meme!r} not found. Available: {available}"
             )
-        asset = ImageAsset(meme, path)
-        self._controller.trigger_meme(asset)
-        return f"Meme triggered: {meme}"
+        ts = datetime.now().isoformat(timespec="seconds")
+        self._on_post("dagi", meme, str(path), text, ts)
+        return f"Posted to message board: [{meme}] {text}"

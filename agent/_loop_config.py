@@ -149,3 +149,7 @@ class AgentCallbacks:
     on_stream_end:           Callable[[], None]    = field(default=lambda: None)
     on_assistant_text_delta: Callable[[str], None] = field(default=lambda t: None)
     on_reasoning_delta:      Callable[[str], None] = field(default=lambda t: None)
+    # Message board: emote tool posts (author, meme_name, asset_path, text, iso_timestamp)
+    on_message_board_post:   Callable[[str, str, str, str, str], None] = field(
+        default=lambda author, name, path, text, ts: None
+    )

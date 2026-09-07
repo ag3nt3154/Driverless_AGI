@@ -48,6 +48,7 @@ class AgentBridge(QObject):
     continue_injected = Signal(int, int)   # cur, max
     plan_shown = Signal()
     subagent_event = Signal(str, str)      # type, json line
+    message_board_post = Signal(str, str, str, str, str)  # author, meme_name, asset_path, text, timestamp
 
     def __init__(self) -> None:
         super().__init__()
@@ -182,6 +183,9 @@ class AgentBridge(QObject):
                 self.subagent_event.emit(subagent_type, line)
             return on_event
 
+        def on_message_board_post(author: str, name: str, path: str, text: str, ts: str) -> None:
+            self.message_board_post.emit(author, name, path, text, ts)
+
         return AgentCallbacks(
             on_tool_start=on_tool_start,
             on_tool_end=on_tool_end,
@@ -207,4 +211,5 @@ class AgentBridge(QObject):
             on_stream_end=self._on_stream_end,
             on_assistant_text_delta=self._on_stream_text_delta,
             on_reasoning_delta=self._on_reasoning_delta,
+            on_message_board_post=on_message_board_post,
         )

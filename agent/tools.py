@@ -178,10 +178,10 @@ def create_tool_registry(
         reg.register(SwitchModelTool())
     from tools.reload_skills import ReloadSkillsTool
     reg.register(ReloadSkillsTool())
-    if expression_controller is not None:
+    if callbacks is not None and callbacks.on_message_board_post is not None:
         from tools.emote import EmoteTool
         memes_root = _DAGI_ROOT / ".dagi" / "emotes" / "memes"
-        reg.register(EmoteTool(controller=expression_controller, memes_root=memes_root))
+        reg.register(EmoteTool(on_post=callbacks.on_message_board_post, memes_root=memes_root))
     if config is not None:
         for spawn_tool in _discover_subagent_tools(
             cwd=cwd, config=config, callbacks=callbacks,

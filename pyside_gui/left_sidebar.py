@@ -14,12 +14,13 @@ from PySide6.QtWidgets import (
 from pyside_gui.sidebars import (
     FileTreeView,
     FileViewerView,
+    MessageBoardView,
     PlanView,
     SessionHistoryView,
 )
 
-_VIEW_NAMES = ("history", "files", "viewer", "plan")
-_RAIL_ICONS = ("\U0001f4cb", "\U0001f4c1", "\U0001f4c4", "\U0001f4dd")
+_VIEW_NAMES = ("history", "files", "viewer", "plan", "board")
+_RAIL_ICONS = ("\U0001f4cb", "\U0001f4c1", "\U0001f4c4", "\U0001f4dd", "\U0001f4e2")
 _RAIL_WIDTH = 40
 
 _RAIL_CSS = """
@@ -98,10 +99,12 @@ class LeftSidebar(QWidget):
         self._file_tree = FileTreeView(project_path)
         self._file_viewer = FileViewerView()
         self._plan_view = PlanView()
+        self._board_view = MessageBoardView()
         self._panel.addWidget(self._history_view)
         self._panel.addWidget(self._file_tree)
         self._panel.addWidget(self._file_viewer)
         self._panel.addWidget(self._plan_view)
+        self._panel.addWidget(self._board_view)
 
         self._file_tree.file_selected.connect(
             self._on_file_selected
@@ -156,6 +159,10 @@ class LeftSidebar(QWidget):
             self._panel.setVisible(True)
             self.expansion_changed.emit(True)
         self._update_rail_styles()
+
+    @property
+    def board_view(self) -> MessageBoardView:
+        return self._board_view
 
     def update_plan(self, subtasks: list[dict], title: str = "") -> None:
         """Push plan data to the plan view (delegation for main-window code)."""

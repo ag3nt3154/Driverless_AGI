@@ -179,7 +179,7 @@ Exit with `/exit`, `exit`, `quit`, or `Ctrl-C`. Conversation history carries acr
 
 ### PySide6 Desktop GUI (`pyside_gui/`)
 
-A native Qt 6 desktop app with a dark Catppuccin Mocha theme. Functionally equivalent to the TUI — full streaming conversation (rendered as HTML via QWebEngineView), right sidebar with token stats and plan tracker, left sidebar with session history, overlay dialogs, and the full slash-command set.
+A native Qt 6 desktop app with a dark Catppuccin Mocha theme. Functionally equivalent to the TUI — full streaming conversation (rendered as HTML via QWebEngineView), right sidebar with token stats and plan tracker, left sidebar with session history/file tree/plan/message board, overlay dialogs, and the full slash-command set. The **message board** tab in the left sidebar displays posts from the `emote` tool — each post shows a meme asset, a text line, and a timestamp.
 
 ```bash
 # Launch (Windows/Linux/macOS — requires conda dagi env):
