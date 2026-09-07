@@ -184,6 +184,10 @@ emotes:
     file: yuandi-dunxia-wan-wanju-qiche.gif
     vad: [0.60, 0.40, 0.45]     # 原地蹲下玩玩具汽车 — squatting to play toy car, absorbed
 
+  - id: yuandi-zhuanxin-wan-mofang
+    file: yuandi-zhuanxin-wan-mofang.gif
+    vad: [0.50, 0.50, 0.55]     # 原地专心玩魔方 — focused on solving Rubik's cube, absorbed
+
   # ── Artistic / graceful ───────────────────────────────────────────────────
   - id: xiaotiqin-yanzou
     file: xiaotiqin-yanzou.gif

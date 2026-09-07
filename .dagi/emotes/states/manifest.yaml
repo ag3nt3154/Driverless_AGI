@@ -3,4 +3,6 @@ states:
   idle: idle.png
   thinking: thinking.png
   tool: money.gif
+  "tool:bash": bash.png
+  "tool:read": reading.png
   error: genshin-impact-fallen.gif
