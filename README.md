@@ -193,9 +193,11 @@ conda run --no-capture-output -n dagi python -m pyside_gui --model <id> --projec
 | `--verbose` / `-v` | Show full tool input/output |
 | `--project` / `-p` | Project directory (defaults to `cwd`) |
 
+**Desktop pet:** A floating always-on-top window that displays VAD expression emotes (GIF animations) as a desktop pet. Hidden by default — toggle with `/show-pet`. The pet is draggable, defaults to the bottom-right corner of the screen, and stays on top of all other windows. The right sidebar's expression widget shows only process-state emotes (idle, thinking, tool:bash, etc.).
+
 **Keyboard shortcuts:** `Enter` submit · `Shift+Enter`/`Ctrl+N` newline · `Ctrl+O` compose mode · `Esc` pause · `Ctrl+Q` quit
 
-**Slash commands:** same set as TUI — `/help`, `/clear`, `/model`, `/compact`, `/tools`, `/skills`, `/workflows`, `/hist`, `/init`, `/copy`, `/exit`
+**Slash commands:** same set as TUI — `/help`, `/clear`, `/model`, `/compact`, `/tools`, `/skills`, `/workflows`, `/hist`, `/init`, `/copy`, `/exit`, `/show-pet`
 
 > **Windows note:** PySide6 DLL loading is handled automatically by `pyside_gui/__init__.py`.
 
@@ -445,6 +447,7 @@ All slash commands work identically in the TUI and CLI.
 | `/workflows` | List all loaded workflows |
 | `/hist [n]` | Open the session history picker — browse the `n` most recent sessions (default 20), select a session, then pick a message turn to resume from |
 | `/init` | Scaffold `.dagi/` and `dagi-memory/` directories for the current project |
+| `/show-pet` | Toggle desktop pet window visibility (PySide GUI only) |
 | `/<skill-name>` | Invoke any loaded skill directly (e.g. `/memory-query`) |
 | `/<workflow-name>` | Run any loaded workflow (e.g. `/improve-yourself`) |
 
