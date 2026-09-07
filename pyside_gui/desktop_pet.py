@@ -1,23 +1,30 @@
 from __future__ import annotations
 
 import logging
+import random
 from pathlib import Path
 
 from PySide6.QtCore import QPoint, QSize, Qt, Slot
-from PySide6.QtGui import QImageReader, QMovie, QMouseEvent, QPixmap, QScreen
+from PySide6.QtGui import QImageReader, QMovie, QMouseEvent
 from PySide6.QtWidgets import QApplication, QLabel, QVBoxLayout, QWidget
 
-from agent.expression import ExpressionSnapshot
-from agent.expression_assets import AssetRef, ImageAsset, TextFallback
+from agent import DAGI_ROOT
 
 _LOGGER = logging.getLogger(__name__)
 
-_PET_SIZE = QSize(210, 182)  # same as ExpressionWidget._GIF_BOUND
+_PET_SIZE = QSize(210, 182)
 _EDGE_INSET = 20
+_GIF_SUFFIXES = frozenset({".gif"})
+
+
+def _scan_gifs(folder: Path) -> list[Path]:
+    if not folder.is_dir():
+        return []
+    return sorted(p for p in folder.iterdir() if p.suffix.lower() in _GIF_SUFFIXES)
 
 
 class DesktopPetWindow(QWidget):
-    """Frameless always-on-top window that displays VAD expression emotes."""
+    """Frameless always-on-top window that randomly cycles through VAD emote GIFs."""
 
     def __init__(self) -> None:
         super().__init__(
@@ -31,7 +38,9 @@ class DesktopPetWindow(QWidget):
 
         self._drag_origin: QPoint | None = None
         self._movie: QMovie | None = None
-        self._static_pixmap: QPixmap | None = None
+        self._seen_last_frame = False
+        self._gifs = _scan_gifs(DAGI_ROOT / ".dagi" / "emotes" / "vad")
+        self._last_index: int | None = None
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -68,68 +77,73 @@ class DesktopPetWindow(QWidget):
         self._drag_origin = None
         event.accept()
 
-    # ── Expression rendering ──────────────────────────────────────────────────
+    # ── GIF cycling ───────────────────────────────────────────────────────────
 
-    @Slot(object)
-    def update_expression(self, snapshot: ExpressionSnapshot) -> None:
-        self._render_asset(snapshot.asset)
+    def showEvent(self, event) -> None:
+        super().showEvent(event)
+        if self._movie is None:
+            self._play_random()
 
-    def _render_asset(self, asset: AssetRef) -> None:
-        if isinstance(asset, TextFallback):
-            self._clear_media()
-            self._label.setText(asset.text)
+    def _pick_random_index(self) -> int | None:
+        n = len(self._gifs)
+        if n == 0:
+            return None
+        if n == 1:
+            return 0
+        idx = random.randrange(n)
+        while idx == self._last_index:
+            idx = random.randrange(n)
+        return idx
+
+    def _play_random(self) -> None:
+        idx = self._pick_random_index()
+        if idx is None:
+            self._label.setText("?")
             return
-        if asset.path.suffix.lower() == ".gif":
-            if self._show_movie(asset):
-                return
-        elif self._show_pixmap(asset):
-            return
-        self._clear_media()
-        self._label.setText("?")
+        self._last_index = idx
+        self._play_gif(self._gifs[idx])
 
-    def _show_movie(self, asset: ImageAsset) -> bool:
+    def _play_gif(self, path: Path) -> None:
         self._clear_media()
-        if not asset.path.is_file():
-            return False
-        natural = QImageReader(str(asset.path)).size()
-        movie = QMovie(str(asset.path))
+        if not path.is_file():
+            self._play_random()
+            return
+        natural = QImageReader(str(path)).size()
+        movie = QMovie(str(path))
         movie.setParent(self)
         if not movie.isValid():
             movie.setParent(None)
             movie.deleteLater()
-            return False
+            self._play_random()
+            return
         if natural.isValid() and not natural.isEmpty():
             scaled = natural.scaled(_PET_SIZE, Qt.AspectRatioMode.KeepAspectRatio)
         else:
             scaled = _PET_SIZE
         movie.setScaledSize(scaled)
+        movie.setSpeed(100)
         self._movie = movie
+        self._seen_last_frame = False
         self._label.setMovie(movie)
+        movie.frameChanged.connect(self._on_frame_changed)
         movie.start()
-        return True
 
-    def _show_pixmap(self, asset: ImageAsset) -> bool:
-        self._clear_media()
-        if not asset.path.is_file():
-            return False
-        pixmap = QPixmap(str(asset.path))
-        if pixmap.isNull():
-            return False
-        self._static_pixmap = pixmap
-        self._label.setPixmap(
-            pixmap.scaled(
-                _PET_SIZE,
-                Qt.AspectRatioMode.KeepAspectRatio,
-                Qt.TransformationMode.SmoothTransformation,
-            )
-        )
-        return True
+    def _on_frame_changed(self, frame_number: int) -> None:
+        if self._movie is None:
+            return
+        last = self._movie.frameCount() - 1
+        if last < 1:
+            return
+        if frame_number >= last:
+            self._seen_last_frame = True
+        elif self._seen_last_frame and frame_number == 0:
+            self._play_random()
 
     def _clear_media(self) -> None:
         if self._movie is not None:
+            self._movie.frameChanged.disconnect(self._on_frame_changed)
             self._movie.stop()
             self._movie.setParent(None)
             self._movie.deleteLater()
             self._movie = None
-        self._static_pixmap = None
         self._label.clear()
