@@ -25,6 +25,7 @@ from pyside_gui.markdown_renderer import render_markdown
 from pyside_gui.menu import build_main_menu
 from pyside_gui.overlays import CopyPicker
 from pyside_gui.prompt_input import PromptInput
+from pyside_gui.desktop_pet import DesktopPetWindow
 from pyside_gui.right_sidebar import RightSidebar
 from pyside_gui.utils import format_elapsed
 
@@ -111,6 +112,8 @@ class DagiMainWindow(QMainWindow):
         self._splitter.setSizes([40, 800, 300])
         self.setCentralWidget(self._splitter)
 
+        self._desktop_pet = DesktopPetWindow()
+
         self._copy_picker = CopyPicker(self._conversation)
 
     def _build_menu(self) -> None:
@@ -164,7 +167,7 @@ class DagiMainWindow(QMainWindow):
         b.agent_done.connect(self._on_agent_done)
         b.agent_paused.connect(self._on_agent_paused)
         b.ask_user_requested.connect(self._on_ask_user)
-        b.expression_changed.connect(rs.expression_widget.update_expression)
+        b.expression_changed.connect(self._desktop_pet.update_expression)
         b.process_state_changed.connect(rs.expression_widget.update_process)
         b.continue_injected.connect(
             lambda c, m: cv.append_info(f"No exit flag — continue prompt injected ({c}/{m})")
@@ -285,6 +288,10 @@ class DagiMainWindow(QMainWindow):
             self._invoke_on_main("_clear_pending_ask_slot")
             log("finally: idle"); self._invoke_on_main("_set_status_slot", "idle")
             self._invoke_on_main("_enable_input_slot")
+    def closeEvent(self, event) -> None:
+        self._desktop_pet.close()
+        super().closeEvent(event)
+
     def keyPressEvent(self, event) -> None:
         if event.key() == Qt.Key.Key_Escape:
             self._action_pause()
