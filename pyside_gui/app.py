@@ -191,6 +191,8 @@ class DagiMainWindow(QMainWindow):
 
     @Slot(str)
     def _on_input_submitted(self, text: str) -> None:
+        if self._compose_mode:
+            self._toggle_compose()
         if text.lower() in ("exit", "quit", "q"):
             self.close()
             return
