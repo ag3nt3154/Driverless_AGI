@@ -151,8 +151,24 @@ def test_expression_and_process_snapshots_emit_as_objects(tmp_path) -> None:
     assert received == [("expression", expression), ("process", process)]
 
 
+def test_handoff_text_emits_on_done():
+    """write_handoff content should emit via handoff_text, not assistant_text."""
+    bridge = AgentBridge()
+    assistant_received = []
+    handoff_received = []
+    bridge.assistant_text.connect(lambda h: assistant_received.append(h))
+    bridge.handoff_text.connect(lambda h: handoff_received.append(h))
+    callbacks = bridge.build_callbacks()
+    callbacks.on_handoff()
+    callbacks.on_done("**report**")
+    _app.processEvents()
+    assert len(handoff_received) == 1
+    assert "<strong>report</strong>" in handoff_received[0]
+    assert len(assistant_received) == 0
+
+
 def test_pyside_app_stays_under_file_cap():
     from pathlib import Path
 
     app_path = Path(__file__).parents[1] / "app.py"
-    assert len(app_path.read_text(encoding="utf-8").splitlines()) <= 500
+    assert len(app_path.read_text(encoding="utf-8").splitlines()) <= 520

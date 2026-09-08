@@ -30,6 +30,7 @@ class AgentBridge(QObject):
     tool_started = Signal(str, str)        # name, args
     tool_ended = Signal(str, str)          # name, result
     assistant_text = Signal(str)           # rendered HTML
+    handoff_text = Signal(str)             # rendered HTML (bypasses stream guard)
     reasoning_received = Signal(str)       # text
     token_update = Signal(int, int, object, int, int)
     context_update = Signal(object)        # dict
@@ -118,7 +119,7 @@ class AgentBridge(QObject):
     def _on_done(self, result: str) -> None:
         if self._handoff_pending and result.strip():
             html = render_markdown(result)
-            self.assistant_text.emit(html)
+            self.handoff_text.emit(html)
         self._handoff_pending = False
         self.agent_done.emit(result)
 

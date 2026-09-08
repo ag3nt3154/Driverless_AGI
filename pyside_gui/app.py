@@ -155,6 +155,7 @@ class DagiMainWindow(QMainWindow):
         b.tool_started.connect(cv.append_tool_start)
         b.tool_ended.connect(cv.append_tool_end)
         b.assistant_text.connect(self._on_assistant_text)
+        b.handoff_text.connect(cv.append_assistant)
         b.stream_started.connect(self._on_stream_started)
         b.reasoning_received.connect(self._on_reasoning)
         b.stream_text_delta.connect(lambda c: cv.stream_delta("text", c))
