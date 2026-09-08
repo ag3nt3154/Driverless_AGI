@@ -160,11 +160,12 @@ class AgentLoop:
             self._seed_from_messages(initial_messages)
         self._sync_messages()
 
-        self.client = openai.OpenAI(api_key=config.api_key, base_url=config.base_url)
-        # Build extra_body for OpenRouter extensions (reasoning, prompt caching, provider routing).
-        # Single source of truth shared with agent/_model_switch.handle_switch_model.
+        from agent._model_switch import build_openai_client, build_extra_body
+
+        self.client, script_rk = build_openai_client(config)
+        if script_rk:
+            config.request_kwargs = script_rk
         self._parallel_tool_calls = False
-        from agent._model_switch import build_extra_body
 
         self._extra_body: dict = build_extra_body(
             config.thinking, config.cache_prompt, config.provider_order,
@@ -180,6 +181,8 @@ class AgentLoop:
             "thinking":       config.thinking,
             "display_name":   config.display_name,
             "provider_order": config.provider_order,
+            "client_script":  config.client_script,
+            "request_kwargs": dict(config.request_kwargs),
         }
         self._current_tier: str = "default"
 
@@ -569,13 +572,16 @@ class AgentLoop:
                     _request = self._build_request_messages()
                     self.callbacks.on_api_call(list(_request))
                     try:
-                        _create_kwargs = dict(
+                        _create_kwargs = dict(self.config.request_kwargs)
+                        _create_kwargs.update(
                             model=self.config.model,
                             messages=_request,
                             tools=self.registry.get_openai_tools_list(),
                             parallel_tool_calls=self._parallel_tool_calls,
-                            **(dict(extra_body=self._extra_body) if self._extra_body else {}),
                         )
+                        if self._extra_body:
+                            _create_kwargs.setdefault("extra_body", {})
+                            _create_kwargs["extra_body"].update(self._extra_body)
                         self._last_request_snapshot = self._freeze_request_snapshot(_create_kwargs)
                         if self.config.stream:
                             _stream = self.client.chat.completions.create(

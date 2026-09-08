@@ -88,6 +88,13 @@ class AgentConfig:
     # (e.g. ["Anthropic", "Together"]). None means use OpenRouter's default load balancing.
     # Sent as extra_body["provider"]["order"] — ignored by non-OpenRouter endpoints.
     provider_order: list[str] | None = None
+    # Path to a Python script that exports a configured openai.OpenAI `client` and
+    # an optional `request_kwargs` dict spread into .create() calls.
+    # When set, api_key/base_url are ignored for client construction.
+    client_script: str | None = None
+    # Extra kwargs spread into chat.completions.create() — loaded from client_script
+    # or set directly. Harness-managed keys (model, messages, tools, stream) take precedence.
+    request_kwargs: dict = field(default_factory=dict)
     # Scheduler: override the ask_user timeout (seconds). None = use default (300s).
     # Set to 60 by the scheduler runner for fully autonomous execution.
     ask_user_timeout: int | None = None

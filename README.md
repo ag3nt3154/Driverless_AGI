@@ -571,6 +571,41 @@ Any model entry can override compaction thresholds (defaults shown):
     keep_recent_tokens: 20000    # recent tail kept verbatim
 ```
 
+### Client Scripts (Custom Transport & Request Profiles)
+
+For full control over the OpenAI client — custom httpx transports, mTLS, proxies, extra headers, request-level defaults — use a **client script**: a Python file that exports a configured `openai.OpenAI` client and optional `request_kwargs`.
+
+```yaml
+models:
+  corp-gpt4o:
+    name: "GPT-4o (Corporate Proxy)"
+    client_script: .dagi/profiles/corp_gpt4o.py
+    model: gpt-4o              # optional: overrides request_kwargs["model"]
+    context_window: 128000
+```
+
+```python
+# .dagi/profiles/corp_gpt4o.py
+import os, httpx, openai
+
+client = openai.OpenAI(
+    api_key=os.environ["CORP_API_KEY"],
+    base_url="https://llm-proxy.corp.example.com/v1",
+    default_headers={"X-Organization": "my-team"},
+    http_client=httpx.Client(
+        transport=httpx.HTTPTransport(local_address="0.0.0.0", verify=False),
+        timeout=120.0,
+    ),
+)
+
+request_kwargs = {
+    "temperature": 0.7,
+    "max_tokens": 4096,
+}
+```
+
+The script must define `client` (an `openai.OpenAI` instance). It may optionally define `request_kwargs` (a dict spread into `chat.completions.create()`). Harness-managed keys (`model`, `messages`, `tools`, `stream`) always take precedence over `request_kwargs`. When `client_script` is set, the `api_url`/`api_key`/`api_key_env` fields are ignored for client construction. An example script is provided at `.dagi/profiles/example_corp.py`.
+
 ### Thinking / Reasoning
 
 Models that support extended thinking (e.g. Qwen3, DeepSeek-R1) can be configured with the `thinking` key. Values: `none` (default), `low`, `medium`, `high`.

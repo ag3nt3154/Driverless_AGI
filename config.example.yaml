@@ -161,6 +161,14 @@ sandbox_mode: false  # true  = file tools (read, write, edit, grep, find, copy) 
 #                     e.g. ["Anthropic", "Together"] — routes to Anthropic first, falls back
 #                     to Together if unavailable. Omit to use OpenRouter's default load balancing.
 #                     Full slug list: https://openrouter.ai/docs/guides/routing/provider-selection
+#   client_script     Path to a Python script that exports a configured openai.OpenAI `client`
+#                     and optional `request_kwargs` dict. When set, the script has full control
+#                     over client construction (custom httpx transports, mTLS, proxies, etc.)
+#                     and request-level defaults (temperature, extra_body, extra_headers, etc.).
+#                     The api_url/api_key/api_key_env fields are ignored for client construction
+#                     when client_script is set. model may still be set in config.yaml to
+#                     override whatever the script's request_kwargs specifies.
+#                     See .dagi/profiles/ for examples.
 
 models:
   gpt-4o-openai:
@@ -219,6 +227,13 @@ models:
   #   context_window: 8192           # Example per-model context override for a smaller model
   #   reserve_tokens: 2048
   #   keep_recent_tokens: 4096
+
+  # ── Client script example (custom transport, mTLS, extra headers, etc.) ────
+  # corp-gpt4o:
+  #   name: "GPT-4o (Corporate Proxy)"
+  #   client_script: .dagi/profiles/corp_gpt4o.py
+  #   model: gpt-4o              # optional: overrides request_kwargs["model"] from the script
+  #   context_window: 128000
 
   # ── Large-context model example ────────────────────────────────────────────
   # gemini-pro-openrouter:

@@ -1,4 +1,4 @@
-"""agent/_model_switch.py — LLM tier switching.
+"""agent/_model_switch.py — LLM tier switching & client construction.
 
 Extracted verbatim from AgentLoop._handle_switch_model in agent/loop.py
 (`self` became the explicit `loop` parameter). `build_extra_body` is the
@@ -8,11 +8,15 @@ handle_switch_model.
 """
 from __future__ import annotations
 
+import importlib.util
+import sys
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 import openai
 
 if TYPE_CHECKING:
+    from agent._loop_config import AgentConfig
     from agent.loop import AgentLoop
 
 
@@ -33,6 +37,67 @@ def build_extra_body(
     if provider_order:
         body["provider"] = {"order": provider_order}
     return body
+
+
+def load_client_script(script_path: str) -> tuple[openai.OpenAI, dict]:
+    """Execute a Python client script and extract `client` and `request_kwargs`.
+
+    The script must define a module-level `client` (openai.OpenAI instance).
+    It may optionally define `request_kwargs` (dict) with extra kwargs to
+    spread into chat.completions.create() calls.
+
+    Returns (client, request_kwargs).
+    """
+    from agent import DAGI_ROOT
+    path = Path(script_path)
+    if not path.is_absolute():
+        path = DAGI_ROOT / path
+    path = path.resolve()
+    if not path.exists():
+        raise FileNotFoundError(f"Client script not found: {path}")
+
+    spec = importlib.util.spec_from_file_location(f"_dagi_client_{path.stem}", path)
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules[mod.__name__] = mod
+    try:
+        spec.loader.exec_module(mod)
+    except Exception as exc:
+        del sys.modules[mod.__name__]
+        raise RuntimeError(f"Failed to execute client script {path}: {exc}") from exc
+
+    client = getattr(mod, "client", None)
+    if client is None:
+        del sys.modules[mod.__name__]
+        raise AttributeError(f"Client script {path} must define a `client` variable")
+    if not isinstance(client, openai.OpenAI):
+        del sys.modules[mod.__name__]
+        raise TypeError(
+            f"Client script {path}: `client` must be an openai.OpenAI instance, "
+            f"got {type(client).__name__}"
+        )
+
+    request_kwargs = getattr(mod, "request_kwargs", {})
+    if not isinstance(request_kwargs, dict):
+        del sys.modules[mod.__name__]
+        raise TypeError(
+            f"Client script {path}: `request_kwargs` must be a dict, "
+            f"got {type(request_kwargs).__name__}"
+        )
+
+    return client, request_kwargs
+
+
+def build_openai_client(config: AgentConfig) -> tuple[openai.OpenAI, dict]:
+    """Build an OpenAI client + request_kwargs from config.
+
+    If config.client_script is set, loads and executes the script.
+    Otherwise falls back to openai.OpenAI(api_key, base_url).
+
+    Returns (client, request_kwargs).
+    """
+    if config.client_script:
+        return load_client_script(config.client_script)
+    return openai.OpenAI(api_key=config.api_key, base_url=config.base_url), {}
 
 
 def handle_switch_model(loop: AgentLoop, target: str, args: dict) -> str:
@@ -69,6 +134,8 @@ def handle_switch_model(loop: AgentLoop, target: str, args: dict) -> str:
         loop.config.thinking       = snap["thinking"]
         loop.config.display_name   = snap["display_name"]
         loop.config.provider_order = snap["provider_order"]
+        loop.config.client_script  = snap["client_script"]
+        loop.config.request_kwargs = snap["request_kwargs"]
         tier_cfg = None
     else:
         return f"Unknown model tier '{target}'. Valid values: plan, default, worker."
@@ -80,8 +147,12 @@ def handle_switch_model(loop: AgentLoop, target: str, args: dict) -> str:
         loop.config.thinking       = tier_cfg.thinking
         loop.config.display_name   = tier_cfg.display_name
         loop.config.provider_order = tier_cfg.provider_order
+        loop.config.client_script  = tier_cfg.client_script
+        loop.config.request_kwargs = tier_cfg.request_kwargs
 
-    loop.client = openai.OpenAI(api_key=loop.config.api_key, base_url=loop.config.base_url)
+    loop.client, script_rk = build_openai_client(loop.config)
+    if script_rk:
+        loop.config.request_kwargs = script_rk
 
     loop._extra_body = build_extra_body(
         loop.config.thinking, loop.config.cache_prompt, loop.config.provider_order,

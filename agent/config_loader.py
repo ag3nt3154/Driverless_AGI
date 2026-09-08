@@ -169,12 +169,13 @@ def _build_config_from_entry(
     sandbox_mode = bool(raw.get("sandbox_mode", False))
     system_prompt_preamble = str(raw.get("system_prompt_preamble", "") or "")
     provider_order: list[str] | None = entry.get("provider_order") or None
+    client_script: str | None = entry.get("client_script") or None
     services = raw.get("services") or {}
     expression_interval = _load_expression_interval(raw)
 
     return AgentConfig(
-        model=entry["model"],
-        base_url=entry["api_url"],
+        model=entry.get("model", ""),
+        base_url=entry.get("api_url", ""),
         api_key=api_key,
         model_id=model_id,
         thinking=str(thinking).lower(),
@@ -193,6 +194,7 @@ def _build_config_from_entry(
         sandbox_mode=sandbox_mode,
         system_prompt_preamble=system_prompt_preamble,
         provider_order=provider_order,
+        client_script=client_script,
         services=services,
         expression_interval=expression_interval,
         python_env=python_env,
