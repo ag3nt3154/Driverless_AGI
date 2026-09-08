@@ -1,6 +1,6 @@
 # AGENTS.md
 
-> Last updated: 2026-09-06 | [README](README.md) | [Wiki](wiki/index.md) | [Code review](wiki/notes/broad-review-2026-09-06.md)
+> Last updated: 2026-09-08 | [README](README.md) | [Wiki](wiki/index.md) | [Code review](wiki/notes/2026-09-08_CODE_REVIEW.md)
 
 ---
 

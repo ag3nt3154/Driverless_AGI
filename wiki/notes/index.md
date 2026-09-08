@@ -2,8 +2,11 @@
 
 Navigation to useful findings and open questions.
 
-> Last updated: 2026-09-06
+> Last updated: 2026-09-08
 
+- [Code review — 2026-09-08](2026-09-08_CODE_REVIEW.md): 37 findings across agent/,
+  tools/, pyside_gui/, root scripts. 3 critical (cross-thread race, double JSON encoding,
+  dead stub with latent ImportError), 12 dead-code, 9 bloat, 13 improvements.
 - [Broad repository review](broad-review-2026-09-06.md): six unfixed scheduler, session,
   Telegram, and CLI findings; reproductions and verification limits.
 - [Dependency and housekeeping review](housekeeping-2026-09-06.md): dependency split,
