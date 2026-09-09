@@ -29,8 +29,7 @@ def project_event(event: "SessionEvent") -> dict:
     """
     data = event.data
     if event.type == ev.USER_MESSAGE:
-        # `role` is durable data, not a projection decision — wiki context
-        # and reload notices ride this event type with role="system".
+        # `role` is durable data, not a projection decision.
         return {"role": data["role"], "content": copy.deepcopy(data["content"])}
     if event.type == ev.ASSISTANT_MESSAGE:
         return copy.deepcopy(dict(data["message"]))
