@@ -105,6 +105,14 @@ class AgentConfig:
     # Active Python environment detected at startup (e.g. "conda:dagi" or "venv:/path")
     # Set by config_loader._detect_python_env()
     python_env: str = ""
+    # Reader: max output tokens for the reader subprocess. None = derive from reserve_tokens.
+    # Loaded from YAML `max_output_tokens` at entry or top level. An explicit value only
+    # tightens the output reservation — it never widens beyond reserve_tokens.
+    max_output_tokens: int | None = None
+    # Reader: when True, use the legacy line-count delegation trigger and old
+    # read-large-text preset. Set use_legacy_reader: true in .dagi/config.yaml to revert.
+    # Remove after one release cycle.
+    use_legacy_reader: bool = False
 
 
 @dataclass

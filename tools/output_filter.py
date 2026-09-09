@@ -28,6 +28,15 @@ def _serialise(result: str | list) -> str:
     return "__list__:" + json.dumps(result)
 
 
+def estimate_tool_output(result: str | list) -> int:
+    """Estimate token count for a raw dispatch result (shared F estimator).
+
+    Uses the same //4 heuristic as filter_tool_output so all callers agree on
+    the threshold boundary. Returns 0 for empty results.
+    """
+    return len(_serialise(result)) // _CHARS_PER_TOKEN
+
+
 def filter_tool_output(
     result: str | list,
     reserve_tokens: int,
@@ -57,7 +66,7 @@ def filter_tool_output(
     if reserve_tokens <= 0:
         return result, full_str
 
-    estimated_tokens = len(full_str) // _CHARS_PER_TOKEN
+    estimated_tokens = estimate_tool_output(result)
     if estimated_tokens < reserve_tokens:
         return result, full_str  # pass-through — small enough to enter context raw
 

@@ -150,9 +150,21 @@ def _build_config_from_entry(
         api_key_env = entry.get("api_key_env", "OPENAI_API_KEY")
         api_key = os.environ.get(api_key_env, "")
 
-    context_window       = entry.get("context_window")        or raw.get("context_window",        128_000)
-    reserve_tokens       = entry.get("reserve_tokens")        or raw.get("reserve_tokens",         16_384)
-    keep_recent_tokens   = entry.get("keep_recent_tokens")    or raw.get("keep_recent_tokens",     20_000)
+    # Use key-presence check (not truthiness) so explicit zero in an entry is honoured.
+    context_window = (
+        entry["context_window"] if "context_window" in entry
+        else raw.get("context_window", 128_000)
+    )
+    reserve_tokens = (
+        entry["reserve_tokens"] if "reserve_tokens" in entry
+        else raw.get("reserve_tokens", 16_384)
+    )
+    keep_recent_tokens = (
+        entry["keep_recent_tokens"] if "keep_recent_tokens" in entry
+        else raw.get("keep_recent_tokens", 20_000)
+    )
+    _mot = entry.get("max_output_tokens") if "max_output_tokens" in entry else raw.get("max_output_tokens")
+    max_output_tokens: int | None = int(_mot) if _mot is not None else None
     null_response_retries = int(raw.get("null_response_retries", 3))
     max_continuations = int(raw.get("max_continuations", 10))
     api_error_retries = int(raw.get("api_error_retries", 3))
@@ -163,6 +175,7 @@ def _build_config_from_entry(
     raw_memory_root = raw.get("memory_root")
     memory_root = Path(raw_memory_root).expanduser() if raw_memory_root else None
 
+    use_legacy_reader = bool(raw.get("use_legacy_reader", False))
     bash_backend = str(raw.get("bash_backend", "subprocess"))
     tools: list[str] | None = raw.get("tools") or None
     disabled_tools: list[str] | None = raw.get("disabled_tools") or None
@@ -182,6 +195,8 @@ def _build_config_from_entry(
         context_window=int(context_window),
         reserve_tokens=int(reserve_tokens),
         keep_recent_tokens=int(keep_recent_tokens),
+        max_output_tokens=max_output_tokens,
+        use_legacy_reader=use_legacy_reader,
         null_response_retries=null_response_retries,
         max_continuations=max_continuations,
         api_error_retries=api_error_retries,
