@@ -37,7 +37,7 @@ class AgentBridge(QObject):
     stream_started = Signal()
     stream_text_delta = Signal(str)        # chunk
     stream_reasoning_delta = Signal(str)   # chunk
-    stream_ended = Signal()
+    stream_ended = Signal(str, str)
     compaction_done = Signal(int, int)     # kept, removed
     model_switched = Signal(str, str)      # from, to
     error_occurred = Signal(str)           # message
@@ -114,7 +114,7 @@ class AgentBridge(QObject):
         self.stream_reasoning_delta.emit(chunk)
 
     def _on_stream_end(self) -> None:
-        self.stream_ended.emit()
+        self.stream_ended.emit(self._stream_text, self._stream_reasoning)
 
     def _on_done(self, result: str) -> None:
         if self._handoff_pending and result.strip():

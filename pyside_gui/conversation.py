@@ -100,6 +100,6 @@ class ConversationView(QWebEngineView):
     ) -> None:
         self._run_js(
             f"appendQuestion({self._js_str(question)}, "
-            f"{self._js_str(json.dumps(options))}, "
+            f"{json.dumps(options)}, "
             f"{timeout if timeout else 'null'})"
         )
