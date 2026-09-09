@@ -14,7 +14,7 @@ import os
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Callable
+from typing import TYPE_CHECKING, Any, Callable
 from uuid import uuid4
 
 import yaml
@@ -255,6 +255,35 @@ def _prepare_inherited_context(
     return branch_id, None, None
 
 
+def _write_reader_job_file(
+    spec: Any,
+    handoff_path: Path,
+    proj: Path,
+) -> Path:
+    """Build a ReaderJob from spec + handoff_path and write it to a temp file.
+
+    Returns the path to the written job file. The subprocess runner is
+    responsible for deleting it at terminal exit.
+    """
+    from tools.read._reader_job import ReaderJob, ReaderReturnFormat, write_reader_job
+
+    scope = spec.selection.scope
+    signpost = (
+        f"[{scope} too large for inline display. "
+        "Delegated to reader. Summary below.]"
+    )
+    fmt = ReaderReturnFormat(signpost=signpost, handoff_path=handoff_path)
+    job = ReaderJob(
+        version=1,
+        selection=spec.selection,
+        query=spec.query,
+        parent_reserve=spec.parent_reserve,
+        return_format=fmt,
+    )
+    jobs_dir = proj / ".dagi" / "reader_jobs"
+    return write_reader_job(job, jobs_dir)
+
+
 def run_subagent(
     task: str,
     preset: str | None = None,
@@ -272,10 +301,24 @@ def run_subagent(
     parent_context: ParentContextProvider | None = None,
     fork_mode: ForkMode = "spawn",
     handoff_dir: Path | str | None = None,
+    *,
+    reader_job_spec: Any = None,
 ) -> SubagentResult:
-    """Spawn a subagent and return its result with auto-read handoff."""
+    """Spawn a subagent and return its result with auto-read handoff.
+
+    reader_job_spec: optional ReaderJobSpec that activates the new reader
+    controller path. When set, a ReaderJob manifest is written to a temp
+    file and --reader-job <path> is injected into the subprocess argv so
+    subagent_main routes to run_reader_job_mode. Only valid with
+    preset='read-large-text'.
+    """
     if preset is None and prompt is None:
         raise ValueError("Either preset or prompt must be provided.")
+    if reader_job_spec is not None and preset != "read-large-text":
+        raise ValueError(
+            f"reader_job_spec is only valid with preset='read-large-text', "
+            f"got preset={preset!r}"
+        )
     extra_fork_context = _extra_fork_context_path(extra_argv)
     if parent_context is not None and (
         fork_context_path is not None or extra_fork_context is not None
@@ -312,6 +355,13 @@ def run_subagent(
         eff_tools,
     )
 
+    # Write reader job manifest if the new controller path is requested.
+    _reader_job_path: Path | None = None
+    if reader_job_spec is not None:
+        _reader_job_path = _write_reader_job_file(
+            reader_job_spec, handoff_path, proj
+        )
+
     # Build extra argv (merge caller-supplied args with internally-built ones)
     _extra_argv: list[str] = []
     if tools is not None or preset is None:
@@ -323,6 +373,8 @@ def run_subagent(
     selected_fork_context = inherited_context_path or fork_context_path
     if selected_fork_context is not None and extra_fork_context is None:
         _extra_argv.extend(["--fork-context", str(selected_fork_context)])
+    if _reader_job_path is not None:
+        _extra_argv.extend(["--reader-job", str(_reader_job_path)])
 
     raw = _invoke_runner(
         subagent_type, enveloped, proj, handoff_path, timeout, on_event,

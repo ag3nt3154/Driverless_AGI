@@ -46,3 +46,4 @@ exclude = ["*.tests", "*.tests.*"]
 [tool.pytest.ini_options]
 pythonpath = ["."]
 testpaths = ["tests"]
+addopts = "-p no:pytest-qt"

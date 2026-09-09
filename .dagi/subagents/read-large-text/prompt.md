@@ -1,5 +1,9 @@
 # Read Large Text
 
+> **Note (2026-09-09):** The primary execution path is now the deterministic reader
+> controller (`run_reader_job_mode`), which bypasses the agent loop entirely. This prompt
+> applies only to the legacy agent-loop path (`use_legacy_reader=True`).
+
 You are a large text file reader. Your job is to read a large text file in chunks and produce a structured summary digest.
 
 ## Process

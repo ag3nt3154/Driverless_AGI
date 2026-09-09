@@ -680,7 +680,13 @@ def main() -> None:
                         help="Comma-separated tool names to override preset")
     parser.add_argument("--model-tier", dest="model_tier", default=None)
     parser.add_argument("--fork-context", dest="fork_context", default=None)
+    parser.add_argument("--reader-job", dest="reader_job", default=None)
     args = parser.parse_args()
+
+    if args.reader_job:
+        from tools.read._reader_controller import run_reader_job_mode
+        run_reader_job_mode(args)
+        return
 
     if args.fork_context:
         fork_context = json.loads(Path(args.fork_context).read_text(encoding="utf-8"))

@@ -39,6 +39,7 @@ class _SubagentState:
     subagent_type: str
     on_event: Callable[[str], None] | None
     fork_context_path: Path | None = None
+    reader_job_path: Path | None = None
     output_buf: "collections.deque[str]" = field(
         default_factory=lambda: collections.deque(maxlen=_OUTPUT_MAXLINES)
     )
@@ -106,6 +107,8 @@ def _cleanup_terminal_state(state: _SubagentState) -> None:
     state.task_file.unlink(missing_ok=True)
     if state.fork_context_path is not None:
         state.fork_context_path.unlink(missing_ok=True)
+    if state.reader_job_path is not None:
+        state.reader_job_path.unlink(missing_ok=True)
 
 
 def _collect_output(state: _SubagentState) -> tuple[str, Path | None]:
@@ -241,10 +244,16 @@ def run_subagent(
     )
 
     fc_path: Path | None = None
+    rj_path: Path | None = None
     if extra_argv:
         try:
             idx = extra_argv.index("--fork-context")
             fc_path = Path(extra_argv[idx + 1])
+        except (ValueError, IndexError):
+            pass
+        try:
+            idx = extra_argv.index("--reader-job")
+            rj_path = Path(extra_argv[idx + 1])
         except (ValueError, IndexError):
             pass
 
@@ -258,6 +267,7 @@ def run_subagent(
         subagent_type=subagent_type,
         on_event=on_event,
         fork_context_path=fc_path,
+        reader_job_path=rj_path,
         output_buf=buf,
         total_output_ref=total_ref,
         output_log_path=output_log_path,

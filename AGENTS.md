@@ -106,8 +106,14 @@ security issues, or complexity debt would be significant.
 | `agent/cli_utils.py` | `_cmd_init` — project wiki scaffold creation |
 | `agent/_init_templates.py` | `build_init_files` — wiki + AGENTS scaffold content |
 | `tools/_wiki_tools.py` | Wiki delegation logic (scope guard, protocol inject, handoff validate) |
-| `tools/subagent_api.py` | Public subagent API; `SubagentResult` dataclass |
-| `tools/_handoff_format.py` | `format_error_result`, `MISSING_HANDOFF_NOTICE` |
+| `tools/subagent_api.py` | Public subagent API; `SubagentResult` dataclass; `reader_job_spec` kwarg |
+| `tools/_handoff_format.py` | `format_handoff_content` (pure), `format_handoff_result`, `format_error_result` |
+| `tools/read/_selection.py` | `ReadSelection`, `SourceSpan`, `references_for_range`, `make_selection` |
+| `tools/read/_chunking.py` | `chunk_selection` (Chonkie + stdlib fallback), `ReaderChunk` |
+| `tools/read/_budgets.py` | `preflight_reader`, `SummaryAllocation`, `estimate_tool_output` |
+| `tools/read/_reader_provider.py` | `ReaderRuntime`, `call_reader`, `build_reader_request` |
+| `tools/read/_reader_controller.py` | `ReaderController`, `ReaderState`, `run_reader_job_mode` |
+| `tools/read/_reader_job.py` | `ReaderJob`, `write_reader_job`, `load_reader_job`, `delegate_selection` |
 | `.dagi/subagents/wiki-{query,add}/` | Wiki subagent presets (file-tool-only, no nesting) |
 | `.dagi/skills/deliver/SKILL.md` | Primary delivery lifecycle orchestration |
 | `.dagi/skills/plan/SKILL.md` | Planning lifecycle (spec, explore, approve, wiki-add) |
@@ -132,6 +138,7 @@ security issues, or complexity debt would be significant.
 
 ## Notes & Terms
 
+- **Large-file reader (controller path)**: `ReadTool` triggers when `estimate_tool_output(result) >= config.reserve_tokens`. Calls `delegate_selection` → `run_subagent(preset="read-large-text", reader_job_spec=spec)` → `subagent_main` routes via `--reader-job` to `run_reader_job_mode` (bypasses agent loop). Controller chunks file with Chonkie/stdlib fallback, calls model API sequentially, writes handoff.
 - **pytest-qt entry point**: name is `pytest-qt` (not `qt`); use `-p "no:pytest-qt"` to disable.
 - **Sentinel display sanitization**: escape loop sentinels (`<<` → `< <`) before showing; byte-check source before editing.
 - **agent/_* loop modules**: white-box test patches must target owning module (e.g. `agent._compaction`).

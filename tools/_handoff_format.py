@@ -39,6 +39,25 @@ def unverified_flag_path(handoff_path: Path) -> Path:
     return handoff_path.with_name(f"{handoff_path.stem}_unverified.flag")
 
 
+def format_handoff_content(
+    content: str,
+    handoff_path: str,
+    *,
+    unverified: bool = False,
+) -> str:
+    """Format already-read handoff content into the standard presentation string.
+
+    Pure function: takes content as a string, no file I/O. Used by the reader
+    controller for budget checks before the file is written, and by the
+    existing format_handoff_result after the file is read.
+    """
+    banner = _UNVERIFIED_BANNER if unverified else ""
+    return (
+        f"{banner}Subagent completed. Handoff written to: {handoff_path}\n\n"
+        f"--- Handoff content ---\n{content}"
+    )
+
+
 def format_handoff_result(handoff_path: str, unverified: bool = False) -> str:
     """Format a subagent's "ok"/"ok_unverified" result, inlining handoff content.
 
@@ -47,18 +66,15 @@ def format_handoff_result(handoff_path: str, unverified: bool = False) -> str:
     banner. If the file can't be read (missing, permissions, bad encoding),
     degrades gracefully to an error message instead of raising.
     """
-    banner = _UNVERIFIED_BANNER if unverified else ""
     try:
         content = Path(handoff_path).read_text(encoding="utf-8")
     except (OSError, UnicodeDecodeError) as exc:
+        banner = _UNVERIFIED_BANNER if unverified else ""
         return (
             f"{banner}Subagent completed. Handoff written to: {handoff_path}\n\n"
             f"(could not read handoff file: {exc})"
         )
-    return (
-        f"{banner}Subagent completed. Handoff written to: {handoff_path}\n\n"
-        f"--- Handoff content ---\n{content}"
-    )
+    return format_handoff_content(content, handoff_path, unverified=unverified)
 
 
 _MISSING_HANDOFF_NOTICE = (

@@ -174,9 +174,11 @@ class TestDocumentCacheDisclosure:
         assert result.startswith("[notes.docx | editable: ")
 
 
-def _make_config(project_path):
+def _make_config(project_path, reserve_tokens=1000, use_legacy_reader=False):
     config = MagicMock()
     config.project_path = project_path
+    config.reserve_tokens = reserve_tokens
+    config.use_legacy_reader = use_legacy_reader
     return config
 
 
@@ -196,7 +198,7 @@ def _make_ok_result(handoff_path):
 
 
 class TestLargeFileDelegation:
-    """ReadTool delegates files over 2000 lines to read_large_text."""
+    """ReadTool delegates when rendered result exceeds parent reserve threshold."""
 
     def test_large_file_delegates_to_read_large_text(self, tmp_path):
         _make_large_file(tmp_path)
@@ -247,8 +249,9 @@ class TestLargeFileDelegation:
 
         assert mock_run.call_args.kwargs["parent_context"] is provider
 
-    def test_explicit_offset_skips_delegation(self, tmp_path):
-        f, _ = _make_large_file(tmp_path)
+    def test_small_result_explicit_limit_skips_delegation(self, tmp_path):
+        """Small limit produces a small result — no delegation regardless of file size."""
+        _make_large_file(tmp_path)
         config = _make_config(tmp_path)
         tool = ReadTool(
             cwd=tmp_path,
@@ -260,11 +263,11 @@ class TestLargeFileDelegation:
         )
 
         with patch("tools.subagent_api.run_subagent") as mock_run:
-            result = tool.run(path="big.txt", offset=5)
+            result = tool.run(path="big.txt", limit=5)
 
         mock_run.assert_not_called()
         assert "Delegated to read_large_text" not in result
-        assert "line5" in result
+        assert f"{1:6d}\tline1" in result
 
     def test_explicit_limit_skips_delegation(self, tmp_path):
         f, _ = _make_large_file(tmp_path)
@@ -322,13 +325,90 @@ class TestLargeFileDelegation:
         mock_run.assert_not_called()
         assert "Delegated to read_large_text" not in result
 
-    def test_doc_ext_over_default_limit_skips_delegation(self, tmp_path):
-        """Converted doc files must not be delegated even if over the line limit —
-        delegation would drop the header/pages info and hand off the raw path."""
+    def test_large_converted_doc_delegates(self, tmp_path):
+        """A3: converted docs whose rendered output exceeds P now delegate."""
         md_text = "\n".join(f"line{i}" for i in range(1, 2501))
         f = tmp_path / "big.docx"
         f.write_bytes(b"fake docx")
-        config = _make_config(tmp_path)
+        handoff = tmp_path / "handoff.md"
+        handoff.write_text("Doc summary.", encoding="utf-8")
+        # reserve_tokens=1000: rendered 2000 lines ≈ 5000 tokens → triggers
+        config = _make_config(tmp_path, reserve_tokens=1000)
+        tool = ReadTool(
+            cwd=tmp_path,
+            allowed_roots=[tmp_path],
+            service_url="http://localhost:8100",
+            project_path=tmp_path,
+            callbacks=None,
+            config=config,
+        )
+
+        with patch("tools.read._read.convert_document", return_value=md_text):
+            with patch(
+                "tools.subagent_api.run_subagent",
+                return_value=_make_ok_result(handoff),
+            ) as mock_run:
+                result = tool.run(path="big.docx")
+
+        mock_run.assert_called_once()
+        assert "Delegated to read_large_text" in result
+        assert "Doc summary." in result
+
+    def test_small_converted_doc_stays_inline(self, tmp_path):
+        """Converted doc with small rendered output stays inline regardless of size."""
+        md_text = "# Hello\n\nSmall document."
+        f = tmp_path / "small.docx"
+        f.write_bytes(b"fake docx")
+        config = _make_config(tmp_path, reserve_tokens=1000)
+        tool = ReadTool(
+            cwd=tmp_path,
+            allowed_roots=[tmp_path],
+            service_url="http://localhost:8100",
+            project_path=tmp_path,
+            callbacks=None,
+            config=config,
+        )
+
+        with patch("tools.read._read.convert_document", return_value=md_text):
+            with patch("tools.subagent_api.run_subagent") as mock_run:
+                result = tool.run(path="small.docx")
+
+        mock_run.assert_not_called()
+        assert result.startswith("[small.docx | editable: ")
+        assert "# Hello" in result
+
+    def test_legacy_reader_uses_line_count_trigger(self, tmp_path):
+        """use_legacy_reader=True restores the old line-count trigger."""
+        _make_large_file(tmp_path)
+        handoff = tmp_path / "handoff.md"
+        handoff.write_text("Legacy summary.", encoding="utf-8")
+        config = _make_config(tmp_path, use_legacy_reader=True)
+        tool = ReadTool(
+            cwd=tmp_path,
+            allowed_roots=[tmp_path],
+            service_url="http://localhost:8100",
+            project_path=tmp_path,
+            callbacks=None,
+            config=config,
+        )
+
+        with patch(
+            "tools.subagent_api.run_subagent",
+            return_value=_make_ok_result(handoff),
+        ) as mock_run:
+            result = tool.run(path="big.txt")
+
+        mock_run.assert_called_once()
+        # Legacy signpost uses line count
+        assert "lines" in result.lower()
+        assert "Legacy summary." in result
+
+    def test_legacy_reader_excludes_converted_docs(self, tmp_path):
+        """use_legacy_reader=True never delegates converted doc files."""
+        md_text = "\n".join(f"line{i}" for i in range(1, 2501))
+        f = tmp_path / "big.docx"
+        f.write_bytes(b"fake docx")
+        config = _make_config(tmp_path, use_legacy_reader=True)
         tool = ReadTool(
             cwd=tmp_path,
             allowed_roots=[tmp_path],
@@ -343,7 +423,6 @@ class TestLargeFileDelegation:
                 result = tool.run(path="big.docx")
 
         mock_run.assert_not_called()
-        assert "Delegated to read_large_text" not in result
         assert result.startswith("[big.docx | editable: ")
 
     def test_on_event_factory_called_with_preset_name(self, tmp_path):
@@ -423,6 +502,51 @@ class TestLargeFileDelegation:
         assert "4321" in result
         assert "Delegation result below." in result
         assert "Summary below." not in result
+
+    def test_size_trigger_fires_on_large_default_window(self, tmp_path):
+        """2500-line file, default read → result is large → delegates."""
+        _make_large_file(tmp_path, num_lines=2500)
+        handoff = tmp_path / "handoff.md"
+        handoff.write_text("summary", encoding="utf-8")
+        # Each line is ~9 chars; 2000 lines → ~18000 chars → 4500 tokens > 1000
+        config = _make_config(tmp_path, reserve_tokens=1000)
+        tool = ReadTool(
+            cwd=tmp_path,
+            allowed_roots=[tmp_path],
+            service_url="http://localhost:8100",
+            project_path=tmp_path,
+            callbacks=None,
+            config=config,
+        )
+
+        with patch(
+            "tools.subagent_api.run_subagent",
+            return_value=_make_ok_result(handoff),
+        ) as mock_run:
+            result = tool.run(path="big.txt")
+
+        mock_run.assert_called_once()
+        assert "Delegated to read_large_text" in result
+
+    def test_size_trigger_does_not_fire_below_threshold(self, tmp_path):
+        """2500-line file, but reserve is very large → stays inline."""
+        _make_large_file(tmp_path, num_lines=2500)
+        # reserve_tokens=1_000_000 → result never reaches threshold
+        config = _make_config(tmp_path, reserve_tokens=1_000_000)
+        tool = ReadTool(
+            cwd=tmp_path,
+            allowed_roots=[tmp_path],
+            service_url="http://localhost:8100",
+            project_path=tmp_path,
+            callbacks=None,
+            config=config,
+        )
+
+        with patch("tools.subagent_api.run_subagent") as mock_run:
+            result = tool.run(path="big.txt")
+
+        mock_run.assert_not_called()
+        assert "Delegated to read_large_text" not in result
 
     def test_query_passed_as_custom_instructions(self, tmp_path):
         _make_large_file(tmp_path)

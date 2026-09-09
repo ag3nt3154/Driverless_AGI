@@ -7,7 +7,9 @@ from typing import TYPE_CHECKING
 
 from agent.base_tool import BaseTool
 from tools._path_guard import validate_path
+from tools.output_filter import estimate_tool_output
 from tools.read._doc_service import cache_path_for, convert_document, DocServiceError
+from tools.read._selection import ReadSelection, make_selection
 
 if TYPE_CHECKING:
     from agent.loop import AgentCallbacks, AgentConfig
@@ -55,6 +57,14 @@ def _select_pages(md_text: str, page_spec: str) -> str:
     return "".join(result_parts)
 
 
+def _render_numbered(selected: list[str], start_idx: int, header: str | None) -> str:
+    """Render lines in cat-n format with optional document header."""
+    numbered = "\n".join(
+        f"{i:6d}\t{line}" for i, line in enumerate(selected, start_idx + 1)
+    )
+    return f"{header}\n{numbered}" if header else numbered
+
+
 class ReadTool(BaseTool):
     name = "read"
     description = (
@@ -67,10 +77,9 @@ class ReadTool(BaseTool):
         "(resolved from the project root) and absolute paths. "
         "Output uses `cat -n` style: each line is prefixed with its 1-indexed "
         "line number followed by a tab — the number is not part of the file content. "
-        "Files exceeding 2000 lines are automatically delegated to "
-        "read_large_text for chunked summarization when read with default "
-        "offset and limit. Use the optional query "
-        "parameter to focus the summary on specific content. "
+        "When the rendered result is too large for inline display, the read is "
+        "automatically delegated to read_large_text for chunked summarization. "
+        "Use the optional query parameter to focus the summary on specific content. "
         "For large-scale codebase exploration, prefer `explore_files`."
     )
     _parameters = {
@@ -100,8 +109,8 @@ class ReadTool(BaseTool):
                 "type": "string",
                 "description": (
                     "Optional focus area for large-file summarization. "
-                    "When the file exceeds 2000 lines, this is passed to "
-                    "read_large_text as guidance. Ignored for small files."
+                    "When the rendered result is too large, this is passed to "
+                    "read_large_text as guidance. Ignored for small results."
                 ),
             },
         },
@@ -150,7 +159,8 @@ class ReadTool(BaseTool):
                 f"currently supported by the read tool."
             )
 
-        header = None
+        header: str | None = None
+        editable_path: Path | None = None
 
         if ext in _DOC_EXTS:
             if not self._service_url or not self._project_path:
@@ -163,11 +173,11 @@ class ReadTool(BaseTool):
             except DocServiceError as exc:
                 return f"Error from document service ({exc.code}): {exc.message}"
 
-            editable = cache_path_for(p, self._project_path)
+            editable_path = cache_path_for(p, self._project_path)
             try:
-                editable_str = str(editable.relative_to(self._project_path))
+                editable_str = str(editable_path.relative_to(self._project_path))
             except ValueError:
-                editable_str = str(editable)
+                editable_str = str(editable_path)
 
             if ext == ".pdf":
                 total_pages = md_text.count("<!-- Page ")
@@ -191,28 +201,49 @@ class ReadTool(BaseTool):
                     f"to be binary or uses an encoding other than UTF-8."
                 )
 
-        if (
-            offset == 1
-            and limit == _DEFAULT_LIMIT
-            and len(lines) > limit
-            and self._config is not None
-            and ext not in _DOC_EXTS
-        ):
-            return self._delegate_to_read_large_text(p, len(lines), query)
-
         start = max(0, offset - 1)
         selected = lines[start : start + limit]
-        numbered = "\n".join(
-            f"{i:6d}\t{line}" for i, line in enumerate(selected, start + 1)
-        )
+        raw_result = _render_numbered(selected, start, header)
 
-        raw_result = f"{header}\n{numbered}" if header else numbered
+        if self._config is not None:
+            if getattr(self._config, "use_legacy_reader", False):
+                # Legacy line-count trigger: only fires on default offset/limit,
+                # excludes converted documents, does not check result size.
+                if (offset == 1 and limit == _DEFAULT_LIMIT
+                        and len(lines) > limit and ext not in _DOC_EXTS):
+                    return self._delegate_legacy(p, len(lines), query)
+            else:
+                P = getattr(self._config, "reserve_tokens", 0)
+                if P > 0 and estimate_tool_output(raw_result) >= P:
+                    selection = make_selection(
+                        p, lines, offset=offset, limit=limit,
+                        header=header, editable_path=editable_path,
+                    )
+                    return self._delegate_to_read_large_text(selection, query)
 
         return raw_result
 
     def _delegate_to_read_large_text(
+        self, selection: ReadSelection, query: str | None
+    ) -> str:
+        from tools.read._reader_job import ReaderLaunchContext, delegate_selection
+
+        on_event = None
+        if self._callbacks and self._callbacks.on_subagent_event_factory:
+            on_event = self._callbacks.on_subagent_event_factory("read-large-text")
+
+        ctx = ReaderLaunchContext(
+            project_path=self._config.project_path,
+            parent_reserve=getattr(self._config, "reserve_tokens", 0),
+            on_event=on_event,
+            parent_context=self._parent_context,
+        )
+        return delegate_selection(selection, query=query or "", context=ctx)
+
+    def _delegate_legacy(
         self, path: Path, total_lines: int, query: str | None
     ) -> str:
+        """Legacy line-count delegation path. Active only when use_legacy_reader=True."""
         import tools.subagent_api as _subagent_api
         from tools._handoff_format import format_handoff_result, dispatch_status_result
 
@@ -245,11 +276,7 @@ class ReadTool(BaseTool):
             return f"{signpost}\n\n{body}"
 
         error = dispatch_status_result(
-            {
-                "status": result.status,
-                "pid": result.pid,
-                "message": "",
-            },
+            {"status": result.status, "pid": result.pid, "message": ""},
             "read-large-text",
         )
         return f"{signpost}\n\n{error}"
