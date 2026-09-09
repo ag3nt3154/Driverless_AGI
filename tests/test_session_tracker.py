@@ -122,17 +122,6 @@ class TestChildTracker:
         assert deep_msg["depth"] == 2
         assert deep_msg["subagent_id"] == "sub2"
 
-    def test_child_cannot_see_or_replace_root_affect_controller_binding(self, tmp_path):
-        parent = SessionTracker(model="m", logs_dir=tmp_path)
-        child = parent.child_tracker("sub1")
-        root_controller = object()
-        child_controller = object()
-
-        parent.bind_affect_controller(root_controller)
-        child.bind_affect_controller(child_controller)
-
-        assert parent.affect_controller is root_controller
-        assert child.affect_controller is None
 
 
 class TestAffectPersistence:
@@ -178,15 +167,6 @@ class TestAffectPersistence:
         assert affect["subagent_id"] == "sub1"
         assert affect["depth"] == 1
 
-    def test_bind_affect_controller_is_root_visible_only(self, tmp_path):
-        parent = SessionTracker(model="m", logs_dir=tmp_path)
-        child = parent.child_tracker("sub1")
-        controller = object()
-
-        parent.bind_affect_controller(controller)
-
-        assert parent.affect_controller is controller
-        assert child.affect_controller is None
 
 
 class TestFinish:

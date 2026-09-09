@@ -2,7 +2,11 @@
 
 Navigation to useful findings and open questions.
 
-> Last updated: 2026-09-08
+> Last updated: 2026-09-09
+
+- [Large-file reader investigation](large-file-reader-2026-09-09.md): plan-only findings,
+  proposed redesign, child configuration behavior, and unverified dependency compatibility;
+  no implementation or approval.
 
 - [Code review — 2026-09-08](2026-09-08_CODE_REVIEW.md): 37 findings across agent/,
   tools/, pyside_gui/, root scripts. 3 critical (cross-thread race, double JSON encoding,

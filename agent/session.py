@@ -57,7 +57,6 @@ class SessionTracker:
         self._subagent_id: str | None = None
         self._depth: int = 0
         self._subagent_stats: list[dict] = []
-        self._affect_controller: Any = None
         self._expression_controller: Any = None
 
         self._logs_dir.mkdir(parents=True, exist_ok=True)
@@ -95,21 +94,6 @@ class SessionTracker:
     @property
     def thread_id(self) -> str:
         return self._thread_id
-
-    @property
-    def affect_controller(self):
-        if not self.owns_affect_controller:
-            return None
-        return self._affect_controller
-
-    @property
-    def owns_affect_controller(self) -> bool:
-        return self._parent is None
-
-    def bind_affect_controller(self, controller) -> None:
-        if not self.owns_affect_controller:
-            return
-        self._affect_controller = controller
 
     @property
     def expression_controller(self):
@@ -312,12 +296,6 @@ class SessionTracker:
         if self._depth > 0:
             record["depth"] = self._depth
         return record
-
-    def _root_tracker(self) -> "SessionTracker":
-        root = self
-        while root._parent is not None:
-            root = root._parent
-        return root
 
     def _write(self, record: dict) -> None:
         if self._parent is not None:

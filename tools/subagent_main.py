@@ -179,21 +179,6 @@ def _build_subagent_system_prompt(subagent_type: str, project_path: Path) -> str
     return "\n\n---\n\n".join(parts)
 
 
-def _resolve_inherited_model(
-    fork_context: dict | None,
-) -> tuple[str, str]:
-    """Resolve model and base_url from a fork-context dict.
-
-    Raises ValueError if fork_context is None (inherit without context).
-    """
-    if fork_context is None:
-        raise ValueError(
-            "model_tier 'inherit' requires a fork-context file"
-        )
-    req = fork_context["request"]
-    return req["model"], req.get("base_url", "")
-
-
 def _validate_compact_response(response) -> tuple[bool, str]:
     """Validate a compact model's response. Returns (ok, error_message)."""
     choice = response.choices[0]
@@ -534,7 +519,6 @@ def run_forked_compact_mode(
     project_path: str | None,
 ) -> None:
     """Execute compact in forked mode: inherit prefix, single non-streaming API call."""
-    import json
     import openai
 
     project = Path(project_path).resolve() if project_path else Path.cwd()

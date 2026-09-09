@@ -802,18 +802,6 @@ class AgentLoop:
 
         return finalize_turn(self, message, response, tool_records)
 
-    def _handle_write_handoff(
-        self,
-        tc: ChatCompletionMessageFunctionToolCall,
-        result: str,
-        description: str,
-        tool_records: list[ToolCallRecord],
-        message_response: tuple,
-    ) -> str:
-        from agent._tool_dispatch import handle_write_handoff
-
-        return handle_write_handoff(self, tc, result, description, tool_records, message_response)
-
     # ── Side-effect handlers ────────────────────────────────────────────────
 
     def _handle_all_tasks_resolved(self) -> str:

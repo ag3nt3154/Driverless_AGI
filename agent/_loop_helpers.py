@@ -23,37 +23,6 @@ def _build_wiki_index_context(memory_root: Path) -> str | None:
     return "[WIKI INDEX]\n" + "\n\n---\n\n".join(parts) + "\n[END WIKI INDEX]"
 
 
-def _format_tools_and_skills(registry: ToolRegistry, skills: list[Skill]) -> str:
-    """Generate a unified tools + skills section for the system prompt."""
-    lines = ["## Available Tools", ""]
-    for name, description in registry.list_tools():
-        lines.append(f"- **{name}**: {description}")
-
-    if skills:
-        lines += [
-            "",
-            "## Available Skills",
-            "",
-            "Skills are detailed guidance documents for specific workflows. "
-            "You MUST invoke the relevant `skill` tool BEFORE beginning any task for which "
-            "a matching skill exists. Treat skill invocation as a required first step — "
-            "never implement a skill-governed workflow without loading it first. "
-            "If the user's request matches a skill's description or any of its trigger phrases, "
-            "call `skill(name)` immediately as your first action. "
-            "Skills may include executable scripts — after loading a skill, use "
-            "`run_skill_script(skill_name, script_name)` to run them.",
-            "",
-        ]
-        for s in sorted(skills, key=lambda x: x.name):
-            desc = f" — {s.description}" if s.description else ""
-            lines.append(f"- **{s.name}**{desc}")
-            if s.triggers:
-                quoted = ", ".join(f'"{t}"' for t in s.triggers)
-                lines.append(f"  Triggers: {quoted}")
-
-    return "\n".join(lines)
-
-
 def _format_reload_notification(
     total: int,
     added: set[str],
@@ -86,27 +55,3 @@ def _extract_reasoning(message) -> str:
     return text or ""
 
 
-class _SafePlaceholder:
-    """Sentinel returned by _SafeDict for unknown keys.
-
-    Preserves the original ``{key}`` or ``{key:spec}`` text so
-    ``str.format_map`` passes through placeholders it doesn't know about.
-    """
-    __slots__ = ("_key",)
-
-    def __init__(self, key: str) -> None:
-        self._key = key
-
-    def __str__(self) -> str:
-        return f"{{{self._key}}}"
-
-    def __format__(self, format_spec: str) -> str:
-        if format_spec:
-            return f"{{{self._key}:{format_spec}}}"
-        return f"{{{self._key}}}"
-
-
-class _SafeDict(dict):
-    """Format-map helper: leaves unknown {key} placeholders intact."""
-    def __missing__(self, key: str) -> _SafePlaceholder:
-        return _SafePlaceholder(key)

@@ -133,19 +133,3 @@ class SkillLoader:
         ), None
 
 
-def format_skills_for_prompt(skills: list[Skill]) -> str:
-    """Format the skills list as a system-prompt section."""
-    if not skills:
-        return ""
-    lines = ["## Available Skills", ""]
-    lines.append(
-        "Use the `skill` tool to load any skill document for detailed guidance:"
-    )
-    lines.append("")
-    for s in sorted(skills, key=lambda x: x.name):
-        desc = f" — {s.description}" if s.description else ""
-        lines.append(f"- **{s.name}**{desc}")
-        if s.triggers:
-            quoted = ", ".join(f'"{t}"' for t in s.triggers)
-            lines.append(f"  Triggers: {quoted}")
-    return "\n".join(lines)

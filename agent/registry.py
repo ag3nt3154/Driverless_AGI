@@ -52,6 +52,3 @@ class ToolRegistry:
             return self._tools[name].run(**kwargs)
         except Exception as e:
             return f"Error: {e}"
-
-
-registry = ToolRegistry()

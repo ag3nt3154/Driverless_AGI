@@ -286,26 +286,6 @@ def test_pipe_mode_passes_tool_names_to_registry(tmp_path, monkeypatch):
 # ── TestForkedCompactMode ─────────────────────────────────────────────────────
 
 class TestForkedCompactMode:
-    def test_inherit_tier_rejects_without_fork_context(self):
-        """_resolve_inherited_model raises ValueError when fork_context is None."""
-        from tools.subagent_main import _resolve_inherited_model
-        with pytest.raises(ValueError, match="inherit.*fork.context"):
-            _resolve_inherited_model(None)
-
-    def test_inherit_tier_uses_fork_context_model(self):
-        """_resolve_inherited_model returns model and base_url from fork-context."""
-        from tools.subagent_main import _resolve_inherited_model
-        fork_ctx = {
-            "version": 1,
-            "request": {
-                "model": "anthropic/claude-sonnet-4",
-                "base_url": "https://openrouter.ai/api/v1",
-            },
-        }
-        model, base_url = _resolve_inherited_model(fork_ctx)
-        assert model == "anthropic/claude-sonnet-4"
-        assert base_url == "https://openrouter.ai/api/v1"
-
     def test_tool_call_response_rejected(self):
         """A tool-call response from the compact model is rejected."""
         from types import SimpleNamespace

@@ -44,10 +44,8 @@ class AgentBridge(QObject):
     agent_done = Signal(str)               # result
     agent_paused = Signal()
     ask_user_requested = Signal(str, object, object)  # q, opts, timeout
-    expression_changed = Signal(object)
     process_state_changed = Signal(object)
     continue_injected = Signal(int, int)   # cur, max
-    plan_shown = Signal()
     subagent_event = Signal(str, str)      # type, json line
     message_board_post = Signal(str, str, str, str, str)  # author, meme_name, asset_path, text, timestamp
 
@@ -171,10 +169,10 @@ class AgentBridge(QObject):
             self.continue_injected.emit(cur, mx)
 
         def on_plan_shown() -> None:
-            self.plan_shown.emit()
+            pass  # signal removed — plan polling uses _poll_plan timer
 
         def on_expression_changed(snapshot) -> None:
-            self.expression_changed.emit(snapshot)
+            pass  # signal removed — expression state uses process_state_changed
 
         def on_process_state_changed(snapshot) -> None:
             self.process_state_changed.emit(snapshot)
