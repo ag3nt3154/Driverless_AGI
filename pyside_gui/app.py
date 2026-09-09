@@ -335,10 +335,10 @@ class DagiMainWindow(QMainWindow):
         self._streaming_active = True
         self._conversation.stream_start()
 
-    @Slot()
-    def _on_stream_ended(self) -> None:
-        text = self._bridge._stream_text.strip()
-        if self._bridge._stream_reasoning.strip():
+    @Slot(str, str)
+    def _on_stream_ended(self, stream_text: str, stream_reasoning: str) -> None:
+        text = stream_text.strip()
+        if stream_reasoning.strip():
             self._stream_had_reasoning = True
         if text:
             self._stream_had_content = True

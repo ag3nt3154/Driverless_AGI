@@ -122,7 +122,7 @@ def _discover_subagent_tools(
             if not type_dir.is_dir():
                 continue
             main_py = type_dir / "main.py"
-            if not main_py.exists():
+            if not main_py.is_file():
                 continue
             type_name = type_dir.name
             mod_name = f"_dagi_subagent_{type_name}"

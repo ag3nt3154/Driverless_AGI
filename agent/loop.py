@@ -376,10 +376,8 @@ class AgentLoop:
     def _log_user_message(self, role: str, content, source: str) -> None:
         """Append one user/message surface event.
 
-        `role` is durable: wiki context and skill-reload notices are
-        role="system" but ride this event type, because they are ordinary
-        model-visible conversation content. `source` is the semantic channel
-        that tells the three apart.
+        `role` is durable. `source` is the semantic channel that tells
+        wiki, reload, and human messages apart.
 
         `step` is 0 for messages that enter the turn before its first step.
         """
@@ -520,7 +518,7 @@ class AgentLoop:
             # before the normal one opens — so it gets its own.
             _reload_turn = self.log.next_turn()
             self.log.append(sev.TURN_START, {"turn": _reload_turn})
-            self._log_user_message("system", notification, "reload")
+            self._log_user_message("user", notification, "reload")
             self._close_turn(_reload_turn, sev.reason_completed())
             self._process.idle()
             self.callbacks.on_assistant_text(notification)
@@ -532,7 +530,7 @@ class AgentLoop:
         if not self._preserve_request_prefix:
             wiki_ctx = _build_wiki_index_context(self._effective_memory_root)
             if wiki_ctx:
-                self._log_user_message("system", wiki_ctx, "wiki")
+                self._log_user_message("user", wiki_ctx, "wiki")
         self._log_user_message("user", task, "human")
         self.tracker.record_user(task)
 

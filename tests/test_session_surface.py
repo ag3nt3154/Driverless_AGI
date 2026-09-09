@@ -14,15 +14,16 @@ def _surface_event(seq: int, type: str, data: dict, op=("append")) -> SessionEve
 
 class TestProjectEvent:
     def test_user_message_preserves_its_role(self):
-        """Wiki context and reload notices ride user/message with role='system'.
+        """Wiki context and reload notices use role='user' so local models
+        that restrict system messages to position 0 don't break.
 
         The role is durable data, not something the projection decides.
         """
         e = _surface_event(
             1, ev.USER_MESSAGE,
-            {"turn": 1, "step": 1, "role": "system", "content": "wiki", "source": "wiki"},
+            {"turn": 1, "step": 1, "role": "user", "content": "wiki", "source": "wiki"},
         )
-        assert project_event(e) == {"role": "system", "content": "wiki"}
+        assert project_event(e) == {"role": "user", "content": "wiki"}
 
     def test_human_prompt_projects_as_user_role(self):
         e = _surface_event(

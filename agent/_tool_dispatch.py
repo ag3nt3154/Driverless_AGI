@@ -107,7 +107,7 @@ def dispatch_tool_calls(
         loop._lifecycle.tool_bookkeeping_finished()
 
     for _sys_content in deferred_system_msgs:
-        loop._log_user_message("system", _sys_content, "reload")
+        loop._log_user_message("user", _sys_content, "reload")
     return None
 
 
