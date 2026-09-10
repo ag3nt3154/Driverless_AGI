@@ -17,7 +17,7 @@ Plan → Act → Observe → Repeat
 
 When the conversation exceeds the model's context window, **context compaction** kicks in — the middle of the history is summarized by a dedicated `compact` subagent that inherits the parent's warm KV-cache prefix, then replaced with its summary, preserving the system prompt and recent messages. This lets the agent handle arbitrarily long tasks without crashing.
 
-To end a turn the agent calls the **`write_handoff` tool** with its final response as `content`. The tool returns a typed `ToolResult(side_effect=SideEffect.END_TURN)` that the loop detects and uses to exit cleanly — no in-band string sentinels. If the agent produces a response with no tool calls and no `write_handoff`, the harness treats it as accidentally truncated and injects a recovery prompt (`.dagi/prompts/main/continue.md`) to resume the loop. A safety valve (`max_continuations`, default 10, configurable in `config.yaml`) prevents runaway recovery loops.
+To end a turn the agent calls either **`write_handoff`** (final response) or **`ask_user`** (pause for user input). `write_handoff` takes the complete user-facing response as `content` and returns a typed `ToolResult(side_effect=SideEffect.END_TURN)` that the loop detects and uses to exit cleanly — no in-band string sentinels. `ask_user` pauses the turn and waits for the user's answer; after receiving it, the agent continues working or calls `write_handoff` to finish. If the agent produces a response with no tool calls and neither turn-ending tool, the harness treats it as accidentally truncated and injects a recovery prompt (`.dagi/prompts/main/continue.md`) to resume the loop. A safety valve (`max_continuations`, default 10, configurable in `config.yaml`) prevents runaway recovery loops.
 
 At session start, **wiki index injection** automatically reads the root and section `.index.md` files
 from the memory wiki and prepends them as a system message before the first API call — giving the
@@ -829,7 +829,7 @@ Driverless_AGI/
 | `compact` | Manually trigger Pi-style context compaction |
 | `switch_model` | Swap to a different model (from `config.yaml`) mid-session |
 | `show_file` | Open a file in the PySide GUI's file viewer for the user, optionally jumping to and highlighting a specific line number. No-op in TUI/Telegram |
-| `ask_user` | Pause and ask the user a clarifying question with optional choices |
+| `ask_user` | Pause and ask the user a clarifying question with optional choices. Acts as a turn-ender — the agent should call `ask_user` instead of `write_handoff` when it needs the user to answer a question before continuing |
 | `show_plan` | Render the current plan document and ask the user for revisions. Returns "Plan approved" (call `set_active_plan`) or "Modifications requested" (revise and call `show_plan` again). In autonomous mode, auto-approves immediately |
 | `create_plan` | Create a new plan directory under `.dagi/plans/` with a scaffolded `plan.md` file. Takes `task_summary` |
 | `escalate_issue` | Worker/review subagent only: raise a blocking question to the main agent instead of guessing. Writes a sidecar file next to the subagent's handoff report; the main agent's subprocess poll loop detects it, terminates the subagent, and surfaces `"[worker escalated]"` / `"[review escalated]"` with the question and context — does not consume a `dagi-execute` retry attempt |

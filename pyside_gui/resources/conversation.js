@@ -204,10 +204,9 @@ function clearConversation() {
     _toolCallStack.length = 0;
 }
 
-function appendQuestion(question, optionsJson, timeout) {
+function appendQuestion(question, options, timeout) {
     const conv = document.getElementById('conversation');
     const sentinel = document.getElementById('scroll-sentinel');
-    const options = JSON.parse(optionsJson);
     const div = document.createElement('div');
     div.className = 'question-panel';
     let html = `<div class="question-header">Question from Dagi</div>`;

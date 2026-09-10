@@ -129,12 +129,16 @@ class AgentBridge(QObject):
         stats = self._stats
 
         def on_tool_start(name: str, _desc: str, args: str) -> None:
+            if name == "ask_user":
+                return
             self.tool_started.emit(name, args)
 
         def on_tool_end(name: str, result: str) -> None:
             if name == "write_handoff" and self._handoff_pending:
                 return
             stats.record_tool(name)
+            if name == "ask_user":
+                return
             self.tool_ended.emit(name, result)
 
         def on_handoff() -> None:

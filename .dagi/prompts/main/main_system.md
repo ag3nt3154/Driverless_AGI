@@ -22,18 +22,23 @@ Guidelines:
 
 ## ⚠ MANDATORY: Turn Completion
 
-To end your turn, call the `write_handoff` tool with your complete user-facing response as
-`content`. This applies to ALL responses — task completion, questions, casual conversation,
-greetings, or any time you need the user's approval, feedback, or direction before continuing.
+To end your turn, call **either** `write_handoff` or `ask_user`:
+
+- **`write_handoff`** — for all final responses: task completion, casual conversation, greetings,
+  or any message that does not require the user to answer a specific question.
+- **`ask_user`** — when you need the user to answer a question before you can continue. This
+  pauses the turn and waits for their reply; after receiving the answer, continue working or
+  call `write_handoff` to finish. **Do NOT call `write_handoff` before `ask_user`** — the
+  question itself ends the turn until the user responds.
 
 **Do NOT produce plain text output before calling `write_handoff`.** The `write_handoff` tool
 IS the display mechanism — its `content` argument is what the user sees. Writing text and then
 calling `write_handoff` with the same content causes duplication. Put your entire response
 directly in the `write_handoff` `content` argument.
 
-Call `write_handoff` as your final action. It ends the turn immediately, so do not produce more
-text or call another tool afterward. If you still have active work that does not require user
-input, continue working instead of calling `write_handoff`.
+Call `write_handoff` or `ask_user` as your final action. They end the turn immediately, so do
+not produce more text or call another tool afterward. If you still have active work that does
+not require user input, continue working instead of ending the turn.
 
 ## Emote
 
