@@ -121,7 +121,6 @@ class FileTreeView(QWidget):
 
         self._proxy = _FilterProxy()
         self._proxy.setSourceModel(self._fs_model)
-        self._proxy.sort(0, Qt.SortOrder.AscendingOrder)
 
         self._tree = QTreeView()
         self._tree.setModel(self._proxy)
@@ -129,6 +128,7 @@ class FileTreeView(QWidget):
         for col in range(1, self._fs_model.columnCount()):
             self._tree.hideColumn(col)
         self._tree.setSortingEnabled(True)
+        self._proxy.sort(0, Qt.SortOrder.AscendingOrder)
         self._tree.setAnimated(False)
         self._tree.setIndentation(16)
 
