@@ -13,7 +13,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from pyside_gui.markdown_renderer import render_markdown
+from pyside_gui.markdown_renderer import render_markdown_with_source_lines
 
 _MAX_FILE_SIZE = 500_000  # 500 KB
 
@@ -43,7 +43,8 @@ _MD_PAGE = """<!DOCTYPE html>
 <html><head><style>
 :root {{
     --bg: #1e1e2e; --text: #cdd6f4; --surface: #282839;
-    --border: #45475a; --accent: #89b4fa;
+    --border: #45475a; --accent: #89b4fa; --highlight: #2a2a4a;
+    --gutter: #181825; --line-num: #6c7086;
     --font-ui: 'Segoe UI', system-ui, sans-serif;
     --font-mono: 'Cascadia Code', 'Consolas', monospace;
 }}
@@ -51,8 +52,29 @@ _MD_PAGE = """<!DOCTYPE html>
 body {{
     background: var(--bg); color: var(--text);
     font-family: var(--font-ui); font-size: 13px;
-    line-height: 1.6; padding: 12px;
+    line-height: 1.6; padding: 12px 12px 12px 48px;
     word-wrap: break-word; overflow-wrap: break-word;
+    position: relative;
+}}
+[data-source-line] {{
+    position: relative;
+}}
+[data-source-line]::before {{
+    content: attr(data-source-line);
+    position: absolute;
+    left: -40px;
+    width: 32px;
+    text-align: right;
+    color: var(--line-num);
+    font-family: var(--font-mono);
+    font-size: 11px;
+    line-height: inherit;
+    pointer-events: none;
+    user-select: none;
+}}
+.line-highlight {{
+    background: var(--highlight) !important;
+    border-radius: 3px;
 }}
 h1, h2, h3 {{ color: var(--accent); margin: 12px 0 6px; }}
 code {{
@@ -85,7 +107,28 @@ li {{ margin: 2px 0; }}
 ul {{ list-style-type: disc; }}
 ol {{ list-style-type: decimal; }}
 ul ul {{ list-style-type: circle; margin: 2px 0; }}
-</style></head><body>{body}</body></html>"""
+</style>
+<script>
+function jumpToLine(line) {{
+    var best = null;
+    var bestLine = 0;
+    document.querySelectorAll('[data-source-line]').forEach(function(el) {{
+        var n = parseInt(el.getAttribute('data-source-line'), 10);
+        if (n <= line && n > bestLine) {{
+            bestLine = n;
+            best = el;
+        }}
+    }});
+    if (best) {{
+        document.querySelectorAll('.line-highlight').forEach(function(el) {{
+            el.classList.remove('line-highlight');
+        }});
+        best.classList.add('line-highlight');
+        best.scrollIntoView({{ behavior: 'smooth', block: 'center' }});
+    }}
+}}
+</script>
+</head><body>{body}</body></html>"""
 
 
 class _TextEditor(QPlainTextEdit):
@@ -194,6 +237,8 @@ class FileViewerView(QWidget):
         self._stack.addWidget(self._text_edit)
 
         self._md_view = QWebEngineView()
+        self._md_view.loadFinished.connect(self._on_md_loaded)
+        self._pending_md_line: int | None = None
         self._stack.addWidget(self._md_view)
 
     def open_file(self, path: str, project_root: Path, line: int | None = None) -> None:
@@ -229,7 +274,8 @@ class FileViewerView(QWidget):
             return
 
         if file_path.suffix.lower() == ".md":
-            html = render_markdown(content)
+            html = render_markdown_with_source_lines(content)
+            self._pending_md_line = line
             self._md_view.setHtml(_MD_PAGE.format(body=html))
             self._stack.setCurrentIndex(1)
         else:
@@ -237,6 +283,12 @@ class FileViewerView(QWidget):
             self._stack.setCurrentIndex(0)
             if line is not None:
                 QTimer.singleShot(0, lambda: self._jump_to_line(line))
+
+    def _on_md_loaded(self, ok: bool) -> None:
+        if ok and self._pending_md_line is not None:
+            line = self._pending_md_line
+            self._pending_md_line = None
+            self._md_view.page().runJavaScript(f"jumpToLine({line})")
 
     def _jump_to_line(self, line: int) -> None:
         block = self._text_edit.document().findBlockByLineNumber(line - 1)
