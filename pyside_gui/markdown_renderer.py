@@ -52,7 +52,12 @@ def render_markdown(text: str) -> str:
 
 def render_markdown_with_source_lines(text: str) -> str:
     tokens = _md.parse(text)
+    depth = 0
     for token in tokens:
-        if token.map is not None and token.nesting == 1:
+        if token.nesting == 1:
+            depth += 1
+        elif token.nesting == -1:
+            depth -= 1
+        if token.map is not None and token.nesting == 1 and depth == 1:
             token.attrSet("data-source-line", str(token.map[0] + 1))
     return _md.renderer.render(tokens, _md.options, {})

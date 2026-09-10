@@ -56,10 +56,10 @@ body {{
     word-wrap: break-word; overflow-wrap: break-word;
     position: relative;
 }}
-[data-source-line] {{
+body > [data-source-line] {{
     position: relative;
 }}
-[data-source-line]::before {{
+body > [data-source-line]::before {{
     content: attr(data-source-line);
     position: absolute;
     left: -40px;
