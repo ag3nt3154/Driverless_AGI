@@ -175,6 +175,9 @@ class DagiMainWindow(QMainWindow):
         )
         b.subagent_event.connect(cv.append_subagent_event)
         b.message_board_post.connect(self._left_sidebar.board_view.add_post)
+        b.show_file_requested.connect(
+            lambda path, line: self._left_sidebar.open_file(path, line)
+        )
 
     def _start_timers(self) -> None:
         self._spinner_timer = QTimer(self)

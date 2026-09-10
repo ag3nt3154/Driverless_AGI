@@ -69,6 +69,8 @@ tools:                      # Restrict the main agent to a specific subset of to
   - web_fetch               # Fetch a URL (fallback when no config subagents)
   # ── Affect tools ─────────────────────────────────────────────────────────────
   - emote                   # Express emotion via VAD adjustment and/or meme display
+  # ── GUI tools ────────────────────────────────────────────────────────────────
+  - show_file               # Open a file in the GUI file viewer with optional line highlight
 sandbox_mode: false     # true = file tools have no path restrictions (allowed_roots=None)
 
 # ── Affect ────────────────────────────────────────────────────────────────────

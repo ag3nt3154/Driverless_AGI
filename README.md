@@ -754,6 +754,7 @@ Driverless_AGI/
 │   ├── compact/             # Trigger context compaction
 │   ├── create_plan/         # Scaffold a new plan directory under .dagi/plans/
 │   ├── switch_model/        # Swap models mid-session
+│   ├── show_file/           # Open a file in the GUI file viewer with optional line highlight
 │   ├── ask_user/            # Prompt user for clarification
 │   ├── escalate_issue/      # Worker/review subagents: sidecar-file escalation to the main agent
 │   ├── write_handoff/       # Main-agent and subagent final-report tool — main mode returns
@@ -827,6 +828,7 @@ Driverless_AGI/
 | `extend_subagent_timeout` | Extend the deadline of an in-flight subagent by PID. Called by the agent when `spawn_*` returns a timeout dict |
 | `compact` | Manually trigger Pi-style context compaction |
 | `switch_model` | Swap to a different model (from `config.yaml`) mid-session |
+| `show_file` | Open a file in the PySide GUI's file viewer for the user, optionally jumping to and highlighting a specific line number. No-op in TUI/Telegram |
 | `ask_user` | Pause and ask the user a clarifying question with optional choices |
 | `show_plan` | Render the current plan document and ask the user for revisions. Returns "Plan approved" (call `set_active_plan`) or "Modifications requested" (revise and call `show_plan` again). In autonomous mode, auto-approves immediately |
 | `create_plan` | Create a new plan directory under `.dagi/plans/` with a scaffolded `plan.md` file. Takes `task_summary` |

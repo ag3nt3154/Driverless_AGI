@@ -168,3 +168,7 @@ class AgentCallbacks:
     on_message_board_post:   Callable[[str, str, str, str, str], None] = field(
         default=lambda author, name, path, text, ts: None
     )
+    # Show file in the GUI viewer (path, optional line number)
+    on_show_file: Callable[[str, int | None], None] = field(
+        default=lambda path, line: None
+    )

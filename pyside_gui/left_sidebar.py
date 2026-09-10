@@ -149,8 +149,8 @@ class LeftSidebar(QWidget):
         self._project_path = path
         self._file_tree.set_root(path)
 
-    def open_file(self, path: str) -> None:
-        self._file_viewer.open_file(path, self._project_path)
+    def open_file(self, path: str, line: int | None = None) -> None:
+        self._file_viewer.open_file(path, self._project_path, line=line)
         self._active_view = "viewer"
         idx = _VIEW_NAMES.index("viewer")
         self._panel.setCurrentIndex(idx)

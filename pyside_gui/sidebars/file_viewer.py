@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PySide6.QtCore import Qt, QRect, QSize
-from PySide6.QtGui import QColor, QFont, QPainter
+from PySide6.QtCore import Qt, QRect, QSize, QTimer
+from PySide6.QtGui import QColor, QFont, QPainter, QTextCursor
 from PySide6.QtWebEngineWidgets import QWebEngineView
 from PySide6.QtWidgets import (
     QLabel,
@@ -196,7 +196,7 @@ class FileViewerView(QWidget):
         self._md_view = QWebEngineView()
         self._stack.addWidget(self._md_view)
 
-    def open_file(self, path: str, project_root: Path) -> None:
+    def open_file(self, path: str, project_root: Path, line: int | None = None) -> None:
         file_path = Path(path)
         try:
             rel = file_path.relative_to(project_root)
@@ -235,6 +235,23 @@ class FileViewerView(QWidget):
         else:
             self._text_edit.setPlainText(content)
             self._stack.setCurrentIndex(0)
+            if line is not None:
+                QTimer.singleShot(0, lambda: self._jump_to_line(line))
+
+    def _jump_to_line(self, line: int) -> None:
+        block = self._text_edit.document().findBlockByLineNumber(line - 1)
+        if not block.isValid():
+            return
+        cursor = QTextCursor(block)
+        self._text_edit.setTextCursor(cursor)
+        self._text_edit.centerCursor()
+        sel = self._text_edit.ExtraSelection()
+        sel.format.setBackground(QColor("#2a2a4a"))
+        sel.format.setProperty(
+            sel.format.Property.FullWidthSelection, True
+        )
+        sel.cursor = cursor
+        self._text_edit.setExtraSelections([sel])
 
     def clear(self) -> None:
         self._path_label.setText("")

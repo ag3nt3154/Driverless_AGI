@@ -182,6 +182,12 @@ def create_tool_registry(
         from tools.emote import EmoteTool
         memes_root = _DAGI_ROOT / ".dagi" / "emotes" / "memes"
         reg.register(EmoteTool(on_post=callbacks.on_message_board_post, memes_root=memes_root))
+    if callbacks is not None and callbacks.on_show_file is not None:
+        from tools.show_file import ShowFileTool
+        reg.register(ShowFileTool(
+            on_show_file=callbacks.on_show_file,
+            project_path=config.project_path if config else cwd,
+        ))
     if config is not None:
         for spawn_tool in _discover_subagent_tools(
             cwd=cwd, config=config, callbacks=callbacks,
