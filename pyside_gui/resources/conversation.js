@@ -204,13 +204,13 @@ function clearConversation() {
     _toolCallStack.length = 0;
 }
 
-function appendQuestion(question, options, timeout) {
+function appendQuestion(questionHtml, options, timeout) {
     const conv = document.getElementById('conversation');
     const sentinel = document.getElementById('scroll-sentinel');
     const div = document.createElement('div');
     div.className = 'question-panel';
     let html = `<div class="question-header">Question from Dagi</div>`;
-    html += `<p>${_escapeHtml(question)}</p>`;
+    html += `<div class="rendered-markdown">${questionHtml}</div>`;
     if (options.length > 0) {
         html += '<table>';
         options.forEach((opt, i) => {

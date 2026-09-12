@@ -6,6 +6,8 @@ from pathlib import Path
 from PySide6.QtCore import QUrl
 from PySide6.QtWebEngineWidgets import QWebEngineView
 
+from pyside_gui.markdown_renderer import render_markdown
+
 
 _RESOURCES = Path(__file__).parent / "resources"
 
@@ -98,8 +100,9 @@ class ConversationView(QWebEngineView):
         options: list[dict],
         timeout: float | None,
     ) -> None:
+        question_html = render_markdown(question)
         self._run_js(
-            f"appendQuestion({self._js_str(question)}, "
+            f"appendQuestion({self._js_str(question_html)}, "
             f"{json.dumps(options)}, "
             f"{timeout if timeout else 'null'})"
         )
