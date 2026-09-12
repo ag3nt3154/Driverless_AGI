@@ -21,6 +21,7 @@ def _escape(text: str) -> str:
         text.replace("&", "&amp;")
         .replace("<", "&lt;")
         .replace(">", "&gt;")
+        .replace('"', "&quot;")
     )
 
 
@@ -44,10 +45,13 @@ def _fence_renderer(tokens, idx, options, env):
 _md = MarkdownIt("gfm-like").enable("table").disable("linkify")
 # Wrap in lambda to insulate from add_render_rule's internal binding behaviour.
 _md.add_render_rule("fence", lambda *a: _fence_renderer(*a[-4:]))
+_safe_md = MarkdownIt("gfm-like", {"html": False}).enable("table").disable("linkify")
+_safe_md.add_render_rule("fence", lambda *a: _fence_renderer(*a[-4:]))
 
 
-def render_markdown(text: str) -> str:
-    return _md.render(text)
+def render_markdown(text: str, *, allow_html: bool = True) -> str:
+    renderer = _md if allow_html else _safe_md
+    return renderer.render(text)
 
 
 def render_markdown_with_source_lines(text: str) -> str:

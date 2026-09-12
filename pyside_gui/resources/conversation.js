@@ -118,14 +118,14 @@ function updateToolResult(name, result, verbose) {
     _scrollToBottom();
 }
 
-function appendReasoning(text) {
+function appendReasoning(html) {
     const conv = document.getElementById('conversation');
     const sentinel = document.getElementById('scroll-sentinel');
     const div = document.createElement('div');
     div.className = 'message reasoning-message';
     div.innerHTML =
         '<div class="message-header">🧠 Thinking</div>' +
-        `<div class="message-body">${_escapeHtml(text)}</div>`;
+        `<div class="message-body rendered-markdown">${html}</div>`;
     conv.insertBefore(div, sentinel);
     _scrollToBottom();
 }
@@ -160,9 +160,41 @@ function createStreamBubble() {
     div.className = 'message assistant-message streaming';
     div.innerHTML =
         '<div class="message-header">Dagi</div>' +
-        '<div class="reasoning"></div>' +
         '<div class="text"></div>';
     conv.insertBefore(div, sentinel);
+    _scrollToBottom();
+}
+
+function updateReasoningPreview(text) {
+    const bubble = document.getElementById('streaming-bubble');
+    if (!bubble) return;
+    let reasoning = document.getElementById('streaming-reasoning');
+    if (!reasoning) {
+        if (!text.trim()) return;
+        reasoning = document.createElement('div');
+        reasoning.id = 'streaming-reasoning';
+        reasoning.innerHTML =
+            '<div class="message-header">🧠 Thinking</div>' +
+            '<div class="message-body"></div>';
+        bubble.parentNode.insertBefore(reasoning, bubble);
+    }
+    reasoning.className = 'message reasoning-message reasoning-streaming';
+    const body = reasoning.querySelector('.message-body');
+    body.className = 'message-body reasoning-preview';
+    body.textContent = text.trimEnd();
+    // Cap visible wrapped lines, not source lines, and follow the newest text.
+    body.scrollTop = body.scrollHeight;
+    _scrollToBottom();
+}
+
+function finalizeReasoning(html) {
+    const reasoning = document.getElementById('streaming-reasoning');
+    if (!reasoning) return;
+    reasoning.classList.remove('reasoning-streaming');
+    const body = reasoning.querySelector('.message-body');
+    body.className = 'message-body rendered-markdown';
+    body.innerHTML = html;
+    body.scrollTop = 0;
     _scrollToBottom();
 }
 
@@ -176,23 +208,21 @@ function updateStreamBubble(kind, chunk) {
 }
 
 function finalizeStream(html) {
+    const reasoning = document.getElementById('streaming-reasoning');
+    if (reasoning) reasoning.id = '';
     const bubble = document.getElementById('streaming-bubble');
     if (!bubble) return;
+    if (!html.trim()) {
+        bubble.remove();
+        _scrollToBottom();
+        return;
+    }
     bubble.classList.remove('streaming');
     bubble.id = '';
-    const reasoningDiv = bubble.querySelector('.reasoning');
-    const reasoningText = reasoningDiv ? reasoningDiv.textContent.trim() : '';
-    if (reasoningText) {
-        const rDiv = document.createElement('div');
-        rDiv.className = 'message reasoning-message';
-        rDiv.innerHTML =
-            '<div class="message-header">🧠 Thinking</div>' +
-            `<div class="message-body">${_escapeHtml(reasoningText)}</div>`;
-        bubble.parentNode.insertBefore(rDiv, bubble);
-    }
     bubble.innerHTML =
         '<div class="message-header">Dagi</div>' +
         `<div class="message-body rendered-markdown">${html}</div>`;
+    _scrollToBottom();
 }
 
 function clearConversation() {

@@ -3,7 +3,7 @@
 Interim home for open and completed project tasks. Relocated from TODO.md 2026-09-05.
 No roadmap redesign; preserving existing status vocabulary and organization.
 
-> Last updated: 2026-09-05
+> Last updated: 2026-09-12
 
 ## Open
 
@@ -18,6 +18,12 @@ No roadmap redesign; preserving existing status vocabulary and organization.
 
 ## Completed (recent)
 
+- **PySide thinking display inspired by dsh** · `done` · implemented `2026-09-12` —
+  Streams show a three-line reasoning preview, then automatically render accumulated reasoning
+  as Markdown when answer text arrives or the stream ends. Focused GUI regression run: 28 passed;
+  one preexisting unrelated `test_bridge.py::test_expression_and_process_snapshots_emit_as_objects`
+  failure remains because `AgentBridge.expression_changed` is absent. Details: [implementation
+  and verification](pyside-thinking-display-2026-09-12.md).
 - **Plan mode removed — replaced with `/plan` skill + `create_plan` tool** · `done` · `2026-09-05`
 - **Deliver workflow (Tasks 1–8)** · `done` · `2026-09-05`
 - **String-Sentinel Protocol Refactor** · `done` · `2026-08-26`

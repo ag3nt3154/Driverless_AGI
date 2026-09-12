@@ -29,3 +29,9 @@ def test_table():
     md = "| A | B |\n|---|---|\n| 1 | 2 |"
     result = render_markdown(md)
     assert "<table>" in result
+
+
+def test_reasoning_code_language_cannot_inject_html_attributes():
+    result = render_markdown('```x" onclick="alert(1)\ncode\n```', allow_html=False)
+    assert 'language-x&quot; onclick=&quot;alert(1)' in result
+    assert ' onclick="' not in result

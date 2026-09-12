@@ -20,6 +20,8 @@ class ConversationView(QWebEngineView):
         super().__init__()
         self._verbose = verbose
         self._ready = False
+        self._stream_reasoning = ""
+        self._reasoning_dirty = False
         html_path = _RESOURCES / "conversation.html"
         self.load(QUrl.fromLocalFile(str(html_path)))
         self.loadFinished.connect(self._on_load_finished)
@@ -58,8 +60,9 @@ class ConversationView(QWebEngineView):
         )
 
     def append_reasoning(self, text: str) -> None:
+        html = render_markdown(text, allow_html=False)
         self._run_js(
-            f"appendReasoning({self._js_str(text)})"
+            f"appendReasoning({self._js_str(html)})"
         )
 
     def append_info(self, text: str) -> None:
@@ -69,18 +72,39 @@ class ConversationView(QWebEngineView):
         self._run_js(f"appendError({self._js_str(text)})")
 
     def stream_start(self) -> None:
+        self._stream_reasoning = ""
+        self._reasoning_dirty = False
         self._run_js("createStreamBubble()")
 
     def stream_delta(self, kind: str, chunk: str) -> None:
+        if not chunk:
+            return
+        if kind == "reasoning":
+            self._stream_reasoning += chunk
+            self._reasoning_dirty = True
+            self._run_js(f"updateReasoningPreview({self._js_str(self._stream_reasoning)})")
+            return
+        # The first answer delta ends the reasoning phase; tool-only turns
+        # instead finalize it at stream_end. Later reasoning can refresh it.
+        self._finish_reasoning()
         self._run_js(
             f"updateStreamBubble({self._js_str(kind)}, "
             f"{self._js_str(chunk)})"
         )
 
     def stream_end(self, html: str) -> None:
+        self._finish_reasoning()
         self._run_js(f"finalizeStream({self._js_str(html)})")
 
+    def _finish_reasoning(self) -> None:
+        if self._reasoning_dirty:
+            html = render_markdown(self._stream_reasoning, allow_html=False)
+            self._run_js(f"finalizeReasoning({self._js_str(html)})")
+            self._reasoning_dirty = False
+
     def clear(self) -> None:
+        self._stream_reasoning = ""
+        self._reasoning_dirty = False
         self._run_js("clearConversation()")
 
     def scroll_to_bottom(self) -> None:

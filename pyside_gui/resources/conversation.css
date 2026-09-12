@@ -139,11 +139,21 @@ body {
 .reasoning-message {
     background: var(--surface);
     border-left: 3px solid var(--magenta);
-    font-style: italic;
     color: var(--text-dim);
 }
 
 .reasoning-message .message-header { color: var(--magenta); }
+
+.reasoning-preview {
+    line-height: 1.6;
+    max-height: 4.8em;
+    overflow: hidden;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    color: var(--text-dim);
+}
+
+.assistant-message.streaming:has(.text:empty) { display: none; }
 
 .info-message {
     color: var(--text-dim);
@@ -200,11 +210,6 @@ body {
 
 .subagent-tool { color: var(--text-dim); }
 .subagent-error { color: var(--red); }
-
-.streaming .reasoning {
-    color: var(--text-dim);
-    font-style: italic;
-}
 
 /* Markdown content styling */
 .rendered-markdown h1,
