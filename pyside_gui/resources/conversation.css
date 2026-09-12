@@ -269,4 +269,40 @@ body {
 .rendered-markdown ul, .rendered-markdown ol { padding-left: 20px; }
 .rendered-markdown li { margin: 2px 0; }
 
+/* Emote card — inline meme display in conversation */
+.emote-card {
+    background: var(--surface);
+    border-left: 3px solid var(--magenta);
+    border-radius: var(--radius);
+    padding: 10px 14px;
+}
+
+.emote-card .emote-header {
+    font-weight: 600;
+    font-size: 12px;
+    color: var(--magenta);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 6px;
+}
+
+.emote-card .emote-img {
+    display: block;
+    max-width: 280px;
+    max-height: 240px;
+    border-radius: 6px;
+    margin: 4px 0 8px;
+}
+
+.emote-card .emote-text {
+    color: var(--text);
+    font-size: 14px;
+}
+
+.emote-card .emote-time {
+    color: var(--text-dim);
+    font-size: 11px;
+    margin-top: 4px;
+}
+
 #scroll-sentinel { height: 1px; }

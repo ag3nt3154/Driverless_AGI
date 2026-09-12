@@ -1,6 +1,6 @@
 # AGENTS.md
 
-> Last updated: 2026-09-12 | [README](README.md) | [Wiki](wiki/index.md) | [Code review](wiki/notes/2026-09-08_CODE_REVIEW.md)
+> Last updated: 2026-09-13 | [README](README.md) | [Wiki](wiki/index.md) | [Code review](wiki/notes/2026-09-08_CODE_REVIEW.md)
 
 ---
 
@@ -148,6 +148,7 @@ security issues, or complexity debt would be significant.
 - **Subagent API**: import `tools/subagent_api.py`; never private `_subagent_runner.py`.
 - **Windows / conda**: `conda run -n dagi python`; hooks use `envs/dagi/python.exe` (conda run drops stdin).
 - **Plan UI location**: active-plan panel in PySide left sidebar, 4th rail view (`PlanView`); `LeftSidebar.update_plan()`.
+- **Emote display**: emote tool posts to both sidebar `MessageBoardView` and inline conversation pane via `appendEmoteCard()` JS; images use `file:///` URLs (safe because QWebEngineView loads from `fromLocalFile`).
 - **Wiki subagents**: tool allowlists are `[read,grep,find]` (query) or `+[write,edit]` (add); no shell/delegation.
 
 ## Wiki Use

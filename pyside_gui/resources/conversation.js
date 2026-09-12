@@ -261,6 +261,25 @@ function appendQuestion(questionHtml, options, timeout) {
     _scrollToBottom();
 }
 
+function appendEmoteCard(name, fileUrl, text, timestamp) {
+    const conv = document.getElementById('conversation');
+    const sentinel = document.getElementById('scroll-sentinel');
+    const div = document.createElement('div');
+    div.className = 'emote-card';
+
+    let imgHtml = `<img class="emote-img" src="${fileUrl}" `
+        + `alt="${_escapeHtml(name)}" `
+        + `onerror="this.outerHTML='<div>[${_escapeHtml(name)}]</div>'">`;
+
+    div.innerHTML =
+        `<div class="emote-header">Dagi</div>`
+        + imgHtml
+        + `<div class="emote-text">${_escapeHtml(text)}</div>`
+        + `<div class="emote-time">${_escapeHtml(timestamp)}</div>`;
+    conv.insertBefore(div, sentinel);
+    _scrollToBottom();
+}
+
 function appendSubagentEvent(subagentType, eventJson) {
     const conv = document.getElementById('conversation');
     const sentinel = document.getElementById('scroll-sentinel');

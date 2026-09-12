@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from urllib.parse import urljoin
+from urllib.request import pathname2url
 
 from PySide6.QtCore import QUrl
 from PySide6.QtWebEngineWidgets import QWebEngineView
@@ -109,6 +111,17 @@ class ConversationView(QWebEngineView):
 
     def scroll_to_bottom(self) -> None:
         self._run_js("scrollToBottom()")
+
+    def append_emote(
+        self, name: str, file_path: str, text: str, timestamp: str,
+    ) -> None:
+        file_url = "file:///" + pathname2url(file_path).lstrip("/")
+        self._run_js(
+            f"appendEmoteCard({self._js_str(name)}, "
+            f"{self._js_str(file_url)}, "
+            f"{self._js_str(text)}, "
+            f"{self._js_str(timestamp)})"
+        )
 
     def append_subagent_event(
         self, subagent_type: str, line: str
