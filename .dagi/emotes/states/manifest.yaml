@@ -5,4 +5,5 @@ states:
   tool: money.gif
   "tool:bash": bash.png
   "tool:read": reading.png
+  "tool:ask_user": asking.png
   error: genshin-impact-fallen.gif
