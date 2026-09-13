@@ -51,6 +51,9 @@ line numbers and exact implementation details may change after this handoff.
 
 The configured default found during research is `current-free-openrouter`, model
 `openrouter/free`. No live image request has established compatibility for this route.
+**The default model is almost certainly not vision-capable.** Testing this feature
+requires switching to a known vision model (e.g. `gpt-4o`, `claude-3.5-sonnet`, or an
+OpenRouter route to one). Do not assume the default config will work for image smoke tests.
 
 ## 3. API contract
 
@@ -135,21 +138,33 @@ Store a versioned internal content part in user-message event content:
 
 The digest determines the path; persisted content must not supply an arbitrary filesystem
 path. If detail is configured when attaching, persist it as an optional `detail` field on
-the reference; later configuration changes must not rewrite that choice. Add
+the reference; later configuration changes must not rewrite that choice. The conflict
+resolution rule is: **per-image `detail` wins over config**. Config `detail` is applied
+only at *attachment time* as a default for new images; it is never applied retroactively
+to images already persisted with a `detail` value. When a fork inherits images with an
+explicit `detail`, the child preserves that value regardless of its own model config. Add
 `.dagi/attachments/` to Git ignores. Resolve the store from the owning project,
 never the current process working directory or a session filename that can be renamed.
 Moving a project together with `.dagi/` preserves references. Copying just a session JSONL
 does not include its assets; report missing assets explicitly.
 
-Write bytes atomically before appending any event that references them. Concurrent insertion
-of identical bytes must produce one valid asset. Existing hash paths must be verified, not
-blindly trusted or overwritten. Verify digest and byte size when loading assets. Reject
-escaping paths and symlink/junction escapes. Never re-encode an asset on later requests.
+Write bytes atomically before appending any event that references them. Use
+`os.replace` from a temp file in the same directory for atomic rename on Windows.
+For v1, write-once-skip-if-exists is sufficient: the GUI is single-user and pastes
+are serialized through the GUI thread's decode → worker commit flow, so true concurrent
+writes to the same hash are not expected. Add a comment noting that concurrent-write
+safety (file locking or compare-and-swap) is deferred until multi-process access is needed.
+Verify digest and byte size when loading assets. Reject escaping paths and
+symlink/junction escapes. Never re-encode an asset on later requests.
 
 Drafts stay in memory. Removing a draft thumbnail releases that draft's bytes. Persisted
 assets are retained in v1; do not garbage-collect them on conversation clear, session rename,
 compaction, or branch completion because other history may still reference them. Failed
 event writes may leave an unreferenced asset; this is preferable to a dangling reference.
+
+Growth expectation: at ~500 KB per screenshot and a few pastes per day, the store grows
+roughly 15–50 MB/month. This is acceptable for v1. A future GC pass (reference-counting
+live sessions against the store) can reclaim unreferenced assets; do not build that now.
 
 ### Provider representation
 
@@ -158,8 +173,13 @@ deeply independent message dictionaries and replaces internal image parts with d
 Preserve message/part order and all unrelated fields, including assistant tool calls and
 reasoning fields. Do not recursively reinterpret arbitrary tool output or text as assets.
 Unknown internal image versions fail with a useful error; they never reach the API.
-Route materialization and preflight exceptions through normal user-visible error handling;
-the current request-building call precedes the SDK-specific inner `try` block.
+Route materialization and preflight exceptions through normal user-visible error handling.
+Concretely: `_build_request_messages` must call `materialize_messages` internally so the
+returned list is already provider-ready (all `dagi_image` parts replaced with data URLs).
+This places materialization errors (missing asset, corrupt hash, unknown image version)
+*before* the `_create_kwargs` dict is assembled, outside the SDK-specific inner `try` block,
+where they propagate to the turn-level error handler and surface to the user without a
+provider call.
 
 Use it for normal requests, stable fork capture, and reconstructed compaction prefixes.
 `_last_request_snapshot` must contain the actual materialized provider request. Observers
@@ -186,6 +206,11 @@ the implementation. Use this deterministic precedence:
 
 When clipboard data offers both pixels and text/HTML, attach the image once; do not also
 insert its alternate URL or HTML representation. Existing typed text remains untouched.
+
+Known edge: `QMimeData.imageData()` may return null on some Windows Remote Desktop
+sessions where the clipboard carries image data as DIB that Qt does not auto-convert.
+This is a known Qt limitation, not a bug to fix in v1; the paste falls through to
+text/file handling or is rejected with an appropriate message.
 Use Qt image decoding, validate a non-null result, bound file bytes and decoded dimensions,
 and encode to PNG once. Preserve screenshot resolution and transparency within limits.
 Do not silently downscale, crop, or recompress later. Reject excessive inputs with the limit
@@ -202,6 +227,12 @@ framework for this small operation.
 Change submission to emit `UserSubmission` through `Signal(object)` (or equivalent). Enter
 submits when text or images exist. Preserve current modified-Enter behavior. Attachment
 removal has its own control; normal text undo/redo remains normal text undo/redo.
+
+After emitting the signal, the GUI must clear its own reference to the `UserSubmission`
+(including the `ImageAttachment` byte buffers). The slot's copy lives until the worker
+completes. `Signal(object)` with `Qt.QueuedConnection` holds a Python reference across
+the thread boundary — without explicit release, potentially large image data stays pinned
+in the GUI-thread's draft until the slot finishes on the worker thread.
 
 ## 6. Submission acceptance and failure behavior
 
@@ -304,7 +335,16 @@ including base64 or credentials in displayed/logged exception details introduced
 
 ## 9. Suggested implementation sequence and file ownership
 
-Implement in these coherent stages, adapting module names to existing conventions:
+Implement in these coherent stages, adapting module names to existing conventions.
+
+**Prerequisite**: `pyside_gui/app.py` is already over the 500-line file cap (currently
+~547 lines). Before stage 4 adds more routing logic, split the submission/dispatch
+methods into a focused module (e.g. `pyside_gui/_dispatch.py`) to stay within bounds.
+
+**Early visual checkpoint**: After completing stages 1+2, wire a hardcoded test image
+through the loop and render it in `conversation.js` as a sent-image thumbnail. This
+gives a visible "it works" signal at the halfway mark and validates the full
+store → event log → materialization → rendering pipeline before tackling clipboard input.
 
 1. **Core representations and asset store.** Add small Qt-free modules such as
    `agent/user_input.py` and `agent/image_assets.py` for value objects, validation of metadata,
@@ -313,7 +353,9 @@ Implement in these coherent stages, adapting module names to existing convention
    or new image-decoding dependency is required in headless core for these operations.
 2. **Loop and persistence.** Wire normalization, acceptance, string compatibility, tracker
    content, provider materialization, and deep-copy isolation. Keep slug input text-only;
-   image-only first turns use a local fallback label without another vision/API request.
+   image-only first turns use a local fallback label (e.g. `"image-conversation"`) for the
+   session filename without making another vision/API request. Do not add synthetic user text
+   solely to satisfy slug generation — this rule from section 3 applies here.
 3. **Fork/resume/configuration.** Wire alternate request paths, inherited normalization,
    model-switch preflight, history labels, and token estimates before exposing GUI input.
 4. **GUI composer and routing.** Add a focused attachment/paste helper module, previews,
@@ -338,7 +380,7 @@ Use tiny programmatically generated fixtures; no personal screenshots in test as
 | Test group | Required assertions |
 | --- | --- |
 | Wire payload | Decode outgoing data URL and compare exact PNG bytes; verify MIME, part order, multiple images, image-only, and unchanged text-only shape. |
-| SDK boundary | Use an OpenAI client with mocked HTTP transport to inspect actual serialized JSON without real credentials/network. Exercise streaming and nonstreaming paths. |
+| SDK boundary | Use an OpenAI client with mocked HTTP transport (`openai.OpenAI(http_client=httpx.Client(transport=httpx.MockTransport(handler)))`) to inspect actual serialized JSON without real credentials/network. The handler receives an `httpx.Request` whose `.content` is the JSON body. Exercise streaming and nonstreaming paths. |
 | Asset store | Atomic write, duplicate insertion, concurrent identical writes, hash mismatch, missing file, invalid reference/version, traversal/junction escape, and rename-independent paths. |
 | Persistence | Round-trip event log and legacy `raw_messages`; remove original source file and clear clipboard, then resume and obtain identical wire image bytes. |
 | History | Image-only labels remain visible; titles/copy/TUI views never render base64 or raw reference dictionaries. |
