@@ -2,13 +2,16 @@
 
 Navigation to useful findings and open questions.
 
-> Last updated: 2026-09-12
+> Last updated: 2026-09-13
 
 - [Large-file reader investigation](large-file-reader-2026-09-09.md): plan-only findings
   that informed the approved redesign below.
 - [Large-file reader plan (full)](large-file-reader-plan-2026-09-09.md): complete
   redesign specification with six review amendments (A1–A6); **approved and implemented
   2026-09-09** — 6 subtasks, 100 tests, all passing.
+- [Image input research and proposal](image-input-proposal-2026-09-13.md): research and detailed
+  implementation handoff recorded; design remains **unapproved**; no implementation or endpoint
+  smoke test was performed.
 
 - [Code review — 2026-09-08](2026-09-08_CODE_REVIEW.md): 37 findings across agent/,
   tools/, pyside_gui/, root scripts. 3 critical (cross-thread race, double JSON encoding,

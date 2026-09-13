@@ -2,7 +2,7 @@
 
 Project knowledge and navigation.
 
-> Last updated: 2026-09-09
+> Last updated: 2026-09-13
 
 - [Architecture](architecture.md): entry points, agent loop, subagent system, tool registry.
 - [Workflows](workflows.md): delivery, planning, wiki lifecycle, testing, model switching.
@@ -21,6 +21,9 @@ Project knowledge and navigation.
 
 - [Broad repository review](notes/broad-review-2026-09-06.md): completed 2026-09-06
   against clean `main` at `707b573`; six actionable findings remain unfixed.
+- [Image input research and proposal](notes/image-input-proposal-2026-09-13.md): research and detailed
+  implementation handoff recorded; proposed design is **unapproved** and no implementation or
+  endpoint test was performed.
 
 ## Approved designs
 

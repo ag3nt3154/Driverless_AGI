@@ -1,6 +1,7 @@
 # AGENTS.md
 
 > Last updated: 2026-09-13 | [README](README.md) | [Wiki](wiki/index.md) | [Code review](wiki/notes/2026-09-08_CODE_REVIEW.md)
+> [Proposed image-input implementation plan](docs/image-input-implementation-plan.md)
 
 ---
 
@@ -8,7 +9,7 @@
 
 Driverless AGI (dagi) is a Python agentic coding assistant with tool use, subagent delegation,
 session persistence, and multi-UI support (TUI, PySide desktop, Telegram). Architecture,
-workflows, errors, and notes live in [wiki/](wiki/index.md).
+workflows, errors, notes, and feature research live in [wiki/](wiki/index.md).
 
 ## Rules
 
