@@ -109,7 +109,9 @@ def handle_special_command(win, result: str) -> None:
 
 def dispatch_agent(win, task: str | UserSubmission) -> None:
     if win._worker and win._worker.is_alive():
-        win._conversation.append_info("Agent is already running.")
+        win._conversation.append_info("Agent is already running — please wait.")
+        if hasattr(win, "_prompt"):
+            win._prompt.restore_draft(task if isinstance(task, UserSubmission) else _as_submission(task))
         return
     win._submission_seq = getattr(win, "_submission_seq", 0) + 1
     win._conversation.append_user_message(_display_text(task))

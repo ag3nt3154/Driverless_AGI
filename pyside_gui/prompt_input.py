@@ -161,6 +161,7 @@ class PromptInput(QWidget):
     def __init__(self) -> None:
         super().__init__()
         self._attachments: list[ImageAttachment] = []
+        self._draft_rejected: bool = False
         self._attachment_previews: list[QImage] = []
 
         layout = QVBoxLayout(self)
@@ -211,17 +212,21 @@ class PromptInput(QWidget):
         if not text and not self._attachments:
             return
         submission = UserSubmission(text=text, images=tuple(self._attachments))
+        self._draft_rejected = False
         self.submitted.emit(submission)
-        self._editor.clear()
-        self._clear_attachments()
+        if not self._draft_rejected:
+            self._editor.clear()
+            self._clear_attachments()
 
     def restore_draft(self, submission: UserSubmission) -> None:
         """Put a rejected submission's content back into the editor.
 
         Used when the window declines to route a submission (e.g. images
         while a plain-text answer is expected) so the user doesn't lose
-        what they typed/pasted.
+        what they typed/pasted. Sets _draft_rejected so _submit() skips
+        its post-emit clear.
         """
+        self._draft_rejected = True
         self._editor.setPlainText(submission.text)
         cursor = self._editor.textCursor()
         cursor.movePosition(cursor.MoveOperation.End)
