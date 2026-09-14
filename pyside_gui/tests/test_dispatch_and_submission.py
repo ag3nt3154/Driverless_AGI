@@ -82,3 +82,95 @@ def test_user_submission_requires_text_or_images() -> None:
 def test_user_submission_accepts_images_only() -> None:
     submission = UserSubmission(text="", images=(_make_attachment(),))
     assert submission.is_valid
+
+
+# --- _append_user_with_images -----------------------------------------------------------
+
+
+class _FakeConversation:
+    def __init__(self) -> None:
+        self.user_messages: list[str] = []
+        self.image_calls: list[tuple[str, list[str]]] = []
+        self.errors: list[str] = []
+
+    def append_user_message(self, text: str) -> None:
+        self.user_messages.append(text)
+
+    def append_user_message_with_images(self, text: str, image_paths) -> None:
+        self.image_calls.append((text, list(image_paths)))
+
+    def append_error(self, text: str) -> None:
+        self.errors.append(text)
+
+
+class _FakeConfig:
+    def __init__(self, project_path) -> None:
+        self.project_path = project_path
+
+
+class _FakeWin:
+    def __init__(self, project_path) -> None:
+        self._conversation = _FakeConversation()
+        self._config = _FakeConfig(project_path)
+
+
+def test_append_user_with_images_stores_and_generates_file_urls(tmp_path) -> None:
+    from pyside_gui._dispatch import _append_user_with_images
+
+    win = _FakeWin(tmp_path)
+    submission = UserSubmission(text="here", images=(_make_attachment(),))
+
+    _append_user_with_images(win, submission)
+
+    assert not win._conversation.errors
+    assert len(win._conversation.image_calls) == 1
+    text, paths = win._conversation.image_calls[0]
+    assert text == "here"
+    assert len(paths) == 1
+    assert paths[0].startswith("file:///")
+    # The asset store actually persisted the bytes at the referenced path.
+    from agent.image_assets import ImageAssetStore
+
+    store = ImageAssetStore(tmp_path)
+    stored_files = list((tmp_path / ".dagi" / "attachments").iterdir())
+    assert len(stored_files) == 1
+    assert stored_files[0].name in paths[0]
+
+
+def test_append_user_with_images_falls_back_on_asset_error(tmp_path, monkeypatch) -> None:
+    from agent.image_assets import AssetError
+    from pyside_gui import _dispatch
+
+    class _BrokenStore:
+        def __init__(self, *_a, **_kw) -> None:
+            pass
+
+        def store(self, *_a, **_kw):
+            raise AssetError("disk full")
+
+    monkeypatch.setattr(_dispatch, "ImageAssetStore", _BrokenStore)
+    win = _FakeWin(tmp_path)
+    submission = UserSubmission(text="here", images=(_make_attachment(),))
+
+    _dispatch._append_user_with_images(win, submission)
+
+    assert len(win._conversation.errors) == 1
+    assert "disk full" in win._conversation.errors[0]
+    assert not win._conversation.image_calls
+    # Falls back to the plain text bubble with the "[N images]" suffix.
+    assert win._conversation.user_messages == ["here [1 image]"]
+
+
+def test_append_user_with_images_text_only_path_unchanged(tmp_path) -> None:
+    from pyside_gui._dispatch import _append_user_with_images
+
+    win = _FakeWin(tmp_path)
+    submission = UserSubmission(text="just text")
+
+    _append_user_with_images(win, submission)
+
+    assert win._conversation.user_messages == ["just text"]
+    assert not win._conversation.image_calls
+    assert not win._conversation.errors
+    # No asset store directory should be created for a text-only submission.
+    assert not (tmp_path / ".dagi").exists()

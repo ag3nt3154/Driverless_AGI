@@ -26,6 +26,33 @@ agent a structural map of accumulated knowledge without any manual invocation. T
 The unified wiki has four categories: projects, todos, knowledge, events. Three skills govern it:
 `memory-add`, `memory-query`, and `memory-refresh` (lint sweep + triage).
 
+### Image Input (PySide GUI)
+
+Paste screenshots or local image files (PNG/JPEG) directly into the composer. Images are:
+- Stored durably in a content-addressed asset store (`.dagi/attachments/`)
+- Sent as data URLs to vision-capable models via the OpenAI Chat Completions API
+- Preserved across session restarts, context compaction, and model switches
+- Displayed as thumbnails in both the composer and conversation view
+
+Configurable per-model via `.dagi/config.yaml`:
+```yaml
+models:
+  my-vision-model:
+    supports_images: true
+    image_input:
+      max_images_per_message: 4
+      max_image_bytes: 8388608  # 8 MiB
+      max_pixels: 24000000
+      detail: auto  # "low", "high", or "auto"
+```
+
+See the "Image attachments" note under **PySide6 Desktop GUI** below for composer usage
+details. Implementation plan and design rationale: `docs/image-input-implementation-plan.md`. Live
+endpoint smoke testing against a real vision-capable model has not yet been performed —
+automated coverage (asset store, wire payload, persistence, history labels, GUI routing) is
+complete, but no live API call with actual credentials has verified end-to-end provider
+compatibility.
+
 ---
 
 ## Setup
@@ -197,7 +224,7 @@ conda run --no-capture-output -n dagi python -m pyside_gui --model <id> --projec
 
 **Keyboard shortcuts:** `Enter` submit · `Shift+Enter`/`Ctrl+N` newline · `Ctrl+O` compose mode · `Esc` pause · `Ctrl+Q` quit
 
-**Image attachments (image input, stage 5):** paste an image (clipboard pixels or local `.png`/`.jpg`/`.jpeg` file paths) into the composer to attach it — a thumbnail strip appears below the text box with a remove (✕) button per image. Limits mirror `AgentConfig` defaults (max 4 images/message, 8 MiB/image, 24M px/image); exceeding one shows an inline error and leaves the draft untouched. Enter submits text and/or attachments together as a `UserSubmission`; the conversation bubble now renders the sent images as thumbnails (up to 200x150, rounded corners, wrapping flex row) below the message text via `ConversationView.append_user_message_with_images()` / `conversation.js`'s `appendUserMessageWithImages()`, resolving each attachment's file path from the `ImageAssetStore` and loading it as a `file://` URL — falling back to the old `"text [N images]"` text bubble if path resolution fails. Pending-ask answers and slash commands are text-only and reject a submission that carries images, restoring the draft instead of discarding it.
+**Image attachments (image input, all 6 stages complete):** paste an image (clipboard pixels or local `.png`/`.jpg`/`.jpeg` file paths) into the composer to attach it — a thumbnail strip appears below the text box with a remove (✕) button per image. Limits mirror `AgentConfig` defaults (max 4 images/message, 8 MiB/image, 24M px/image); exceeding one shows an inline error and leaves the draft untouched. Enter submits text and/or attachments together as a `UserSubmission`; the conversation bubble now renders the sent images as thumbnails (up to 200x150, rounded corners, wrapping flex row) below the message text via `ConversationView.append_user_message_with_images()` / `conversation.js`'s `appendUserMessageWithImages()`, resolving each attachment's file path from the `ImageAssetStore` and loading it as a `file://` URL — falling back to the old `"text [N images]"` text bubble if path resolution fails. Pending-ask answers and slash commands are text-only and reject a submission that carries images, restoring the draft instead of discarding it.
 
 **Slash commands:** same set as TUI — `/help`, `/clear`, `/model`, `/compact`, `/tools`, `/skills`, `/workflows`, `/hist`, `/init`, `/copy`, `/exit`, `/show-pet`
 

@@ -191,6 +191,146 @@ class TestInjectAndResume:
         assert any(p.get("type") == "dagi_image" for p in parts)
 
 
+class TestWirePayloadDetails:
+    """Section 10 'Wire payload' group: exact bytes, MIME, part order, multi-image,
+    image-only, and text-only-unchanged shape — beyond the single-image happy path
+    already covered by TestBuildRequestMessagesMaterializes."""
+
+    def test_exact_png_bytes_round_trip_through_data_url(self, tmp_path):
+        import base64
+
+        loop = _make_loop(tmp_path)
+        loop._generate_session_slug = MagicMock(return_value="a_slug")
+        submission = UserSubmission(text="look", images=(_make_attachment(),))
+        loop.run(submission)
+
+        messages = loop._build_request_messages()
+        image_part = next(
+            p for m in messages if m.get("role") == "user" and isinstance(m.get("content"), list)
+            for p in m["content"] if p.get("type") == "image_url"
+        )
+        url = image_part["image_url"]["url"]
+        header, encoded = url.split(",", 1)
+        assert header == "data:image/png;base64"
+        assert base64.b64decode(encoded) == PNG_BYTES
+
+    def test_mime_type_matches_attachment(self, tmp_path):
+        loop = _make_loop(tmp_path)
+        loop._generate_session_slug = MagicMock(return_value="a_slug")
+        jpeg_bytes = b"\xff\xd8\xff\xe0" + b"\x00" * 32 + b"\xff\xd9"
+        attachment = ImageAttachment(data=jpeg_bytes, mime_type="image/jpeg", width=2, height=2, name="p.jpg")
+        submission = UserSubmission(text="look", images=(attachment,))
+        loop.run(submission)
+
+        messages = loop._build_request_messages()
+        image_part = next(
+            p for m in messages if m.get("role") == "user" and isinstance(m.get("content"), list)
+            for p in m["content"] if p.get("type") == "image_url"
+        )
+        assert image_part["image_url"]["url"].startswith("data:image/jpeg;base64,")
+
+    def test_text_part_precedes_image_parts_in_order(self, tmp_path):
+        loop = _make_loop(tmp_path)
+        loop._generate_session_slug = MagicMock(return_value="a_slug")
+        submission = UserSubmission(text="caption", images=(_make_attachment("a.png"),))
+        loop.run(submission)
+
+        messages = loop._build_request_messages()
+        user_msg = next(
+            m for m in messages if m.get("role") == "user" and isinstance(m.get("content"), list)
+        )
+        types = [p["type"] for p in user_msg["content"]]
+        assert types == ["text", "image_url"]
+
+    def test_multiple_images_all_materialize(self, tmp_path):
+        import base64
+
+        loop = _make_loop(tmp_path)
+        loop._generate_session_slug = MagicMock(return_value="a_slug")
+        data_a = PNG_BYTES
+        data_b = PNG_BYTES + b"\x00"  # distinct bytes -> distinct hash
+        att_a = ImageAttachment(data=data_a, mime_type="image/png", width=1, height=1, name="a.png")
+        att_b = ImageAttachment(data=data_b, mime_type="image/png", width=1, height=1, name="b.png")
+        submission = UserSubmission(text="two images", images=(att_a, att_b))
+        loop.run(submission)
+
+        messages = loop._build_request_messages()
+        user_msg = next(
+            m for m in messages if m.get("role") == "user" and isinstance(m.get("content"), list)
+        )
+        image_urls = [p["image_url"]["url"] for p in user_msg["content"] if p["type"] == "image_url"]
+        assert len(image_urls) == 2
+        decoded = {base64.b64decode(u.split(",", 1)[1]) for u in image_urls}
+        assert decoded == {data_a, data_b}
+
+    def test_image_only_message_has_no_text_part(self, tmp_path):
+        loop = _make_loop(tmp_path)
+        loop._generate_session_slug = MagicMock()
+        submission = UserSubmission(text="", images=(_make_attachment(),))
+        loop.run(submission)
+
+        messages = loop._build_request_messages()
+        user_msg = next(
+            m for m in messages if m.get("role") == "user" and isinstance(m.get("content"), list)
+        )
+        assert [p["type"] for p in user_msg["content"]] == ["image_url"]
+
+    def test_text_only_message_shape_is_unchanged_string(self, tmp_path):
+        loop = _make_loop(tmp_path)
+        loop._generate_session_slug = MagicMock(return_value="a_slug")
+        loop.run("just plain text, no images")
+
+        messages = loop._build_request_messages()
+        user_msg = next(m for m in messages if m.get("role") == "user")
+        assert isinstance(user_msg["content"], str)
+        assert user_msg["content"] == "just plain text, no images"
+
+
+class TestPersistenceRoundTrip:
+    """Section 10 'Persistence' group: store -> log -> reload -> materialize
+    reproduces identical bytes, and the store does not depend on the original
+    in-memory attachment surviving."""
+
+    def test_round_trip_after_resume_yields_identical_bytes(self, tmp_path):
+        import base64
+
+        original_loop = _make_loop(tmp_path)
+        original_loop._generate_session_slug = MagicMock(return_value="a_slug")
+        submission = UserSubmission(text="remember this", images=(_make_attachment(),))
+        original_loop.run(submission)
+
+        # Simulate the "original source removed" case: nothing but the stored
+        # copy in .dagi/attachments and the seeded messages is used below —
+        # `submission`/`attachment` going out of scope models the clipboard
+        # being cleared and the source file being deleted.
+        seed_messages = [{"role": "system", "content": "sys"}] + list(original_loop._messages)
+        del submission
+
+        resumed_loop = _make_loop(tmp_path)
+        resumed_loop._messages = []
+        resumed_loop._seed_from_messages(seed_messages)
+        resumed_loop._sync_messages()
+
+        messages = resumed_loop._build_request_messages()
+        image_part = next(
+            p for m in messages if m.get("role") == "user" and isinstance(m.get("content"), list)
+            for p in m["content"] if p.get("type") == "image_url"
+        )
+        encoded = image_part["image_url"]["url"].split(",", 1)[1]
+        assert base64.b64decode(encoded) == PNG_BYTES
+
+    def test_store_independent_of_original_attachment_object(self, tmp_path):
+        store = ImageAssetStore(tmp_path)
+        attachment = _make_attachment()
+        ref = store.store(attachment)
+        del attachment
+
+        # A brand-new store instance (fresh process/session simulation) still
+        # reads back identical bytes purely from disk.
+        reloaded_store = ImageAssetStore(tmp_path)
+        assert reloaded_store.load(ref) == PNG_BYTES
+
+
 class TestRecordUserAcceptsStrOrList:
     def test_accepts_string(self, tmp_path):
         from agent.session import SessionTracker

@@ -2,7 +2,11 @@
 
 ## In progress
 
-- **Image input, stage 5 of 6 done** (see `docs/image-input-implementation-plan.md`).
+(nothing currently in progress)
+
+## Completed
+
+- **Image input — all 6 stages complete** (see `docs/image-input-implementation-plan.md`).
   Stage 1 landed: `agent/user_input.py` (Qt-free `ImageAttachment`/`UserSubmission`
   value objects) and `agent/image_assets.py` (`ImageRef`, `ImageAssetStore`,
   `materialize_messages` — content-addressed store under `.dagi/attachments/`,
@@ -98,4 +102,40 @@
   pyside_gui/tests/test_conversation_reasoning.py` (17 passed) plus `node
   --check conversation.js`; full `pyside_gui` suite still 50 passed / 7
   failed / 32 errors, same pre-existing headless-Qt baseline as stage 4.
-  Remaining stage: end-to-end integration verification (stage 6).
+  Stage 6 landed (integration verification and documentation): extended the
+  four Stage 1-4 test files with the Section 10 gaps — wire payload tests
+  (`tests/test_loop_image_integration.py`: exact PNG byte round-trip through
+  the outgoing data URL, MIME-type correctness for PNG/JPEG, text-part-before-
+  image-part ordering, multiple distinct images in one message, image-only
+  messages, and text-only messages staying a plain string); a persistence
+  round-trip test (store an image, seed a fresh `AgentLoop` from the prior
+  loop's messages the way GUI resume does, materialize, and get back
+  byte-identical PNG data with the original `ImageAttachment`/`UserSubmission`
+  out of scope — modeling "source file deleted, clipboard cleared"); asset
+  store gap tests (`tests/test_image_assets.py`: concurrent identical writes
+  from 8 threads never corrupt the stored file — tolerating, per the module's
+  own documented deferred-concurrency guarantee, that a losing writer may see
+  a transient `PermissionError` on Windows `os.replace`; a symlinked asset
+  path is rejected by `load()`, skipped if the sandbox disallows creating
+  symlinks); history-label gap tests
+  (`tests/test_image_config_and_labels.py`: image-only/mixed labels across
+  `_content_label`, `_derive_title`, `build_turn_list`, and
+  `build_copyable_messages` are asserted to never contain `{`/`}` or
+  `sha256` — i.e. never a stringified dict or raw reference); and GUI routing
+  tests (`pyside_gui/tests/test_dispatch_and_submission.py`:
+  `_append_user_with_images` with a fake `win`/`_conversation`/`_config`
+  verifying it calls `ImageAssetStore.store()` and produces `file:///` URLs,
+  falls back to the error bubble + `"text [N images]"` text bubble on
+  `AssetError` without losing the message, and leaves the text-only path
+  byte-for-byte unchanged with no `.dagi/` directory created). Full targeted
+  run: `conda run -n dagi python -m pytest tests/test_image_assets.py
+  tests/test_loop_image_integration.py tests/test_image_config_and_labels.py
+  pyside_gui/tests/test_dispatch_and_submission.py --noconftest -v` — 81
+  passed, 1 skipped (symlink test, sandbox-dependent). README.md gained an
+  "Image Input (PySide GUI)" section documenting the feature and
+  `.dagi/config.yaml` `image_input:` knobs.
+  **Not yet done:** the opt-in live endpoint smoke test against a real
+  vision-capable model (plan Section 10's last item) has not been run — it
+  requires a configured vision-capable model's credentials, which are not
+  available in this environment. All automated verification is complete;
+  only that manual/live step remains unrun.

@@ -251,6 +251,59 @@ def test_materialize_messages_preserves_unrelated_fields(tmp_path: Path) -> None
     assert result == messages
 
 
+def test_store_concurrent_identical_writes(tmp_path: Path) -> None:
+    """Multiple threads storing the same bytes concurrently must never leave a
+    corrupted or partial file on disk, even though true concurrent-write
+    safety (locking/CAS) is explicitly deferred per the module docstring —
+    the real-world usage is a single GUI thread, so a losing writer racing on
+    the atomic os.replace may raise rather than silently corrupt data.
+    Every writer that *does* succeed must agree on the same ref/bytes."""
+    import threading
+
+    store = ImageAssetStore(tmp_path)
+    attachment = _attachment()
+    results: list = []
+    errors: list = []
+
+    def _write() -> None:
+        try:
+            results.append(store.store(attachment))
+        except OSError as exc:
+            errors.append(exc)
+
+    threads = [threading.Thread(target=_write) for _ in range(8)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    assert len(results) + len(errors) == 8
+    assert results, "at least one concurrent writer must succeed"
+    assert len(set(results)) == 1  # every successful writer got an identical ImageRef
+    files = list((tmp_path / ".dagi" / "attachments").glob("*.png"))
+    assert len(files) == 1
+    assert files[0].read_bytes() == _TINY_PNG  # never partial/corrupted
+
+
+def test_load_rejects_symlinked_asset(tmp_path: Path) -> None:
+    """load() must refuse a symlink even if it happens to point at valid
+    bytes — a symlink at the digest path could otherwise be used to read an
+    arbitrary file outside the store."""
+    store = ImageAssetStore(tmp_path)
+    ref = store.store(_attachment())
+    real_path = store.resolve_path(ref)
+    outside = tmp_path / "outside.png"
+    outside.write_bytes(_TINY_PNG)
+    real_path.unlink()
+    try:
+        real_path.symlink_to(outside)
+    except OSError:
+        pytest.skip("symlink creation not permitted in this environment")
+
+    with pytest.raises(AssetError):
+        store.load(ref)
+
+
 def test_materialize_messages_raises_on_unknown_version(tmp_path: Path) -> None:
     store = ImageAssetStore(tmp_path)
     messages = [

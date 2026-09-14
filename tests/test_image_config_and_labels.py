@@ -142,6 +142,87 @@ def test_build_copyable_messages_image_only_not_skipped():
     assert "[1 image]" in items[0]["content"]
 
 
+# ── 4b. Labels/copy never leak base64 or raw reference dicts ────────────────
+
+def _big_fake_base64_sha() -> str:
+    # Not real base64 image data, but long enough to catch naive str(dict)/
+    # str(content) leaks if a label function regresses.
+    return "a" * 64
+
+
+def test_content_label_never_contains_image_url_or_dict_braces():
+    content = [
+        {"type": "text", "text": "look"},
+        {
+            "type": "dagi_image", "version": 1, "sha256": _big_fake_base64_sha(),
+            "mime_type": "image/png", "byte_size": 12345, "width": 10, "height": 10,
+            "name": "Screenshot 1",
+        },
+    ]
+    label = _content_label(content)
+    assert "{" not in label and "}" not in label
+    assert "sha256" not in label
+    assert "base64" not in label
+    assert label == "look [1 image]"
+
+
+def test_derive_title_image_only_never_renders_dict(tmp_path):
+    path = tmp_path / "session_2_logs.jsonl"
+    lines = [
+        {
+            "type": "session_end",
+            "raw_messages": [
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "dagi_image", "version": 1, "sha256": "b" * 64,
+                            "mime_type": "image/png", "byte_size": 999, "width": 5,
+                            "height": 5, "name": "Screenshot 2",
+                        },
+                    ],
+                },
+            ],
+        },
+    ]
+    title = _derive_title(path, lines)
+    assert title == "[1 image]"
+    assert "{" not in title
+    assert "sha256" not in title
+
+
+def test_build_copyable_messages_never_contains_dict_repr_for_images():
+    messages = [
+        {
+            "role": "user",
+            "content": [
+                {"type": "text", "text": "check this"},
+                {
+                    "type": "dagi_image", "version": 1, "sha256": "c" * 64,
+                    "mime_type": "image/png", "byte_size": 1, "width": 1, "height": 1,
+                    "name": "x",
+                },
+            ],
+        },
+    ]
+    items = build_copyable_messages(messages)
+    assert len(items) == 1
+    content = items[0]["content"]
+    assert isinstance(content, str)
+    assert "{" not in content
+    assert "sha256" not in content
+    assert content == "check this [1 image]"
+
+
+def test_build_turn_list_image_only_label_visible_not_empty():
+    raw_messages = [
+        {"role": "user", "content": [{"type": "dagi_image", "sha256": "d" * 64}]},
+    ]
+    turns = build_turn_list(raw_messages)
+    assert turns[0]["label"] != ""
+    assert turns[0]["label"] == "[1 image]"
+
+
 # ── 5. estimate_tokens image awareness ──────────────────────────────────────
 
 def test_estimate_tokens_counts_images_not_flat_placeholder():
