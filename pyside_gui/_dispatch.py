@@ -12,8 +12,9 @@ from __future__ import annotations
 import threading
 import time
 import traceback
+from urllib.request import pathname2url
 
-from agent.image_assets import AssetError, ImageAssetStore, ImageRef
+from agent.image_assets import AssetError, ImageAssetStore
 from agent.loop import AgentLoop
 from agent.user_input import UserSubmission
 
@@ -48,20 +49,8 @@ def _append_user_with_images(win, submission: UserSubmission) -> None:
         store = ImageAssetStore(win._config.project_path)
         image_paths = []
         for img in submission.images:
-            import hashlib
-
-            digest = hashlib.sha256(img.data).hexdigest()
-            ref = ImageRef(
-                sha256=digest,
-                mime_type=img.mime_type,
-                byte_size=len(img.data),
-                width=img.width,
-                height=img.height,
-                name=img.name,
-            )
+            ref = store.store(img)
             path = store.resolve_path(ref)
-            from urllib.request import pathname2url
-
             file_url = "file:///" + pathname2url(str(path)).lstrip("/")
             image_paths.append(file_url)
     except AssetError as exc:
