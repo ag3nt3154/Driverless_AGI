@@ -2,7 +2,7 @@
 
 ## In progress
 
-- **Image input, stage 4 of 6 done** (see `docs/image-input-implementation-plan.md`).
+- **Image input, stage 5 of 6 done** (see `docs/image-input-implementation-plan.md`).
   Stage 1 landed: `agent/user_input.py` (Qt-free `ImageAttachment`/`UserSubmission`
   value objects) and `agent/image_assets.py` (`ImageRef`, `ImageAssetStore`,
   `materialize_messages` — content-addressed store under `.dagi/attachments/`,
@@ -69,4 +69,33 @@
   new module layout — full suite: 50 passed (up from 39 pre-stage-4), same 7
   pre-existing failures / 32 pre-existing errors (headless-Qt environment
   issues, confirmed present on the pre-stage-4 baseline too).
-  Remaining stages: sent-image rendering, integration verification.
+  Stage 5 landed (conversation-view rendering + error hardening):
+  `pyside_gui/conversation.py` gained `append_user_message_with_images(text,
+  image_paths)`, JSON-encoding the path list and delegating to a new JS
+  function; `pyside_gui/resources/conversation.js` gained
+  `appendUserMessageWithImages()`, which builds the same message-header/body
+  markup as `appendMessage()` plus an `.image-gallery` of `<img
+  class="sent-image-thumb">` tags — every path goes through `_escapeHtml()`
+  before being placed in the DOM, so a crafted filename/path can't inject
+  markup; `pyside_gui/resources/conversation.css` gained `.image-gallery`
+  (flex row, wraps) and `.sent-image-thumb` (200x150 max, rounded corners,
+  border, hover accent) rules. `pyside_gui/_dispatch.py` gained
+  `_append_user_with_images(win, submission)`, used by both `dispatch_agent`
+  (normal submit) and the inject-and-resume path in `on_input_submitted`: it
+  resolves each attachment's file path via `ImageAssetStore.resolve_path()`
+  (re-hashing the same bytes `AgentLoop._submission_content()` will hash),
+  converts to a `file://` URL, and calls
+  `append_user_message_with_images()`; on `AssetError` it shows
+  `append_error("Couldn't load image preview: ...")` and falls back to the
+  old `"text [N images]"` bubble instead of losing the message. `agent_work`
+  now catches `AssetError` ahead of the general `Exception` handler and
+  prefixes the surfaced message with `"Image error: "` for clarity (the
+  general handler + `finally` block already restored input/showed
+  `error_occurred` for every other failure path, confirmed by re-reading
+  `_dispatch.py`). Text-only submissions are untouched — `append_user_message`
+  and `appendMessage()` still handle them exactly as before. Verified via
+  `conda run -n dagi python -m pytest pyside_gui/tests/test_dispatch_and_submission.py
+  pyside_gui/tests/test_conversation_reasoning.py` (17 passed) plus `node
+  --check conversation.js`; full `pyside_gui` suite still 50 passed / 7
+  failed / 32 errors, same pre-existing headless-Qt baseline as stage 4.
+  Remaining stage: end-to-end integration verification (stage 6).

@@ -69,6 +69,28 @@ body {
 
 .message-body { color: var(--text); }
 
+.image-gallery {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 8px;
+}
+
+.sent-image-thumb {
+    max-width: 200px;
+    max-height: 150px;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    cursor: pointer;
+    object-fit: contain;
+    background: var(--surface);
+}
+
+.sent-image-thumb:hover {
+    border-color: var(--accent);
+    opacity: 0.9;
+}
+
 .tool-call {
     background: var(--surface);
     border-left: 3px solid var(--yellow);

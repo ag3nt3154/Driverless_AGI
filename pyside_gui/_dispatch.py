@@ -13,6 +13,7 @@ import threading
 import time
 import traceback
 
+from agent.image_assets import AssetError, ImageAssetStore, ImageRef
 from agent.loop import AgentLoop
 from agent.user_input import UserSubmission
 
@@ -31,6 +32,43 @@ def _display_text(task: str | UserSubmission) -> str:
         return submission.text
     suffix = f"[{n} image{'s' if n != 1 else ''}]"
     return f"{submission.text} {suffix}".strip()
+
+
+def _append_user_with_images(win, submission: UserSubmission) -> None:
+    """Append a user message to the conversation, with image thumbnails when present.
+
+    Falls back to the plain text bubble (with an "[N images]" suffix) if
+    resolving the image files fails, so a broken asset store never blocks
+    the user from seeing their own message or from continuing to type.
+    """
+    if not submission.images:
+        win._conversation.append_user_message(submission.text)
+        return
+    try:
+        store = ImageAssetStore(win._config.project_path)
+        image_paths = []
+        for img in submission.images:
+            import hashlib
+
+            digest = hashlib.sha256(img.data).hexdigest()
+            ref = ImageRef(
+                sha256=digest,
+                mime_type=img.mime_type,
+                byte_size=len(img.data),
+                width=img.width,
+                height=img.height,
+                name=img.name,
+            )
+            path = store.resolve_path(ref)
+            from urllib.request import pathname2url
+
+            file_url = "file:///" + pathname2url(str(path)).lstrip("/")
+            image_paths.append(file_url)
+    except AssetError as exc:
+        win._conversation.append_error(f"Couldn't load image preview: {exc}")
+        win._conversation.append_user_message(_display_text(submission))
+        return
+    win._conversation.append_user_message_with_images(submission.text, image_paths)
 
 
 def on_input_submitted(win, submission: str | UserSubmission) -> None:
@@ -72,7 +110,7 @@ def on_input_submitted(win, submission: str | UserSubmission) -> None:
         and not win._current_loop_ref[0]._pause_event.is_set()
     ):
         loop = win._current_loop_ref[0]
-        win._conversation.append_user_message(_display_text(submission))
+        _append_user_with_images(win, submission)
         win._prompt.setDisabled(True)
         win._show_running()
         win._right_sidebar.set_status("running")
@@ -114,7 +152,7 @@ def dispatch_agent(win, task: str | UserSubmission) -> None:
             win._prompt.restore_draft(task if isinstance(task, UserSubmission) else _as_submission(task))
         return
     win._submission_seq = getattr(win, "_submission_seq", 0) + 1
-    win._conversation.append_user_message(_display_text(task))
+    _append_user_with_images(win, _as_submission(task))
     win._prompt.setDisabled(True)
     win._show_running()
     win._current_loop_ref = []
@@ -148,6 +186,10 @@ def agent_work(win, task: str | UserSubmission, callbacks: object, loop_ref: lis
         win._active_loop = loop; win._cmd_handler.set_active_loop(loop)
         log("agent run started")
         loop.run(task); log("agent run completed")
+    except AssetError as exc:
+        log(f"EXCEPTION: {type(exc).__name__}: {exc}")
+        worker_log.debug("".join(traceback.format_exception(exc)))
+        win._bridge.error_occurred.emit(f"Image error: {exc}")
     except Exception as exc:
         log(f"EXCEPTION: {type(exc).__name__}: {exc}")
         worker_log.debug("".join(traceback.format_exception(exc)))

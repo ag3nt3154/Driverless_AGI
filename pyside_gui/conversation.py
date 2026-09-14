@@ -44,6 +44,21 @@ class ConversationView(QWebEngineView):
             f"appendMessage('user', {self._js_str(text)})"
         )
 
+    def append_user_message_with_images(
+        self, text: str, image_paths: list[str]
+    ) -> None:
+        """Append a user message with text and local image thumbnails.
+
+        ``image_paths`` should already be file:// URLs (or otherwise
+        directly loadable by QWebEngine) — they are passed through JSON
+        encoding and escaped again as text in JS before being placed in
+        the DOM, so they are never interpreted as HTML.
+        """
+        paths_json = json.dumps(list(image_paths))
+        self._run_js(
+            f"appendUserMessageWithImages({self._js_str(text)}, {paths_json})"
+        )
+
     def append_assistant(self, html: str) -> None:
         self._run_js(f"appendMarkdown({self._js_str(html)})")
 

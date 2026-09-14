@@ -44,6 +44,30 @@ function appendMessage(role, text) {
     _scrollToBottom();
 }
 
+function appendUserMessageWithImages(text, imagePaths) {
+    const conv = document.getElementById('conversation');
+    const sentinel = document.getElementById('scroll-sentinel');
+    const div = document.createElement('div');
+    div.className = 'message user-message';
+
+    let html = '<div class="message-header">You</div>';
+    if (text) {
+        html += `<div class="message-body">${_escapeHtml(text)}</div>`;
+    }
+    if (imagePaths && imagePaths.length > 0) {
+        html += '<div class="image-gallery">';
+        for (const path of imagePaths) {
+            // _escapeHtml on the path prevents it from being interpreted as
+            // markup — it is only ever used as an attribute value here.
+            html += `<img class="sent-image-thumb" src="${_escapeHtml(path)}" alt="Sent image" />`;
+        }
+        html += '</div>';
+    }
+    div.innerHTML = html;
+    conv.insertBefore(div, sentinel);
+    _scrollToBottom();
+}
+
 function appendMarkdown(html) {
     const conv = document.getElementById('conversation');
     const sentinel = document.getElementById('scroll-sentinel');
