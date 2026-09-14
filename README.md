@@ -722,6 +722,8 @@ Driverless_AGI/
 │   ├── workflows.py       # WorkflowLoader — loads .dagi/workflow/
 │   ├── sub_agent.py       # SubAgentRunner — legacy in-process subagent (used by cli_subagent)
 │   ├── cli_utils.py       # Shared TUI helpers (_cmd_init, _skill_invocation_message) — extracted from archives/cli.py
+│   ├── user_input.py      # Qt-free ImageAttachment/UserSubmission value objects (image input, stage 1)
+│   ├── image_assets.py    # Content-addressed image store (.dagi/attachments/<sha256>.png), ImageRef, materialize_messages (image input, stage 1)
 │   └── _git_branch.py     # Plan branching helper — creates/checks out dagi/<slug>_<plan_id> from HEAD
 │
 ├── tools/                  # Every tool is a subfolder: tools/<name>/__init__.py re-exports
@@ -800,6 +802,7 @@ Driverless_AGI/
 │   ├── gnhf/              # GNHF session artifacts (notes.md — committed to dagi branch)
 │   ├── plans/             # Generated plan files
 │   ├── logs/              # Session JSONL files
+│   ├── attachments/       # Content-addressed image store (<sha256>.png/.jpg), gitignored — see agent/image_assets.py
 │   └── self-review/       # Session review reports and improvement plans
 │
 ├── archive/
