@@ -6,6 +6,15 @@
 
 ## Completed
 
+- **Malformed tool-call arguments no longer crash the agent loop** — when a model
+  produces invalid JSON in tool-call arguments (e.g. unclosed `"` or `{}` in markdown
+  content for `write_handoff`), the dispatch code already caught the `JSONDecodeError`
+  and returned an error to the model, but the raw malformed string remained in the
+  conversation history. On the next API call the provider rejected it with a 400,
+  which was not retried and crashed the loop. Fix: `_tool_dispatch.py` now wraps
+  the malformed string in valid JSON (`{"_malformed": "..."}`) and patches both the
+  `TOOL_CALL` and `ASSISTANT_MESSAGE` log events before re-syncing messages.
+
 - **Image input — all 6 stages complete** (see `docs/image-input-implementation-plan.md`).
   Stage 1 landed: `agent/user_input.py` (Qt-free `ImageAttachment`/`UserSubmission`
   value objects) and `agent/image_assets.py` (`ImageRef`, `ImageAssetStore`,

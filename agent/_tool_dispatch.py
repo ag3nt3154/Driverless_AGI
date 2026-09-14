@@ -27,6 +27,26 @@ if TYPE_CHECKING:
     from agent.loop import AgentLoop
 
 
+def _patch_logged_tool_args(loop: AgentLoop, call_id: str, safe_args: str) -> None:
+    """Overwrite malformed arguments in already-logged events so the
+    conversation history sent to the API contains only valid JSON.
+
+    Patches both the TOOL_CALL event and the ASSISTANT_MESSAGE event that
+    carries the ``tool_calls`` list.
+    """
+    from agent import session_events as _ev
+
+    for event in reversed(loop.log._events):
+        if event.type == _ev.TOOL_CALL and event.data.get("call_id") == call_id:
+            event.data["arguments"] = safe_args
+        if event.type == _ev.ASSISTANT_MESSAGE:
+            for tc_dict in event.data.get("message", {}).get("tool_calls", []):
+                if tc_dict.get("id") == call_id:
+                    tc_dict["function"]["arguments"] = safe_args
+            break
+    loop._sync_messages()
+
+
 def dispatch_tool_calls(
     loop: AgentLoop,
     message,
@@ -70,6 +90,11 @@ def dispatch_tool_calls(
             result = (
                 f"Error: invalid JSON arguments for tool {tc.function.name!r}: {exc}"
             )
+            # Sanitise the malformed arguments string so it doesn't poison
+            # the conversation history and trigger a 400 on the next API call.
+            _safe_args = json.dumps({"_malformed": tc.function.arguments})
+            tc.function.arguments = _safe_args
+            _patch_logged_tool_args(loop, tc.id, _safe_args)
             bookkeep_tool_call(loop, tc, result, description, tool_records)
             loop._lifecycle.tool_bookkeeping_finished()
             continue

@@ -273,6 +273,16 @@ class TestToolDispatch:
         assert error_reply["content"].startswith(
             "Error: invalid JSON arguments for tool 'ask_user':"
         )
+        # The malformed arguments must be sanitised in the retried assistant
+        # message so the API doesn't reject the history with a 400.
+        asst_msg = next(
+            msg for msg in retry_messages
+            if msg.get("role") == "assistant" and msg.get("tool_calls")
+        )
+        import json
+        sanitised = asst_msg["tool_calls"][0]["function"]["arguments"]
+        parsed = json.loads(sanitised)  # must be valid JSON now
+        assert "_malformed" in parsed
 
     def test_multiple_tool_calls_in_one_response_all_dispatch(self):
         tool_a = FakeTool(name="tool_a", result="result a")
