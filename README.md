@@ -600,6 +600,8 @@ Any model entry can override compaction thresholds (defaults shown):
     keep_recent_tokens: 20000    # recent tail kept verbatim
 ```
 
+**Subagent context inheritance:** subagents (worker, review, explore_files, etc.) always use the main agent's context settings (`context_window`, `reserve_tokens`, `keep_recent_tokens`) from the top-level config, regardless of which model tier they run on. Only LLM-specific fields (model, base_url, api_key, thinking) come from the worker/advanced model entry. This ensures consistent context budgets across all agent tiers.
+
 ### Client Scripts (Custom Transport & Request Profiles)
 
 For full control over the OpenAI client — custom httpx transports, mTLS, proxies, extra headers, request-level defaults — use a **client script**: a Python file that exports a configured `openai.OpenAI` client and optional `request_kwargs`.

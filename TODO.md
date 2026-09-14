@@ -6,6 +6,14 @@
 
 ## Completed
 
+- **Subagents now inherit the main agent's context settings** — previously,
+  `_apply_worker_config` and `_apply_advanced_config` in `tools/subagent_main.py`
+  (and the equivalent in `agent/sub_agent.py`) replaced `context_window`,
+  `reserve_tokens`, and `keep_recent_tokens` with the worker/advanced model's own
+  values. Now only LLM-identity fields (model, base_url, api_key, thinking) come
+  from the tier-specific config; context budget always stays from the main agent's
+  `.dagi/config.yaml` top-level settings.
+
 - **Malformed tool-call arguments no longer crash the agent loop** — when a model
   produces invalid JSON in tool-call arguments (e.g. unclosed `"` or `{}` in markdown
   content for `write_handoff`), the dispatch code already caught the `JSONDecodeError`

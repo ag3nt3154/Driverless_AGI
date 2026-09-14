@@ -40,8 +40,9 @@ class SubAgentRunner:
         self._subagent_id = subagent_id
 
         # Use worker model if configured; fall back to parent model.
-        # Only LLM-specific fields (model, base_url, api_key, thinking, token limits)
-        # come from the worker — project context always stays from the parent.
+        # Only LLM-specific fields (model, base_url, api_key, thinking) come
+        # from the worker — context settings (context_window, reserve_tokens,
+        # keep_recent_tokens) always stay from the main agent config.
         w = config.worker_config or config
         self._config = replace(
             config,
@@ -49,9 +50,6 @@ class SubAgentRunner:
             base_url=w.base_url,
             api_key=w.api_key,
             thinking=w.thinking,
-            context_window=w.context_window,
-            reserve_tokens=w.reserve_tokens,
-            keep_recent_tokens=w.keep_recent_tokens,
             worker_config=None,    # prevent further nesting
             advanced_config=None,  # prevent advanced_config nesting in generic sub-agents
         )

@@ -33,7 +33,12 @@ _HANDOFF_RETRY_PROMPT = (
 
 
 def _apply_worker_config(config: AgentConfig) -> AgentConfig:
-    """Return a flattened config that uses worker_model (falls back to default)."""
+    """Return a flattened config that uses worker_model (falls back to default).
+
+    Context settings (context_window, reserve_tokens, keep_recent_tokens) are
+    always kept from the main agent config so subagents share the same context
+    budget regardless of which model tier they use.
+    """
     w = config.worker_config or config
     return replace(
         config,
@@ -41,9 +46,6 @@ def _apply_worker_config(config: AgentConfig) -> AgentConfig:
         base_url=w.base_url,
         api_key=w.api_key,
         thinking=w.thinking,
-        context_window=w.context_window,
-        reserve_tokens=w.reserve_tokens,
-        keep_recent_tokens=w.keep_recent_tokens,
         expression_interval=w.expression_interval,
         worker_config=None,
         advanced_config=None,
@@ -51,7 +53,12 @@ def _apply_worker_config(config: AgentConfig) -> AgentConfig:
 
 
 def _apply_advanced_config(config: AgentConfig) -> AgentConfig:
-    """Return a flattened config that uses advanced_model (falls back to default)."""
+    """Return a flattened config that uses advanced_model (falls back to default).
+
+    Context settings (context_window, reserve_tokens, keep_recent_tokens) are
+    always kept from the main agent config so subagents share the same context
+    budget regardless of which model tier they use.
+    """
     a = config.advanced_config or config
     return replace(
         config,
@@ -59,9 +66,6 @@ def _apply_advanced_config(config: AgentConfig) -> AgentConfig:
         base_url=a.base_url,
         api_key=a.api_key,
         thinking=a.thinking,
-        context_window=a.context_window,
-        reserve_tokens=a.reserve_tokens,
-        keep_recent_tokens=a.keep_recent_tokens,
         expression_interval=a.expression_interval,
         worker_config=None,
         advanced_config=None,
