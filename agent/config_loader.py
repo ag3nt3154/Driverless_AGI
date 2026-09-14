@@ -186,6 +186,27 @@ def _build_config_from_entry(
     services = raw.get("services") or {}
     expression_interval = _load_expression_interval(raw)
 
+    supports_images = entry.get("supports_images")
+    if supports_images is None:
+        supports_images = raw.get("supports_images")
+    image_input_entry: dict = entry.get("image_input") or {}
+    image_input_max_images_per_message = int(
+        image_input_entry.get("max_images_per_message", 4)
+    )
+    image_input_max_image_bytes = int(
+        image_input_entry.get("max_image_bytes", 8 * 1024 * 1024)
+    )
+    image_input_max_pixels = int(
+        image_input_entry.get("max_pixels", 24_000_000)
+    )
+    image_input_max_request_image_bytes = int(
+        image_input_entry.get("max_request_image_bytes", 20 * 1024 * 1024)
+    )
+    image_input_detail = image_input_entry.get("detail")
+    image_input_estimated_tokens_per_image = int(
+        image_input_entry.get("estimated_tokens_per_image", 1024)
+    )
+
     return AgentConfig(
         model=entry.get("model", ""),
         base_url=entry.get("api_url", ""),
@@ -213,6 +234,13 @@ def _build_config_from_entry(
         services=services,
         expression_interval=expression_interval,
         python_env=python_env,
+        supports_images=supports_images,
+        image_input_max_images_per_message=image_input_max_images_per_message,
+        image_input_max_image_bytes=image_input_max_image_bytes,
+        image_input_max_pixels=image_input_max_pixels,
+        image_input_max_request_image_bytes=image_input_max_request_image_bytes,
+        image_input_detail=image_input_detail,
+        image_input_estimated_tokens_per_image=image_input_estimated_tokens_per_image,
     )
 
 

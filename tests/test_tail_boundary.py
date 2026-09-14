@@ -88,7 +88,7 @@ class TestEstimateTokens:
     def test_list_content_uses_placeholder(self):
         msg = {"content": [{"type": "image_url", "image_url": {"url": "data:image/png;base64," + "A" * 100_000}}]}
         tokens = estimate_tokens(msg)
-        assert tokens == 200
+        assert tokens == 1024
 
     def test_none_content(self):
         assert estimate_tokens({"content": None}) == 4

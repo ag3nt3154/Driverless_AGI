@@ -706,11 +706,13 @@ Driverless_AGI/
 │   ├── _system_prompt.py  # System-prompt assembly (single source of truth)
 │   ├── _plan_mode.py      # DEPRECATED stub — re-exports rebuild_for_reload from _reload.py
 │   ├── _reload.py         # Hot-reload: rebuild tool registry and system prompt after skill changes
-│   ├── _model_switch.py   # LLM tier switching + shared extra_body builder
+│   ├── _model_switch.py   # LLM tier switching + shared extra_body builder; preflight rejects a switch when
+│   │                       #   history has dagi_image parts and the target tier's supports_images is False (image input, stage 3)
 │   ├── _streaming.py      # Streaming chat-completions consumer
-│   ├── _compaction.py     # Context compaction via forked compact subagent
+│   ├── _compaction.py     # Context compaction via forked compact subagent; materializes dagi_image parts in the
+│   │                       #   reconstructed fork prefix before building the fork snapshot (image input, stage 3)
 │   ├── _tool_dispatch.py  # Tool-call dispatch, bookkeeping, write_handoff short-circuit
-│   ├── config_loader.py   # Resolves model config from YAML
+│   ├── config_loader.py   # Resolves model config from YAML; reads supports_images + per-model image_input: block (image input, stage 3)
 │   ├── session.py         # SessionTracker — JSONL logs
 │   ├── session_events.py  # Event vocabulary + SESSION_FORMAT_VERSION (3 — bumped for dagi_image content parts, image input stage 2)
 │   ├── session_log.py     # SessionLog — append-only tree log (branches, turn/step coords)
@@ -725,6 +727,10 @@ Driverless_AGI/
 │   ├── user_input.py      # Qt-free ImageAttachment/UserSubmission value objects (image input, stage 1)
 │   ├── image_assets.py    # Content-addressed image store (.dagi/attachments/<sha256>.png), ImageRef, materialize_messages (image input, stage 1)
 │   │                       # wired into AgentLoop.run()/inject_and_resume()/_build_request_messages() (image input, stage 2)
+│   ├── _loop_config.py    # AgentConfig/AgentCallbacks dataclasses; AgentConfig carries flat supports_images/
+│   │                       #   image_input_* fields (None=unknown-permit, True=permit, False=block) (image input, stage 3)
+│   ├── history.py         # JSONL session parsing for TUI/GUI sidecar; _content_label() renders dagi_image content
+│   │                       #   parts as "text [N images]" in titles, turn lists, and copyable messages (image input, stage 3)
 │   └── _git_branch.py     # Plan branching helper — creates/checks out dagi/<slug>_<plan_id> from HEAD
 │
 ├── tools/                  # Every tool is a subfolder: tools/<name>/__init__.py re-exports

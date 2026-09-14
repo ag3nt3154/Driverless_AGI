@@ -100,6 +100,20 @@ def build_openai_client(config: AgentConfig) -> tuple[openai.OpenAI, dict]:
     return openai.OpenAI(api_key=config.api_key, base_url=config.base_url), {}
 
 
+def _history_has_images(loop: AgentLoop) -> bool:
+    """True if any surface user message carries a ``dagi_image`` content part."""
+    for msg in loop.log.derive_messages():
+        if msg.get("role") != "user":
+            continue
+        content = msg.get("content")
+        if not isinstance(content, list):
+            continue
+        for part in content:
+            if isinstance(part, dict) and part.get("type") == "dagi_image":
+                return True
+    return False
+
+
 def handle_switch_model(loop: AgentLoop, target: str, args: dict) -> str:
     """Switch the active LLM tier in-place without changing the tool registry."""
     reason = args.get("reason", "")
@@ -119,6 +133,7 @@ def handle_switch_model(loop: AgentLoop, target: str, args: dict) -> str:
                 "Cannot switch to 'advanced' tier: no advanced_model is configured in .dagi/config.yaml. "
                 "Continuing with the current model."
             )
+        target_supports_images = tier_cfg.supports_images
     elif target == "worker":
         tier_cfg = loop.config.worker_config
         if tier_cfg is None:
@@ -126,7 +141,23 @@ def handle_switch_model(loop: AgentLoop, target: str, args: dict) -> str:
                 "Cannot switch to 'worker' tier: no worker_model is configured in .dagi/config.yaml. "
                 "Continuing with the current model."
             )
+        target_supports_images = tier_cfg.supports_images
     elif target == "default":
+        tier_cfg = None
+        # config.supports_images is never mutated by a switch (only the six
+        # identity fields snapshotted below are), so it still holds the
+        # original "default" tier value here.
+        target_supports_images = loop.config.supports_images
+    else:
+        return f"Unknown model tier '{target}'. Valid values: plan, default, worker."
+
+    if _history_has_images(loop) and target_supports_images is False:
+        return (
+            f"Cannot switch to '{target}' tier: model does not support images "
+            "and history contains images."
+        )
+
+    if target == "default":
         snap = loop._base_config_snapshot
         loop.config.model          = snap["model"]
         loop.config.base_url       = snap["base_url"]
@@ -136,9 +167,6 @@ def handle_switch_model(loop: AgentLoop, target: str, args: dict) -> str:
         loop.config.provider_order = snap["provider_order"]
         loop.config.client_script  = snap["client_script"]
         loop.config.request_kwargs = snap["request_kwargs"]
-        tier_cfg = None
-    else:
-        return f"Unknown model tier '{target}'. Valid values: plan, default, worker."
 
     if tier_cfg is not None:
         loop.config.model          = tier_cfg.model

@@ -113,6 +113,14 @@ class AgentConfig:
     # read-large-text preset. Set use_legacy_reader: true in .dagi/config.yaml to revert.
     # Remove after one release cycle.
     use_legacy_reader: bool = False
+    # Image input configuration (Section 8 of image-input-implementation-plan.md)
+    supports_images: bool | None = None  # None=unknown (permit attempt), True=permit, False=block
+    image_input_max_images_per_message: int = 4
+    image_input_max_image_bytes: int = 8 * 1024 * 1024  # 8 MiB
+    image_input_max_pixels: int = 24_000_000
+    image_input_max_request_image_bytes: int = 20 * 1024 * 1024  # 20 MiB
+    image_input_detail: str | None = None  # omitted by default; "low", "high", "auto" if set
+    image_input_estimated_tokens_per_image: int = 1024
 
 
 @dataclass

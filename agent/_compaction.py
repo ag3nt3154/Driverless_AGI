@@ -193,6 +193,14 @@ def compact(loop: AgentLoop, force: bool = False) -> "CompactionResult":
     spec = spec_for_branch(loop.log, branch_id)
     _header, prefix_msgs = reconstruct(loop.log, spec)
 
+    # Materialize dagi_image references into inline data URLs — the compaction
+    # subprocess only ever sees an actual provider request snapshot, never
+    # internal asset-store references.
+    from agent.image_assets import materialize_messages, ImageAssetStore
+
+    store = ImageAssetStore(loop.config.project_path)
+    prefix_msgs = materialize_messages(list(prefix_msgs), store)
+
     fork_messages = [
         {"role": "system", "content": _header["content"]},
         *prefix_msgs,

@@ -36,6 +36,7 @@ def _breakdown(messages: list) -> dict[str, int]:
     System messages are excluded — accounted for by _system_breakdown() from source files.
     Compaction summaries (role=user, content starts with '[CONTEXT SUMMARY') are broken out
     into a separate 'summary' bucket so they don't inflate the user row."""
+    _TOKENS_PER_IMAGE = 1024
     buckets: dict[str, int] = {"summary": 0, "user": 0, "assistant": 0, "tools": 0}
     role_map = {"user": "user", "assistant": "assistant", "tool": "tools"}
     for m in messages:
@@ -43,14 +44,26 @@ def _breakdown(messages: list) -> dict[str, int]:
         if bucket is None:
             continue
         content = m.get("content") or ""
+        img_count = 0
         if isinstance(content, list):
-            text = " ".join(b.get("text", "") if isinstance(b, dict) else str(b) for b in content)
+            parts = []
+            for b in content:
+                if isinstance(b, dict):
+                    if b.get("type") == "text":
+                        parts.append(b.get("text", ""))
+                    elif b.get("type") in ("dagi_image", "image_url"):
+                        img_count += 1
+                    else:
+                        parts.append(b.get("text", "") if "text" in b else "")
+                else:
+                    parts.append(str(b))
+            text = " ".join(parts)
         else:
             text = str(content)
         for tc in m.get("tool_calls") or []:
             if isinstance(tc, dict):
                 text += tc.get("function", {}).get("arguments", "")
-        toks = max(1, len(text) // 4)
+        toks = max(1, len(text) // 4) + img_count * _TOKENS_PER_IMAGE
         if bucket == "user" and text.startswith("[CONTEXT SUMMARY"):
             buckets["summary"] += toks
         else:

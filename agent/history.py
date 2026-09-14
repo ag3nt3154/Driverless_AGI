@@ -53,13 +53,32 @@ def _parse_session_file(path: Path) -> dict | None:
     }
 
 
+def _content_label(content) -> str:
+    """Extract a human-readable label from message content (str or list)."""
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        texts = []
+        image_count = 0
+        for part in content:
+            if isinstance(part, dict):
+                if part.get("type") == "text":
+                    texts.append(part.get("text", ""))
+                elif part.get("type") in ("dagi_image", "image_url"):
+                    image_count += 1
+        text = " ".join(texts).strip()
+        suffix = f" [{image_count} image{'s' if image_count != 1 else ''}]" if image_count else ""
+        return (text + suffix) if text else suffix.strip()
+    return str(content)
+
+
 def _derive_title(path: Path, lines: list[dict]) -> str:
     """Return first user message (<=60 chars) as title, or the filename stem."""
     end_rec = next((ln for ln in lines if ln.get("type") == "session_end"), None)
     if end_rec:
         for msg in end_rec.get("raw_messages") or []:
             if msg.get("role") == "user":
-                text = str(msg.get("content") or "").strip().replace("\n", " ")
+                text = _content_label(msg.get("content") or "").strip().replace("\n", " ")
                 return text[:60] + ("…" if len(text) > 60 else "")
     stem = path.stem
     if stem.endswith("_logs"):
@@ -159,7 +178,7 @@ def build_turn_list(raw_messages: list[dict]) -> list[dict]:
     turns: list[dict] = []
     for i, msg in enumerate(raw_messages):
         if msg.get("role") == "user":
-            content = str(msg.get("content") or "").strip().replace("\n", " ")
+            content = _content_label(msg.get("content") or "").strip().replace("\n", " ")
             label = content[:70] + ("…" if len(content) > 70 else "")
             turns.append({"index": i, "label": label, "content": content})
     return turns
@@ -179,11 +198,7 @@ def build_copyable_messages(messages: list[dict]) -> list[dict]:
             continue
         content = msg.get("content")
         if isinstance(content, list):
-            text = " ".join(
-                b.get("text", "")
-                for b in content
-                if isinstance(b, dict) and b.get("type") == "text"
-            )
+            text = _content_label(content)
         elif content:
             text = str(content)
         else:

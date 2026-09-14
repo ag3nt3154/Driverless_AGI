@@ -9,18 +9,29 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 _CHARS_PER_TOKEN = 4
-_IMAGE_PLACEHOLDER_TOKENS = 200
+_ESTIMATED_TOKENS_PER_IMAGE = 1024
 
 
 def estimate_tokens(msg: dict) -> int:
     """Rough token estimate for a single message (1 token ~ 4 chars).
 
-    List-typed content (vision results with base64) uses a fixed
-    placeholder to avoid base64 inflation.
+    List-typed content (vision results / dagi_image parts) counts text parts
+    normally and adds a fixed per-image estimate instead of a flat placeholder,
+    so multi-image messages aren't undercounted.
     """
     content = msg.get("content")
     if isinstance(content, list):
-        return _IMAGE_PLACEHOLDER_TOKENS
+        text_tokens = 0
+        image_tokens = 0
+        for part in content:
+            if isinstance(part, dict):
+                if part.get("type") == "text":
+                    text_tokens += max(len(part.get("text", "")) // _CHARS_PER_TOKEN, 1)
+                elif part.get("type") in ("dagi_image", "image_url"):
+                    image_tokens += _ESTIMATED_TOKENS_PER_IMAGE
+            elif isinstance(part, str):
+                text_tokens += max(len(part) // _CHARS_PER_TOKEN, 1)
+        return max(text_tokens + image_tokens, 4)
     text = str(content) if content else ""
     for tc in msg.get("tool_calls") or []:
         text += str(tc.get("function", {}).get("arguments", ""))
