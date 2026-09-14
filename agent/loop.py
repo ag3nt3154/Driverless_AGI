@@ -32,6 +32,8 @@ from agent.session import SessionTracker, ToolCallRecord
 from agent.session_log import InvariantError, SessionLog
 from agent.session_store import append_event
 from agent.skills import Skill, SkillLoader
+from agent.user_input import UserSubmission
+from agent.image_assets import ImageAssetStore, materialize_messages
 from tools.subagent_api import build_fork_context, run_subagent
 from tools.compact._tail_boundary import compute_tail_boundary
 from tools.output_filter import filter_tool_output
@@ -206,9 +208,30 @@ class AgentLoop:
     def pause(self) -> None:
         self._lifecycle.pause()
 
-    def inject_and_resume(self, message: str) -> None:
-        self._log_user_message("user", message, "inject")
+    def inject_and_resume(self, message: str | UserSubmission) -> None:
+        submission = message if isinstance(message, UserSubmission) else UserSubmission(text=message)
+        content = self._submission_content(submission)
+        self._log_user_message("user", content, "inject")
         self._lifecycle.resume_thinking()
+
+    def _submission_content(self, submission: UserSubmission) -> str | list[dict]:
+        """Build the content payload for a UserSubmission.
+
+        Text-only submissions collapse to a plain string (unchanged wire
+        shape). Submissions carrying images are stored in the project's
+        ImageAssetStore and represented as a content list: the text part
+        (if any) first, then one ``dagi_image`` part per attachment.
+        """
+        if not submission.images:
+            return submission.text
+        store = ImageAssetStore(self.config.project_path)
+        parts: list[dict] = []
+        if submission.text.strip():
+            parts.append({"type": "text", "text": submission.text})
+        for attachment in submission.images:
+            ref = store.store(attachment)
+            parts.append(ref.to_content_part())
+        return parts
 
     @property
     def parent_context_provider(self) -> ParentContextProvider:
@@ -431,7 +454,8 @@ class AgentLoop:
         """
         messages = [self._header_message()]
         messages.extend(self._messages[1:])
-        return messages
+        store = ImageAssetStore(self.config.project_path)
+        return materialize_messages(messages, store)
 
     def _collect_steps(self) -> list[tuple[int, int]]:
         from agent._compaction import collect_steps
@@ -510,7 +534,9 @@ class AgentLoop:
         self.log.append(sev.TURN_END, {"turn": 0, "reason": sev.reason_completed()})
         self.log.append(sev.END_SEED, {"count": len(messages) - 1})
 
-    def run(self, task: str) -> str:
+    def run(self, task: str | UserSubmission) -> str:
+        submission = task if isinstance(task, UserSubmission) else UserSubmission(text=task)
+        task = submission.text
         if task.strip().lower() == "/reload":
             added, removed, errors = self._rebuild_for_reload()
             notification = _format_reload_notification(len(self.skills), added, removed, errors)
@@ -531,12 +557,17 @@ class AgentLoop:
             wiki_ctx = _build_wiki_index_context(self._effective_memory_root)
             if wiki_ctx:
                 self._log_user_message("user", wiki_ctx, "wiki")
-        self._log_user_message("user", task, "human")
-        self.tracker.record_user(task)
+        _content = self._submission_content(submission)
+        self._log_user_message("user", _content, "human")
+        self.tracker.record_user(_content)
 
         # ── Auto-name session file from first user message ────────────────────
         if not self._skip_slug_generation:
-            slug = self._generate_session_slug(task)
+            slug_text = submission.text.strip() if submission.text.strip() else None
+            if slug_text:
+                slug = self._generate_session_slug(slug_text)
+            else:
+                slug = "image-conversation"
             if slug:
                 self.tracker.rename_with_slug(slug)
 

@@ -27,7 +27,7 @@ class MessageNode:
     id: str
     seq: int
     entity: str                          # "system" | "user" | "assistant"
-    content: str | None
+    content: str | list | None
     model: str | None
     input_tokens: int | None
     output_tokens: int | None
@@ -142,7 +142,7 @@ class SessionTracker:
         node = self._add(entity="system", content=content)
         self._write(self._tag({"type": "message", **asdict(node)}))
 
-    def record_user(self, content: str) -> None:
+    def record_user(self, content: str | list) -> None:
         node = self._add(entity="user", content=content)
         self._write(self._tag({"type": "message", **asdict(node)}))
 

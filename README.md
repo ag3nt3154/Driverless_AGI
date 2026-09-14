@@ -712,7 +712,7 @@ Driverless_AGI/
 │   ├── _tool_dispatch.py  # Tool-call dispatch, bookkeeping, write_handoff short-circuit
 │   ├── config_loader.py   # Resolves model config from YAML
 │   ├── session.py         # SessionTracker — JSONL logs
-│   ├── session_events.py  # Event vocabulary + SESSION_FORMAT_VERSION (2)
+│   ├── session_events.py  # Event vocabulary + SESSION_FORMAT_VERSION (3 — bumped for dagi_image content parts, image input stage 2)
 │   ├── session_log.py     # SessionLog — append-only tree log (branches, turn/step coords)
 │   ├── session_surface.py # Surface — ordered message projection with replace ops
 │   ├── session_store.py   # JSONL persistence (read_session / write_session / append_event)
@@ -724,6 +724,7 @@ Driverless_AGI/
 │   ├── cli_utils.py       # Shared TUI helpers (_cmd_init, _skill_invocation_message) — extracted from archives/cli.py
 │   ├── user_input.py      # Qt-free ImageAttachment/UserSubmission value objects (image input, stage 1)
 │   ├── image_assets.py    # Content-addressed image store (.dagi/attachments/<sha256>.png), ImageRef, materialize_messages (image input, stage 1)
+│   │                       # wired into AgentLoop.run()/inject_and_resume()/_build_request_messages() (image input, stage 2)
 │   └── _git_branch.py     # Plan branching helper — creates/checks out dagi/<slug>_<plan_id> from HEAD
 │
 ├── tools/                  # Every tool is a subfolder: tools/<name>/__init__.py re-exports
