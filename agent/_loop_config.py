@@ -122,6 +122,23 @@ class AgentConfig:
     image_input_detail: str | None = None  # omitted by default; "low", "high", "auto" if set
     image_input_estimated_tokens_per_image: int = 1024
 
+    def __post_init__(self) -> None:
+        if self.supports_images is not None and not isinstance(self.supports_images, bool):
+            raise ValueError(f"supports_images must be bool or None, got {type(self.supports_images).__name__}")
+        _IMG_POS_INTS = {
+            "image_input_max_images_per_message": self.image_input_max_images_per_message,
+            "image_input_max_image_bytes": self.image_input_max_image_bytes,
+            "image_input_max_pixels": self.image_input_max_pixels,
+            "image_input_max_request_image_bytes": self.image_input_max_request_image_bytes,
+            "image_input_estimated_tokens_per_image": self.image_input_estimated_tokens_per_image,
+        }
+        for name, val in _IMG_POS_INTS.items():
+            if not isinstance(val, int) or val <= 0:
+                raise ValueError(f"{name} must be a positive integer, got {val!r}")
+        _VALID_DETAILS = (None, "low", "high", "auto")
+        if self.image_input_detail not in _VALID_DETAILS:
+            raise ValueError(f"image_input_detail must be one of {_VALID_DETAILS}, got {self.image_input_detail!r}")
+
 
 @dataclass
 class AgentCallbacks:

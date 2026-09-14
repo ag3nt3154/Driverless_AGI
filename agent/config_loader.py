@@ -189,6 +189,8 @@ def _build_config_from_entry(
     supports_images = entry.get("supports_images")
     if supports_images is None:
         supports_images = raw.get("supports_images")
+    if supports_images is not None:
+        supports_images = bool(supports_images)
     image_input_entry: dict = entry.get("image_input") or {}
     image_input_max_images_per_message = int(
         image_input_entry.get("max_images_per_message", 4)
