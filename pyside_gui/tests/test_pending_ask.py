@@ -49,6 +49,7 @@ class _Worker:
 
 def _submit_app(*, worker_alive: bool, pending, container) -> SimpleNamespace:
     app = SimpleNamespace(
+        _compose_mode=False,
         _pending_ask=pending,
         _pending_ask_container=container,
         _worker=_Worker(worker_alive),
@@ -74,7 +75,7 @@ def test_stale_pending_ask_does_not_swallow_the_next_task() -> None:
 
     DagiMainWindow._on_input_submitted(app, "next task")
 
-    assert app.dispatched == ["next task"]
+    assert [s.text for s in app.dispatched] == ["next task"]
     assert container == []
     assert not evt.is_set()
     assert app.running_shown == 0  # _dispatch_agent owns the label
@@ -140,7 +141,7 @@ def _work_app() -> SimpleNamespace:
 
 def test_worker_exit_clears_a_pending_ask(monkeypatch) -> None:
     """Every turn ending — however it ends — retires the question with it."""
-    monkeypatch.setattr("pyside_gui.app.AgentLoop", _StubLoop)
+    monkeypatch.setattr("pyside_gui._dispatch.AgentLoop", _StubLoop)
     app = _work_app()
 
     DagiMainWindow._agent_work(app, "task", SimpleNamespace(), [])
@@ -156,7 +157,7 @@ def test_worker_crash_clears_a_pending_ask(monkeypatch) -> None:
     def _boom(*_args, **_kwargs):
         raise RuntimeError("provider exploded")
 
-    monkeypatch.setattr("pyside_gui.app.AgentLoop", _boom)
+    monkeypatch.setattr("pyside_gui._dispatch.AgentLoop", _boom)
     app = _work_app()
 
     DagiMainWindow._agent_work(app, "task", SimpleNamespace(), [])

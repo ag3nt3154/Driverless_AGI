@@ -2,7 +2,7 @@
 
 ## In progress
 
-- **Image input, stage 3 of 6 done** (see `docs/image-input-implementation-plan.md`).
+- **Image input, stage 4 of 6 done** (see `docs/image-input-implementation-plan.md`).
   Stage 1 landed: `agent/user_input.py` (Qt-free `ImageAttachment`/`UserSubmission`
   value objects) and `agent/image_assets.py` (`ImageRef`, `ImageAssetStore`,
   `materialize_messages` — content-addressed store under `.dagi/attachments/`,
@@ -40,5 +40,33 @@
   real text-token counts. Covered by `tests/test_image_config_and_labels.py`
   (22 tests); `tests/test_tail_boundary.py` updated for the new per-image
   estimate.
-  Remaining stages: GUI composer, sent-image rendering, integration
-  verification.
+  Stage 4 landed (PySide GUI composer): `pyside_gui/app.py`'s submission/dispatch
+  logic (`_on_input_submitted`, `_dispatch_agent`, `_agent_work`,
+  `_handle_special_command`) was extracted into `pyside_gui/_dispatch.py` as
+  free functions taking the window as their first arg, keeping `app.py` under
+  its 500-line cap (436 lines) while `DagiMainWindow` keeps thin wrapper
+  methods for backward-compat test hooks. `pyside_gui/prompt_input.py`'s
+  `PromptInput` is now a `QWidget` wrapping an inner `QPlainTextEdit`, an
+  `_AttachmentStrip` of 64x64 thumbnails with per-image remove (X) buttons,
+  and clipboard paste handling (`canInsertFromMimeData`/`insertFromMimeData`):
+  image pixels (`QMimeData.hasImage()`) take precedence, then local file URLs
+  with `.png`/`.jpg`/`.jpeg` extensions (whole batch rejected on any failure),
+  else default text paste. Pasted/dropped images are decoded via `QImage`,
+  encoded to PNG via `QImage.save()`/`QBuffer`, and validated against the same
+  limits as `AgentConfig` defaults (max 4 images/message, 8 MiB/image, 24M
+  px/image) before becoming an `ImageAttachment`; violations emit
+  `attachment_error` (wired to the conversation's error bubble) and leave the
+  existing draft untouched. `submitted` is now `Signal(object)` carrying a
+  `UserSubmission` instead of `Signal(str)`. `_on_input_submitted` routes the
+  full `UserSubmission` through to `AgentLoop.run()`/`inject_and_resume()`;
+  pending-ask answers and slash commands reject image attachments (restoring
+  the draft via `PromptInput.restore_draft()`) since neither accepts images;
+  the conversation bubble shows `"text [N images]"` via a shared
+  `_display_text()` helper. Heavy paste decode/encode stays on the GUI thread
+  for v1 (TODO left in `prompt_input.py` to move it off-thread for large
+  batches). Covered by `pyside_gui/tests/test_dispatch_and_submission.py` (8
+  tests, Qt-free) plus `pyside_gui/tests/test_pending_ask.py` updated for the
+  new module layout — full suite: 50 passed (up from 39 pre-stage-4), same 7
+  pre-existing failures / 32 pre-existing errors (headless-Qt environment
+  issues, confirmed present on the pre-stage-4 baseline too).
+  Remaining stages: sent-image rendering, integration verification.

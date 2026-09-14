@@ -197,6 +197,8 @@ conda run --no-capture-output -n dagi python -m pyside_gui --model <id> --projec
 
 **Keyboard shortcuts:** `Enter` submit · `Shift+Enter`/`Ctrl+N` newline · `Ctrl+O` compose mode · `Esc` pause · `Ctrl+Q` quit
 
+**Image attachments (image input, stage 4):** paste an image (clipboard pixels or local `.png`/`.jpg`/`.jpeg` file paths) into the composer to attach it — a thumbnail strip appears below the text box with a remove (✕) button per image. Limits mirror `AgentConfig` defaults (max 4 images/message, 8 MiB/image, 24M px/image); exceeding one shows an inline error and leaves the draft untouched. Enter submits text and/or attachments together as a `UserSubmission`; the conversation bubble shows `"text [N images]"`. Pending-ask answers and slash commands are text-only and reject a submission that carries images, restoring the draft instead of discarding it.
+
 **Slash commands:** same set as TUI — `/help`, `/clear`, `/model`, `/compact`, `/tools`, `/skills`, `/workflows`, `/hist`, `/init`, `/copy`, `/exit`, `/show-pet`
 
 > **Windows note:** PySide6 DLL loading is handled automatically by `pyside_gui/__init__.py`.

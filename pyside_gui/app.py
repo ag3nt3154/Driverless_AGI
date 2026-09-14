@@ -1,7 +1,6 @@
 from __future__ import annotations
 import threading
 import time
-import traceback
 from pathlib import Path
 
 from PySide6.QtCore import QMetaObject, Qt, QTimer, Q_ARG, Slot
@@ -17,7 +16,8 @@ from PySide6.QtWidgets import (
 from agent import DAGI_ROOT
 from agent.loop import AgentConfig, AgentLoop
 
-from pyside_gui.bridge import AgentBridge, init_worker_logger, worker_log
+from pyside_gui import _dispatch
+from pyside_gui.bridge import AgentBridge, init_worker_logger
 from pyside_gui.commands import SlashCommandHandler, UIWidgets
 from pyside_gui.conversation import ConversationView
 from pyside_gui.left_sidebar import LeftSidebar, _RAIL_WIDTH
@@ -56,6 +56,7 @@ class DagiMainWindow(QMainWindow):
         self._stream_had_content = False
         self._stream_had_reasoning = False
         self._streaming_active = False
+        self._submission_seq = 0
 
         self.setWindowTitle(f"Driverless AGI — {config.display_name}")
         self.setMinimumSize(1200, 700)
@@ -149,6 +150,7 @@ class DagiMainWindow(QMainWindow):
 
     def _connect_signals(self) -> None:
         self._prompt.submitted.connect(self._on_input_submitted)
+        self._prompt.attachment_error.connect(self._conversation.append_error)
         self._left_sidebar.session_selected.connect(self._on_session_selected)
         self._left_sidebar.expansion_changed.connect(self._on_sidebar_expansion)
         b, cv, rs = self._bridge, self._conversation, self._right_sidebar
@@ -198,107 +200,19 @@ class DagiMainWindow(QMainWindow):
             "\nType /help for commands"
         )
 
-    @Slot(str)
-    def _on_input_submitted(self, text: str) -> None:
-        if self._compose_mode:
-            self._toggle_compose()
-        if text.lower() in ("exit", "quit", "q"):
-            self.close()
-            return
-        if self._pending_ask is not None:
-            if self._worker and self._worker.is_alive():
-                if self._pending_ask_container is not None:
-                    self._pending_ask_container.append(text)
-                self._pending_ask.set()
-                self._pending_ask = None
-                self._pending_ask_container = None
-                self._conversation.append_user_message(text)
-                self._prompt.setDisabled(True)
-                self._show_running()
-                return
-            # Nobody is left to read the answer: the ask_user call timed out
-            # and its turn has since ended. Posting into the dead event would
-            # show the running label without starting a worker — a hang.
-            self._pending_ask = self._pending_ask_container = None
-        # Inject-and-resume while paused
-        if (
-            self._worker and self._worker.is_alive()
-            and self._current_loop_ref
-            and not self._current_loop_ref[0]._pause_event.is_set()
-        ):
-            loop = self._current_loop_ref[0]
-            self._conversation.append_user_message(text)
-            self._prompt.setDisabled(True)
-            self._show_running()
-            self._right_sidebar.set_status("running")
-            loop.inject_and_resume(text)
-            return
-        if text.startswith("/"):
-            result = self._cmd_handler.handle(text)
-            if result == "__EXIT__":
-                self.close()
-            elif result is not None:
-                self._handle_special_command(result)
-                if not result.startswith("__"):
-                    self._dispatch_agent(result)
-            return
-        self._dispatch_agent(text)
+    @Slot(object)
+    def _on_input_submitted(self, submission: object) -> None:
+        _dispatch.on_input_submitted(self, submission)
 
     def _handle_special_command(self, result: str) -> None:
-        if result == "__COMPACT__":
-            self._do_compact()
-        elif result.startswith("__WTF__"):
-            self._do_wtf(result[7:] or None)
-        elif result == "__COPY__":
-            msgs = list(self._active_loop._messages) if self._active_loop else []
-            self._copy_picker.show_messages(msgs)
+        _dispatch.handle_special_command(self, result)
 
-    def _dispatch_agent(self, task: str) -> None:
-        if self._worker and self._worker.is_alive():
-            self._conversation.append_info("Agent is already running.")
-            return
-        self._conversation.append_user_message(task)
-        self._prompt.setDisabled(True)
-        self._show_running()
-        self._current_loop_ref = []
-        callbacks = self._bridge.build_callbacks(self._current_loop_ref)
-        self._worker = threading.Thread(
-            target=self._agent_work, args=(task, callbacks, self._current_loop_ref), daemon=True)
-        self._worker.start()
+    def _dispatch_agent(self, task: object) -> None:
+        _dispatch.dispatch_agent(self, task)
 
-    def _agent_work(self, task: str, callbacks: object, loop_ref: list) -> None:
-        t0 = time.monotonic()
-        def log(msg: str) -> None:
-            worker_log.info("[%.3fs] %s", time.monotonic() - t0, msg)
-        self._invoke_on_main("_set_status_slot", "running"); log("worker started")
-        try:
-            tracker = self._active_loop.tracker if self._active_loop else None
-            if self._restore_initial_messages is not None:
-                initial, self._restore_initial_messages = self._restore_initial_messages, None
-                initial_affect, self._restore_initial_affect = self._restore_initial_affect, None
-            else:
-                initial = self._active_loop._messages if self._active_loop else None
-                initial_affect = None
-            log(f"session captured (msgs={len(initial) if initial else 0})")
-            loop = AgentLoop(
-                self._config, callbacks, initial_messages=initial,
-                initial_affect=initial_affect, _tracker=tracker,
-            )
-            log("AgentLoop constructed"); loop_ref.append(loop)
-            self._active_loop = loop; self._cmd_handler.set_active_loop(loop)
-            log("agent run started")
-            loop.run(task); log("agent run completed")
-        except Exception as exc:
-            log(f"EXCEPTION: {type(exc).__name__}: {exc}")
-            worker_log.debug("".join(traceback.format_exception(exc)))
-            self._bridge.error_occurred.emit(str(exc))
-        finally:
-            if loop_ref:
-                try: loop_ref[0].finish()
-                except Exception: pass
-            self._invoke_on_main("_clear_pending_ask_slot")
-            log("finally: idle"); self._invoke_on_main("_set_status_slot", "idle")
-            self._invoke_on_main("_enable_input_slot")
+    def _agent_work(self, task: object, callbacks: object, loop_ref: list) -> None:
+        _dispatch.agent_work(self, task, callbacks, loop_ref)
+
     def closeEvent(self, event) -> None:
         self._desktop_pet.close()
         super().closeEvent(event)
