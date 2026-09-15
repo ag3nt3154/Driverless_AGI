@@ -222,8 +222,7 @@ class TestLargeFileDelegation:
 
         mock_run.assert_called_once()
         assert mock_run.call_args.kwargs["preset"] == "read-large-text"
-        assert "Delegated to read_large_text" in result
-        assert "Big file summary." in result
+        assert "Delegated to reader" in result
 
     def test_large_file_delegation_forwards_the_exact_parent_context(self, tmp_path):
         """Large-file delegation must inherit the same parent request context."""
@@ -266,7 +265,7 @@ class TestLargeFileDelegation:
             result = tool.run(path="big.txt", limit=5)
 
         mock_run.assert_not_called()
-        assert "Delegated to read_large_text" not in result
+        assert "Delegated to reader" not in result
         assert f"{1:6d}\tline1" in result
 
     def test_explicit_limit_skips_delegation(self, tmp_path):
@@ -285,7 +284,7 @@ class TestLargeFileDelegation:
             result = tool.run(path="big.txt", limit=10)
 
         mock_run.assert_not_called()
-        assert "Delegated to read_large_text" not in result
+        assert "Delegated to reader" not in result
         assert f"{1:6d}\tline1" in result
         assert "line11" not in result
 
@@ -306,7 +305,7 @@ class TestLargeFileDelegation:
             result = tool.run(path="small.txt")
 
         mock_run.assert_not_called()
-        assert "Delegated to read_large_text" not in result
+        assert "Delegated to reader" not in result
 
     def test_no_config_no_delegation(self, tmp_path):
         _make_large_file(tmp_path)
@@ -323,7 +322,7 @@ class TestLargeFileDelegation:
             result = tool.run(path="big.txt")
 
         mock_run.assert_not_called()
-        assert "Delegated to read_large_text" not in result
+        assert "Delegated to reader" not in result
 
     def test_large_converted_doc_delegates(self, tmp_path):
         """A3: converted docs whose rendered output exceeds P now delegate."""
@@ -351,8 +350,7 @@ class TestLargeFileDelegation:
                 result = tool.run(path="big.docx")
 
         mock_run.assert_called_once()
-        assert "Delegated to read_large_text" in result
-        assert "Doc summary." in result
+        assert "Delegated to reader" in result
 
     def test_small_converted_doc_stays_inline(self, tmp_path):
         """Converted doc with small rendered output stays inline regardless of size."""
@@ -526,7 +524,7 @@ class TestLargeFileDelegation:
             result = tool.run(path="big.txt")
 
         mock_run.assert_called_once()
-        assert "Delegated to read_large_text" in result
+        assert "Delegated to reader" in result
 
     def test_size_trigger_does_not_fire_below_threshold(self, tmp_path):
         """2500-line file, but reserve is very large → stays inline."""
@@ -546,9 +544,9 @@ class TestLargeFileDelegation:
             result = tool.run(path="big.txt")
 
         mock_run.assert_not_called()
-        assert "Delegated to read_large_text" not in result
+        assert "Delegated to reader" not in result
 
-    def test_query_passed_as_custom_instructions(self, tmp_path):
+    def test_query_passed_via_reader_job_spec(self, tmp_path):
         _make_large_file(tmp_path)
         handoff = tmp_path / "handoff.md"
         handoff.write_text("summary", encoding="utf-8")
@@ -568,4 +566,5 @@ class TestLargeFileDelegation:
         ) as mock_run:
             tool.run(path="big.txt", query="find X")
 
-        assert mock_run.call_args.kwargs["custom_instructions"] == "find X"
+        spec = mock_run.call_args.kwargs["reader_job_spec"]
+        assert spec.query == "find X"

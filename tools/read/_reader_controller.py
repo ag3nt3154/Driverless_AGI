@@ -33,7 +33,7 @@ from tools.read._reader_provider import (
 )
 
 if TYPE_CHECKING:
-    from agent._loop_config import AgentConfig
+    from agent._loop_config import AgentCallbacks, AgentConfig
 
 
 # ---------------------------------------------------------------------------
@@ -322,25 +322,45 @@ def run_reader_job_mode(args: Any) -> None:
 def _run_with_job(job: ReaderJob, args: Any) -> None:
     """Resolve config and runtime, then run the controller."""
     from agent.config_loader import resolve_model_config
-    config = resolve_model_config(job.selection.path.parent)
+    config = resolve_model_config(project_path=job.selection.path.parent)
     runtime = _build_runtime(config, job)
     controller = ReaderController(job=job, config=config, runtime=runtime)
     controller.run()
 
 
+def _build_pipe_callbacks() -> "AgentCallbacks":
+    """Minimal callbacks that emit newline-delimited JSON to stdout."""
+    import json as _json
+    from agent.loop import AgentCallbacks
+
+    def _emit(evt: dict) -> None:
+        print(_json.dumps(evt), flush=True)
+
+    return AgentCallbacks(
+        on_assistant_text=lambda text: (
+            _emit({"type": "message", "content": text}) if text.strip() else None
+        ),
+        on_error=lambda e: _emit({"type": "error", "message": str(e)}),
+    )
+
+
 def _build_runtime(config: "AgentConfig", job: ReaderJob) -> ReaderRuntime:
     """Build a ReaderRuntime from the resolved config."""
     from agent._model_switch import build_openai_client
+    from tools.write_handoff._write_handoff import WriteHandoffTool
     client, script_rk = build_openai_client(config)
     request_options = dict(config.request_kwargs)
     if script_rk:
         request_options.update(script_rk)
+    callbacks = _build_pipe_callbacks()
     return ReaderRuntime(
         client=client,
         model=config.model,
         system_prompt=config.system_prompt,
         request_options=request_options,
         api_error_retries=config.api_error_retries,
+        callbacks=callbacks,
+        handoff_tool=WriteHandoffTool(handoff_path=job.return_format.handoff_path),
     )
 
 
