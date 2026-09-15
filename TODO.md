@@ -6,6 +6,15 @@
 
 ## Completed
 
+- **Wiki handoff validation made case-tolerant** — `_validate_handoff` in
+  `tools/_wiki_tools.py` now normalises heading casing before matching
+  (e.g. "Wiki Sources" → "Wiki sources"), accepts `no results` as well as
+  `no_results` for query outcomes, and tolerates trailing periods on outcome
+  and failure-details values. The split regex also accepts a missing trailing
+  newline after the last heading. Both wiki-query and wiki-add SKILL.md child
+  protocols were tightened: handoff format is now shown in a fenced code block
+  with explicit instructions against preamble text and extra sections.
+
 - **Subagents now inherit the main agent's context settings** — previously,
   `_apply_worker_config` and `_apply_advanced_config` in `tools/subagent_main.py`
   (and the equivalent in `agent/sub_agent.py`) replaced `context_window`,

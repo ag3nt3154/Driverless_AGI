@@ -14,23 +14,38 @@ SECTIONS = {
 }
 
 
+def _normalise_heading(heading):
+    """Canonical form: first word capitalised, rest lowercase."""
+    return heading.strip().capitalize()
+
+
+_CANONICAL = {_normalise_heading(s): s for sections in SECTIONS.values() for s in sections}
+
+
 def _validate_handoff(text, operation):
-    parts = re.split(r"^## ([^\r\n]+)\r?\n", text, flags=re.MULTILINE)
-    headings = parts[1::2]
+    parts = re.split(r"^## ([^\r\n]+)\r?\n?", text, flags=re.MULTILINE)
+    raw_headings = parts[1::2]
+    bodies = [b.strip() for b in parts[2::2]]
+    # Map headings to canonical names, case-insensitive
+    headings = [_CANONICAL.get(_normalise_heading(h), h) for h in raw_headings]
     if len(headings) != len(set(headings)):
         raise ValueError("Duplicate handoff sections")
-    sections = dict(zip(headings, (body.strip() for body in parts[2::2])))
+    sections = dict(zip(headings, bodies))
     if any(not sections.get(name) for name in SECTIONS[operation]):
         raise ValueError("Missing or empty required handoff sections")
-    outcome = sections["Outcome"]
-    allowed = {"success", "error", "no_results"} if operation == "query" else {"success", "error"}
+    outcome = sections["Outcome"].lower().strip().rstrip(".")
+    allowed = {"success", "error", "no_results", "no results"}
+    if operation == "query":
+        pass  # all allowed values valid
+    else:
+        allowed -= {"no_results", "no results"}
     if outcome not in allowed:
-        raise ValueError(f"Invalid handoff outcome: {outcome}")
+        raise ValueError(f"Invalid handoff outcome: {sections['Outcome']}")
     if outcome == "error":
         raise ValueError("Child reported an error")
-    if sections["Failure details"].lower() != "none":
+    if sections["Failure details"].lower().strip().rstrip(".") != "none":
         raise ValueError("Handoff reports failures despite a non-error outcome")
-    if operation == "add" and sections["Partial writes"].lower() != "none":
+    if operation == "add" and sections["Partial writes"].lower().strip().rstrip(".") != "none":
         raise ValueError("Partial writes do not establish completed persistence")
 
 
@@ -84,7 +99,11 @@ def run_wiki(owner, operation, task, scope=""):
             on_event = owner._callbacks.on_subagent_event_factory(f"wiki-{operation}")
         result = subagent_api.run_subagent(
             task=task, preset=f"wiki-{operation}", prompt=protocol,
-            custom_instructions=f"Resolved wiki_root: {root}\nSearch scope first: {target}",
+            custom_instructions=(
+                f"Resolved wiki_root: {root}\nSearch scope first: {target}\n"
+                f"All grep and find calls must use {root} (or a subdirectory of it) "
+                f"as their path. Never search from the project root or outside the wiki."
+            ),
             tools=["read", "grep", "find"] + (["write", "edit"] if operation == "add" else []),
             project_path=project, on_event=on_event, parent_log=owner._session_log,
         )

@@ -40,16 +40,23 @@ An initialized wiki with no relevant knowledge returns no_results, not error. Re
 findings with wiki-relative sources, competing evidence, conflicts and gaps; do not answer
 from unrelated context or produce traversal logs. Never resolve conflicts or modify pages.
 
-Finish with write_handoff containing these exact nonempty Markdown sections:
+Finish with write_handoff containing exactly these six Markdown sections, in this order,
+using these exact headings (case-sensitive). Every section must have a non-empty body.
+Use the single word `None` (not "N/A", not empty) when a section has nothing to report.
+
+```
 ## Outcome
-success | no_results | error (choose exactly one)
+success | no_results | error (choose exactly one word, lowercase)
 ## Findings
-Relevant findings, or None.
+Relevant findings, or None
 ## Wiki sources
-Wiki-relative citations, or None.
+Wiki-relative citations, or None
 ## Conflicts
-Both conflicted accounts, dates and evidence, or None.
+Both conflicted accounts, dates and evidence, or None
 ## Gaps
-Missing knowledge or redirection attempts, or None.
+Missing knowledge or redirection attempts, or None
 ## Failure details
-Actionable failure and suggested next step, or exactly None.
+Actionable failure and suggested next step, or None
+```
+
+Do not add any text before `## Outcome`. Do not add extra sections.

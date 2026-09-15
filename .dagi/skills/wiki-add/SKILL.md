@@ -49,19 +49,26 @@ Error entries separate observed symptoms, suspected cause, confirmed cause and v
 missing evidence remains unknown. Update the existing issue when a supplied verified fix
 arrives, retaining the original observation.
 
-Finish with write_handoff containing these exact nonempty Markdown sections:
+Finish with write_handoff containing exactly these six Markdown sections, in this order,
+using these exact headings (case-sensitive). Every section must have a non-empty body.
+Use the single word `None` (not "N/A", not empty) when a section has nothing to report.
+
+```
 ## Outcome
-success | error (choose exactly one)
+success | error (choose exactly one word, lowercase)
 ## Created/updated paths
-Wiki-relative paths; explain no-op if points already exist.
+Wiki-relative paths; explain no-op if points already exist
 ## Change summary
-Actual changes or no-op verification.
+Actual changes or no-op verification
 ## Dated conflicts
-Both accounts with conflict_detected dates, or None.
+Both accounts with conflict_detected dates, or None
 ## Partial writes
-All partial writes on failure, or exactly None after full completion.
+All partial writes on failure, or None after full completion
 ## Failure details
-Actionable failure and suggested next step, or exactly None.
+Actionable failure and suggested next step, or None
+```
+
+Do not add any text before `## Outcome`. Do not add extra sections.
 
 Any incomplete requested write has outcome error. Never claim successful persistence merely
 because the process ran. Report partial writes honestly.
