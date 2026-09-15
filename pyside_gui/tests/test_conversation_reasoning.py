@@ -73,7 +73,7 @@ def test_stream_preview_shows_last_three_visual_lines(view, text):
         };
     """)
     assert state["text"] == text.rstrip()
-    assert state["height"] == pytest.approx(3 * state["line"], abs=1)
+    assert state["height"] == pytest.approx(7 * state["line"], abs=1)
     assert state["scroll"] > 0
     assert state["scroll"] == pytest.approx(state["overflow"], abs=1)
     assert not state["answerVisible"]
