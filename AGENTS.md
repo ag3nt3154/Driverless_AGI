@@ -1,6 +1,6 @@
 # AGENTS.md
 
-> Last updated: 2026-09-13 | [README](README.md) | [Wiki](wiki/index.md) | [Code review](wiki/notes/2026-09-08_CODE_REVIEW.md)
+> Last updated: 2026-09-15 | [README](README.md) | [Wiki](wiki/index.md) | [Code review](wiki/notes/production-review-2026-09-15.md)
 > [Proposed image-input implementation plan](docs/image-input-implementation-plan.md)
 
 ---

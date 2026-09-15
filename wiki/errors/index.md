@@ -2,7 +2,7 @@
 
 Navigation to observed issues and verified fixes.
 
-> Last updated: 2026-09-06
+> Last updated: 2026-09-15
 
 ## Recent confirmed issues (2026-09)
 
@@ -34,6 +34,10 @@ Registry no longer rebuilds or restricts tools during planning.
 (7) `SetActivePlanTool` containment check didn't call `.resolve()`.
 
 ## Open issues
+
+- [Production review (2026-09-15)](../notes/production-review-2026-09-15.md): 19 actionable
+  subagent, agent-loop, PySide GUI, and session-persistence findings; all recommendations
+  remain unapproved.
 
 - [Broad repository review (2026-09-06)](../notes/broad-review-2026-09-06.md): five P1
   findings (scheduler constructor and timeout, session restore, Telegram final delivery and

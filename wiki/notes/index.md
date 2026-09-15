@@ -2,7 +2,11 @@
 
 Navigation to useful findings and open questions.
 
-> Last updated: 2026-09-13
+> Last updated: 2026-09-15
+
+- [Production review — 2026-09-15](production-review-2026-09-15.md): 19 actionable findings
+  across subagents, the agent loop, PySide GUI, and session persistence; verdict not
+  production-ready; recommendations remain unapproved.
 
 - [Large-file reader investigation](large-file-reader-2026-09-09.md): plan-only findings
   that informed the approved redesign below.
