@@ -6,6 +6,18 @@
 
 ## Completed
 
+- **Reader subagent crash fixed** — `_run_with_job` in
+  `tools/read/_reader_controller.py` passed the selection's parent directory as
+  the positional `model_id` argument to `resolve_model_config` instead of as
+  `project_path`, causing an immediate crash. Additionally, `_build_runtime`
+  never set `handoff_tool` or `callbacks` on the `ReaderRuntime`, so the
+  subprocess would also fail when writing the handoff. Both bugs are fixed;
+  stale test assertions in `test_read_tool.py` updated to match the current
+  delegation flow ("`Delegated to reader`" instead of the old
+  "`Delegated to read_large_text`", `reader_job_spec.query` instead of
+  `custom_instructions`).
+
+
 - **Wiki handoff validation made case-tolerant** — `_validate_handoff` in
   `tools/_wiki_tools.py` now normalises heading casing before matching
   (e.g. "Wiki Sources" → "Wiki sources"), accepts `no results` as well as
