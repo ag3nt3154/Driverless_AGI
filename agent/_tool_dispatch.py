@@ -64,6 +64,7 @@ def dispatch_tool_calls(
     (e.g. DeepSeek) enforce.
     """
     deferred_system_msgs: list[str] = []
+    deferred_end_turn: tuple | None = None
 
     for tc in message.tool_calls:
         tool_obj = loop.registry._tools.get(tc.function.name)
@@ -111,9 +112,8 @@ def dispatch_tool_calls(
             effect = result.side_effect
 
             if effect is SideEffect.END_TURN:
-                return handle_end_turn(
-                    loop, tc, result, description, tool_records, (message, response)
-                )
+                deferred_end_turn = (tc, result, description)
+                continue
             elif effect is SideEffect.ALL_TASKS_RESOLVED:
                 result = loop._handle_all_tasks_resolved()
             elif effect is SideEffect.RELOAD_SKILLS:
@@ -139,6 +139,12 @@ def dispatch_tool_calls(
 
     for _sys_content in deferred_system_msgs:
         loop._log_user_message("user", _sys_content, "reload")
+
+    if deferred_end_turn is not None:
+        tc, result, description = deferred_end_turn
+        return handle_end_turn(
+            loop, tc, result, description, tool_records, (message, response)
+        )
     return None
 
 
