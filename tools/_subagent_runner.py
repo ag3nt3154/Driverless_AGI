@@ -160,12 +160,19 @@ def _poll_until(
                 "output_tail": output_tail,
                 "output_log_path": str(output_log) if output_log else None,
             }
+            if ret != 0:
+                return {
+                    "status": "error",
+                    "message": f"subagent exited with code {ret}",
+                    "handoff_path": str(state.handoff_path) if state.handoff_path.exists() else None,
+                    **diag,
+                }
             handoff_result = _handoff_result(state.handoff_path)
             if handoff_result is not None:
                 return {**handoff_result, **diag}
             return {
                 "status": "error",
-                "message": f"subagent exited (code {ret}) without writing handoff",
+                "message": "subagent exited (code 0) without writing handoff",
                 **diag,
             }
         if time.monotonic() >= deadline:
