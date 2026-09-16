@@ -742,12 +742,12 @@ Driverless_AGI/
 │   ├── _streaming.py      # Streaming chat-completions consumer
 │   ├── _compaction.py     # Context compaction via forked compact subagent; materializes dagi_image parts in the
 │   │                       #   reconstructed fork prefix before building the fork snapshot (image input, stage 3)
-│   ├── _tool_dispatch.py  # Tool-call dispatch, bookkeeping, write_handoff deferral (runs last in batch), pause gating, malformed-args sanitisation
+│   ├── _tool_dispatch.py  # Tool-call dispatch, bookkeeping, write_handoff deferral (runs last in batch), pause gating, malformed-args sanitisation + surface cache reproject
 │   ├── config_loader.py   # Resolves model config from YAML; reads supports_images + per-model image_input: block (image input, stage 3)
 │   ├── session.py         # SessionTracker — JSONL logs
 │   ├── session_events.py  # Event vocabulary + SESSION_FORMAT_VERSION (3 — bumped for dagi_image content parts, image input stage 2)
 │   ├── session_log.py     # SessionLog — append-only tree log (branches, turn/step coords)
-│   ├── session_surface.py # Surface — ordered message projection with replace ops
+│   ├── session_surface.py # Surface — ordered message projection with replace ops and per-node reproject
 │   ├── session_store.py   # JSONL persistence (read_session / write_session / append_event)
 │   └── context_spec.py    # ContextSpec — byte-identical context reconstruction from log tree
 │   ├── prompts.py         # Loads system/user prompts from .dagi/prompts/ and .dagi/subagents/
@@ -788,7 +788,7 @@ Driverless_AGI/
 │   ├── web_research/        # Multi-page web research (spawns pipe subagent)
 │   ├── explore_files/       # Large-scale codebase scanning (spawns pipe subagent)
 │   ├── subagent_api.py    # Public API — run_subagent() / SubagentResult / resume_subagent_by_pid()
-│   ├── _subagent_runner.py # Private runner — Popen(stdout=PIPE), JSON event relay, PID polling; only called by subagent_api.py
+│   ├── _subagent_runner.py # Private runner — Popen(stdout=PIPE), JSON event relay, PID polling, fault-isolated stdout drain; only called by subagent_api.py
 │   ├── subagent_main.py   # Piped subagent entry point (spawned via `python -m tools.subagent_main`)
 │   ├── extend_timeout/      # ExtendSubagentTimeoutTool — resume in-flight subagent deadline
 │   ├── compact/             # Trigger context compaction

@@ -2,15 +2,17 @@
 
 ## In progress
 
-- **Production review (R5, R8, R11–R19)** — remaining findings from
-  `wiki/notes/production-review-2026-09-15.md` still to address. R5 (session
-  filename collisions) and R8 (pipe subagent prompt loss) deferred pending
-  design decisions; P2 items (R11–R19) not yet started.
+- **Production review (R5, R8, R11, R17)** — remaining deferred findings from
+  `wiki/notes/production-review-2026-09-15.md`. R5 (session filename
+  collisions) and R8 (pipe subagent prompt loss) deferred pending design
+  decisions; R11 (interrupted restore from events) deferred for complexity;
+  R17 (orderly GUI shutdown) deferred — needs design for worker cancellation,
+  process-tree cleanup, and state persistence.
 
 ## Completed
 
-- **Production review fixes (R1–R4, R6–R7, R9–R10)** — eight P1 findings
-  from `wiki/notes/production-review-2026-09-15.md` fixed:
+- **Production review fixes (R1–R4, R6–R7, R9–R10, R12–R16, R18–R19)** —
+  fifteen findings from `wiki/notes/production-review-2026-09-15.md` fixed:
   - R1: Compact fork now resolves credentials from the parent's actual model,
     not the default, preventing cross-provider key/endpoint mismatch.
   - R2: All model-output markdown render paths use `allow_html=False`,
@@ -29,6 +31,23 @@
     handoff is deferred and executed last so no calls are orphaned.
   - R10: Session restore is blocked while a worker thread is running,
     preventing the old worker from contaminating the restored view.
+  - R12: Idle GUI compaction wraps `compact()` in a maintenance turn so
+    the CONTEXT_COMPACTION surface event doesn't violate the open-turn
+    invariant.
+  - R13: Malformed tool-argument repair now re-projects the surface cache
+    entry so the stale deep copy doesn't send broken JSON to the API.
+  - R14: Bridge emits `ask_user_expired` on question timeout, clearing
+    the pending-ask sink so the next user input isn't silently swallowed.
+  - R15: `/clear` now resets pending restored history and affect state so
+    the next task starts fresh.
+  - R16: Observer callback and log-write failures inside the child stdout
+    drain loop are individually caught so a throwing callback can't block
+    the pipe.
+  - R18: The stream deduplication flag resets after suppressing one
+    duplicate so post-stream diagnostic messages still appear.
+  - R19: Preflight work (wiki context, submission content, slug generation)
+    is inside the try/finally that closes the turn, so a preflight failure
+    can't leave a turn permanently open.
 
 
 - **Reader subagent crash fixed** — `_run_with_job` in
