@@ -71,6 +71,7 @@ class AgentLoop:
         _bash_tool: "object | None" = None,
         _system_prompt_override: str | None = None,
         _preserve_request_prefix: bool = False,
+        _session_log: "SessionLog | None" = None,
     ):
         from agent.tools import create_tool_registry
         from uuid import uuid4
@@ -100,7 +101,10 @@ class AgentLoop:
             else config.project_path / "dagi-memory"
         ).resolve()
 
-        self.log = SessionLog()
+        if _session_log is not None:
+            self.log = _session_log
+        else:
+            self.log = SessionLog()
         _tracker_path = getattr(self.tracker, "_path", None)
         if isinstance(_tracker_path, Path):
             _events_path = _tracker_path.with_suffix(".events.jsonl")

@@ -160,9 +160,11 @@ def agent_work(win, task: str | UserSubmission, callbacks: object, loop_ref: lis
     win._invoke_on_main("_set_status_slot", "running"); log("worker started")
     try:
         tracker = win._active_loop.tracker if win._active_loop else None
+        prev_log = win._active_loop.log if win._active_loop else None
         if win._restore_initial_messages is not None:
             initial, win._restore_initial_messages = win._restore_initial_messages, None
             initial_affect, win._restore_initial_affect = win._restore_initial_affect, None
+            prev_log = None
         else:
             initial = win._active_loop._messages if win._active_loop else None
             initial_affect = None
@@ -170,6 +172,7 @@ def agent_work(win, task: str | UserSubmission, callbacks: object, loop_ref: lis
         loop = AgentLoop(
             win._config, callbacks, initial_messages=initial,
             initial_affect=initial_affect, _tracker=tracker,
+            _session_log=prev_log,
         )
         log("AgentLoop constructed"); loop_ref.append(loop)
         win._active_loop = loop; win._cmd_handler.set_active_loop(loop)
