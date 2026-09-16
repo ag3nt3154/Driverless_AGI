@@ -84,6 +84,12 @@ def dispatch_tool_calls(
                 "arguments": tc.function.arguments,  # raw, unparsed
             },
         )
+        if not loop._pause_event.is_set():
+            result = "[paused] Tool execution cancelled by user pause."
+            bookkeep_tool_call(loop, tc, result, description, tool_records)
+            loop._lifecycle.tool_bookkeeping_finished()
+            continue
+
         try:
             args = json.loads(tc.function.arguments)
         except json.JSONDecodeError as exc:
