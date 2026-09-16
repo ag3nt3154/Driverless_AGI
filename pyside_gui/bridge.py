@@ -117,7 +117,7 @@ class AgentBridge(QObject):
 
     def _on_done(self, result: str) -> None:
         if self._handoff_pending and result.strip():
-            html = render_markdown(result)
+            html = render_markdown(result, allow_html=False)
             self.handoff_text.emit(html)
         self._handoff_pending = False
         self.agent_done.emit(result)
@@ -146,7 +146,7 @@ class AgentBridge(QObject):
 
         def on_assistant_text(text: str) -> None:
             if text.strip():
-                html = render_markdown(text)
+                html = render_markdown(text, allow_html=False)
                 self.assistant_text.emit(html)
 
         def on_reasoning(text: str) -> None:

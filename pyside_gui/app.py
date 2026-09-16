@@ -264,7 +264,7 @@ class DagiMainWindow(QMainWindow):
             self._stream_had_reasoning = True
         if text:
             self._stream_had_content = True
-            self._conversation.stream_end(render_markdown(text))
+            self._conversation.stream_end(render_markdown(text, allow_html=False))
         else:
             self._conversation.stream_end("")
         self._streaming_active = False

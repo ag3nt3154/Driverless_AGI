@@ -152,7 +152,7 @@ class ConversationView(QWebEngineView):
         options: list[dict],
         timeout: float | None,
     ) -> None:
-        question_html = render_markdown(question)
+        question_html = render_markdown(question, allow_html=False)
         self._run_js(
             f"appendQuestion({self._js_str(question_html)}, "
             f"{json.dumps(options)}, "
