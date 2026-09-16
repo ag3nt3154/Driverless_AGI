@@ -2,9 +2,34 @@
 
 ## In progress
 
-(nothing currently in progress)
+- **Production review (R5, R8, R11–R19)** — remaining findings from
+  `wiki/notes/production-review-2026-09-15.md` still to address. R5 (session
+  filename collisions) and R8 (pipe subagent prompt loss) deferred pending
+  design decisions; P2 items (R11–R19) not yet started.
 
 ## Completed
+
+- **Production review fixes (R1–R4, R6–R7, R9–R10)** — eight P1 findings
+  from `wiki/notes/production-review-2026-09-15.md` fixed:
+  - R1: Compact fork now resolves credentials from the parent's actual model,
+    not the default, preventing cross-provider key/endpoint mismatch.
+  - R2: All model-output markdown render paths use `allow_html=False`,
+    preventing injected HTML/event attributes from executing in the
+    conversation page.
+  - R3: Session restore and title derivation now use the last `session_end`
+    record instead of the first, recovering all turns in a multi-turn session.
+  - R4: GUI submissions carry the existing `SessionLog` to the new
+    `AgentLoop` instead of creating a fresh one, keeping event sequence
+    numbers monotonic across turns.
+  - R6: Tool dispatch checks pause state before each tool execution,
+    cancelling remaining tools instead of running them after the user pauses.
+  - R7: A nonzero child exit code now always produces an error result, even
+    when a handoff file exists on disk from a prior failed validation attempt.
+  - R9: When the model groups `write_handoff` with other tool calls, the
+    handoff is deferred and executed last so no calls are orphaned.
+  - R10: Session restore is blocked while a worker thread is running,
+    preventing the old worker from contaminating the restored view.
+
 
 - **Reader subagent crash fixed** — `_run_with_job` in
   `tools/read/_reader_controller.py` passed the selection's parent directory as

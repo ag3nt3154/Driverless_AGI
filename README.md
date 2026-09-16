@@ -484,7 +484,7 @@ All slash commands work identically in the TUI and CLI.
 
 ### Pausing and Resuming (TUI only)
 
-Press `Esc` at any time while the agent is running to pause it. If a `bash` command is currently running — in the main loop, or inside an active worker/review subagent — it is force-killed immediately (surfaced as `[killed by user]` in the conversation, or as a tool error for the subagent call). Otherwise, the agent pauses at the end of the current iteration (after all tool calls in the current LLM response complete). The status indicator switches to `⏸ Paused`.
+Press `Esc` at any time while the agent is running to pause it. If a `bash` command is currently running — in the main loop, or inside an active worker/review subagent — it is force-killed immediately (surfaced as `[killed by user]` in the conversation, or as a tool error for the subagent call). Otherwise, remaining tool calls in the current LLM response are cancelled individually (each gets a `[paused]` result) and the agent pauses before the next iteration. The status indicator switches to `⏸ Paused`.
 
 Type any message and press `Enter` to inject it into the agent's context and resume — this is equivalent to the agent asking you a question and you answering it. The agent receives your message and continues from where it stopped, with full context intact.
 
@@ -742,7 +742,7 @@ Driverless_AGI/
 │   ├── _streaming.py      # Streaming chat-completions consumer
 │   ├── _compaction.py     # Context compaction via forked compact subagent; materializes dagi_image parts in the
 │   │                       #   reconstructed fork prefix before building the fork snapshot (image input, stage 3)
-│   ├── _tool_dispatch.py  # Tool-call dispatch, bookkeeping, write_handoff short-circuit, malformed-args sanitisation
+│   ├── _tool_dispatch.py  # Tool-call dispatch, bookkeeping, write_handoff deferral (runs last in batch), pause gating, malformed-args sanitisation
 │   ├── config_loader.py   # Resolves model config from YAML; reads supports_images + per-model image_input: block (image input, stage 3)
 │   ├── session.py         # SessionTracker — JSONL logs
 │   ├── session_events.py  # Event vocabulary + SESSION_FORMAT_VERSION (3 — bumped for dagi_image content parts, image input stage 2)
