@@ -101,6 +101,14 @@ class Surface:
         self._cache[lo:hi + 1] = [project_event(event)]
         self.generation += 1
 
+    def reproject(self, event: "SessionEvent") -> None:
+        """Re-derive the cached projection for a mutated event."""
+        try:
+            idx = self._nodes.index(event.seq)
+        except ValueError:
+            return
+        self._cache[idx] = project_event(event)
+
     def messages(self) -> list[dict]:
         """A fresh list over the cached projections."""
         return list(self._cache)

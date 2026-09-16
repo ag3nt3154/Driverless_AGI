@@ -76,10 +76,16 @@ def _tee_stdout(
             for raw in proc.stdout:  # type: ignore[union-attr]
                 line = raw.rstrip("\n")
                 if line and on_event:
-                    on_event(line)
+                    try:
+                        on_event(line)
+                    except Exception:
+                        pass
                 buf.append(line)
                 total_ref[0] += 1
-                lf.write(raw if raw.endswith("\n") else raw + "\n")
+                try:
+                    lf.write(raw if raw.endswith("\n") else raw + "\n")
+                except Exception:
+                    pass
     except Exception:
         pass
 

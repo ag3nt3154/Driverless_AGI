@@ -14,6 +14,7 @@ from PySide6.QtWidgets import (
 )
 
 from agent import DAGI_ROOT
+from agent import session_events as sev
 from agent.loop import AgentConfig, AgentLoop
 
 from pyside_gui import _dispatch
@@ -147,6 +148,8 @@ class DagiMainWindow(QMainWindow):
 
     def _on_session_cleared(self) -> None:
         self._active_loop = None; self._bridge.reset_stats()
+        self._restore_initial_messages = None
+        self._restore_initial_affect = None
 
     def _connect_signals(self) -> None:
         self._prompt.submitted.connect(self._on_input_submitted)
@@ -171,6 +174,7 @@ class DagiMainWindow(QMainWindow):
         b.agent_done.connect(self._on_agent_done)
         b.agent_paused.connect(self._on_agent_paused)
         b.ask_user_requested.connect(self._on_ask_user)
+        b.ask_user_expired.connect(self._clear_pending_ask_slot)
         b.process_state_changed.connect(rs.expression_widget.update_process)
         b.continue_injected.connect(
             lambda c, m: cv.append_info(f"No exit flag — continue prompt injected ({c}/{m})")
@@ -277,6 +281,7 @@ class DagiMainWindow(QMainWindow):
     @Slot(str)
     def _on_assistant_text(self, html: str) -> None:
         if self._stream_had_content:
+            self._stream_had_content = False
             return
         self._conversation.append_assistant(html)
 
@@ -341,10 +346,14 @@ class DagiMainWindow(QMainWindow):
         loop = self._active_loop
 
         def _work() -> None:
+            turn = loop.log.next_turn
+            loop.log.append(sev.TURN_START, {"turn": turn, "source": "gui_compact"})
             try:
                 r = loop.compact(force=True)
             except Exception as exc:
                 self._bridge.error_occurred.emit(f"Compact failed: {exc}"); return
+            finally:
+                loop.log.append(sev.TURN_END, {"turn": turn, "reason": sev.reason_completed()})
             if r.did_compact:
                 self._bridge.compaction_done.emit(len(loop._messages), r.removed_count)
         threading.Thread(target=_work, daemon=True).start()

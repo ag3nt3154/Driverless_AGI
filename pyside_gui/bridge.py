@@ -44,6 +44,7 @@ class AgentBridge(QObject):
     agent_done = Signal(str)               # result
     agent_paused = Signal()
     ask_user_requested = Signal(str, object, object)  # q, opts, timeout
+    ask_user_expired = Signal()                        # question timed out
     process_state_changed = Signal(object)
     continue_injected = Signal(int, int)   # cur, max
     subagent_event = Signal(str, str)      # type, json line
@@ -94,6 +95,7 @@ class AgentBridge(QObject):
         evt.wait(timeout=safety)
         if container:
             return container[0]
+        self.ask_user_expired.emit()
         return next(
             (o["label"] for o in options if o.get("recommended")),
             options[0]["label"] if options else "",

@@ -557,28 +557,27 @@ class AgentLoop:
         _turn = self.log.next_turn()
         self.log.append(sev.TURN_START, {"turn": _turn})
 
-        if not self._preserve_request_prefix:
-            wiki_ctx = _build_wiki_index_context(self._effective_memory_root)
-            if wiki_ctx:
-                self._log_user_message("user", wiki_ctx, "wiki")
-        _content = self._submission_content(submission)
-        self._log_user_message("user", _content, "human")
-        self.tracker.record_user(_content)
-
-        # ── Auto-name session file from first user message ────────────────────
-        if not self._skip_slug_generation:
-            slug_text = submission.text.strip() if submission.text.strip() else None
-            if slug_text:
-                slug = self._generate_session_slug(slug_text)
-            else:
-                slug = "image-conversation"
-            if slug:
-                self.tracker.rename_with_slug(slug)
-
-        self._continuation_count = 0
-        self._start_expression_timer()
-
         try:
+            if not self._preserve_request_prefix:
+                wiki_ctx = _build_wiki_index_context(self._effective_memory_root)
+                if wiki_ctx:
+                    self._log_user_message("user", wiki_ctx, "wiki")
+            _content = self._submission_content(submission)
+            self._log_user_message("user", _content, "human")
+            self.tracker.record_user(_content)
+
+            # ── Auto-name session file from first user message ────────────────
+            if not self._skip_slug_generation:
+                slug_text = submission.text.strip() if submission.text.strip() else None
+                if slug_text:
+                    slug = self._generate_session_slug(slug_text)
+                else:
+                    slug = "image-conversation"
+                if slug:
+                    self.tracker.rename_with_slug(slug)
+
+            self._continuation_count = 0
+            self._start_expression_timer()
             iteration = 0
             while True:
                 iteration += 1

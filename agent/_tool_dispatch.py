@@ -43,6 +43,7 @@ def _patch_logged_tool_args(loop: AgentLoop, call_id: str, safe_args: str) -> No
             for tc_dict in event.data.get("message", {}).get("tool_calls", []):
                 if tc_dict.get("id") == call_id:
                     tc_dict["function"]["arguments"] = safe_args
+            loop.log.surface.reproject(event)
             break
     loop._sync_messages()
 
