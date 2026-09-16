@@ -74,9 +74,9 @@ def _content_label(content) -> str:
 
 def _derive_title(path: Path, lines: list[dict]) -> str:
     """Return first user message (<=60 chars) as title, or the filename stem."""
-    end_rec = next((ln for ln in lines if ln.get("type") == "session_end"), None)
-    if end_rec:
-        for msg in end_rec.get("raw_messages") or []:
+    end_recs = [ln for ln in lines if ln.get("type") == "session_end"]
+    if end_recs:
+        for msg in end_recs[-1].get("raw_messages") or []:
             if msg.get("role") == "user":
                 text = _content_label(msg.get("content") or "").strip().replace("\n", " ")
                 return text[:60] + ("…" if len(text) > 60 else "")
@@ -92,10 +92,10 @@ def load_raw_messages(path: Path | str) -> list[dict] | None:
         lines = _load_jsonl(path)
     except Exception:
         return None
-    end_rec = next((ln for ln in lines if ln.get("type") == "session_end"), None)
-    if end_rec is None:
+    end_recs = [ln for ln in lines if ln.get("type") == "session_end"]
+    if not end_recs:
         return None
-    return end_rec.get("raw_messages") or None
+    return end_recs[-1].get("raw_messages") or None
 
 
 def load_affect_restore(path: Path | str) -> AffectRestore | None:
