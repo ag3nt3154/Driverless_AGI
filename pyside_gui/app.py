@@ -312,6 +312,11 @@ class DagiMainWindow(QMainWindow):
 
     @Slot(object)
     def _on_session_selected(self, session_data: dict) -> None:
+        if self._worker and self._worker.is_alive():
+            self._conversation.append_info(
+                "Cannot restore while a task is running — stop it first (Escape)."
+            )
+            return
         from agent.history import load_affect_restore, load_raw_messages
         path = Path(session_data["path"])
         raw = load_raw_messages(path)
