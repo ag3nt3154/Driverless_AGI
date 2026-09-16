@@ -534,13 +534,12 @@ def run_forked_compact_mode(
 
     req = fc["request"]
     model = req["model"]
-    base_url = req.get("base_url", "")
 
-    # Credentials come from environment, NOT from fork-context
-    base_config = resolve_model_config(None, project_path=project)
+    # Resolve credentials and endpoint together from the parent's model
+    base_config = resolve_model_config(model, project_path=project)
     client = openai.OpenAI(
         api_key=base_config.api_key,
-        base_url=base_url or base_config.base_url,
+        base_url=base_config.base_url,
     )
 
     from tools.subagent_api import _load_preset
