@@ -270,6 +270,77 @@ class SessionLog:
             event_range=(self._events[step_start_idx].seq, end_evt.seq),
         )
 
+    def revise_last_step(self) -> list[SessionEvent]:
+        """Remove the last completed step from the log. Returns removed events.
+
+        If this was the last step in its turn, the turn wrapper (turn/start,
+        user/message, turn/end) is also removed. Raises ValueError if no
+        completed step exists.
+        """
+        info = self.peek_last_step()
+        if info is None:
+            raise ValueError("No step to revise")
+
+        first_seq, last_seq = info.event_range
+
+        # Find index range of the step's events
+        start_idx = next(i for i, e in enumerate(self._events) if e.seq == first_seq)
+        end_idx = next(i for i, e in enumerate(self._events) if e.seq == last_seq)
+
+        # Also remove a turn/end that immediately follows the step/end (closed turn)
+        turn_end_idx = None
+        if end_idx + 1 < len(self._events) and self._events[end_idx + 1].type == ev.TURN_END:
+            turn_end_idx = end_idx + 1
+
+        # Check if this is the last step in the turn — look for other step/start
+        # events in this turn between turn/start and our step/start
+        target_turn = info.turn
+        has_earlier_step = False
+        for i in range(start_idx):
+            evt = self._events[i]
+            if (evt.type == ev.STEP_START and evt.branch == "main"
+                    and evt.data.get("turn") == target_turn):
+                has_earlier_step = True
+                break
+
+        # Determine the full removal range
+        if has_earlier_step:
+            # Remove just the step (and turn_end if present)
+            remove_start = start_idx
+            remove_end = turn_end_idx if turn_end_idx is not None else end_idx
+        else:
+            # Last step in turn — also remove turn/start, user/message, turn/end
+            # Find the turn/start for this turn
+            turn_start_idx = None
+            for i in range(start_idx - 1, -1, -1):
+                evt = self._events[i]
+                if (evt.type == ev.TURN_START and evt.branch == "main"
+                        and evt.data.get("turn") == target_turn):
+                    turn_start_idx = i
+                    break
+            remove_start = turn_start_idx if turn_start_idx is not None else start_idx
+            remove_end = turn_end_idx if turn_end_idx is not None else end_idx
+
+        removed = self._events[remove_start:remove_end + 1]
+        del self._events[remove_start:remove_end + 1]
+
+        # Rebuild derived state from scratch
+        self._rebuild_state()
+
+        return removed
+
+    def _rebuild_state(self) -> None:
+        """Recompute all derived state from the event list."""
+        self._open_turn = None
+        self._open_step = None
+        self._max_turn = 0
+        self._calls.clear()
+        self._branches.clear()
+        self._surface = Surface()
+        for event in self._events:
+            if event.branch == "main":
+                self._absorb(event)
+
     def _absorb(self, event: SessionEvent) -> None:
         """Fold one committed event into the log's derived state."""
         if event.type == ev.TURN_START:
