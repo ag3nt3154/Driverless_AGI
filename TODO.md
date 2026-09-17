@@ -3,11 +3,11 @@
 ## In progress
 
 - **`/revise-history` slash command** — implementing per
-  `docs/superpowers/plans/2026-09-17-revise-history.md` (11 tasks). Task 1
-  (failing tests for `SessionLog.peek_last_step`) and Task 2
-  (`SessionLog.peek_last_step()` implementation, `agent/session_log.py`)
-  done. Remaining: `revise_last_step()`, TUI/GUI wiring, and the
-  `/revise-history` command itself.
+  `docs/superpowers/plans/2026-09-17-revise-history.md` (11 tasks). Tasks 1-4
+  done: `SessionLog.peek_last_step()` and `SessionLog.revise_last_step()`
+  (`agent/session_log.py`), with tests in `tests/test_session_log_revise.py`
+  (16/16 passing). Remaining: TUI/GUI wiring and the `/revise-history`
+  command itself (Tasks 5-11).
 
 - **Production review (R5, R8, R11, R17)** — remaining deferred findings from
   `wiki/notes/production-review-2026-09-15.md`. R5 (session filename
