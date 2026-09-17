@@ -27,9 +27,15 @@
   crashing (the in-memory revision still applies), and image content blocks
   render as an `"[image]"` placeholder instead of vanishing. Guards against
   running while the agent loop is active or with no active conversation;
-  errors clearly if more steps are requested than exist. 24 tests across
-  `tests/test_session_log_revise.py`, `tests/test_revise_history_tui.py`, and
-  `pyside_gui/tests/test_commands.py`, all passing.
+  errors clearly if more steps are requested than exist. 42 tests across
+  `tests/test_session_log_revise.py` (19, core `SessionLog` logic),
+  `tests/test_revise_history_tui.py` (13: 3 for `format_step_summaries` plus
+  10 handler-level tests for `tui/commands.py::_cmd_revise_history`, using a
+  lightweight `SlashCommandsMixin` stand-in with `push_screen` stubbed to
+  invoke the confirm callback directly), and `pyside_gui/tests/test_commands.py`
+  (10 handler-level tests for `pyside_gui/commands.py::_cmd_revise_history`,
+  alongside 5 pre-existing tests for other commands in that file, monkeypatching
+  `QMessageBox.question`), all passing.
   Two known limitations recorded in
   `wiki/notes/revise-history-open-questions.md` for follow-up: behaviour at
   the `/hist`-restore seed boundary is undefined, and revising a step that
