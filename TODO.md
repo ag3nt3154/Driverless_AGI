@@ -20,7 +20,10 @@
   PySide equivalent, `SlashCommandHandler._cmd_revise_history`, using a
   blocking `QMessageBox.question(...)` confirm dialog (Qt's synchronous
   idiom, no async callback needed) and porting both Task 8 hardening fixes.
-  Remaining: Tasks 10-11 (further test coverage / docs, per the plan).
+  Task 10 done: `TestReviseWithPersistence` added to
+  `tests/test_session_log_revise.py` — integration tests round-tripping a
+  revised `SessionLog` through `write_session`/`read_session` (full log
+  19/19 passing). Remaining: Task 11 (docs, per the plan).
 
 - **Production review (R5, R8, R11, R17)** — remaining deferred findings from
   `wiki/notes/production-review-2026-09-15.md`. R5 (session filename
