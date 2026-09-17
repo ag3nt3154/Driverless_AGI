@@ -337,3 +337,55 @@ class TestEditorKeyHandling:
         event = _make_key_event(Qt.Key.Key_Down)
         # Should not raise; QPlainTextEdit handles it normally
         prompt._editor.keyPressEvent(event)
+
+    def test_shift_enter_with_popup_inserts_newline_not_accept(self, qapp):
+        prompt = PromptInput()
+        prompt.set_completions([("/help", "Show help")])
+        prompt._editor.setPlainText("/he")
+        assert prompt._completer.isVisible()
+        submitted = []
+        prompt.submitted.connect(lambda s: submitted.append(s))
+        event = _make_key_event(Qt.Key.Key_Return, Qt.KeyboardModifier.ShiftModifier)
+        prompt._editor.keyPressEvent(event)
+        # Should NOT accept completion (popup still visible or text still /he area)
+        # and should NOT submit
+        assert len(submitted) == 0
+        # text should have a newline appended (Shift+Enter inserts newline)
+        assert "\n" in prompt._editor.toPlainText()
+
+    def test_ctrl_enter_with_popup_inserts_newline_not_accept(self, qapp):
+        prompt = PromptInput()
+        prompt.set_completions([("/help", "Show help")])
+        prompt._editor.setPlainText("/he")
+        assert prompt._completer.isVisible()
+        submitted = []
+        prompt.submitted.connect(lambda s: submitted.append(s))
+        event = _make_key_event(Qt.Key.Key_Return, Qt.KeyboardModifier.ControlModifier)
+        prompt._editor.keyPressEvent(event)
+        # Should NOT accept completion
+        assert prompt._editor.toPlainText() != "/help "
+        # Should NOT submit
+        assert len(submitted) == 0
+
+    def test_shift_tab_with_popup_does_not_accept(self, qapp):
+        prompt = PromptInput()
+        prompt.set_completions([("/help", "Show help"), ("/exit", "Exit")])
+        prompt._editor.setPlainText("/")
+        assert prompt._completer.isVisible()
+        original_text = prompt._editor.toPlainText()
+        event = _make_key_event(Qt.Key.Key_Tab, Qt.KeyboardModifier.ShiftModifier)
+        prompt._editor.keyPressEvent(event)
+        # Shift+Tab should NOT accept completion
+        assert prompt._editor.toPlainText() == original_text
+
+    def test_enter_without_popup_submits(self, qapp):
+        prompt = PromptInput()
+        prompt.set_completions([("/help", "Show help")])
+        prompt._editor.setPlainText("hello world")
+        assert not prompt._completer.isVisible()
+        submitted = []
+        prompt.submitted.connect(lambda s: submitted.append(s))
+        event = _make_key_event(Qt.Key.Key_Return)
+        prompt._editor.keyPressEvent(event)
+        assert len(submitted) == 1
+        assert submitted[0].text == "hello world"

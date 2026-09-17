@@ -113,7 +113,7 @@ class _Editor(QPlainTextEdit):
         completer_visible = self._owner._completer.isVisible()
 
         if completer_visible:
-            if key == Qt.Key.Key_Tab:
+            if key == Qt.Key.Key_Tab and not (mods & Qt.KeyboardModifier.ShiftModifier):
                 self._owner._accept_completion()
                 event.accept()
                 return
@@ -125,6 +125,7 @@ class _Editor(QPlainTextEdit):
                     self._owner._accept_completion()
                     event.accept()
                     return
+                # Shift/Ctrl+Enter: fall through to insert newline below
             if key == Qt.Key.Key_Escape:
                 self._owner._completer.hide()
                 event.accept()
