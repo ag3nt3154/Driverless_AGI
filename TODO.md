@@ -2,9 +2,10 @@
 
 ## In progress
 
-- **Slash-command autocomplete (Tasks 2+)** — `completions()` method added to
-  `SlashCommandHandler` (Task 1 complete); popup widget and integration with the
-  PySide6 prompt input still pending.
+- **Slash-command autocomplete (Tasks 3+)** — `completions()` method added
+  (Task 1), `SlashCompleterPopup` widget created (Task 2); integration with the
+  PySide6 prompt input (wiring popup show/hide/key-nav into `PromptInput`) still
+  pending.
 
 - **Production review (R5, R8, R11, R17)** — remaining deferred findings from
   `wiki/notes/production-review-2026-09-15.md`. R5 (session filename
