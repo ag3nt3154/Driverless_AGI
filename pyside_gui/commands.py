@@ -46,6 +46,7 @@ class SlashCommandHandler:
         self._worker_alive: Callable[[], bool] = lambda: False
         self._on_config_changed: Callable[["AgentConfig", Path], None] | None = None
         self._on_session_cleared: Callable[[], None] | None = None
+        self._on_completions_changed: Callable[[], None] | None = None
         self._desktop_pet: "QWidget | None" = None
 
     def set_active_loop(self, loop) -> None:
@@ -61,6 +62,9 @@ class SlashCommandHandler:
 
     def set_on_session_cleared(self, fn: Callable[[], None]) -> None:
         self._on_session_cleared = fn
+
+    def set_on_completions_changed(self, fn: Callable[[], None]) -> None:
+        self._on_completions_changed = fn
 
     def set_desktop_pet(self, pet) -> None:
         self._desktop_pet = pet
@@ -83,6 +87,8 @@ class SlashCommandHandler:
                 [self._project_path / ".dagi" / "workflow"]
             )
         }
+        if self._on_completions_changed:
+            self._on_completions_changed()
 
     def completions(self) -> list[tuple[str, str]]:
         """Return completions from builtin commands, loaded skills, and loaded workflows."""

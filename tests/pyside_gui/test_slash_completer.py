@@ -389,3 +389,42 @@ class TestEditorKeyHandling:
         prompt._editor.keyPressEvent(event)
         assert len(submitted) == 1
         assert submitted[0].text == "hello world"
+
+
+class TestAppWiring:
+    def test_prompt_has_completions_after_set_completions(self, qapp):
+        """Verify set_completions + completions() produces populated autocomplete."""
+        from pyside_gui.commands import SlashCommandHandler, UIWidgets
+        from unittest.mock import MagicMock
+        from pathlib import Path
+
+        widgets = UIWidgets(
+            conversation=MagicMock(),
+            right_sidebar=MagicMock(),
+            left_sidebar=MagicMock(),
+        )
+        handler = SlashCommandHandler(widgets, MagicMock(), Path("."))
+        prompt = PromptInput()
+        prompt.set_completions(handler.completions())
+        names = [
+            prompt._completer.item(i).data(Qt.ItemDataRole.UserRole)
+            for i in range(prompt._completer.count())
+        ]
+        assert "/help" in names
+        assert "/clear" in names
+
+    def test_completions_refresh_callback(self, qapp):
+        """Verify on_completions_changed callback fires when load_maps is called."""
+        from pyside_gui.commands import SlashCommandHandler, UIWidgets
+        from pathlib import Path
+
+        widgets = UIWidgets(
+            conversation=MagicMock(),
+            right_sidebar=MagicMock(),
+            left_sidebar=MagicMock(),
+        )
+        handler = SlashCommandHandler(widgets, MagicMock(), Path("."))
+        refreshed = []
+        handler.set_on_completions_changed(lambda: refreshed.append(1))
+        handler.load_maps()  # should trigger the callback
+        assert len(refreshed) == 1
