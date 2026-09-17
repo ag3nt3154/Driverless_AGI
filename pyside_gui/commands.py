@@ -290,7 +290,6 @@ class SlashCommandHandler:
 
     def _cmd_revise_history(self, arg: str | None) -> str | None:
         """Remove the last N steps from the session log."""
-        from pathlib import Path
         from agent.session_store import write_session
         from tui.revise_history import format_step_summaries
 
@@ -344,7 +343,7 @@ class SlashCommandHandler:
         summary = format_step_summaries(infos)
         count_label = f"{n} step{'s' if n != 1 else ''}"
         result = QMessageBox.question(
-            None,
+            conv,
             "Revise History",
             f"Will remove {count_label}:\n\n{summary}\n\nConfirm?",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
@@ -387,6 +386,9 @@ class SlashCommandHandler:
                     conv.append_user_message(content)
                 elif role == "assistant" and content:
                     conv.append_assistant(content)
+                elif role == "tool":
+                    truncated = content[:80] + "…" if len(content) > 80 else content
+                    conv.append_info(f"↳ tool result: {truncated}")
 
             conv.append_info(f"Removed {n} step{'s' if n != 1 else ''}.")
         except Exception as exc:
