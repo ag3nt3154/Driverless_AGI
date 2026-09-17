@@ -19,6 +19,7 @@ _SLASH_HELP = {
     "/plan": "Enter plan mode", "/model": "Switch model  (/model <id>)",
     "/wtf": "Diagnose the active conversation  (/wtf [description])",
     "/show-pet": "Toggle desktop pet visibility",
+    "/revise-history": "Undo last N steps  (/revise-history [N])",
 }
 
 
