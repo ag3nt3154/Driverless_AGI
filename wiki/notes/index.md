@@ -2,7 +2,7 @@
 
 Navigation to useful findings and open questions.
 
-> Last updated: 2026-09-15
+> Last updated: 2026-09-17
 
 - [Production review — 2026-09-15](production-review-2026-09-15.md): 19 actionable findings
   across subagents, the agent loop, PySide GUI, and session persistence; verdict not
@@ -30,6 +30,8 @@ Navigation to useful findings and open questions.
 - [Project TODOs](project-todos.md): open and completed tasks.
 - [PySide thinking display](pyside-thinking-display-2026-09-12.md): completed behavior and
   verification details for the three-line streaming preview and final Markdown rendering.
+- Slash-command autocomplete (2026-09-17): **implemented**; `SlashCompleterPopup` wired into
+  `PromptInput`; 40 tests passing. See [architecture](../architecture.md) for details.
 - Codex skill lifecycle finding (2026-09-06) is recorded in [wiki contract](wiki-contract.md)
   and [workflows](../workflows.md); completion is limited to skill files and lifecycle docs.
 - Codex completion verification (2026-09-06): focused dagi wiki-delegation tests passed, 59

@@ -2,7 +2,7 @@
 
 Project knowledge and navigation.
 
-> Last updated: 2026-09-15
+> Last updated: 2026-09-17
 
 - [Production review — 2026-09-15](notes/production-review-2026-09-15.md): 19 actionable
   findings; verdict **not production-ready**; recommendations remain unapproved.
@@ -27,6 +27,14 @@ Project knowledge and navigation.
 - [Image input research and proposal](notes/image-input-proposal-2026-09-13.md): research and detailed
   implementation handoff recorded; proposed design is **unapproved** and no implementation or
   endpoint test was performed.
+
+## Implemented features
+
+- **Slash-command autocomplete** (2026-09-17): `SlashCompleterPopup` in
+  `pyside_gui/slash_completer.py`; wired into `PromptInput` and `_Editor`. Typing `/`
+  shows a filtered popup of all commands, skills, and workflows. Tab/Enter accepts,
+  Up/Down navigates, Escape dismisses. Completions refresh automatically on `/wd`.
+  40 tests in `tests/pyside_gui/test_slash_completer.py`.
 
 ## Approved designs
 

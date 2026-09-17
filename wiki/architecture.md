@@ -2,13 +2,16 @@
 
 Current components and their relationships.
 
-> Last updated: 2026-09-05
+> Last updated: 2026-09-17
 
 ## Entry Points
 
 - **TUI** (`tui/app.py`): Textual-based terminal UI; primary interactive entry point.
 - **PySide GUI** (`pyside_gui/`): Qt desktop UI; collapsible left sidebar with session
   history, file tree, file viewer, and plan views. Right sidebar for media/VAD.
+  Prompt input has slash-command autocomplete (`SlashCompleterPopup` in
+  `slash_completer.py`) — typing `/` shows a filtered popup of all available
+  commands, skills, and workflows; Tab/Enter accepts, Up/Down navigates, Escape dismisses.
 - **Telegram** (`tg/bot.py`): Async Telegram bot; requires `TELEGRAM_ALLOWED_CHAT_IDS`.
 - **CLI** (`agent/cli_utils.py`): Shared helpers for TUI and future entry points.
 - **Electron/dagi_gui**: Archived; not actively maintained.
