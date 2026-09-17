@@ -14,6 +14,7 @@ from PySide6.QtWidgets import (
 )
 
 from agent.user_input import ImageAttachment, UserSubmission
+from pyside_gui.slash_completer import SlashCompleterPopup
 
 # Mirrors agent._loop_config.AgentConfig defaults (image_input_*). Kept as
 # local constants so the GUI can reject oversized pastes before they ever
@@ -180,6 +181,9 @@ class PromptInput(QWidget):
         self._editor.setFixedHeight(self.COLLAPSED_HEIGHT)
         layout.addWidget(self._editor)
 
+        self._completer = SlashCompleterPopup(self)
+        self._editor.textChanged.connect(self._on_text_changed)
+
     # ---- forwarded widget-ish API (keeps app.py's existing call sites) ----
 
     def setDisabled(self, disabled: bool) -> None:  # noqa: N802
@@ -204,6 +208,47 @@ class PromptInput(QWidget):
             self._editor.setMaximumHeight(16777215)  # QWIDGETSIZE_MAX
         else:
             self._editor.setFixedHeight(self.COLLAPSED_HEIGHT)
+
+    def set_completions(self, items: list[tuple[str, str]]) -> None:
+        """Load the list of available slash commands for autocomplete."""
+        self._completer.set_items(items)
+
+    def _current_slash_prefix(self) -> str | None:
+        """Return the /command prefix being typed, or None if not applicable."""
+        text = self._editor.toPlainText()
+        if not text.startswith("/"):
+            return None
+        # Autocomplete only applies to the first word (before any space)
+        if " " in text:
+            return None
+        return text
+
+    def _on_text_changed(self) -> None:
+        prefix = self._current_slash_prefix()
+        if prefix is None:
+            self._completer.hide()
+            return
+        self._position_completer()
+        self._completer.apply_filter(prefix)
+
+    def _position_completer(self) -> None:
+        """Position the popup just above the editor."""
+        editor_rect = self._editor.geometry()
+        popup_height = self._completer.height()
+        global_pos = self.mapToGlobal(editor_rect.topLeft())
+        self._completer.setFixedWidth(editor_rect.width())
+        self._completer.move(global_pos.x(), global_pos.y() - popup_height)
+
+    def _accept_completion(self) -> None:
+        """Replace the current text with the selected command + trailing space."""
+        cmd = self._completer.selected_command()
+        if cmd is None:
+            return
+        self._completer.hide()
+        self._editor.setPlainText(cmd + " ")
+        cursor = self._editor.textCursor()
+        cursor.movePosition(cursor.MoveOperation.End)
+        self._editor.setTextCursor(cursor)
 
     # ---- submission ----
 

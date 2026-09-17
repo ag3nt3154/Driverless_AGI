@@ -189,3 +189,63 @@ class TestSlashCompleterPopup:
         assert not popup.isVisible()
         popup.apply_filter("/he")    # matches → should show again
         assert popup.isVisible()
+
+
+from pyside_gui.prompt_input import PromptInput
+
+
+class TestPromptInputCompleter:
+    def test_completer_created(self, qapp):
+        prompt = PromptInput()
+        assert hasattr(prompt, "_completer")
+
+    def test_set_completions_stores_items(self, qapp):
+        prompt = PromptInput()
+        prompt.set_completions([("/help", "Show help"), ("/exit", "Exit")])
+        assert len(prompt._completer._all_items) == 2
+
+    def test_typing_slash_shows_popup(self, qapp):
+        prompt = PromptInput()
+        prompt.set_completions([("/help", "Show help"), ("/exit", "Exit")])
+        prompt._editor.setPlainText("/")
+        prompt._on_text_changed()
+        assert prompt._completer.isVisible()
+
+    def test_typing_space_hides_popup(self, qapp):
+        prompt = PromptInput()
+        prompt.set_completions([("/help", "Show help")])
+        prompt._editor.setPlainText("/help ")
+        prompt._on_text_changed()
+        assert not prompt._completer.isVisible()
+
+    def test_no_slash_prefix_hides_popup(self, qapp):
+        prompt = PromptInput()
+        prompt.set_completions([("/help", "Show help")])
+        prompt._editor.setPlainText("hello")
+        prompt._on_text_changed()
+        assert not prompt._completer.isVisible()
+
+    def test_accept_completion_replaces_text(self, qapp):
+        prompt = PromptInput()
+        prompt.set_completions([("/help", "Show help"), ("/exit", "Exit")])
+        prompt._editor.setPlainText("/he")
+        prompt._on_text_changed()
+        prompt._accept_completion()
+        assert prompt._editor.toPlainText() == "/help "
+
+    def test_accept_completion_hides_popup(self, qapp):
+        prompt = PromptInput()
+        prompt.set_completions([("/help", "Show help")])
+        prompt._editor.setPlainText("/he")
+        prompt._on_text_changed()
+        prompt._accept_completion()
+        assert not prompt._completer.isVisible()
+
+    def test_accept_completion_noop_when_no_selection(self, qapp):
+        prompt = PromptInput()
+        prompt.set_completions([("/help", "Show help")])
+        prompt._editor.setPlainText("/zzz")
+        prompt._on_text_changed()  # no match, popup hidden
+        original = prompt._editor.toPlainText()
+        prompt._accept_completion()
+        assert prompt._editor.toPlainText() == original
