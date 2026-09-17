@@ -6,8 +6,12 @@
   `docs/superpowers/plans/2026-09-17-revise-history.md` (11 tasks). Tasks 1-4
   done: `SessionLog.peek_last_step()` and `SessionLog.revise_last_step()`
   (`agent/session_log.py`), with tests in `tests/test_session_log_revise.py`
-  (16/16 passing). Remaining: TUI/GUI wiring and the `/revise-history`
-  command itself (Tasks 5-11).
+  (16/16 passing). Task 6 done: `/revise-history` registered in TUI slash
+  command help. Task 7 done: `tui/revise_history.py` adds
+  `ReviseConfirmScreen` (a `ModalScreen[bool]` confirmation dialog) and
+  `format_step_summaries()`, with tests in `tests/test_revise_history_tui.py`
+  (3/3 passing). Remaining: wiring the modal into `tui/commands.py` and the
+  rest of the TUI/GUI command flow (Tasks 8-11).
 
 - **Production review (R5, R8, R11, R17)** — remaining deferred findings from
   `wiki/notes/production-review-2026-09-15.md`. R5 (session filename
