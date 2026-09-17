@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from PySide6.QtCore import QBuffer, QIODevice, QMimeData, Qt, Signal
-from PySide6.QtGui import QImage, QKeyEvent, QPixmap
+from PySide6.QtGui import QFocusEvent, QImage, QKeyEvent, QPixmap
 from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
@@ -155,6 +155,10 @@ class _Editor(QPlainTextEdit):
             return
 
         super().keyPressEvent(event)
+
+    def focusOutEvent(self, event: QFocusEvent) -> None:  # noqa: N802
+        self._owner._completer.hide()
+        super().focusOutEvent(event)
 
     def canInsertFromMimeData(self, source: QMimeData) -> bool:  # noqa: N802
         if source.hasImage() or source.hasUrls():
