@@ -227,11 +227,19 @@ class SessionLog:
         if step_start_idx is None:
             return None
 
-        # Extract tool names and assistant snippet from events in range
+        # Extract tool names and assistant snippet from events in range.
+        # Only main-branch events count: a subagent spawned mid-step can
+        # interleave its own TOOL_CALL/ASSISTANT_MESSAGE events here before
+        # this step's STEP_END is appended, and those belong to the
+        # subagent's branch, not to the main-branch step being summarized.
+        # If the step has multiple main-branch ASSISTANT_MESSAGE events,
+        # the last one wins (intentional).
         tool_names: list[str] = []
         assistant_snippet = ""
         for i in range(step_start_idx, step_end_idx + 1):
             evt = self._events[i]
+            if evt.branch != "main":
+                continue
             if evt.type == ev.TOOL_CALL:
                 tool_names.append(evt.data.get("name", "?"))
             elif evt.type == ev.ASSISTANT_MESSAGE:
