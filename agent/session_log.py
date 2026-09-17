@@ -124,6 +124,16 @@ class SessionEvent:
         )
 
 
+@dataclass(frozen=True, slots=True)
+class StepInfo:
+    """Read-only summary of a step for the revise-history UI."""
+    step_number: int       # absolute step count across the session
+    turn: int
+    tool_names: list[str]
+    assistant_snippet: str
+    event_range: tuple[int, int]  # (first_seq, last_seq) of events in this step
+
+
 class SessionLog:
     """Append-only event log with write-time invariant enforcement."""
 
@@ -190,6 +200,67 @@ class SessionLog:
             if event.type == ev.BRANCH_START and event.data.get("branch") == branch_id:
                 return event
         return None
+
+    def peek_last_step(self) -> StepInfo | None:
+        """Return a read-only summary of the last completed step, or None."""
+        step_end_idx = None
+        for i in range(len(self._events) - 1, -1, -1):
+            if self._events[i].type == ev.STEP_END and self._events[i].branch == "main":
+                step_end_idx = i
+                break
+        if step_end_idx is None:
+            return None
+
+        end_evt = self._events[step_end_idx]
+        target_turn = end_evt.data["turn"]
+        target_step = end_evt.data["step"]
+
+        # Walk backward to find the matching step/start
+        step_start_idx = None
+        for i in range(step_end_idx - 1, -1, -1):
+            evt = self._events[i]
+            if (evt.type == ev.STEP_START and evt.branch == "main"
+                    and evt.data["turn"] == target_turn
+                    and evt.data["step"] == target_step):
+                step_start_idx = i
+                break
+        if step_start_idx is None:
+            return None
+
+        # Extract tool names and assistant snippet from events in range
+        tool_names: list[str] = []
+        assistant_snippet = ""
+        for i in range(step_start_idx, step_end_idx + 1):
+            evt = self._events[i]
+            if evt.type == ev.TOOL_CALL:
+                tool_names.append(evt.data.get("name", "?"))
+            elif evt.type == ev.ASSISTANT_MESSAGE:
+                content = evt.data.get("message", {}).get("content", "")
+                if isinstance(content, str):
+                    text = content
+                elif isinstance(content, list):
+                    text = " ".join(
+                        b.get("text", "") for b in content
+                        if isinstance(b, dict) and b.get("type") == "text"
+                    )
+                else:
+                    text = str(content)
+                text = text.replace("\n", " ").strip()
+                assistant_snippet = text[:100] + ("…" if len(text) > 100 else "")
+
+        # Count absolute step number
+        abs_step = 0
+        for i in range(step_end_idx + 1):
+            if self._events[i].type == ev.STEP_END and self._events[i].branch == "main":
+                abs_step += 1
+
+        return StepInfo(
+            step_number=abs_step,
+            turn=target_turn,
+            tool_names=tool_names,
+            assistant_snippet=assistant_snippet,
+            event_range=(self._events[step_start_idx].seq, end_evt.seq),
+        )
 
     def _absorb(self, event: SessionEvent) -> None:
         """Fold one committed event into the log's derived state."""
