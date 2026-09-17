@@ -15,7 +15,10 @@
   plain-Enter accept the completion, Escape hides the popup, Up/Down navigate
   the list); Tab without a popup is silently swallowed (no literal tab char);
   7 new `TestEditorKeyHandling` tests pass; caller wiring in `app.py`/`_dispatch.py`
-  still pending.
+  still pending; code quality pass applied — Shift+Tab now correctly falls
+  through (no longer accepts completion), clarity comment added for
+  Shift/Ctrl+Enter fall-through path, 4 additional edge-case tests added
+  (Shift+Enter, Ctrl+Enter, Shift+Tab, Enter-without-popup); 38 tests pass.
 
 - **Production review (R5, R8, R11, R17)** — remaining deferred findings from
   `wiki/notes/production-review-2026-09-15.md`. R5 (session filename
