@@ -2,7 +2,7 @@
 
 ## In progress
 
-- **Slash-command autocomplete (Task 4+)** — `completions()` method added
+- **Slash-command autocomplete (Task 5+)** — `completions()` method added
   (Task 1), `SlashCompleterPopup` widget created (Task 2), popup re-show bug
   fixed and test coverage expanded (Task 3), popup wired into `PromptInput`
   (Task 3 integration complete — show/hide/filter/accept via `set_completions`,
@@ -10,8 +10,12 @@
   positioning order corrected (apply_filter before _position_completer),
   newline guard added to `_current_slash_prefix`, tests updated to rely on
   signal firing rather than manual `_on_text_changed()` calls, edge-case
-  test added for empty completions + slash; key-nav (Tab/↑/↓) and caller
-  wiring in `app.py`/`_dispatch.py` still pending.
+  test added for empty completions + slash; Task 4 complete — `_Editor.keyPressEvent`
+  now intercepts Tab/Enter/Escape/Up/Down when the popup is visible (Tab and
+  plain-Enter accept the completion, Escape hides the popup, Up/Down navigate
+  the list); Tab without a popup is silently swallowed (no literal tab char);
+  7 new `TestEditorKeyHandling` tests pass; caller wiring in `app.py`/`_dispatch.py`
+  still pending.
 
 - **Production review (R5, R8, R11, R17)** — remaining deferred findings from
   `wiki/notes/production-review-2026-09-15.md`. R5 (session filename

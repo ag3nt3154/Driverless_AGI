@@ -110,6 +110,37 @@ class _Editor(QPlainTextEdit):
     def keyPressEvent(self, event: QKeyEvent) -> None:
         mods = event.modifiers()
         key = event.key()
+        completer_visible = self._owner._completer.isVisible()
+
+        if completer_visible:
+            if key == Qt.Key.Key_Tab:
+                self._owner._accept_completion()
+                event.accept()
+                return
+            if key in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
+                if not (mods & (
+                    Qt.KeyboardModifier.ShiftModifier
+                    | Qt.KeyboardModifier.ControlModifier
+                )):
+                    self._owner._accept_completion()
+                    event.accept()
+                    return
+            if key == Qt.Key.Key_Escape:
+                self._owner._completer.hide()
+                event.accept()
+                return
+            if key == Qt.Key.Key_Down:
+                self._owner._completer.move_selection(1)
+                event.accept()
+                return
+            if key == Qt.Key.Key_Up:
+                self._owner._completer.move_selection(-1)
+                event.accept()
+                return
+
+        if key == Qt.Key.Key_Tab:
+            event.accept()
+            return
 
         if key in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
             if mods & (

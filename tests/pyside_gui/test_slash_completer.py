@@ -256,3 +256,84 @@ class TestPromptInputCompleter:
         prompt._editor.setPlainText("/")
         # signal fires
         assert not prompt._completer.isVisible()
+
+
+from PySide6.QtGui import QKeyEvent
+from PySide6.QtCore import QEvent
+
+
+def _make_key_event(key, modifiers=Qt.KeyboardModifier.NoModifier):
+    return QKeyEvent(QEvent.Type.KeyPress, key, modifiers, "", False)
+
+
+class TestEditorKeyHandling:
+    def test_tab_accepts_completion(self, qapp):
+        prompt = PromptInput()
+        prompt.set_completions([("/help", "Show help"), ("/exit", "Exit")])
+        prompt._editor.setPlainText("/he")
+        assert prompt._completer.isVisible()
+        event = _make_key_event(Qt.Key.Key_Tab)
+        prompt._editor.keyPressEvent(event)
+        assert prompt._editor.toPlainText() == "/help "
+        assert not prompt._completer.isVisible()
+
+    def test_escape_hides_popup(self, qapp):
+        prompt = PromptInput()
+        prompt.set_completions([("/help", "Show help")])
+        prompt._editor.setPlainText("/")
+        assert prompt._completer.isVisible()
+        event = _make_key_event(Qt.Key.Key_Escape)
+        prompt._editor.keyPressEvent(event)
+        assert not prompt._completer.isVisible()
+
+    def test_down_arrow_moves_selection(self, qapp):
+        prompt = PromptInput()
+        prompt.set_completions([("/clear", "Clear"), ("/exit", "Exit"), ("/help", "Help")])
+        prompt._editor.setPlainText("/")
+        initial_cmd = prompt._completer.selected_command()
+        event = _make_key_event(Qt.Key.Key_Down)
+        prompt._editor.keyPressEvent(event)
+        after_cmd = prompt._completer.selected_command()
+        assert after_cmd != initial_cmd
+
+    def test_up_arrow_moves_selection(self, qapp):
+        prompt = PromptInput()
+        prompt.set_completions([("/clear", "Clear"), ("/exit", "Exit"), ("/help", "Help")])
+        prompt._editor.setPlainText("/")
+        # Move down first to have somewhere to go up from
+        prompt._completer.move_selection(1)
+        before = prompt._completer.currentRow()
+        event = _make_key_event(Qt.Key.Key_Up)
+        prompt._editor.keyPressEvent(event)
+        assert prompt._completer.currentRow() == before - 1
+
+    def test_enter_with_popup_accepts_and_does_not_submit(self, qapp):
+        prompt = PromptInput()
+        prompt.set_completions([("/help", "Show help")])
+        prompt._editor.setPlainText("/he")
+        assert prompt._completer.isVisible()
+        submitted = []
+        prompt.submitted.connect(lambda s: submitted.append(s))
+        event = _make_key_event(Qt.Key.Key_Return)
+        prompt._editor.keyPressEvent(event)
+        assert prompt._editor.toPlainText() == "/help "
+        assert len(submitted) == 0
+
+    def test_tab_without_popup_does_not_insert_tab(self, qapp):
+        prompt = PromptInput()
+        prompt.set_completions([("/help", "Show help")])
+        prompt._editor.setPlainText("hello")
+        assert not prompt._completer.isVisible()
+        event = _make_key_event(Qt.Key.Key_Tab)
+        prompt._editor.keyPressEvent(event)
+        assert prompt._editor.toPlainText() == "hello"
+
+    def test_down_arrow_without_popup_passes_through(self, qapp):
+        """Down arrow when popup is not visible should not crash."""
+        prompt = PromptInput()
+        prompt.set_completions([("/help", "Show help")])
+        prompt._editor.setPlainText("hello")
+        assert not prompt._completer.isVisible()
+        event = _make_key_event(Qt.Key.Key_Down)
+        # Should not raise; QPlainTextEdit handles it normally
+        prompt._editor.keyPressEvent(event)
