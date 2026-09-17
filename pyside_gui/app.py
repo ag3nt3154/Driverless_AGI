@@ -141,6 +141,8 @@ class DagiMainWindow(QMainWindow):
         self._cmd_handler.set_on_session_cleared(self._on_session_cleared)
         self._cmd_handler.set_desktop_pet(self._desktop_pet)
         self._cmd_handler.load_maps()
+        # Push initial completions explicitly; the callback below handles future refreshes
+        # (e.g. after /wd changes the project path and reloads skill/workflow maps).
         self._prompt.set_completions(self._cmd_handler.completions())
         self._cmd_handler.set_on_completions_changed(
             lambda: self._prompt.set_completions(self._cmd_handler.completions())
