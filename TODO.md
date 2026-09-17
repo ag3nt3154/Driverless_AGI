@@ -2,6 +2,13 @@
 
 ## In progress
 
+- **`/revise-history` slash command** — implementing per
+  `docs/superpowers/plans/2026-09-17-revise-history.md` (11 tasks). Task 1
+  (failing tests for `SessionLog.peek_last_step`) and Task 2
+  (`SessionLog.peek_last_step()` implementation, `agent/session_log.py`)
+  done. Remaining: `revise_last_step()`, TUI/GUI wiring, and the
+  `/revise-history` command itself.
+
 - **Production review (R5, R8, R11, R17)** — remaining deferred findings from
   `wiki/notes/production-review-2026-09-15.md`. R5 (session filename
   collisions) and R8 (pipe subagent prompt loss) deferred pending design
