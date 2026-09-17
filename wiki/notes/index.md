@@ -4,6 +4,15 @@ Navigation to useful findings and open questions.
 
 > Last updated: 2026-09-17
 
+- Wiki-index injection now sends only the wiki root path (2026-09-17): **implemented**;
+  `_build_wiki_index_context` in `agent/_loop_helpers.py` previously read and concatenated
+  every section `.index.md` file into a `[WIKI INDEX]` block on every turn — replaced with a
+  one-line path pointer (`[WIKI]\nProject wiki root: <path>\n[END WIKI]`), since the model
+  already has `wiki-query`/read tools to fetch specifics on demand. Verified via
+  `tests/test_loop_helpers.py` + `tests/test_subagent_main.py` (47/47 passing); committed as
+  `e2369be`. Surfaced two pre-existing, unrelated `test_agent_loop.py` failures and a `conda
+  run` stdout-buffering gotcha while verifying — both logged in [errors](../errors/index.md).
+
 - [Production review — 2026-09-15](production-review-2026-09-15.md): 19 actionable findings
   across subagents, the agent loop, PySide GUI, and session persistence; verdict not
   production-ready; recommendations remain unapproved.

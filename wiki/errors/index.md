@@ -2,7 +2,7 @@
 
 Navigation to observed issues and verified fixes.
 
-> Last updated: 2026-09-15
+> Last updated: 2026-09-17
 
 ## Recent confirmed issues (2026-09)
 
@@ -52,7 +52,29 @@ provider response falls back to SDK default (600s read, `max_retries=2`). Fix: c
 `test_pyside_app_stays_under_file_cap` asserts ≤500 lines; the file has been 547+ on `main`
 since the left-sidebar work. Raise the cap or split the module.
 
+**Two pre-existing `test_agent_loop.py` failures** · `open` · found 2026-09-17:
+Isolated while investigating an apparent test hang (see environment issue below).
+Both fail on a clean run (`python -u -m pytest tests/test_agent_loop.py -v --timeout=15
+--timeout-method=thread`, dagi env python directly) — unrelated to the same-day wiki-index
+change (`agent/_loop_helpers.py`), which neither test touches.
+1. `TestDispatchToolCallsExtraction::test_deferred_system_messages_land_after_all_tool_results`
+   — `roles.index("system", 1)` raises `ValueError`; the deferred system notification is not
+   landing after both tool results as expected.
+2. `TestProcessLifecycle::test_pause_during_tool_suppresses_post_tool_thinking` — after
+   `thread.join(timeout=2.0)`, `thread.is_alive()` is still `True`; looks like a genuine race
+   in pause/resume rather than a flaky timing assumption. Not yet root-caused.
+
 ## Known environment issues
+
+**`conda run` swallows pytest output until the process exits** · found 2026-09-17:
+`conda run -n dagi python -m pytest ...` fully buffers stdout whenever it isn't attached to a
+TTY — piping to `tail` or redirecting to a file both look identical to a hang, sometimes for
+10+ minutes, even though the suite itself finishes in seconds. Not `conda run`'s own overhead;
+its child process's stdout buffering policy switches from line-buffered to fully-buffered once
+detached from a terminal, and `conda run` doesn't flush early.
+Workaround: call the env's interpreter directly (`<conda root>/envs/dagi/python.exe -u -m
+pytest ...`), bypassing the `conda run` wrapper, and pass `-u` for unbuffered output so
+progress streams live.
 
 **pytest-qt DLL failure without full conda activation** · found 2026-09-05:
 Symptom: `ImportError: DLL load failed while importing QtCore: The specified procedure could
