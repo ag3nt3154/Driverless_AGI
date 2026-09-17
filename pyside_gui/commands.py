@@ -85,15 +85,13 @@ class SlashCommandHandler:
         }
 
     def completions(self) -> list[tuple[str, str]]:
-        """Return all valid slash-command names with descriptions."""
-        result: list[tuple[str, str]] = []
-        for name, desc in _SLASH_HELP.items():
-            result.append((name, desc))
+        """Return completions from builtin commands, loaded skills, and loaded workflows."""
+        combined: dict[str, str] = dict(_SLASH_HELP)
         for name, skill in self._skill_map.items():
-            result.append((name, skill.description or ""))
+            combined[name] = skill.description or ""
         for name, wf in self._workflow_map.items():
-            result.append((name, wf.description or ""))
-        return result
+            combined[name] = wf.description or ""
+        return list(combined.items())
 
     def handle(self, raw: str) -> str | None:
         """Process a slash command.
