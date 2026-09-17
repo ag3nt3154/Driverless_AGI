@@ -10,17 +10,16 @@ from agent.prompts import load_prompt
 
 
 def _build_wiki_index_context(memory_root: Path) -> str | None:
-    """Read wiki root and section .index.md files; return a formatted context block."""
+    """Point the model at the wiki root path instead of inlining its contents.
+
+    Previously this read and concatenated every section .index.md file into
+    the context on every turn — expensive and stale-prone as the wiki grows.
+    The model has wiki-query/read tools; it only needs to know where to look.
+    """
     wiki_root = memory_root / "wiki"
-    root_index = wiki_root / ".index.md"
-    if not root_index.exists():
+    if not wiki_root.exists():
         return None
-    parts = [root_index.read_text(encoding="utf-8")]
-    for section in ("projects", "knowledge"):
-        section_index = wiki_root / section / ".index.md"
-        if section_index.exists():
-            parts.append(section_index.read_text(encoding="utf-8"))
-    return "[WIKI INDEX]\n" + "\n\n---\n\n".join(parts) + "\n[END WIKI INDEX]"
+    return f"[WIKI]\nProject wiki root: {wiki_root}\n[END WIKI]"
 
 
 def _format_reload_notification(
