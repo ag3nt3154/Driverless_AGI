@@ -2,23 +2,15 @@
 
 ## In progress
 
-- **Slash-command autocomplete (Task 5+)** — `completions()` method added
-  (Task 1), `SlashCompleterPopup` widget created (Task 2), popup re-show bug
-  fixed and test coverage expanded (Task 3), popup wired into `PromptInput`
-  (Task 3 integration complete — show/hide/filter/accept via `set_completions`,
-  `_on_text_changed`, `_accept_completion`); code quality fixes applied:
-  positioning order corrected (apply_filter before _position_completer),
-  newline guard added to `_current_slash_prefix`, tests updated to rely on
-  signal firing rather than manual `_on_text_changed()` calls, edge-case
-  test added for empty completions + slash; Task 4 complete — `_Editor.keyPressEvent`
-  now intercepts Tab/Enter/Escape/Up/Down when the popup is visible (Tab and
-  plain-Enter accept the completion, Escape hides the popup, Up/Down navigate
-  the list); Tab without a popup is silently swallowed (no literal tab char);
-  7 new `TestEditorKeyHandling` tests pass; caller wiring in `app.py`/`_dispatch.py`
-  still pending; code quality pass applied — Shift+Tab now correctly falls
-  through (no longer accepts completion), clarity comment added for
-  Shift/Ctrl+Enter fall-through path, 4 additional edge-case tests added
-  (Shift+Enter, Ctrl+Enter, Shift+Tab, Enter-without-popup); 38 tests pass.
+- **Slash-command autocomplete** — Tasks 1–5 complete. `completions()` method
+  added (Task 1), `SlashCompleterPopup` widget created (Task 2), popup wired
+  into `PromptInput` with show/hide/filter/accept (Task 3), `_Editor.keyPressEvent`
+  intercepts Tab/Enter/Escape/Up/Down when popup is visible (Task 4), app-level
+  wiring complete (Task 5): `_build_commands()` now calls
+  `prompt.set_completions()` after `load_maps()` and registers an
+  `_on_completions_changed` callback on `SlashCommandHandler` so completions
+  refresh automatically when `/wd` changes the working directory; 40 tests pass.
+  Next: Task 6+ (dispatch integration, `/wd` live refresh smoke test).
 
 - **Production review (R5, R8, R11, R17)** — remaining deferred findings from
   `wiki/notes/production-review-2026-09-15.md`. R5 (session filename
