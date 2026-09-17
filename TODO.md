@@ -6,7 +6,11 @@
   (Task 1), `SlashCompleterPopup` widget created (Task 2), popup re-show bug
   fixed and test coverage expanded (Task 3), popup wired into `PromptInput`
   (Task 3 integration complete — show/hide/filter/accept via `set_completions`,
-  `_on_text_changed`, `_accept_completion`); key-nav (Tab/↑/↓) and caller
+  `_on_text_changed`, `_accept_completion`); code quality fixes applied:
+  positioning order corrected (apply_filter before _position_completer),
+  newline guard added to `_current_slash_prefix`, tests updated to rely on
+  signal firing rather than manual `_on_text_changed()` calls, edge-case
+  test added for empty completions + slash; key-nav (Tab/↑/↓) and caller
   wiring in `app.py`/`_dispatch.py` still pending.
 
 - **Production review (R5, R8, R11, R17)** — remaining deferred findings from
