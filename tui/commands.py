@@ -370,19 +370,24 @@ class SlashCommandsMixin:
                 return
             for _ in range(n):
                 log.revise_last_step()
-            # Rewrite the JSONL file
-            tracker_path = getattr(self._active_loop.tracker, "_path", None)
-            if isinstance(tracker_path, Path):
-                events_path = tracker_path.with_suffix(".events.jsonl")
-                write_session(events_path, log.events)
-            # Sync the derived message cache
-            self._active_loop._sync_messages()
-            # Re-render
-            conv.clear()
-            self._render_messages_from_log(log)
-            conv.append_info(
-                f"[green]✓ Removed {n} step{'s' if n != 1 else ''}.[/green]"
-            )
+            try:
+                # Rewrite the JSONL file
+                tracker_path = getattr(self._active_loop.tracker, "_path", None)
+                if isinstance(tracker_path, Path):
+                    events_path = tracker_path.with_suffix(".events.jsonl")
+                    write_session(events_path, log.events)
+                # Sync the derived message cache
+                self._active_loop._sync_messages()
+                # Re-render
+                conv.clear()
+                self._render_messages_from_log(log)
+                conv.append_info(
+                    f"[green]✓ Removed {n} step{'s' if n != 1 else ''}.[/green]"
+                )
+            except Exception as exc:
+                conv.append_error(
+                    f"Revision applied in memory but failed to persist to disk: {exc}"
+                )
 
         self.push_screen(ReviseConfirmScreen(infos), callback=_on_confirm)
 
@@ -395,8 +400,12 @@ class SlashCommandsMixin:
             if isinstance(content, list):
                 parts = []
                 for b in content:
-                    if isinstance(b, dict) and b.get("type") == "text":
+                    if not isinstance(b, dict):
+                        continue
+                    if b.get("type") == "text":
                         parts.append(b.get("text", ""))
+                    elif b.get("type") in ("dagi_image", "image_url"):
+                        parts.append("[image]")
                 content = " ".join(parts)
             content = str(content).strip()
             if role == "user":
