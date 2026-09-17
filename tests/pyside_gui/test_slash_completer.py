@@ -208,21 +208,21 @@ class TestPromptInputCompleter:
         prompt = PromptInput()
         prompt.set_completions([("/help", "Show help"), ("/exit", "Exit")])
         prompt._editor.setPlainText("/")
-        prompt._on_text_changed()
+        # signal fires automatically from textChanged connection
         assert prompt._completer.isVisible()
 
     def test_typing_space_hides_popup(self, qapp):
         prompt = PromptInput()
         prompt.set_completions([("/help", "Show help")])
         prompt._editor.setPlainText("/help ")
-        prompt._on_text_changed()
+        # signal fires automatically from textChanged connection
         assert not prompt._completer.isVisible()
 
     def test_no_slash_prefix_hides_popup(self, qapp):
         prompt = PromptInput()
         prompt.set_completions([("/help", "Show help")])
         prompt._editor.setPlainText("hello")
-        prompt._on_text_changed()
+        # signal fires automatically from textChanged connection
         assert not prompt._completer.isVisible()
 
     def test_accept_completion_replaces_text(self, qapp):
@@ -249,3 +249,10 @@ class TestPromptInputCompleter:
         original = prompt._editor.toPlainText()
         prompt._accept_completion()
         assert prompt._editor.toPlainText() == original
+
+    def test_empty_completions_slash_does_not_crash(self, qapp):
+        prompt = PromptInput()
+        prompt.set_completions([])
+        prompt._editor.setPlainText("/")
+        # signal fires
+        assert not prompt._completer.isVisible()

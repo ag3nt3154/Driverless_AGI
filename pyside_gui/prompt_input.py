@@ -218,8 +218,8 @@ class PromptInput(QWidget):
         text = self._editor.toPlainText()
         if not text.startswith("/"):
             return None
-        # Autocomplete only applies to the first word (before any space)
-        if " " in text:
+        # Autocomplete only applies to the first word (before any space or newline)
+        if " " in text or "\n" in text:
             return None
         return text
 
@@ -228,8 +228,8 @@ class PromptInput(QWidget):
         if prefix is None:
             self._completer.hide()
             return
-        self._position_completer()
-        self._completer.apply_filter(prefix)
+        self._completer.apply_filter(prefix)   # resize first (updates height)
+        self._position_completer()             # then position with correct height
 
     def _position_completer(self) -> None:
         """Position the popup just above the editor."""
