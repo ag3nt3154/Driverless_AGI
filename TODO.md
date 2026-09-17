@@ -10,8 +10,17 @@
   command help. Task 7 done: `tui/revise_history.py` adds
   `ReviseConfirmScreen` (a `ModalScreen[bool]` confirmation dialog) and
   `format_step_summaries()`, with tests in `tests/test_revise_history_tui.py`
-  (3/3 passing). Remaining: wiring the modal into `tui/commands.py` and the
-  rest of the TUI/GUI command flow (Tasks 8-11).
+  (3/3 passing). Task 8 done: `tui/commands.py` wires `_cmd_revise_history`
+  into the TUI, including hardening added during review — the persistence/
+  re-render block is wrapped in `try/except` (reports via
+  `conv.append_error` on `write_session` failure, leaving the in-memory
+  revision applied) and `_render_messages_from_log` renders
+  `dagi_image`/`image_url` content blocks as an `"[image]"` placeholder
+  instead of dropping them. Task 9 done: `pyside_gui/commands.py` adds the
+  PySide equivalent, `SlashCommandHandler._cmd_revise_history`, using a
+  blocking `QMessageBox.question(...)` confirm dialog (Qt's synchronous
+  idiom, no async callback needed) and porting both Task 8 hardening fixes.
+  Remaining: Tasks 10-11 (further test coverage / docs, per the plan).
 
 - **Production review (R5, R8, R11, R17)** — remaining deferred findings from
   `wiki/notes/production-review-2026-09-15.md`. R5 (session filename
