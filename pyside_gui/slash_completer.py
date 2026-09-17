@@ -69,13 +69,11 @@ class SlashCompleterPopup(QListWidget):
         self._resize_to_content()
 
     def _resize_to_content(self) -> None:
-        visible_count = sum(
-            1 for i in range(self.count()) if not self.item(i).isHidden()
-        )
-        rows = min(visible_count, _MAX_VISIBLE)
+        rows = min(self.visible_count(), _MAX_VISIBLE)
         if rows == 0:
             self.hide()
             return
+        self.show()
         self.setFixedHeight(rows * _ITEM_HEIGHT + 12)
 
     def selected_command(self) -> str | None:

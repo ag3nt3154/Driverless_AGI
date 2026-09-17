@@ -147,8 +147,7 @@ class TestSlashCompleterPopup:
         popup.set_items(items)
         item = popup.item(0)
         fg = item.foreground().color().name()
-        # Valid items use the highlight colour, not the dim colour
-        assert fg != "#6c7086"
+        assert fg == "#cdd6f4"  # Catppuccin Mocha text color
 
     def test_visible_count_after_filter(self, qapp):
         popup = SlashCompleterPopup(None)
@@ -156,3 +155,37 @@ class TestSlashCompleterPopup:
         popup.set_items(items)
         popup.apply_filter("/h")
         assert popup.visible_count() == 2
+
+    def test_move_selection_backward_wraps(self, qapp):
+        popup = SlashCompleterPopup(None)
+        items = [("/clear", "Clear"), ("/exit", "Exit"), ("/help", "Help")]
+        popup.set_items(items)
+        popup.apply_filter("/")
+        popup.setCurrentRow(0)
+        popup.move_selection(-1)
+        # Should wrap to last visible item
+        assert popup.currentRow() == 2
+
+    def test_selected_command_returns_none_after_no_match(self, qapp):
+        popup = SlashCompleterPopup(None)
+        items = [("/help", "Show help"), ("/exit", "Exit")]
+        popup.set_items(items)
+        popup.apply_filter("/zzz")
+        assert popup.selected_command() is None
+
+    def test_move_selection_skips_hidden_items(self, qapp):
+        popup = SlashCompleterPopup(None)
+        items = [("/aa", "AA"), ("/bb", "BB"), ("/cc", "CC")]
+        popup.set_items(items)
+        popup.apply_filter("/a")  # only /aa visible
+        popup.move_selection(1)   # only one visible item, should stay on /aa
+        assert popup.selected_command() == "/aa"
+
+    def test_popup_reshows_after_no_match_filter(self, qapp):
+        popup = SlashCompleterPopup(None)
+        items = [("/help", "Show help"), ("/exit", "Exit")]
+        popup.set_items(items)
+        popup.apply_filter("/zzz")   # no match → hidden
+        assert not popup.isVisible()
+        popup.apply_filter("/he")    # matches → should show again
+        assert popup.isVisible()
