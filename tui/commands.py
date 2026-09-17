@@ -83,6 +83,8 @@ class SlashCommandsMixin:
             self._cmd_copy()
         elif cmd == "/hist":
             self._cmd_hist(arg)
+        elif cmd == "/revise-history":
+            self._cmd_revise_history(arg)
         elif cmd == "/init":
             from agent.cli_utils import _cmd_init
             _cmd_init(self._project_path)
@@ -308,3 +310,103 @@ class SlashCommandsMixin:
             conv.append_info("[dim]No session history found in .dagi/logs/[/dim]")
             return
         self.push_screen(HistoryScreen(logs_dir, max_sessions=n))
+
+    def _cmd_revise_history(self, arg: str | None) -> None:
+        """Remove the last N steps from the session log."""
+        from pathlib import Path
+        from agent.session_store import write_session
+        from tui.revise_history import ReviseConfirmScreen
+
+        conv = self.query_one(ConversationPane)
+
+        if self._worker and self._worker.is_alive():
+            conv.append_info("[yellow]⚠ Cannot revise while the agent is running.[/yellow]")
+            return
+
+        if self._active_loop is None:
+            conv.append_info("[dim]Nothing to revise — no active conversation.[/dim]")
+            return
+
+        log = self._active_loop.log
+
+        # Parse N
+        n = 1
+        if arg:
+            try:
+                n = int(arg)
+            except ValueError:
+                conv.append_info(f"[red]Invalid argument:[/red] expected a number, got {arg!r}")
+                return
+            if n < 1:
+                conv.append_info("[red]N must be at least 1.[/red]")
+                return
+
+        # Peek at the steps to be removed, using a disposable copy of the log
+        # so the real log is untouched until the user confirms.
+        from agent.session_log import SessionLog
+        infos = []
+        temp_log = SessionLog(seed=list(log.events))
+        for _ in range(n):
+            info = temp_log.peek_last_step()
+            if info is None:
+                break
+            infos.append(info)
+            temp_log.revise_last_step()
+
+        if not infos:
+            conv.append_info("[dim]Nothing to revise — no steps found.[/dim]")
+            return
+
+        if len(infos) < n:
+            conv.append_info(
+                f"[red]Only {len(infos)} step{'s' if len(infos) != 1 else ''} available, "
+                f"pass {len(infos)} or fewer.[/red]"
+            )
+            return
+
+        def _on_confirm(confirmed: bool) -> None:
+            if not confirmed:
+                conv.append_info("[dim]Revision cancelled.[/dim]")
+                return
+            for _ in range(n):
+                log.revise_last_step()
+            # Rewrite the JSONL file
+            tracker_path = getattr(self._active_loop.tracker, "_path", None)
+            if isinstance(tracker_path, Path):
+                events_path = tracker_path.with_suffix(".events.jsonl")
+                write_session(events_path, log.events)
+            # Sync the derived message cache
+            self._active_loop._sync_messages()
+            # Re-render
+            conv.clear()
+            self._render_messages_from_log(log)
+            conv.append_info(
+                f"[green]✓ Removed {n} step{'s' if n != 1 else ''}.[/green]"
+            )
+
+        self.push_screen(ReviseConfirmScreen(infos), callback=_on_confirm)
+
+    def _render_messages_from_log(self, log) -> None:
+        """Re-render the conversation from the session log's surface messages."""
+        conv = self.query_one(ConversationPane)
+        for msg in log.derive_messages():
+            role = msg.get("role")
+            content = msg.get("content", "")
+            if isinstance(content, list):
+                parts = []
+                for b in content:
+                    if isinstance(b, dict) and b.get("type") == "text":
+                        parts.append(b.get("text", ""))
+                content = " ".join(parts)
+            content = str(content).strip()
+            if role == "user":
+                from rich.panel import Panel
+                conv.write(Panel(
+                    content,
+                    title="[bold cyan]You[/bold cyan]",
+                    title_align="left", border_style="cyan", padding=(0, 1),
+                ))
+            elif role == "assistant" and content:
+                conv.append_assistant(content)
+            elif role == "tool":
+                conv.append_info(f"[dim]  ↳ tool result: {content[:80]}…[/dim]" if len(content) > 80 else f"[dim]  ↳ tool result: {content}[/dim]")
