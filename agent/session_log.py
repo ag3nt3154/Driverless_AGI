@@ -284,8 +284,12 @@ class SessionLog:
         first_seq, last_seq = info.event_range
 
         # Find index range of the step's events
-        start_idx = next(i for i, e in enumerate(self._events) if e.seq == first_seq)
-        end_idx = next(i for i, e in enumerate(self._events) if e.seq == last_seq)
+        start_idx = next((i for i, e in enumerate(self._events) if e.seq == first_seq), None)
+        end_idx = next((i for i, e in enumerate(self._events) if e.seq == last_seq), None)
+        if start_idx is None or end_idx is None:
+            raise RuntimeError(
+                f"revise_last_step: could not locate step event range {info.event_range} in log"
+            )
 
         # Also remove a turn/end that immediately follows the step/end (closed turn)
         turn_end_idx = None
