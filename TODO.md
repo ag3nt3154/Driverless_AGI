@@ -2,29 +2,6 @@
 
 ## In progress
 
-- **`/revise-history` slash command** — implementing per
-  `docs/superpowers/plans/2026-09-17-revise-history.md` (11 tasks). Tasks 1-4
-  done: `SessionLog.peek_last_step()` and `SessionLog.revise_last_step()`
-  (`agent/session_log.py`), with tests in `tests/test_session_log_revise.py`
-  (16/16 passing). Task 6 done: `/revise-history` registered in TUI slash
-  command help. Task 7 done: `tui/revise_history.py` adds
-  `ReviseConfirmScreen` (a `ModalScreen[bool]` confirmation dialog) and
-  `format_step_summaries()`, with tests in `tests/test_revise_history_tui.py`
-  (3/3 passing). Task 8 done: `tui/commands.py` wires `_cmd_revise_history`
-  into the TUI, including hardening added during review — the persistence/
-  re-render block is wrapped in `try/except` (reports via
-  `conv.append_error` on `write_session` failure, leaving the in-memory
-  revision applied) and `_render_messages_from_log` renders
-  `dagi_image`/`image_url` content blocks as an `"[image]"` placeholder
-  instead of dropping them. Task 9 done: `pyside_gui/commands.py` adds the
-  PySide equivalent, `SlashCommandHandler._cmd_revise_history`, using a
-  blocking `QMessageBox.question(...)` confirm dialog (Qt's synchronous
-  idiom, no async callback needed) and porting both Task 8 hardening fixes.
-  Task 10 done: `TestReviseWithPersistence` added to
-  `tests/test_session_log_revise.py` — integration tests round-tripping a
-  revised `SessionLog` through `write_session`/`read_session` (full log
-  19/19 passing). Remaining: Task 11 (docs, per the plan).
-
 - **Production review (R5, R8, R11, R17)** — remaining deferred findings from
   `wiki/notes/production-review-2026-09-15.md`. R5 (session filename
   collisions) and R8 (pipe subagent prompt loss) deferred pending design
@@ -33,6 +10,31 @@
   process-tree cleanup, and state persistence.
 
 ## Completed
+
+- **`/revise-history [n]` slash command** — fully implemented per
+  `docs/superpowers/plans/2026-09-17-revise-history.md` (11 tasks, all done).
+  `SessionLog.peek_last_step()` / `revise_last_step()` (`agent/session_log.py`)
+  remove the last N steps (each a `step/start`...`step/end` bracket) from the
+  tail of the session event log, auto-removing the enclosing turn if it was
+  the turn's only step. Both `tui/commands.py` (Textual `ReviseConfirmScreen`
+  modal, async callback) and `pyside_gui/commands.py` (blocking
+  `QMessageBox.question`) show a confirmation dialog summarizing what will be
+  removed (via the shared `tui/revise_history.py::format_step_summaries`)
+  before mutating the log, rewriting the session's JSONL file
+  (`write_session`), and re-rendering the conversation from
+  `log.derive_messages()`. Hardened during review: persistence/re-render
+  failures are caught and reported via `conv.append_error` rather than
+  crashing (the in-memory revision still applies), and image content blocks
+  render as an `"[image]"` placeholder instead of vanishing. Guards against
+  running while the agent loop is active or with no active conversation;
+  errors clearly if more steps are requested than exist. 24 tests across
+  `tests/test_session_log_revise.py`, `tests/test_revise_history_tui.py`, and
+  `pyside_gui/tests/test_commands.py`, all passing.
+  Two known limitations recorded in
+  `wiki/notes/revise-history-open-questions.md` for follow-up: behaviour at
+  the `/hist`-restore seed boundary is undefined, and revising a step that
+  spawned a subagent branch can delete the subagent's interleaved events too
+  (positional slice, not branch-filtered).
 
 - **Slash-command autocomplete (PySide GUI)** — fully complete. Typing `/` in
   the prompt input shows a `SlashCompleterPopup` (`pyside_gui/slash_completer.py`)
