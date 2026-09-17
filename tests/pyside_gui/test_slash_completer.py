@@ -71,3 +71,88 @@ class TestCompletions:
         handler._skill_map = {"/no-desc": skill}
         pairs = dict(handler.completions())
         assert pairs["/no-desc"] == ""
+
+
+from PySide6.QtWidgets import QApplication
+from PySide6.QtCore import Qt
+from pyside_gui.slash_completer import SlashCompleterPopup
+
+
+@pytest.fixture(scope="session")
+def qapp():
+    app = QApplication.instance()
+    if app is None:
+        app = QApplication([])
+    return app
+
+
+class TestSlashCompleterPopup:
+    def test_set_items_populates_list(self, qapp):
+        popup = SlashCompleterPopup(None)
+        items = [("/help", "Show help"), ("/exit", "Exit"), ("/clear", "Clear")]
+        popup.set_items(items)
+        assert popup.count() == 3
+
+    def test_filter_narrows_list(self, qapp):
+        popup = SlashCompleterPopup(None)
+        items = [("/help", "Show help"), ("/exit", "Exit"), ("/clear", "Clear")]
+        popup.set_items(items)
+        popup.apply_filter("/he")
+        visible = [popup.item(i) for i in range(popup.count())
+                   if not popup.item(i).isHidden()]
+        assert len(visible) == 1
+        assert visible[0].data(Qt.ItemDataRole.UserRole) == "/help"
+
+    def test_filter_empty_prefix_shows_all(self, qapp):
+        popup = SlashCompleterPopup(None)
+        items = [("/help", "Show help"), ("/exit", "Exit")]
+        popup.set_items(items)
+        popup.apply_filter("/")
+        visible = [popup.item(i) for i in range(popup.count())
+                   if not popup.item(i).isHidden()]
+        assert len(visible) == 2
+
+    def test_filter_no_match_hides_all(self, qapp):
+        popup = SlashCompleterPopup(None)
+        items = [("/help", "Show help"), ("/exit", "Exit")]
+        popup.set_items(items)
+        popup.apply_filter("/zzz")
+        visible = [popup.item(i) for i in range(popup.count())
+                   if not popup.item(i).isHidden()]
+        assert len(visible) == 0
+
+    def test_selected_command_returns_name(self, qapp):
+        popup = SlashCompleterPopup(None)
+        items = [("/help", "Show help"), ("/exit", "Exit")]
+        popup.set_items(items)
+        popup.setCurrentRow(0)
+        assert popup.selected_command() == "/help"
+
+    def test_move_selection_wraps(self, qapp):
+        popup = SlashCompleterPopup(None)
+        items = [("/help", "Show help"), ("/exit", "Exit"), ("/clear", "Clear")]
+        popup.set_items(items)
+        popup.apply_filter("/")
+        popup.setCurrentRow(0)
+        popup.move_selection(1)
+        assert popup.currentRow() == 1
+        popup.move_selection(1)
+        assert popup.currentRow() == 2
+        popup.move_selection(1)
+        assert popup.currentRow() == 0  # wraps
+
+    def test_valid_commands_highlighted(self, qapp):
+        popup = SlashCompleterPopup(None)
+        items = [("/help", "Show help")]
+        popup.set_items(items)
+        item = popup.item(0)
+        fg = item.foreground().color().name()
+        # Valid items use the highlight colour, not the dim colour
+        assert fg != "#6c7086"
+
+    def test_visible_count_after_filter(self, qapp):
+        popup = SlashCompleterPopup(None)
+        items = [("/help", "Show help"), ("/exit", "Exit"), ("/hist", "History")]
+        popup.set_items(items)
+        popup.apply_filter("/h")
+        assert popup.visible_count() == 2
