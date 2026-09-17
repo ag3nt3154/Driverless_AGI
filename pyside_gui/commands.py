@@ -137,6 +137,8 @@ class SlashCommandHandler:
             return self._cmd_show_pet()
         elif cmd == "/init":
             return self._cmd_init()
+        elif cmd == "/revise-history":
+            return self._cmd_revise_history(arg)
         elif cmd in self._skill_map:
             return self._cmd_skill(cmd, arg)
         elif cmd in self._workflow_map:
@@ -284,6 +286,113 @@ class SlashCommandHandler:
         from agent.cli_utils import _cmd_init
         _cmd_init(self._project_path)
         self._w.conversation.append_info("Initialized .dagi/ scaffold")
+        return None
+
+    def _cmd_revise_history(self, arg: str | None) -> str | None:
+        """Remove the last N steps from the session log."""
+        from pathlib import Path
+        from agent.session_store import write_session
+        from tui.revise_history import format_step_summaries
+
+        conv = self._w.conversation
+
+        if self._worker_alive():
+            conv.append_info("Cannot revise while the agent is running.")
+            return None
+
+        if self._active_loop is None:
+            conv.append_info("Nothing to revise — no active conversation.")
+            return None
+
+        log = self._active_loop.log
+
+        n = 1
+        if arg:
+            try:
+                n = int(arg)
+            except ValueError:
+                conv.append_error(f"Invalid argument: expected a number, got {arg!r}")
+                return None
+            if n < 1:
+                conv.append_error("N must be at least 1.")
+                return None
+
+        # Peek at steps using a temporary copy
+        from agent.session_log import SessionLog
+        temp_log = SessionLog(seed=list(log.events))
+        infos = []
+        for _ in range(n):
+            info = temp_log.peek_last_step()
+            if info is None:
+                break
+            infos.append(info)
+            temp_log.revise_last_step()
+
+        if not infos:
+            conv.append_info("Nothing to revise — no steps found.")
+            return None
+
+        if len(infos) < n:
+            conv.append_error(
+                f"Only {len(infos)} step{'s' if len(infos) != 1 else ''} available, "
+                f"pass {len(infos)} or fewer."
+            )
+            return None
+
+        # Show confirmation dialog
+        from PySide6.QtWidgets import QMessageBox
+        summary = format_step_summaries(infos)
+        count_label = f"{n} step{'s' if n != 1 else ''}"
+        result = QMessageBox.question(
+            None,
+            "Revise History",
+            f"Will remove {count_label}:\n\n{summary}\n\nConfirm?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if result != QMessageBox.StandardButton.Yes:
+            conv.append_info("Revision cancelled.")
+            return None
+
+        for _ in range(n):
+            log.revise_last_step()
+
+        try:
+            # Rewrite JSONL
+            tracker_path = getattr(self._active_loop.tracker, "_path", None)
+            if isinstance(tracker_path, Path):
+                events_path = tracker_path.with_suffix(".events.jsonl")
+                write_session(events_path, log.events)
+
+            # Sync derived message cache
+            self._active_loop._sync_messages()
+
+            # Re-render conversation
+            conv.clear()
+            for msg in log.derive_messages():
+                role = msg.get("role")
+                content = msg.get("content", "")
+                if isinstance(content, list):
+                    parts = []
+                    for b in content:
+                        if not isinstance(b, dict):
+                            continue
+                        if b.get("type") == "text":
+                            parts.append(b.get("text", ""))
+                        elif b.get("type") in ("dagi_image", "image_url"):
+                            parts.append("[image]")
+                    content = " ".join(parts)
+                content = str(content).strip()
+                if role == "user":
+                    conv.append_user_message(content)
+                elif role == "assistant" and content:
+                    conv.append_assistant(content)
+
+            conv.append_info(f"Removed {n} step{'s' if n != 1 else ''}.")
+        except Exception as exc:
+            conv.append_error(
+                f"Revision applied in memory but failed to persist to disk: {exc}"
+            )
         return None
 
     def _cmd_skill(self, cmd: str, arg: str | None) -> str:
