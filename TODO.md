@@ -2,11 +2,12 @@
 
 ## In progress
 
-- **Slash-command autocomplete (Tasks 3+)** — `completions()` method added
+- **Slash-command autocomplete (Task 4+)** — `completions()` method added
   (Task 1), `SlashCompleterPopup` widget created (Task 2), popup re-show bug
-  fixed and test coverage expanded (Task 3); integration with the PySide6
-  prompt input (wiring popup show/hide/key-nav into `PromptInput`) still
-  pending.
+  fixed and test coverage expanded (Task 3), popup wired into `PromptInput`
+  (Task 3 integration complete — show/hide/filter/accept via `set_completions`,
+  `_on_text_changed`, `_accept_completion`); key-nav (Tab/↑/↓) and caller
+  wiring in `app.py`/`_dispatch.py` still pending.
 
 - **Production review (R5, R8, R11, R17)** — remaining deferred findings from
   `wiki/notes/production-review-2026-09-15.md`. R5 (session filename
