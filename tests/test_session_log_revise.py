@@ -1,10 +1,13 @@
 """tests/test_session_log_revise.py — Tests for session log revision."""
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from agent import session_events as ev
 from agent.session_log import SessionLog
+from agent.session_store import write_session, read_session
 
 
 def _build_log_with_steps(n_turns: int, steps_per_turn: int) -> SessionLog:
@@ -151,3 +154,42 @@ class TestReviseLastStep:
         log.on_append = lambda e: calls.append(e)
         log.revise_last_step()
         assert len(calls) == 0
+
+
+class TestReviseWithPersistence:
+    def test_rewrite_after_revise_produces_loadable_log(self, tmp_path: Path):
+        log = _build_log_with_steps(2, 2)
+        path = tmp_path / "test.events.jsonl"
+        write_session(path, log.events)
+
+        # Revise one step
+        log.revise_last_step()
+        write_session(path, log.events)
+
+        # Reload and verify
+        reloaded = read_session(path)
+        assert len(reloaded) == len(log.events)
+        for orig, loaded in zip(log.events, reloaded):
+            assert orig.seq == loaded.seq
+            assert orig.type == loaded.type
+
+    def test_reloaded_log_has_correct_derived_state(self, tmp_path: Path):
+        log = _build_log_with_steps(1, 2)
+        log.revise_last_step()
+        path = tmp_path / "test.events.jsonl"
+        write_session(path, log.events)
+
+        reloaded_events = read_session(path)
+        new_log = SessionLog(seed=reloaded_events)
+        assert new_log.open_turn == log.open_turn
+        assert new_log.open_step == log.open_step
+        assert len(new_log.derive_messages()) == len(log.derive_messages())
+
+    def test_revise_all_then_rewrite_produces_empty_log(self, tmp_path: Path):
+        log = _build_log_with_steps(1, 1)
+        log.revise_last_step()
+        path = tmp_path / "test.events.jsonl"
+        write_session(path, log.events)
+
+        reloaded = read_session(path)
+        assert len(reloaded) == 0
