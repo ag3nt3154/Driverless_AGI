@@ -2,16 +2,6 @@
 
 ## In progress
 
-- **Slash-command autocomplete** — Tasks 1–5 complete. `completions()` method
-  added (Task 1), `SlashCompleterPopup` widget created (Task 2), popup wired
-  into `PromptInput` with show/hide/filter/accept (Task 3), `_Editor.keyPressEvent`
-  intercepts Tab/Enter/Escape/Up/Down when popup is visible (Task 4), app-level
-  wiring complete (Task 5): `_build_commands()` now calls
-  `prompt.set_completions()` after `load_maps()` and registers an
-  `_on_completions_changed` callback on `SlashCommandHandler` so completions
-  refresh automatically when `/wd` changes the working directory; 40 tests pass.
-  Next: Task 6+ (dispatch integration, `/wd` live refresh smoke test).
-
 - **Production review (R5, R8, R11, R17)** — remaining deferred findings from
   `wiki/notes/production-review-2026-09-15.md`. R5 (session filename
   collisions) and R8 (pipe subagent prompt loss) deferred pending design
@@ -20,6 +10,15 @@
   process-tree cleanup, and state persistence.
 
 ## Completed
+
+- **Slash-command autocomplete (PySide GUI)** — fully complete. Typing `/` in
+  the prompt input shows a `SlashCompleterPopup` (`pyside_gui/slash_completer.py`)
+  listing all built-ins, skills, and workflows; filters as you type; Tab/Enter
+  accepts the highlighted command (inserts it with a trailing space); Up/Down
+  navigate the list; Escape dismisses; first space dismisses. Popup refreshes
+  automatically when `/wd` changes the working directory via an
+  `_on_completions_changed` callback on `SlashCommandHandler`. 40 tests in
+  `tests/pyside_gui/test_slash_completer.py`.
 
 - **Production review fixes (R1–R4, R6–R7, R9–R10, R12–R16, R18–R19)** —
   fifteen findings from `wiki/notes/production-review-2026-09-15.md` fixed:
