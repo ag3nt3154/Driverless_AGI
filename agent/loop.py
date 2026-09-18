@@ -348,6 +348,7 @@ class AgentLoop:
         agent/_compaction.compact). Failures are non-fatal — the session
         continues with un-compacted messages rather than crashing."""
         try:
+            self.callbacks.on_compaction_started()
             return self.compact()
         except Exception as exc:
             self.callbacks.on_assistant_text(

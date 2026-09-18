@@ -14,6 +14,7 @@ import pytest
 
 from agent.loop import AgentConfig, AgentCallbacks, AgentLoop
 from agent.protocol import SideEffect, ToolResult
+from agent._loop_config import CompactionResult
 
 
 # ---------------------------------------------------------------------------
@@ -440,3 +441,24 @@ class TestCompactionStartedCallback:
         """AgentCallbacks must have an on_compaction_started field."""
         callbacks = AgentCallbacks()
         assert callable(callbacks.on_compaction_started)
+
+
+class TestCompactionStartedFired:
+    def test_compaction_started_fires_before_compact(self):
+        """on_compaction_started must fire before compact() is called."""
+        call_order = []
+        callbacks = AgentCallbacks(
+            on_compaction_started=lambda: call_order.append("started"),
+        )
+
+        loop = _make_loop()
+        loop.callbacks = callbacks
+        loop.compact = MagicMock(
+            side_effect=lambda **kw: call_order.append("compact") or CompactionResult(
+                did_compact=True, generation=1, summary_content="summary", removed_count=5,
+            ),
+        )
+
+        loop._compact_context()
+
+        assert call_order == ["started", "compact"]
