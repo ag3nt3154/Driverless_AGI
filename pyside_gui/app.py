@@ -174,6 +174,7 @@ class DagiMainWindow(QMainWindow):
         b.stream_ended.connect(self._on_stream_ended)
         b.token_update.connect(rs.update_stats)
         b.context_update.connect(rs.update_context)
+        b.compaction_started.connect(self._on_compaction_started)
         b.compaction_done.connect(self._on_compaction)
         b.model_switched.connect(self._on_model_switched)
         b.error_occurred.connect(cv.append_error)
@@ -290,6 +291,10 @@ class DagiMainWindow(QMainWindow):
             self._stream_had_content = False
             return
         self._conversation.append_assistant(html)
+
+    @Slot()
+    def _on_compaction_started(self) -> None:
+        self._right_sidebar.set_status("compacting")
 
     @Slot(int, int)
     def _on_compaction(self, kept: int, removed: int) -> None:

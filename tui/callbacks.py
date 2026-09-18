@@ -103,6 +103,10 @@ def build_callbacks(app: DagiApp, loop_ref: list) -> AgentCallbacks:
         if _stream["expanded"]:
             app.call_from_thread(app._collapse_stream_preview)
 
+    def on_compaction_started():
+        app.call_from_thread(conv.append_info,
+            "[yellow]⚡ Compacting context...[/yellow]")
+
     def on_compaction(kept, removed):
         app.call_from_thread(conv.append_info,
             f"[yellow]⚡ Context compacted — removed {removed} messages, kept {kept}[/yellow]")
@@ -178,6 +182,7 @@ def build_callbacks(app: DagiApp, loop_ref: list) -> AgentCallbacks:
         on_iteration=lambda _: None, on_done=on_done, on_error=on_error,
         on_handoff=on_handoff,
         on_api_call=on_api_call, on_reasoning=on_reasoning,
+        on_compaction_started=on_compaction_started,
         on_compaction=on_compaction, on_model_switch=on_model_switch,
         on_ask_user=on_ask_user,
         on_expression_changed=on_expression_changed,

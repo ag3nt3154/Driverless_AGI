@@ -38,6 +38,7 @@ class AgentBridge(QObject):
     stream_text_delta = Signal(str)        # chunk
     stream_reasoning_delta = Signal(str)   # chunk
     stream_ended = Signal(str, str)
+    compaction_started = Signal()
     compaction_done = Signal(int, int)     # kept, removed
     model_switched = Signal(str, str)      # from, to
     error_occurred = Signal(str)           # message
@@ -155,6 +156,9 @@ class AgentBridge(QObject):
             if text.strip():
                 self.reasoning_received.emit(text)
 
+        def on_compaction_started() -> None:
+            self.compaction_started.emit()
+
         def on_compaction(kept: int, removed: int) -> None:
             self.compaction_done.emit(kept, removed)
             if loop_ref:
@@ -206,6 +210,7 @@ class AgentBridge(QObject):
             on_handoff=on_handoff,
             on_api_call=on_api_call,
             on_reasoning=on_reasoning,
+            on_compaction_started=on_compaction_started,
             on_compaction=on_compaction,
             on_model_switch=on_model_switch,
             on_ask_user=self._ask_user,
