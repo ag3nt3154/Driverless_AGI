@@ -34,7 +34,7 @@ class GrepTool(BaseTool):
     name = "grep"
     description = (
         "Search for a pattern in files using ripgrep (rg). "
-        "This is your ONLY search tool — NEVER use bash findstr/grep/rg directly. "
+        "This is your DEFAULT search tool — DO NOT use bash findstr/grep/rg directly. "
         "Returns matching lines with file:line format. "
         "Automatically excludes binary files (.pyc, .pyo, .bin), "
         "__pycache__, .git, .dagi, and other non-source directories. "
