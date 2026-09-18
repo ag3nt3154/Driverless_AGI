@@ -860,7 +860,7 @@ Driverless_AGI/
 | `write` | Overwrite a file. Creates parent dirs. Takes `path` + `content` |
 | `edit` | Edit a file by replacing exact text (`oldText` → `newText`). The match must be unique; CRLF-safe |
 | `bash` | Run a shell command. Returns stdout + stderr + exit code. Pass `command` + optional `timeout` |
-| `grep` | Regex search across files. Returns `file:line:match` format. Uses ripgrep when available |
+| `grep` | Regex search across files using ripgrep (rg). Returns `file:line:match` format. Automatically excludes binary files (`.pyc`, `.pyo`, `.bin`), `__pycache__`, `.git`, `.dagi`, and other non-source directories. `path` must be a specific subdirectory or file (not `.` / project root) |
 | `find` | Find files by glob pattern (e.g. `**/*.py`). Searches all allowed roots when no path given |
 | `skill` | Load a `.dagi/skills/<name>/SKILL.md` guidance document and return it for execution |
 | `web_search` | DuckDuckGo web search. Returns titles, URLs, and snippets |

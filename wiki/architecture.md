@@ -2,7 +2,7 @@
 
 Current components and their relationships.
 
-> Last updated: 2026-09-17
+> Last updated: 2026-09-18
 
 ## Entry Points
 
@@ -48,6 +48,12 @@ owning module (e.g. `agent._compaction.run_subagent`).
   `ALL_TASKS_RESOLVED`, `SET_ACTIVE_PLAN`, `RELOAD_SKILLS`, `SWITCH_MODEL`.
 - Tool filtering: `config.yaml`'s `tools:` list restricts main agent; mandatory
   `write_handoff` is always injected.
+- Output filter (`tools/output_filter.py`): large tool results are cached to
+  `.dagi/hash_cache/tool_output/` and replaced with a truncated preview; the
+  "refine your search" instruction appears first so the agent sees it before the preview.
+- Grep exclusions (`tools/grep/_grep.py`): `.dagi/`, `__pycache__/`, `.git/`, and other
+  non-source directories plus binary extensions (`.pyc`, `.pyo`, etc.) are excluded from
+  both ripgrep and Python-fallback search paths.
 
 ## Subagent System
 

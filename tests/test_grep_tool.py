@@ -60,7 +60,7 @@ class TestCaseSensitivity:
 
 
 class TestHiddenFiles:
-    def test_dagi_dir_is_searchable(self, tmp_path):
+    def test_dagi_dir_is_excluded(self, tmp_path):
         dagi = tmp_path / ".dagi"
         dagi.mkdir()
         (dagi / "config.yaml").write_text(
@@ -68,10 +68,13 @@ class TestHiddenFiles:
         )
         tool = _make_tool(tmp_path)
 
-        result = tool.run(pattern="model", path=str(tmp_path))
+        with patch(
+            "tools.grep._grep.subprocess.run",
+            side_effect=FileNotFoundError,
+        ):
+            result = tool.run(pattern="model", path=str(tmp_path))
 
-        assert ".dagi" in result
-        assert "model" in result
+        assert result == "[no matches]"
 
     def test_git_dir_is_excluded(self, tmp_path):
         git = tmp_path / ".git"
@@ -103,6 +106,42 @@ class TestHiddenFiles:
             result = tool.run(pattern="sensitive", path=str(tmp_path))
 
         assert result == "[no matches]"
+
+
+class TestBinaryFileExclusion:
+    def test_pyc_files_excluded(self, tmp_path):
+        pycache = tmp_path / "__pycache__"
+        pycache.mkdir()
+        (pycache / "mod.cpython-312.pyc").write_bytes(b"needle")
+        (tmp_path / "mod.py").write_text(
+            "needle", encoding="utf-8", newline="\n",
+        )
+        tool = _make_tool(tmp_path)
+
+        with patch(
+            "tools.grep._grep.subprocess.run",
+            side_effect=FileNotFoundError,
+        ):
+            result = tool.run(pattern="needle", path=str(tmp_path))
+
+        assert "mod.py" in result
+        assert "__pycache__" not in result
+
+    def test_pyo_files_excluded(self, tmp_path):
+        (tmp_path / "mod.pyo").write_bytes(b"needle")
+        (tmp_path / "mod.py").write_text(
+            "needle", encoding="utf-8", newline="\n",
+        )
+        tool = _make_tool(tmp_path)
+
+        with patch(
+            "tools.grep._grep.subprocess.run",
+            side_effect=FileNotFoundError,
+        ):
+            result = tool.run(pattern="needle", path=str(tmp_path))
+
+        assert "mod.py" in result
+        assert "mod.pyo" not in result
 
 
 class TestGlobFiltering:

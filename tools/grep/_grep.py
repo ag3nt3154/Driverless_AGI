@@ -8,31 +8,52 @@ from tools._path_guard import validate_path
 
 _MAX_RESULTS = 200
 _FALLBACK_TIMEOUT = 15  # seconds — wall-clock cap for the Python fallback
-_HIDDEN_WHITELIST = {'.dagi', '.index.md'}
+
+_EXCLUDED_DIRS = {
+    '.git', '.dagi', '__pycache__', '.mypy_cache', '.pytest_cache',
+    'node_modules', '.tox', '.venv', 'venv',
+}
+_EXCLUDED_EXTS = {'.pyc', '.pyo', '.pyd', '.so', '.dll', '.exe', '.bin', '.whl', '.egg'}
 
 
 def _is_visible(parts: tuple[str, ...]) -> bool:
-    """Everything under .dagi/ is visible; other dotfile dirs are hidden."""
-    if parts[0] == ".dagi":
-        return True
-    return not any(
-        p.startswith(".") and p not in _HIDDEN_WHITELIST
-        for p in parts
-    )
+    """Exclude dot-dirs, __pycache__, and binary artifacts."""
+    for p in parts:
+        if p in _EXCLUDED_DIRS:
+            return False
+        if p.startswith(".") and p != '.index.md':
+            return False
+    return True
+
+
+def _is_binary_ext(path: Path) -> bool:
+    return path.suffix.lower() in _EXCLUDED_EXTS
 
 
 class GrepTool(BaseTool):
     name = "grep"
     description = (
-        "Search for a pattern in files using regex or literal match. "
+        "Search for a pattern in files using ripgrep (rg). "
+        "This is your ONLY search tool — NEVER use bash findstr/grep/rg directly. "
         "Returns matching lines with file:line format. "
-        "Paths are relative to the project root. Uses ripgrep (rg) if available."
+        "Automatically excludes binary files (.pyc, .pyo, .bin), "
+        "__pycache__, .git, .dagi, and other non-source directories. "
+        "IMPORTANT: 'path' must be a specific subdirectory or file, NOT '.' — "
+        "narrow searches to the relevant directory (e.g. 'src/', 'tools/') to "
+        "avoid excessive output. Use 'glob' to further filter by file type."
     )
     _parameters = {
         "type": "object",
         "properties": {
             "pattern": {"type": "string", "description": "Regex pattern (or literal string) to search for"},
-            "path": {"type": "string", "description": "File or directory to search"},
+            "path": {
+                "type": "string",
+                "description": (
+                    "File or directory to search. Must be a specific path — "
+                    "do NOT pass '.' or the project root. Narrow to the relevant "
+                    "subdirectory (e.g. 'agent/', 'tools/', 'src/')."
+                ),
+            },
             "glob": {"type": "string", "description": "Glob pattern to filter files (e.g. '*.py', '**/*.ts')"},
             "literal": {"type": "boolean", "description": "Treat pattern as a literal string, not regex (default: false)"},
         },
@@ -75,10 +96,13 @@ class GrepTool(BaseTool):
                 return
             if not p.is_file():
                 continue
-            if glob_pat:
-                yield p
+            if _is_binary_ext(p):
                 continue
             parts = p.relative_to(search_path).parts
+            if glob_pat:
+                if _is_visible(parts):
+                    yield p
+                continue
             if _is_visible(parts):
                 yield p
 
@@ -93,8 +117,12 @@ class GrepTool(BaseTool):
         try:
             cmd = [
                 "rg", "--line-number", "--no-heading", "--color=never",
-                "--hidden", "--no-ignore", "--glob", "!.git",
+                "--no-ignore",
             ]
+            for d in sorted(_EXCLUDED_DIRS):
+                cmd += ["--glob", f"!{d}"]
+            for ext in sorted(_EXCLUDED_EXTS):
+                cmd += ["--glob", f"!*{ext}"]
             if literal:
                 cmd.append("--fixed-strings")
             if glob:

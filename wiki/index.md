@@ -2,7 +2,7 @@
 
 Project knowledge and navigation.
 
-> Last updated: 2026-09-17
+> Last updated: 2026-09-18
 
 - [Production review — 2026-09-15](notes/production-review-2026-09-15.md): 19 actionable
   findings; verdict **not production-ready**; recommendations remain unapproved.

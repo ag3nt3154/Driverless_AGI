@@ -2,7 +2,16 @@
 
 Navigation to useful findings and open questions.
 
-> Last updated: 2026-09-17
+> Last updated: 2026-09-18
+
+- Grep tool hardening (2026-09-18): **implemented**; `tools/grep/_grep.py` now excludes
+  `.dagi/`, `__pycache__/`, `.git/`, `.mypy_cache/`, `.pytest_cache/`, `node_modules/`,
+  `.tox/`, `.venv/`, `venv/` directories and binary extensions (`.pyc`, `.pyo`, `.pyd`,
+  `.so`, `.dll`, `.exe`, `.bin`, `.whl`, `.egg`) from both ripgrep and Python-fallback paths.
+  Tool description updated to mandate specific subdirectory paths (not `.`), name ripgrep
+  explicitly, and forbid bash `findstr`/`grep` workarounds. `tools/output_filter.py`
+  truncation message reordered: "refine your search" instruction now appears at the top
+  of truncated results. 15 tests passing in `tests/test_grep_tool.py`.
 
 - Wiki-index injection now sends only the wiki root path (2026-09-17): **implemented**;
   `_build_wiki_index_context` in `agent/_loop_helpers.py` previously read and concatenated

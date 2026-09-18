@@ -84,10 +84,12 @@ def filter_tool_output(
     preview = full_str[:preview_chars]
 
     context_result = (
-        f"{preview}\n\n"
-        f"--- OUTPUT TRUNCATED ---\n"
+        f"⚠ TOOL OUTPUT TOO LARGE (~{estimated_tokens:,} tokens estimated) — "
+        f"DO NOT read the full output from the cache file. "
+        f"Instead, REFINE YOUR SEARCH: narrow the path to a specific subdirectory, "
+        f"add a glob filter (e.g. glob='*.py'), or use a more specific pattern.\n"
         f"Full output saved to: {tmp_path}\n"
-        f"Tool output is very large (~{estimated_tokens:,} tokens estimated). "
-        f"Read it chunk by chunk using the read tool with the offset and limit parameters."
+        f"--- TRUNCATED PREVIEW ---\n"
+        f"{preview}"
     )
     return context_result, full_str

@@ -9,6 +9,16 @@
   R17 (orderly GUI shutdown) deferred — needs design for worker cancellation,
   process-tree cleanup, and state persistence.
 
+- **Grep tool hardening** — grep now excludes `.dagi/`, `__pycache__/`, `.git/`,
+  `.mypy_cache/`, `.pytest_cache/`, `node_modules/`, `.tox/`, `.venv/`, `venv/`,
+  and binary file extensions (`.pyc`, `.pyo`, `.pyd`, `.so`, `.dll`, `.exe`,
+  `.bin`, `.whl`, `.egg`) from both the ripgrep and Python-fallback code paths.
+  Tool description updated to mandate a specific subdirectory path (not `.` or
+  project root), mention ripgrep explicitly, and forbid bash `findstr`/`grep`
+  workarounds. Output-filter truncation message reordered: the "refine your
+  search" instruction now appears at the top of truncated results instead of
+  the bottom, so the agent sees it first.
+
 ## Completed
 
 - **`/revise-history [n]` slash command** — fully implemented per
