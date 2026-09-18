@@ -477,11 +477,11 @@ class AgentLoop:
 
         log_compaction(self.log, result, tail_first_step, self._sync_messages)
 
-    def compact(self, force: bool = False) -> CompactionResult:
+    def compact(self, force: bool = False, summarize_all: bool = False) -> CompactionResult:
         """Delegate to agent/_compaction.compact (moved verbatim)."""
         from agent._compaction import compact as _compact
 
-        return _compact(self, force)
+        return _compact(self, force, summarize_all=summarize_all)
 
     def _sync_messages(self) -> None:
         """Rebuild ``_messages`` from the log, in place."""

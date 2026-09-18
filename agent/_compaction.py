@@ -14,7 +14,7 @@ from typing import TYPE_CHECKING
 
 from agent import session_events as sev
 from agent.session_log import InvariantError
-from tools.compact._tail_boundary import compute_tail_boundary
+from tools.compact._tail_boundary import TailBoundary, compute_tail_boundary
 from tools.subagent_api import build_fork_context, run_subagent
 
 if TYPE_CHECKING:
@@ -104,7 +104,7 @@ def log_compaction(
     sync_fn()
 
 
-def compact(loop: AgentLoop, force: bool = False) -> "CompactionResult":
+def compact(loop: AgentLoop, force: bool = False, summarize_all: bool = False) -> "CompactionResult":
     """Compact context via a subprocess that inherits the parent's prefix.
 
     The compact subprocess receives the parent's warm KV-cache prefix
@@ -127,15 +127,22 @@ def compact(loop: AgentLoop, force: bool = False) -> "CompactionResult":
 
         return _NO_COMPACTION
 
-    boundary = compute_tail_boundary(
-        steps=steps,
-        prompt_tokens=loop._last_prompt_tokens,
-        keep_recent_tokens=loop.config.keep_recent_tokens,
-    )
-    if not boundary.has_middle:
-        from agent._loop_config import _NO_COMPACTION
-
-        return _NO_COMPACTION
+    if summarize_all:
+        boundary = TailBoundary(
+            tail_start_index=len(steps),
+            keep_count=0,
+            tail_steps=[],
+            middle_steps=list(steps),
+        )
+    else:
+        boundary = compute_tail_boundary(
+            steps=steps,
+            prompt_tokens=loop._last_prompt_tokens,
+            keep_recent_tokens=loop.config.keep_recent_tokens,
+        )
+        if not boundary.has_middle:
+            from agent._loop_config import _NO_COMPACTION
+            return _NO_COMPACTION
 
     # --- Resolve structural values from the log ---
     middle_last = boundary.middle_steps[-1]
@@ -155,17 +162,19 @@ def compact(loop: AgentLoop, force: bool = False) -> "CompactionResult":
         return _NO_COMPACTION  # last summarized step incomplete
 
     nodes = loop.log.surface.nodes
-    tail_first = boundary.tail_steps[0]
-    try:
-        tail_idx = find_surface_index_for_step(loop.log, tail_first)
-    except ValueError:
-        from agent._loop_config import _NO_COMPACTION
-
-        return _NO_COMPACTION
-    if tail_idx == 0:
-        from agent._loop_config import _NO_COMPACTION
-
-        return _NO_COMPACTION  # nothing to shadow
+    if boundary.tail_steps:
+        tail_first = boundary.tail_steps[0]
+        try:
+            tail_idx = find_surface_index_for_step(loop.log, tail_first)
+        except ValueError:
+            from agent._loop_config import _NO_COMPACTION
+            return _NO_COMPACTION
+        if tail_idx == 0:
+            from agent._loop_config import _NO_COMPACTION
+            return _NO_COMPACTION  # nothing to shadow
+    else:
+        # summarize_all: shadow the entire surface
+        tail_idx = len(nodes)
 
     first_summarized_seq = nodes[0]
     last_summarized_seq = nodes[tail_idx - 1]

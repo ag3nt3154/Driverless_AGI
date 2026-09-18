@@ -462,3 +462,39 @@ class TestCompactionStartedFired:
         loop._compact_context()
 
         assert call_order == ["started", "compact"]
+
+
+class TestFullCompaction:
+    def test_compact_summarize_all_puts_everything_in_middle(self):
+        """compact(summarize_all=True) must summarize all steps, keeping none as tail."""
+        loop = _make_loop()
+        loop.client = MagicMock()
+
+        # Run a task that produces multiple steps with continue prompts
+        loop.client.chat.completions.create.side_effect = [
+            _make_response("step 1"),
+            _make_response("step 2"),
+            _make_response("step 3"),
+            _exit_response("Done."),
+        ]
+        loop.run("do something")
+
+        # Now attempt full compaction — mock the subagent to return a summary.
+        # compact() appends surface events that require an open turn.
+        from agent import session_events as sev
+        _turn = loop.log.next_turn()
+        loop.log.append(sev.TURN_START, {"turn": _turn})
+
+        with patch("agent._compaction.run_subagent") as mock_sub:
+            mock_sub.return_value = SimpleNamespace(
+                is_ok=True, handoff_text="Full summary of conversation.",
+                handoff_path="/tmp/fake",
+            )
+            result = loop.compact(summarize_all=True)
+
+        assert result.did_compact
+        # After full compaction, the surface should have only the compaction
+        # summary node — no retained tail steps
+        msgs = loop.log.derive_messages()
+        assert len(msgs) == 1
+        assert "Full summary" in msgs[0]["content"]
