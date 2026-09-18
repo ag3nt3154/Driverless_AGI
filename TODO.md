@@ -26,6 +26,16 @@
   `tests/test_continuation.py::TestCompactionStartedFired::
   test_compaction_started_fires_before_compact` asserts call order via a
   mocked `compact`. Verified via `tests/test_continuation.py` (21 passed).
+  Task 5 done: `compact()` (`agent/_compaction.py`) gained a
+  `summarize_all: bool = False` parameter. When `True`, it bypasses
+  `compute_tail_boundary` and constructs a `TailBoundary` with all steps
+  in `middle_steps` and an empty `tail_steps`, so the entire context is
+  summarized with no tail retention. `AgentLoop.compact()` (`agent/loop.py`)
+  forwards the new kwarg. New test
+  `tests/test_continuation.py::TestFullCompaction::
+  test_compact_summarize_all_puts_everything_in_middle` asserts that after
+  full compaction only the summary node remains on the surface. Verified
+  via `tests/test_continuation.py` (22 passed).
   Remaining tasks (loop detection, turn stripping) not yet started.
 
 - **Production review (R5, R8, R11, R17)** — remaining deferred findings from
