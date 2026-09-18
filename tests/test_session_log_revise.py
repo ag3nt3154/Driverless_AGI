@@ -110,13 +110,14 @@ class TestReviseLastStep:
         remaining_types = [e.type for e in log.events]
         assert ev.TURN_START in remaining_types
         assert ev.USER_MESSAGE in remaining_types
+        assert ev.TURN_END in remaining_types
 
     def test_rewinds_internal_state(self):
         log = _build_log_with_steps(1, 2)
         log.revise_last_step()
-        # open_turn should still be set (turn is still open with step 1)
-        assert log.open_turn == 1
-        assert log.open_step is None  # between steps
+        # Turn stays closed (turn/end preserved) when earlier steps remain
+        assert log.open_turn is None
+        assert log.open_step is None
 
     def test_rewinds_state_after_full_turn_removal(self):
         log = _build_log_with_steps(2, 1)
@@ -144,9 +145,19 @@ class TestReviseLastStep:
         log = _build_log_with_steps(1, 2)
         log.revise_last_step()
         old_seq = log.seq
-        # Should be able to append new events without seq collision
-        log.append(ev.STEP_START, {"turn": 1, "step": 2})
+        # Turn is closed after revision; start a new turn to verify seq stays valid
+        log.append(ev.TURN_START, {"turn": 2})
         assert log.events[-1].seq > old_seq
+
+    def test_can_start_new_turn_after_partial_step_removal(self):
+        """Regression: removing a step from a multi-step closed turn must keep
+        the turn/end so the turn stays closed, allowing a new turn to start."""
+        log = _build_log_with_steps(1, 2)
+        log.revise_last_step()
+        # Turn 1 should be closed — a new turn must succeed
+        log.append(ev.TURN_START, {"turn": 2})
+        log.append(ev.USER_MESSAGE, {"turn": 2, "step": 0, "role": "user", "content": "hello"}, surface_op="append")
+        assert log.open_turn == 2
 
     def test_on_append_not_called_during_revision(self):
         log = _build_log_with_steps(1, 1)

@@ -27,8 +27,13 @@
   crashing (the in-memory revision still applies), and image content blocks
   render as an `"[image]"` placeholder instead of vanishing. Guards against
   running while the agent loop is active or with no active conversation;
-  errors clearly if more steps are requested than exist. 42 tests across
-  `tests/test_session_log_revise.py` (19, core `SessionLog` logic),
+  errors clearly if more steps are requested than exist. Bug fix (2026-09-18):
+  `revise_last_step()` no longer removes the `turn/end` event when removing a
+  step from a multi-step turn — previously left the turn "open", causing
+  `InvariantError("turn N is already open")` on the next user message.
+  43 tests across
+  `tests/test_session_log_revise.py` (20, core `SessionLog` logic including
+  regression test for partial-step-removal turn closure),
   `tests/test_revise_history_tui.py` (13: 3 for `format_step_summaries` plus
   10 handler-level tests for `tui/commands.py::_cmd_revise_history`, using a
   lightweight `SlashCommandsMixin` stand-in with `push_screen` stubbed to

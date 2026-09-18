@@ -309,9 +309,9 @@ class SessionLog:
 
         # Determine the full removal range
         if has_earlier_step:
-            # Remove just the step (and turn_end if present)
+            # Remove just the step; keep turn_end so the turn stays closed
             remove_start = start_idx
-            remove_end = turn_end_idx if turn_end_idx is not None else end_idx
+            remove_end = end_idx
         else:
             # Last step in turn — also remove turn/start, user/message, turn/end
             # Find the turn/start for this turn
