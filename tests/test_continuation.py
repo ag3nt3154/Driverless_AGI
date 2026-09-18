@@ -433,3 +433,10 @@ class TestErrorPause:
         assert any(
             m.get("content") == "please retry" for m in loop._messages
         ), "injected message must appear in _messages"
+
+
+class TestCompactionStartedCallback:
+    def test_compaction_started_callback_exists(self):
+        """AgentCallbacks must have an on_compaction_started field."""
+        callbacks = AgentCallbacks()
+        assert callable(callbacks.on_compaction_started)

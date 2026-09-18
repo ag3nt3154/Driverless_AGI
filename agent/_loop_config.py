@@ -155,6 +155,7 @@ class AgentCallbacks:
     on_api_call:       Callable[[list], None]                   = field(default=lambda msgs: None)
     on_reasoning:      Callable[[str], None]                    = field(default=lambda text: None)
     on_compaction:     Callable[[int, int], None]               = field(default=lambda kept, removed: None)
+    on_compaction_started: Callable[[], None]               = field(default=lambda: None)
     on_model_switch:   Callable[[str, str], None]               = field(default=lambda f, t: None)
     on_expression_changed: Callable[[ExpressionSnapshot], None] = field(
         default=lambda snapshot: None
