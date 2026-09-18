@@ -11,10 +11,17 @@
   `ProcessStateController.compacting()` (`agent/process_state.py`) added
   alongside `idle`/`thinking`/`paused`/`error`, and the PySide right sidebar
   (`pyside_gui/right_sidebar.py`) gained a matching `"compacting"` entry in
-  `_STATUS_DOTS` (`⟳`, `#89b4fa`). Remaining tasks (loop detection, turn
-  stripping, wiring the new callback into `agent/_compaction.py` /
-  `agent/loop.py`, and actually calling `.compacting()`/reverting state
-  during compaction) not yet started.
+  `_STATUS_DOTS` (`⟳`, `#89b4fa`). Task 3 done: `on_compaction_started` wired
+  into both frontends. `pyside_gui/bridge.py` gained a `compaction_started`
+  Signal, emitted from a new closure in `AgentBridge.build_callbacks` and
+  passed to `AgentCallbacks(...)`; `pyside_gui/app.py` connects it to a new
+  `MainWindow._on_compaction_started` slot that sets the right sidebar status
+  to `"compacting"`. `tui/callbacks.py` gained an `on_compaction_started`
+  closure (posts a "Compacting context..." info line) wired into the
+  `AgentCallbacks(...)` return. Verified via
+  `tests/test_continuation.py` (20 passed). Remaining tasks (loop detection,
+  turn stripping, wiring the callback into `agent/_compaction.py` /
+  `agent/loop.py` to actually fire during compaction) not yet started.
 
 - **Production review (R5, R8, R11, R17)** — remaining deferred findings from
   `wiki/notes/production-review-2026-09-15.md`. R5 (session filename
