@@ -84,6 +84,9 @@ def build_cli_callbacks(verbose: bool = False, prefix: str = "") -> AgentCallbac
     def on_compaction(kept, removed):
         logger.info("%scontext compacted — removed %d messages, kept %d", tag, removed, kept)
 
+    def on_compaction_started():
+        logger.info("%scontext compaction starting", tag)
+
     def on_model_switch(from_name, to_name):
         logger.info("%smodel switch: %s -> %s", tag, from_name, to_name)
 
@@ -94,6 +97,7 @@ def build_cli_callbacks(verbose: bool = False, prefix: str = "") -> AgentCallbac
         on_tool_start=on_tool_start, on_tool_end=on_tool_end,
         on_assistant_text=on_assistant_text, on_reasoning=on_reasoning,
         on_error=on_error, on_compaction=on_compaction,
+        on_compaction_started=on_compaction_started,
         on_model_switch=on_model_switch, on_continue_injected=on_continue_injected,
         on_stream_start=on_stream_start, on_stream_end=on_stream_end,
         on_assistant_text_delta=on_assistant_text_delta,

@@ -90,6 +90,7 @@ def build_callbacks(
         on_api_call=lambda _: None,
         on_reasoning=lambda _: None,
         on_compaction=lambda _k, _r: None,
+        on_compaction_started=lambda: None,
         on_model_switch=lambda _f, _t: None,
         on_ask_user=on_ask_user,
         on_pause=lambda: None,

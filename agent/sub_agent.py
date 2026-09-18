@@ -72,6 +72,7 @@ class SubAgentRunner:
                 on_token_update=callbacks.on_token_update,
                 on_iteration=callbacks.on_iteration,
                 on_compaction=callbacks.on_compaction,
+                on_compaction_started=callbacks.on_compaction_started,
                 on_reasoning=callbacks.on_reasoning,
             )
         else:
