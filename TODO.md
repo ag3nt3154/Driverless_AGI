@@ -19,9 +19,14 @@
   to `"compacting"`. `tui/callbacks.py` gained an `on_compaction_started`
   closure (posts a "Compacting context..." info line) wired into the
   `AgentCallbacks(...)` return. Verified via
-  `tests/test_continuation.py` (20 passed). Remaining tasks (loop detection,
-  turn stripping, wiring the callback into `agent/_compaction.py` /
-  `agent/loop.py` to actually fire during compaction) not yet started.
+  `tests/test_continuation.py` (20 passed). Task 4 done: `_compact_context`
+  (`agent/loop.py`) now calls `self.callbacks.on_compaction_started()` before
+  `self.compact()`, so the frontends' compacting status actually fires during
+  real compaction runs. New test
+  `tests/test_continuation.py::TestCompactionStartedFired::
+  test_compaction_started_fires_before_compact` asserts call order via a
+  mocked `compact`. Verified via `tests/test_continuation.py` (21 passed).
+  Remaining tasks (loop detection, turn stripping) not yet started.
 
 - **Production review (R5, R8, R11, R17)** — remaining deferred findings from
   `wiki/notes/production-review-2026-09-15.md`. R5 (session filename
