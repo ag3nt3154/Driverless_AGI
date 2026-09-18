@@ -2,51 +2,6 @@
 
 ## In progress
 
-- **Garbled Loop Recovery** — detect when the model falls into a degenerate
-  loop of empty-content responses, strip those turns, and compact the
-  context. Task 1 done: `AgentCallbacks` (`agent/_loop_config.py`) gained
-  `on_compaction_started: Callable[[], None]` (no-op default), fired before
-  compaction begins; tests in `tests/test_continuation.py::
-  TestCompactionStartedCallback`. Task 2 done:
-  `ProcessStateController.compacting()` (`agent/process_state.py`) added
-  alongside `idle`/`thinking`/`paused`/`error`, and the PySide right sidebar
-  (`pyside_gui/right_sidebar.py`) gained a matching `"compacting"` entry in
-  `_STATUS_DOTS` (`⟳`, `#89b4fa`). Task 3 done: `on_compaction_started` wired
-  into both frontends. `pyside_gui/bridge.py` gained a `compaction_started`
-  Signal, emitted from a new closure in `AgentBridge.build_callbacks` and
-  passed to `AgentCallbacks(...)`; `pyside_gui/app.py` connects it to a new
-  `MainWindow._on_compaction_started` slot that sets the right sidebar status
-  to `"compacting"`. `tui/callbacks.py` gained an `on_compaction_started`
-  closure (posts a "Compacting context..." info line) wired into the
-  `AgentCallbacks(...)` return. Verified via
-  `tests/test_continuation.py` (20 passed). Task 4 done: `_compact_context`
-  (`agent/loop.py`) now calls `self.callbacks.on_compaction_started()` before
-  `self.compact()`, so the frontends' compacting status actually fires during
-  real compaction runs. New test
-  `tests/test_continuation.py::TestCompactionStartedFired::
-  test_compaction_started_fires_before_compact` asserts call order via a
-  mocked `compact`. Verified via `tests/test_continuation.py` (21 passed).
-  Task 5 done: `compact()` (`agent/_compaction.py`) gained a
-  `summarize_all: bool = False` parameter. When `True`, it bypasses
-  `compute_tail_boundary` and constructs a `TailBoundary` with all steps
-  in `middle_steps` and an empty `tail_steps`, so the entire context is
-  summarized with no tail retention. `AgentLoop.compact()` (`agent/loop.py`)
-  forwards the new kwarg. New test
-  `tests/test_continuation.py::TestFullCompaction::
-  test_compact_summarize_all_puts_everything_in_middle` asserts that after
-  full compaction only the summary node remains on the surface. Verified
-  via `tests/test_continuation.py` (22 passed).
-  Task 6 done: garbled-loop detection and recovery in `agent/loop.py`.
-  A new module-level constant `_EMPTY_CONTENT_THRESHOLD = 3` and instance
-  variable `_empty_content_streak` track consecutive empty-content responses.
-  When the streak reaches the threshold, the empty steps are revised out of
-  the session log via `revise_last_step()`, a new turn is opened, and
-  `compact(summarize_all=True)` is triggered for full context recovery.
-  Non-empty responses reset the counter. New tests in
-  `tests/test_continuation.py::TestGarbledLoopRecovery` (3 tests) verify
-  compaction triggers, counter reset on real content, and empty-step removal.
-  Verified via `tests/test_continuation.py` (25 passed).
-
 - **Production review (R5, R8, R11, R17)** — remaining deferred findings from
   `wiki/notes/production-review-2026-09-15.md`. R5 (session filename
   collisions) and R8 (pipe subagent prompt loss) deferred pending design
@@ -65,6 +20,38 @@
   the bottom, so the agent sees it first.
 
 ## Completed
+
+- **Garbled Loop Recovery** — all 8 tasks complete. Detects when the model
+  falls into a degenerate loop of empty-content responses, strips those
+  turns, and compacts the context. Task 1: `AgentCallbacks`
+  (`agent/_loop_config.py`) gained `on_compaction_started: Callable[[], None]`
+  (no-op default), fired before compaction begins. Task 2:
+  `ProcessStateController.compacting()` (`agent/process_state.py`) added
+  alongside `idle`/`thinking`/`paused`/`error`, and the PySide right sidebar
+  (`pyside_gui/right_sidebar.py`) gained a matching `"compacting"` entry in
+  `_STATUS_DOTS` (`⟳`, `#89b4fa`). Task 3: `on_compaction_started` wired into
+  both frontends — `pyside_gui/bridge.py` gained a `compaction_started`
+  Signal connected to `MainWindow._on_compaction_started`, and
+  `tui/callbacks.py` gained an `on_compaction_started` closure that posts a
+  "Compacting context..." info line. Task 4: `_compact_context`
+  (`agent/loop.py`) calls `self.callbacks.on_compaction_started()` before
+  `self.compact()`, so the frontends' compacting status fires during real
+  compaction runs. Task 5: `compact()` (`agent/_compaction.py`) gained a
+  `summarize_all: bool = False` parameter; when `True`, it bypasses
+  `compute_tail_boundary` and puts all steps in `middle_steps` with an empty
+  `tail_steps`, summarizing the entire context with no tail retention.
+  Task 6: garbled-loop detection and recovery in `agent/loop.py` — a
+  module-level `_EMPTY_CONTENT_THRESHOLD = 3` and instance variable
+  `_empty_content_streak` track consecutive empty-content responses; on
+  reaching the threshold, empty steps are revised out via
+  `revise_last_step()`, a new turn is opened, and
+  `compact(summarize_all=True)` runs for full context recovery. Task 7 and
+  Task 8 (final wiring/verification and documentation) done: full test suite
+  passing (`tests/test_continuation.py`, 25 passed, covering
+  `TestCompactionStartedCallback`, `TestCompactionStartedFired`,
+  `TestFullCompaction`, and `TestGarbledLoopRecovery`), and README.md,
+  TODO.md, `wiki/architecture.md`, and `wiki/index.md` updated to document
+  the feature.
 
 - **`/revise-history [n]` slash command** — fully implemented per
   `docs/superpowers/plans/2026-09-17-revise-history.md` (11 tasks, all done).

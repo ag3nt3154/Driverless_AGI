@@ -19,6 +19,8 @@ When the conversation exceeds the model's context window, **context compaction**
 
 To end a turn the agent calls either **`write_handoff`** (final response) or **`ask_user`** (pause for user input). `write_handoff` takes the complete user-facing response as `content` and returns a typed `ToolResult(side_effect=SideEffect.END_TURN)` that the loop detects and uses to exit cleanly — no in-band string sentinels. `ask_user` pauses the turn and waits for the user's answer; after receiving it, the agent continues working or calls `write_handoff` to finish. If the agent produces a response with no tool calls and neither turn-ending tool, the harness treats it as accidentally truncated and injects a recovery prompt (`.dagi/prompts/main/continue.md`) to resume the loop. A safety valve (`max_continuations`, default 10, configurable in `config.yaml`) prevents runaway recovery loops. Additionally, **garbled loop recovery** detects when the model produces 3 consecutive empty-content responses (a common failure mode with smaller models), revises those empty steps out of the session log, and triggers a full context compaction to give the model a fresh start.
 
+**Garbled loop recovery:** When a model produces consecutive empty-content responses (common with smaller models), the harness automatically strips the degenerate turns, compacts the full context, and retries — rather than burning through all continuation attempts.
+
 At session start, **wiki index injection** automatically reads the root and section `.index.md` files
 from the memory wiki and prepends them as a system message before the first API call — giving the
 agent a structural map of accumulated knowledge without any manual invocation. The agent then uses the

@@ -25,8 +25,14 @@ Current components and their relationships.
 - `_reload`: skill hot-reload logic
 - `_model_switch`: model switching
 - `_streaming`: provider streaming
-- `_compaction`: context compaction (via `compact` subagent inheriting warm KV-cache)
+- `_compaction`: context compaction (via `compact` subagent inheriting warm KV-cache);
+  supports `summarize_all` mode for full-context compaction (no tail retention)
 - `_tool_dispatch`: dispatches tool calls through `ToolRegistry`
+
+- **Garbled loop recovery:** consecutive empty-content responses (threshold: 3) trigger
+  `revise_last_step()` to strip degenerate turns, followed by full compaction
+  (`compact(summarize_all=True)`). Process state transitions to `"compacting"` during
+  the operation.
 
 All modules are re-exported via `agent.loop`. White-box test patches must target the
 owning module (e.g. `agent._compaction.run_subagent`).

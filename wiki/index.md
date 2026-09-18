@@ -30,6 +30,10 @@ Project knowledge and navigation.
 
 ## Implemented features
 
+- **Garbled loop recovery** (2026-09-18): Detects consecutive empty-content model
+  responses, strips degenerate turns via `revise_last_step()`, and triggers full
+  context compaction. Shows `PROCESS compacting` in PySide sidebar during recovery.
+
 - **Slash-command autocomplete** (2026-09-17): `SlashCompleterPopup` in
   `pyside_gui/slash_completer.py`; wired into `PromptInput` and `_Editor`. Typing `/`
   shows a filtered popup of all commands, skills, and workflows. Tab/Enter accepts,
