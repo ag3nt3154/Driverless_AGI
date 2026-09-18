@@ -36,7 +36,16 @@
   test_compact_summarize_all_puts_everything_in_middle` asserts that after
   full compaction only the summary node remains on the surface. Verified
   via `tests/test_continuation.py` (22 passed).
-  Remaining tasks (loop detection, turn stripping) not yet started.
+  Task 6 done: garbled-loop detection and recovery in `agent/loop.py`.
+  A new module-level constant `_EMPTY_CONTENT_THRESHOLD = 3` and instance
+  variable `_empty_content_streak` track consecutive empty-content responses.
+  When the streak reaches the threshold, the empty steps are revised out of
+  the session log via `revise_last_step()`, a new turn is opened, and
+  `compact(summarize_all=True)` is triggered for full context recovery.
+  Non-empty responses reset the counter. New tests in
+  `tests/test_continuation.py::TestGarbledLoopRecovery` (3 tests) verify
+  compaction triggers, counter reset on real content, and empty-step removal.
+  Verified via `tests/test_continuation.py` (25 passed).
 
 - **Production review (R5, R8, R11, R17)** — remaining deferred findings from
   `wiki/notes/production-review-2026-09-15.md`. R5 (session filename

@@ -45,6 +45,8 @@ from agent._loop_helpers import (  # noqa: F401
     _format_reload_notification,
 )
 
+_EMPTY_CONTENT_THRESHOLD = 3
+
 
 
 # Compaction/config/callback dataclasses moved verbatim to agent/_loop_config.py;
@@ -196,6 +198,7 @@ class AgentLoop:
 
         # Reset at the start of each run() call — counts "continue" injections for that task only
         self._continuation_count: int = 0
+        self._empty_content_streak: int = 0
         self._last_prompt_tokens: int = 0
         self._compaction_generation: int = 0
         #: Snapshot of the last provider request's identity fields.
@@ -578,6 +581,7 @@ class AgentLoop:
                     self.tracker.rename_with_slug(slug)
 
             self._continuation_count = 0
+            self._empty_content_streak = 0
             self._start_expression_timer()
             iteration = 0
             while True:
@@ -741,6 +745,33 @@ class AgentLoop:
 
                     # No tool calls — inject "continue" to prompt model to call write_handoff
                     self.callbacks.on_assistant_text(result)
+                    # ── Garbled-loop detection ───────────────────────────
+                    if not result.strip():
+                        self._empty_content_streak += 1
+                        if self._empty_content_streak >= _EMPTY_CONTENT_THRESHOLD:
+                            # Close the current (open) step first so it can be revised
+                            self._continuing_step_finished(_turn, iteration)
+                            for _ in range(self._empty_content_streak):
+                                try:
+                                    self.log.revise_last_step()
+                                except ValueError:
+                                    break
+                            # Re-open a turn+step so the loop can continue normally
+                            _turn = self.log.next_turn()
+                            self.log.append(sev.TURN_START, {"turn": _turn})
+                            iteration = 0
+                            self._sync_messages()
+                            self._empty_content_streak = 0
+                            self._continuation_count = 0
+                            self.callbacks.on_assistant_text(
+                                "[Garbled response loop detected — compacting context for recovery.]"
+                            )
+                            self.callbacks.on_compaction_started()
+                            self.compact(summarize_all=True)
+                            continue
+                    else:
+                        self._empty_content_streak = 0
+                    # ─────────────────────────────────────────────────────
                     if self._continuation_count >= self.config.max_continuations:
                         self._process.idle()
                         self.callbacks.on_done(result)

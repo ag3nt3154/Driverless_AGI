@@ -498,3 +498,82 @@ class TestFullCompaction:
         msgs = loop.log.derive_messages()
         assert len(msgs) == 1
         assert "Full summary" in msgs[0]["content"]
+
+
+class TestGarbledLoopRecovery:
+    def test_garbled_loop_triggers_full_compaction(self):
+        """Consecutive empty-content responses must trigger revise + full compaction."""
+        compaction_started = []
+        callbacks = AgentCallbacks(
+            on_compaction_started=lambda: compaction_started.append(True),
+        )
+
+        loop = _make_loop(max_continuations=10)
+        loop.callbacks = callbacks
+        loop.client = MagicMock()
+
+        # 3 empty responses (garbled), then after compaction the model recovers
+        loop.client.chat.completions.create.side_effect = [
+            _make_response(""),  # garbled 1
+            _make_response(""),  # garbled 2
+            _make_response(""),  # garbled 3 → triggers recovery
+            _exit_response("Recovered after compaction."),
+        ]
+
+        with patch.object(loop, "compact") as mock_compact:
+            mock_compact.return_value = CompactionResult(
+                did_compact=True, generation=1,
+                summary_content="[CONTEXT SUMMARY]\nsummary", removed_count=3,
+            )
+            result = loop.run("do something")
+
+        mock_compact.assert_called_once_with(summarize_all=True)
+        assert compaction_started, "on_compaction_started should have fired"
+
+    def test_non_empty_response_resets_garbled_counter(self):
+        """A response with content must reset the empty-content counter."""
+        loop = _make_loop(max_continuations=10)
+        loop.client = MagicMock()
+        loop.client.chat.completions.create.side_effect = [
+            _make_response(""),      # garbled 1
+            _make_response(""),      # garbled 2
+            _make_response("real"),  # resets counter
+            _make_response(""),      # garbled 1 again
+            _make_response(""),      # garbled 2
+            _exit_response("Done."),
+        ]
+
+        with patch.object(loop, "compact") as mock_compact:
+            result = loop.run("do something")
+
+        # Should NOT have triggered compaction — never hit 3 consecutive
+        mock_compact.assert_not_called()
+        assert "Done." in result
+
+    def test_garbled_recovery_removes_empty_steps(self):
+        """After recovery, the empty garbled steps must not be on the surface."""
+        loop = _make_loop(max_continuations=10)
+        loop.client = MagicMock()
+        loop.client.chat.completions.create.side_effect = [
+            _make_response(""),  # garbled 1
+            _make_response(""),  # garbled 2
+            _make_response(""),  # garbled 3 → triggers recovery
+            _exit_response("Recovered."),
+        ]
+
+        with patch.object(loop, "compact") as mock_compact:
+            mock_compact.return_value = CompactionResult(
+                did_compact=True, generation=1,
+                summary_content="[CONTEXT SUMMARY]\nsummary", removed_count=3,
+            )
+            loop.run("do something")
+
+        # The empty assistant messages should have been revised away
+        # (exclude tool-call messages like write_handoff which legitimately have empty content)
+        empty_assistant_msgs = [
+            m for m in loop._messages
+            if m.get("role") == "assistant"
+            and not (m.get("content") or "").strip()
+            and not m.get("tool_calls")
+        ]
+        assert len(empty_assistant_msgs) == 0
