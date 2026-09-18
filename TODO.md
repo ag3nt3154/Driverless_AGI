@@ -2,6 +2,15 @@
 
 ## In progress
 
+- **Garbled Loop Recovery** — detect when the model falls into a degenerate
+  loop of empty-content responses, strip those turns, and compact the
+  context. Task 1 done: `AgentCallbacks` (`agent/_loop_config.py`) gained
+  `on_compaction_started: Callable[[], None]` (no-op default), fired before
+  compaction begins; tests in `tests/test_continuation.py::
+  TestCompactionStartedCallback`. Remaining tasks (loop detection, turn
+  stripping, wiring the new callback into `agent/_compaction.py` /
+  `agent/loop.py`, UI hookups) not yet started.
+
 - **Production review (R5, R8, R11, R17)** — remaining deferred findings from
   `wiki/notes/production-review-2026-09-15.md`. R5 (session filename
   collisions) and R8 (pipe subagent prompt loss) deferred pending design
