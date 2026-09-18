@@ -57,11 +57,31 @@ durability callback still targets the old event path. **Evidence:** The offline 
 lifecycle wrote 33 events with only 14 unique sequence values and two resets;
 reconstructed messages were duplicated (`first`, `first`, `second`, `first`, `second`, `third`).
 Separately, source tracing confirmed that tracker slug renaming can shift the human log path while
-the durability callback retains the original event path.  
-**Proposed fix:** Reuse one persistent loop/log, or replay authoritative events with monotonic
-IDs and a stable session identifier.  
-**Acceptance:** Multi-turn restore after slug rename preserves event order, IDs, and branch
-coordinates.
+the durability callback retains the original event path.
+
+**Confirmed narrower defect and fix (2026-09-18):** `pyside_gui/_dispatch.py` supplied both
+`previous._messages` and `previous.log` to the new `AgentLoop` on each prompt. The constructor in
+`agent/loop.py` unconditionally seeded `initial_messages` into a supplied log, duplicating the
+whole existing conversation, including tool outputs. The constructor now seeds initial messages
+only when `_session_log` is absent, leaving a supplied log authoritative. Message-only resume
+still seeds and refreshes its header. The regression test
+`tests/test_session_log_shadow.py::TestResumeSeeding::test_gui_continuation_preserves_history_once_after_handoff`
+passes across three repeated rebuild/run cycles and verifies one new user prompt.
+
+**Status:** The narrow duplication fix is implemented and verified; the broader event sequencing,
+stable log-location, and slug-rename concerns remain open. No commit or deployment to the other
+machine is recorded here.
+
+**Remaining context limitation:** A user reported that another machine reached approximately
+1.2 million context on the next GUI prompt after a successful edit and `write_handoff`; the exact
+incident attribution is unconfirmed because no logs are available. The reported provider limit was
+1m; configured values were `context_window=200000`, `keep_recent_tokens=20000`,
+`max_iterations=20`, and `reserve_tokens=16384`. The sidebar showed 300% total and 200% tools,
+but its request-message estimates use characters divided by four and are not exact provider token
+counts. The compaction trigger runs after a successful non-handoff tool step using preceding
+response usage; handoff short-circuits that path, and there is no pre-request size enforcement.
+`context_window` is a compaction trigger, not a hard provider cap. This broader hardening remains
+open.
 
 ### P1 — R5: Second-level session filenames collide
 

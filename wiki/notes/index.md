@@ -25,6 +25,9 @@ Navigation to useful findings and open questions.
 - [Production review — 2026-09-15](production-review-2026-09-15.md): 19 actionable findings
   across subagents, the agent loop, PySide GUI, and session persistence; verdict not
   production-ready; recommendations remain unapproved.
+- [GUI context duplication](gui-context-duplication-2026-09-18.md): confirmed narrow session-log
+  duplication fix, regression verification, reported incident details, and remaining context
+  hardening limitation.
 
 - [Large-file reader investigation](large-file-reader-2026-09-09.md): plan-only findings
   that informed the approved redesign below.

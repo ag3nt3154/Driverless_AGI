@@ -655,3 +655,30 @@ class TestResumeSeeding:
     def test_a_fresh_session_seeds_nothing(self, tmp_path):
         loop = _make_loop(tmp_path)
         assert [e.type for e in loop.log.events] == [ev.REQUEST_HEADER]
+
+    def test_gui_continuation_preserves_history_once_after_handoff(self, tmp_path):
+        """Rebuilding the GUI loop must not replay history into its own live log."""
+        loop = _make_loop(tmp_path, _initial=self.HISTORY)
+        loop.client.chat.completions.create.return_value = _wh_response()
+        loop.run("Finish the edit")
+
+        for _ in range(3):
+            history = loop._build_request_messages()[1:]
+            nodes = loop.log.surface.nodes
+            previous = loop
+            with patch("openai.OpenAI"), patch.object(Path, "exists", return_value=False):
+                loop = AgentLoop(
+                    config=previous.config,
+                    initial_messages=previous._messages,
+                    _session_log=previous.log,
+                    _registry=previous.registry,
+                    _tracker=previous.tracker,
+                )
+            assert loop.log is previous.log
+            assert loop.log.surface.nodes == nodes
+            assert loop._build_request_messages()[1:] == history
+            loop.client.chat.completions.create.return_value = _wh_response()
+            loop.run("Next request")
+            request = loop.client.chat.completions.create.call_args.kwargs["messages"]
+            assert request[1:-1] == history
+            assert request[-1] == {"role": "user", "content": "Next request"}

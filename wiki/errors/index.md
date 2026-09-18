@@ -2,9 +2,18 @@
 
 Navigation to observed issues and verified fixes.
 
-> Last updated: 2026-09-17
+> Last updated: 2026-09-18
 
 ## Recent confirmed issues (2026-09)
+
+**GUI session history duplicated during continuation** · `fixed` · 2026-09-18:
+`pyside_gui/_dispatch.py` supplied both prior messages and the prior `SessionLog` to a new
+`AgentLoop`, while the constructor also seeded those messages into the supplied log. The complete
+conversation, including tool outputs, was therefore duplicated on rebuild. The constructor now
+seeds only when no session log is supplied; message-only resume continues to seed and refresh its
+header. The regression test covers three repeated rebuild/run cycles and exact provider history.
+The fix does not repair already polluted sessions or enforce a hard provider context cap; see
+[GUI context duplication](../notes/gui-context-duplication-2026-09-18.md).
 
 **PySide GUI — 4 bugs (2026-09-05, all fixed):**
 - Right sidebar white on some Windows themes: viewport lacked explicit bg —

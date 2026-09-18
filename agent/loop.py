@@ -164,7 +164,9 @@ class AgentLoop:
         # (self.log is initialized earlier, before create_tool_registry, so it
         # can be forwarded to subagent tools at construction time.)
         self._emit_header(system, "resume" if initial_messages else "initial")
-        if initial_messages:
+        # A supplied log already owns the conversation. Replaying its derived
+        # messages would duplicate the entire history on every GUI prompt.
+        if initial_messages and _session_log is None:
             self._seed_from_messages(initial_messages)
         self._sync_messages()
 
