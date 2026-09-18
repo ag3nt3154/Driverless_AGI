@@ -7,9 +7,14 @@
   context. Task 1 done: `AgentCallbacks` (`agent/_loop_config.py`) gained
   `on_compaction_started: Callable[[], None]` (no-op default), fired before
   compaction begins; tests in `tests/test_continuation.py::
-  TestCompactionStartedCallback`. Remaining tasks (loop detection, turn
+  TestCompactionStartedCallback`. Task 2 done:
+  `ProcessStateController.compacting()` (`agent/process_state.py`) added
+  alongside `idle`/`thinking`/`paused`/`error`, and the PySide right sidebar
+  (`pyside_gui/right_sidebar.py`) gained a matching `"compacting"` entry in
+  `_STATUS_DOTS` (`⟳`, `#89b4fa`). Remaining tasks (loop detection, turn
   stripping, wiring the new callback into `agent/_compaction.py` /
-  `agent/loop.py`, UI hookups) not yet started.
+  `agent/loop.py`, and actually calling `.compacting()`/reverting state
+  during compaction) not yet started.
 
 - **Production review (R5, R8, R11, R17)** — remaining deferred findings from
   `wiki/notes/production-review-2026-09-15.md`. R5 (session filename
