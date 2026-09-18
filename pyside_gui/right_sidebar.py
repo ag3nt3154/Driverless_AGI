@@ -22,9 +22,10 @@ def _path_tail(path: Path | str, max_chars: int = 22) -> str:
 
 
 _STATUS_DOTS = {
-    "running": ("●", "#a6e3a1", "running"),
-    "paused":  ("⏸", "#f9e2af", "paused"),
-    "idle":    ("○", "#6c7086", "idle"),
+    "running":    ("●", "#a6e3a1", "running"),
+    "paused":     ("⏸", "#f9e2af", "paused"),
+    "compacting": ("⟳", "#89b4fa", "compacting"),
+    "idle":       ("○", "#6c7086", "idle"),
 }
 
 _SIDEBAR_CSS = """

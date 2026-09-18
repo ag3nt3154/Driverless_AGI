@@ -50,6 +50,9 @@ class ProcessStateController:
     def paused(self) -> ProcessSnapshot:
         return self._transition("paused")
 
+    def compacting(self) -> ProcessSnapshot:
+        return self._transition("compacting")
+
     def error(self) -> ProcessSnapshot:
         return self._transition("error")
 
