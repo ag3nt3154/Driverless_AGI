@@ -1,6 +1,6 @@
 # AGENTS.md
 
-> Last updated: 2026-09-19 | [README](README.md) | [Wiki](wiki/index.md) | [Code review](wiki/notes/production-review-2026-09-15.md)
+> Last updated: 2026-09-20 | [README](README.md) | [Wiki](wiki/index.md) | [Code review](wiki/notes/production-review-2026-09-15.md)
 > [Proposed image-input implementation plan](docs/image-input-implementation-plan.md)
 > [GUI context duplication and budget audit](wiki/notes/gui-context-duplication-2026-09-18.md)
 > [Context overflow audit report](docs/context-overflow-audit-2026-09-18.md)
@@ -121,7 +121,8 @@ security issues, or complexity debt would be significant.
 | `.dagi/skills/deliver/SKILL.md` | Primary delivery lifecycle orchestration |
 | `.dagi/skills/plan/SKILL.md` | Planning lifecycle (spec, explore, approve, wiki-add) |
 | `.dagi/prompts/main/main_system.md` | Main agent system prompt template |
-| `.dagi/config.yaml` | Tool allowlist, model config, memory root, affect config |
+| `.dagi/config.yaml` | Global runtime settings: tool allowlist, context budget, memory root |
+| `.dagi/model_config/*.yaml` | Per-model catalog entries (filename = model_id); git-tracked |
 | `tests/test_wiki_tools.py` | Wiki delegation contract tests (33 tests) |
 | `tests/test_project_init.py` | Init preservation and scaffold tests |
 | `wiki/` | Project knowledge wiki (architecture, workflows, errors, notes) |
@@ -142,15 +143,14 @@ security issues, or complexity debt would be significant.
 ## Notes & Terms
 
 - **Large-file reader (controller path)**: `ReadTool` triggers when `estimate_tool_output(result) >= config.reserve_tokens`. Calls `delegate_selection` → `run_subagent(preset="read-large-text", reader_job_spec=spec)` → `subagent_main` routes via `--reader-job` to `run_reader_job_mode` (bypasses agent loop). Controller chunks file with Chonkie/stdlib fallback, calls model API sequentially, writes handoff.
-- **pytest-qt entry point**: name is `pytest-qt` (not `qt`); use `-p "no:pytest-qt"` to disable.
 - **Sentinel display sanitization**: escape loop sentinels (`<<` → `< <`) before showing; byte-check source before editing.
 - **agent/_* loop modules**: white-box test patches must target owning module (e.g. `agent._compaction`).
 - **Prompt-cache boundary**: entire prior provider input must prefix next request; no dynamic board.
 - **Termination**: main and child turns end through `write_handoff`; bare assistant text triggers corrective continuation.
+- **Model catalog**: individual `.dagi/model_config/{id}.yaml` files (primary); inline `models:` in config.yaml still works as fallback; file-based entries win. `cache_prompt` defaults to `true`; `thinking` must be set per-model (no global default).
 - **Tool filtering**: `config.yaml` `tools:` restricts main agent; mandatory `write_handoff` always injected.
 - **Subagent API**: import `tools/subagent_api.py`; never private `_subagent_runner.py`.
 - **Windows / conda**: `conda run -n dagi python`; hooks use `envs/dagi/python.exe` (conda run drops stdin). `conda run` fully buffers stdout when not attached to a TTY — piped or redirected output looks like a hang. Use the env's interpreter directly with `-u` for unbuffered output.
-- **Plan UI location**: active-plan panel in PySide left sidebar, 4th rail view (`PlanView`); `LeftSidebar.update_plan()`.
 - **Pre-request budget guard**: `AgentLoop` estimates request size before each API call; if over `context_window - reserve_tokens`, compacts automatically.
 - **Wiki subagents**: tool allowlists are `[read,grep,find]` (query) or `+[write,edit]` (add); no shell/delegation.
 

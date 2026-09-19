@@ -36,16 +36,18 @@ Paste screenshots or local image files (PNG/JPEG) directly into the composer. Im
 - Preserved across session restarts, context compaction, and model switches
 - Displayed as thumbnails in both the composer and conversation view
 
-Configurable per-model via `.dagi/config.yaml`:
+Configurable per-model in `.dagi/model_config/my-vision-model.yaml`:
 ```yaml
-models:
-  my-vision-model:
-    supports_images: true
-    image_input:
-      max_images_per_message: 4
-      max_image_bytes: 8388608  # 8 MiB
-      max_pixels: 24000000
-      detail: auto  # "low", "high", or "auto"
+name: My Vision Model
+model: provider/model-name
+api_url: https://...
+api_key_env: MY_API_KEY
+supports_images: true
+image_input:
+  max_images_per_message: 4
+  max_image_bytes: 8388608  # 8 MiB
+  max_pixels: 24000000
+  detail: auto  # "low", "high", or "auto"
 ```
 
 See the "Image attachments" note under **PySide6 Desktop GUI** below for composer usage
@@ -168,7 +170,7 @@ echo "Add type hints to agent/" | python main.py
 
 | Flag | Description |
 |------|-------------|
-| `--model` | Model ID from `config.yaml` |
+| `--model` | Model ID from the model catalog |
 | `--max-iter` | Override max iterations |
 | `--project` | Path to a project directory to scope file access |
 
@@ -186,7 +188,7 @@ conda run --no-capture-output -n dagi python tui.py -m deepseek-v4-pro-openroute
 
 | Flag | Description |
 |------|-------------|
-| `--model` / `-m` | Model ID from `config.yaml` |
+| `--model` / `-m` | Model ID from the model catalog |
 | `--verbose` / `-v` | Show full tool input/output |
 | `--project` / `-p` | Project directory |
 
@@ -218,7 +220,7 @@ conda run --no-capture-output -n dagi python -m pyside_gui --model <id> --projec
 
 | Flag | Description |
 |------|-------------|
-| `--model` / `-m` | Model ID from `config.yaml` |
+| `--model` / `-m` | Model ID from the model catalog |
 | `--verbose` / `-v` | Show full tool input/output |
 | `--project` / `-p` | Project directory (defaults to `cwd`) |
 
@@ -243,7 +245,7 @@ For a distribution that doesn't require a full conda install, unpack a [conda-pa
 ```
 
 Double-click `dagi_run.bat` in the repo root. It opens a Windows Terminal window (falls back to `cmd` if `wt.exe` isn't on `PATH`), activates `dagi_env`, and runs `dagi_launch.py`, which prompts for:
-1. **Model** — numbered list read live from `config.yaml`'s `models:` catalog
+1. **Model** — numbered list read live from the model catalog (`.dagi/model_config/`)
 2. **Verbose** — `y`/`n`
 
 ...then launches `tui.py --model <id> [--verbose]` with your selections.
@@ -336,7 +338,7 @@ conda run -n dagi python telegram_bot.py --project /path/to/project
 
 | Flag | Description |
 |------|-------------|
-| `--model` / `-m` | Model ID from `config.yaml` |
+| `--model` / `-m` | Model ID from the model catalog |
 | `--project` / `-p` | Project directory |
 
 **Telegram commands:** `/start`, `/clear`, `/help`
@@ -563,45 +565,52 @@ The context carries over — no need to restart.
 
 ## Configuration
 
-`config.yaml` controls runtime behavior. Copy `config.example.yaml` to get started.
+`.dagi/config.yaml` controls global runtime settings. Model definitions live in individual files under `.dagi/model_config/`.
 
 ```yaml
+# .dagi/config.yaml — global settings
 default_model: gpt-4o-openai        # used if --model isn't passed
-max_iterations: 20                   # hard cap on loop iterations
 max_continuations: 10                # max "continue" injections before giving up
 api_error_retries: 3                 # retries for transient API errors (429/5xx/connection)
-cache_prompt: true                   # send cache_prompt: true in extra_body (OpenRouter prompt caching)
-
-models:
-  gpt-4o-openai:
-    name: "GPT-4o (OpenAI)"          # display name
-    model: "gpt-4o"                  # model ID sent to API
-    api_url: "https://api.openai.com/v1"
-    api_key_env: "OPENAI_API_KEY"    # env var holding the key
-
-  claude-opus-openrouter:
-    name: "Claude Opus 4.6 (OpenRouter)"
-    model: "anthropic/claude-opus-4-6"
-    api_url: "https://openrouter.ai/api/v1"
-    api_key_env: "OPENROUTER_API_KEY"
 
 services:
   doc_converter: "http://localhost:8100"   # required for reading .pdf/.docx/.xlsx/.pptx — see below
 ```
 
-### Per-Model Overrides
+### Model Catalog
 
-Any model entry can override compaction thresholds (defaults shown):
+Each model is a separate YAML file in `.dagi/model_config/`. The filename (without `.yaml`) is the model ID.
 
 ```yaml
-  my-model:
-    model: "provider/model-id"
-    api_url: "https://..."
-    api_key_env: "MY_API_KEY"
-    context_window: 128000       # model's hard token limit
-    reserve_tokens: 16384        # headroom for next reply
-    keep_recent_tokens: 20000    # recent tail kept verbatim
+# .dagi/model_config/gpt-4o-openai.yaml
+name: "GPT-4o (OpenAI)"
+model: "gpt-4o"
+api_url: "https://api.openai.com/v1"
+api_key_env: "OPENAI_API_KEY"
 ```
+
+```yaml
+# .dagi/model_config/claude-opus-openrouter.yaml
+name: "Claude Opus 4.6 (OpenRouter)"
+model: "anthropic/claude-opus-4-6"
+api_url: "https://openrouter.ai/api/v1"
+api_key_env: "OPENROUTER_API_KEY"
+```
+
+Any model file can also override compaction thresholds (defaults shown):
+
+```yaml
+# .dagi/model_config/my-model.yaml
+name: "My Model"
+model: "provider/model-id"
+api_url: "https://..."
+api_key_env: "MY_API_KEY"
+context_window: 128000       # model's hard token limit
+reserve_tokens: 16384        # headroom for next reply
+keep_recent_tokens: 20000    # recent tail kept verbatim
+```
+
+Legacy inline `models:` entries in `config.yaml` still work as a fallback, but file-based entries win on collision.
 
 **Subagent context inheritance:** subagents (worker, review, explore_files, etc.) always use the main agent's context settings (`context_window`, `reserve_tokens`, `keep_recent_tokens`) from the top-level config, regardless of which model tier they run on. Only LLM-specific fields (model, base_url, api_key, thinking) come from the worker/advanced model entry. This ensures consistent context budgets across all agent tiers.
 
@@ -610,12 +619,11 @@ Any model entry can override compaction thresholds (defaults shown):
 For full control over the OpenAI client — custom httpx transports, mTLS, proxies, extra headers, request-level defaults — use a **client script**: a Python file that exports a configured `openai.OpenAI` client and optional `request_kwargs`.
 
 ```yaml
-models:
-  corp-gpt4o:
-    name: "GPT-4o (Corporate Proxy)"
-    client_script: .dagi/profiles/corp_gpt4o.py
-    model: gpt-4o              # optional: overrides request_kwargs["model"]
-    context_window: 128000
+# .dagi/model_config/corp-gpt4o.yaml
+name: "GPT-4o (Corporate Proxy)"
+client_script: .dagi/profiles/corp_gpt4o.py
+model: gpt-4o              # optional: overrides request_kwargs["model"]
+context_window: 128000
 ```
 
 ```python
@@ -642,23 +650,15 @@ The script must define `client` (an `openai.OpenAI` instance). It may optionally
 
 ### Thinking / Reasoning
 
-Models that support extended thinking (e.g. Qwen3, DeepSeek-R1) can be configured with the `thinking` key. Values: `none` (default), `low`, `medium`, `high`.
-
-Set it globally:
+Models that support extended thinking (e.g. Qwen3, DeepSeek-R1) can be configured with the `thinking` key in their model file. Values: `none` (default), `low`, `medium`, `high`.
 
 ```yaml
+# .dagi/model_config/qwen3-30b-openrouter.yaml
+name: "Qwen3 30B (OpenRouter)"
+model: "qwen/qwen3-30b-a3b"
+api_url: "https://openrouter.ai/api/v1"
+api_key_env: "OPENROUTER_API_KEY"
 thinking: high
-```
-
-Or per-model (overrides the global setting):
-
-```yaml
-models:
-  qwen3-30b-openrouter:
-    model: "qwen/qwen3-30b-a3b"
-    api_url: "https://openrouter.ai/api/v1"
-    api_key_env: "OPENROUTER_API_KEY"
-    thinking: high      # only this model reasons; others stay at the global value
 ```
 
 When reasoning is active:
@@ -677,9 +677,8 @@ stream: true   # global default
 Or per-model (overrides the global setting) — useful as an escape hatch for a provider that doesn't handle `stream_options.include_usage` well:
 
 ```yaml
-models:
-  some-model:
-    stream: false   # this model waits for the full response, like before streaming existed
+# .dagi/model_config/some-model.yaml
+stream: false   # this model waits for the full response, like before streaming existed
 ```
 
 Token/cost usage is requested via `stream_options: {"include_usage": true}` on every streaming call; if a provider never sends the trailing usage chunk, that turn's usage is simply unavailable (the same degraded state that already exists today for providers that omit `usage.cost`) rather than an error. `main.py`, `telegram_bot.py`, and the scheduler are unaffected by this setting — streaming only changes how the TUI renders a turn in progress, not the final result.
@@ -724,7 +723,7 @@ Driverless_AGI/
 ├── main.py                # Single-shot CLI (argparse)
 ├── archives/              # Deprecated, unused — reference only
 │   └── cli.py             #   Old interactive CLI REPL (typer + rich)
-├── config.yaml            # Runtime config (gitignored)
+├── config.yaml            # Runtime config (gitignored — legacy; see .dagi/)
 ├── config.example.yaml    # Config template
 ├── .env                   # API keys (gitignored)
 ├── SOUL.md                # Agent personality
@@ -820,6 +819,8 @@ Driverless_AGI/
 │           └── cache.py    #   Server-side content-addressed cache (.cache/<sha256>.md)
 │
 ├── .dagi/
+│   ├── config.yaml        # Global runtime settings (tool allowlist, context budget, memory root)
+│   ├── model_config/      # Per-model YAML files (filename = model_id); git-tracked
 │   ├── prompts/           # Prompt markdown files, organized by role
 │   │   ├── main/          #   main_system.md — primary coding assistant prompt
 │   │   └── compact/       #   compact_system, compact_user (Pi-style summariser)
@@ -871,7 +872,7 @@ Driverless_AGI/
 | `explore_files` | Large-scale codebase scan: explores with broad-to-narrow strategy (glob/grep first, targeted reads second) and returns a citation-first handoff (`path:line_start-line_end` entries). Runs as a pipe subagent; output streams to the main TUI with an `[explore_files]` label |
 | `extend_subagent_timeout` | Extend the deadline of an in-flight subagent by PID. Called by the agent when `spawn_*` returns a timeout dict |
 | `compact` | Manually trigger Pi-style context compaction |
-| `switch_model` | Swap to a different model (from `config.yaml`) mid-session |
+| `switch_model` | Swap to a different model (from the model catalog) mid-session |
 | `show_file` | Open a file in the PySide GUI's file viewer for the user, optionally jumping to and highlighting a specific line number. No-op in TUI/Telegram |
 | `ask_user` | Pause and ask the user a clarifying question with optional choices. Acts as a turn-ender — the agent should call `ask_user` instead of `write_handoff` when it needs the user to answer a question before continuing |
 | `show_plan` | Render the current plan document and ask the user for revisions. Returns "Plan approved" (call `set_active_plan`) or "Modifications requested" (revise and call `show_plan` again). In autonomous mode, auto-approves immediately |

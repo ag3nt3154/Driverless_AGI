@@ -1,0 +1,4 @@
+name: Qwen 3.8 27B q6
+model: Qwen3.8-27B-q6_K
+api_url: http://localhost:8080/v1
+api_key_env: OPENROUTER_API_KEY

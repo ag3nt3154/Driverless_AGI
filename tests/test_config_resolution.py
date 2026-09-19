@@ -10,6 +10,7 @@ import pytest
 import yaml
 
 from agent.config_loader import (
+    _load_model_config_dir,
     _load_project_config,
     _merge_configs,
     list_model_ids,
@@ -181,6 +182,97 @@ class TestResolveModelConfig:
         )
         cfg = resolve_model_config("m1", config_path=cfg_file)
         assert cfg.worker_config is None
+
+
+class TestModelConfigDir:
+    def test_missing_dir_returns_empty(self, tmp_path):
+        assert _load_model_config_dir(tmp_path) == {}
+
+    def test_loads_individual_model_files(self, tmp_path):
+        model_dir = tmp_path / "model_config"
+        model_dir.mkdir()
+        (model_dir / "alpha.yaml").write_text(
+            "name: Alpha\nmodel: test/alpha\napi_url: https://x/v1\n",
+            encoding="utf-8",
+        )
+        (model_dir / "beta.yaml").write_text(
+            "name: Beta\nmodel: test/beta\napi_url: https://y/v1\n",
+            encoding="utf-8",
+        )
+        models = _load_model_config_dir(tmp_path)
+        assert set(models) == {"alpha", "beta"}
+        assert models["alpha"]["model"] == "test/alpha"
+        assert models["beta"]["name"] == "Beta"
+
+    def test_invalid_yaml_raises_value_error(self, tmp_path):
+        model_dir = tmp_path / "model_config"
+        model_dir.mkdir()
+        (model_dir / "bad.yaml").write_text("key: [unclosed", encoding="utf-8")
+        with pytest.raises(ValueError, match="Invalid YAML"):
+            _load_model_config_dir(tmp_path)
+
+    def test_non_yaml_files_ignored(self, tmp_path):
+        model_dir = tmp_path / "model_config"
+        model_dir.mkdir()
+        (model_dir / "readme.txt").write_text("not a model", encoding="utf-8")
+        (model_dir / "m1.yaml").write_text("model: test/m1\n", encoding="utf-8")
+        models = _load_model_config_dir(tmp_path)
+        assert list(models) == ["m1"]
+
+    def test_file_models_override_inline_in_load_raw_config(self, tmp_path):
+        cfg_file = _write_config(
+            tmp_path / "config.yaml",
+            "models:\n  m1:\n    model: inline/m1\n",
+        )
+        model_dir = tmp_path / "model_config"
+        model_dir.mkdir()
+        (model_dir / "m1.yaml").write_text(
+            "model: file/m1\napi_url: https://x/v1\n", encoding="utf-8"
+        )
+        raw = load_raw_config(config_path=cfg_file)
+        assert raw["models"]["m1"]["model"] == "file/m1"
+
+    def test_file_models_merged_with_inline_in_load_raw_config(self, tmp_path):
+        cfg_file = _write_config(
+            tmp_path / "config.yaml",
+            "models:\n  m1:\n    model: inline/m1\n",
+        )
+        model_dir = tmp_path / "model_config"
+        model_dir.mkdir()
+        (model_dir / "m2.yaml").write_text("model: file/m2\n", encoding="utf-8")
+        raw = load_raw_config(config_path=cfg_file)
+        assert raw["models"]["m1"]["model"] == "inline/m1"
+        assert raw["models"]["m2"]["model"] == "file/m2"
+
+    def test_project_model_config_dir_loaded(self, tmp_path):
+        root_cfg = _write_config(
+            tmp_path / "config.yaml",
+            "default_model: m1\n"
+            "models:\n  m1:\n    model: root/m1\n    api_key: sk-1\n",
+        )
+        project = tmp_path / "proj"
+        proj_dagi = project / ".dagi"
+        proj_model_dir = proj_dagi / "model_config"
+        proj_model_dir.mkdir(parents=True)
+        (proj_model_dir / "m1.yaml").write_text(
+            "model: proj/m1\napi_url: https://x/v1\napi_key: sk-1\n",
+            encoding="utf-8",
+        )
+        cfg = resolve_model_config("m1", config_path=root_cfg, project_path=project)
+        assert cfg.model == "proj/m1"
+
+    def test_resolve_picks_up_file_only_models(self, tmp_path):
+        cfg_file = _write_config(
+            tmp_path / "config.yaml", "default_model: alpha\n"
+        )
+        model_dir = tmp_path / "model_config"
+        model_dir.mkdir()
+        (model_dir / "alpha.yaml").write_text(
+            "model: test/alpha\napi_url: https://x/v1\napi_key: sk-1\n",
+            encoding="utf-8",
+        )
+        cfg = resolve_model_config("alpha", config_path=cfg_file)
+        assert cfg.model == "test/alpha"
 
 
 class TestSaveConfig:

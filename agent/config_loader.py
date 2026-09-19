@@ -2,18 +2,19 @@
 agent/config_loader.py — single source of truth for dagi configuration.
 
 Two-layer config stack:
-  1. {DAGI_ROOT}/.dagi/config.yaml          — base config (models catalog, defaults)
+  1. {DAGI_ROOT}/.dagi/config.yaml          — base config (defaults, tool allowlist)
   2. {project_path}/.dagi/config.yaml        — project override (merged over base)
 
-config.yaml schema:
-    default_model: <model_id>
-    models:
-      <model_id>:
-        name: "Human-readable label"
-        model: "provider/model-name"   # sent verbatim to the API
-        api_url: "https://..."
-        api_key_env: "ENV_VAR_NAME"    # pointer into .env — never the key itself
-        api_key: "sk-..."              # optional: inline key (overrides api_key_env)
+Model catalog — loaded from individual files in .dagi/model_config/:
+  Each {model_id}.yaml contains one model entry:
+    name: "Human-readable label"
+    model: "provider/model-name"   # sent verbatim to the API
+    api_url: "https://..."
+    api_key_env: "ENV_VAR_NAME"    # pointer into .env — never the key itself
+    api_key: "sk-..."              # optional: inline key (overrides api_key_env)
+
+  Legacy inline `models:` in config.yaml is still loaded as a fallback;
+  file-based entries win on collision.
 """
 from __future__ import annotations
 
@@ -84,17 +85,47 @@ def load_telegram_config() -> TelegramConfig:
     return TelegramConfig(bot_token=token, allowed_chat_ids=allowed_chat_ids)
 
 
+def _load_model_config_dir(config_dir: Path) -> dict[str, dict]:
+    """Load individual model YAML files from {config_dir}/model_config/.
+
+    Each file is named {model_id}.yaml; its contents become the catalog entry.
+    Returns an empty dict if the directory is absent.
+    """
+    model_dir = config_dir / "model_config"
+    if not model_dir.is_dir():
+        return {}
+    models: dict[str, dict] = {}
+    for path in sorted(model_dir.glob("*.yaml")):
+        model_id = path.stem
+        try:
+            entry = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+        except yaml.YAMLError as exc:
+            raise ValueError(f"Invalid YAML in {path}: {exc}") from exc
+        if isinstance(entry, dict):
+            models[model_id] = entry
+    return models
+
+
 def load_raw_config(config_path: Path | None = None) -> dict:
     """Return the full parsed config dict from {DAGI_ROOT}/.dagi/config.yaml,
     or {} if the file is absent.
+
+    Model entries from .dagi/model_config/*.yaml are merged into the
+    ``models`` dict, winning over any same-ID inline entries.
 
     config_path overrides the default path (used by benchmark runners
     that need a separate config file).
     """
     path = config_path or _CONFIG_PATH
     if not path.exists():
-        return {}
-    return yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+        raw: dict = {}
+    else:
+        raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    file_models = _load_model_config_dir(path.parent)
+    if file_models:
+        inline_models: dict = raw.get("models") or {}
+        raw["models"] = {**inline_models, **file_models}
+    return raw
 
 
 def list_model_ids() -> list[str]:
@@ -105,15 +136,24 @@ def list_model_ids() -> list[str]:
 def _load_project_config(project_path: Path) -> dict | None:
     """Load project-level config from {project_path}/.dagi/config.yaml.
 
-    Returns None if the file is absent. Raises ValueError on invalid YAML.
+    Also merges any model files from {project_path}/.dagi/model_config/.
+    Returns None if neither the config file nor the model_config dir exists.
+    Raises ValueError on invalid YAML.
     """
-    path = project_path / ".dagi" / "config.yaml"
-    if not path.exists():
+    dagi_dir = project_path / ".dagi"
+    path = dagi_dir / "config.yaml"
+    has_config = path.exists()
+    file_models = _load_model_config_dir(dagi_dir)
+    if not has_config and not file_models:
         return None
     try:
-        return yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+        raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {} if has_config else {}
     except yaml.YAMLError as exc:
         raise ValueError(f"Invalid YAML in {path}: {exc}") from exc
+    if file_models:
+        inline_models: dict = raw.get("models") or {}
+        raw["models"] = {**inline_models, **file_models}
+    return raw
 
 
 def _merge_configs(root_raw: dict, project_raw: dict) -> dict:
@@ -169,7 +209,7 @@ def _build_config_from_entry(
     max_continuations = int(raw.get("max_continuations", 10))
     api_error_retries = int(raw.get("api_error_retries", 3))
     thinking = entry.get("thinking") or raw.get("thinking", "none") or "none"
-    cache_prompt = bool(entry.get("cache_prompt", raw.get("cache_prompt", False)))
+    cache_prompt = bool(entry.get("cache_prompt", raw.get("cache_prompt", True)))
     stream = bool(entry.get("stream", raw.get("stream", True)))
 
     raw_memory_root = raw.get("memory_root")

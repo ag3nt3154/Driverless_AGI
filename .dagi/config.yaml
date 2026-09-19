@@ -1,12 +1,9 @@
 # increase for flaky providers
-null_response_retries: 5  
+null_response_retries: 5
 
 context_window: 200000
 keep_recent_tokens: 20000
-max_iterations: 20
 reserve_tokens: 16384
-
-
 
 # default_model: minimax-2.7-openrouter
 # default_model: deepseek-v4-flash-openrouter
@@ -20,14 +17,10 @@ default_model: current-free-openrouter
 # context_window: 32000
 # keep_recent_tokens: 15000
 # reserve_tokens: 10000
-# max_iterations: 20
-
 
 # Absolute path to the dagi-memory directory (wiki/raw/sources).
 # Omit to use the default: {current working directory}/dagi-memory
 memory_root: "G:\\My Drive\\black_grimoire\\dagi-memory"
-thinking: high          # none | low | medium | high — reasoning effort for models that support it
-cache_prompt: true      # send cache_prompt: true in extra_body — enables prompt caching on OpenRouter
 tools:                      # Restrict the main agent to a specific subset of tools.
                             # Omit (or set to null) to enable all available tools.
   # ── File tools ──────────────────────────────────────────────────────────────
@@ -72,54 +65,3 @@ tools:                      # Restrict the main agent to a specific subset of to
   # ── GUI tools ────────────────────────────────────────────────────────────────
   - show_file               # Open a file in the GUI file viewer with optional line highlight
 sandbox_mode: false     # true = file tools have no path restrictions (allowed_roots=None)
-
-# ── Affect ────────────────────────────────────────────────────────────────────
-affect:
-  drift_pull: 0.07        # Pull each VAD axis back toward baseline on drift
-  drift_noise: 0.02       # Random drift noise per axis; must be between 0 and 1
-#   emote_hysteresis: 0.05  # Stickiness when choosing the nearest VAD emote
-  wander_volatility: 0.1 # Brownian motion step size for baseline wandering
-  drift_interval: 1.0     # Seconds between affect drifts (matches GIF rotation)
-
-models:
-  claude-opus-openrouter:
-    api_key_env: OPENROUTER_API_KEY
-    api_url: https://openrouter.ai/api/v1
-    model: anthropic/claude-opus-4-6
-    name: Claude Opus 4.6 (OpenRouter)
-  deepseek-v4-pro-openrouter:
-    api_key_env: OPENROUTER_API_KEY
-    api_url: https://openrouter.ai/api/v1
-    model: deepseek/deepseek-v4-pro
-    name: Deepseek v4 Pro (OpenRouter)
-  deepseek-v4-flash-openrouter:
-    api_key_env: OPENROUTER_API_KEY
-    api_url: https://openrouter.ai/api/v1
-    model: deepseek/deepseek-v4-flash-0731
-    name: Deepseek v4 Flash(OpenRouter)
-  deepseek-v4-flash-deepseek:
-    api_key_env: DEEPSEEK_API_KEY
-    api_url: https://api.deepseek.com/v1
-    model: deepseek-v4-flash
-    name: Deepseek v4 Flash(Deepseek)
-  laguna-free-openrouter:
-    api_key_env: OPENROUTER_API_KEY
-    api_url: https://openrouter.ai/api/v1
-    model: poolside/laguna-s-2.1:free
-    name: Laguna Free (OpenRouter)
-  current-free-openrouter:
-    api_key_env: OPENROUTER_API_KEY
-    api_url: https://openrouter.ai/api/v1
-    model: openrouter/free
-    name: Current Free (OpenRouter)
-  nemotron-ultra-free-openrouter:
-    api_key_env: OPENROUTER_API_KEY
-    api_url: https://openrouter.ai/api/v1
-    model: nvidia/nemotron-3-ultra-550b-a55b:free
-    name: Nemotron Ultra Free (OpenRouter)
-  local_model:
-    api_key_env: OPENROUTER_API_KEY
-    api_url: http://localhost:8080/v1
-    model: Qwen3.8-27B-q6_K
-    name: Qwen 3.8 27B q6
-

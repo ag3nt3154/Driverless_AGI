@@ -65,7 +65,7 @@ class AgentConfig:
     # errors before propagating the exception. Independent of null_response_retries.
     api_error_retries: int = 3
     # Send cache_prompt: true in extra_body — enables prompt caching on OpenRouter.
-    cache_prompt: bool = False
+    cache_prompt: bool = True
     # Streaming: consume the API response as a chunk stream, firing per-delta
     # callbacks. Dataclass default is False so direct AgentConfig() construction
     # (tests, benchmarks) keeps the blocking path; config_loader defaults the
