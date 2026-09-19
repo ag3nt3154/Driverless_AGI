@@ -357,7 +357,7 @@ class DagiMainWindow(QMainWindow):
         loop = self._active_loop
 
         def _work() -> None:
-            turn = loop.log.next_turn
+            turn = loop.log.next_turn()
             loop.log.append(sev.TURN_START, {"turn": turn, "source": "gui_compact"})
             try:
                 r = loop.compact(force=True)
