@@ -122,6 +122,9 @@ def compact(loop: AgentLoop, force: bool = False, summarize_all: bool = False) -
         return _NO_COMPACTION
 
     steps = collect_steps(loop.log)
+    # Step-zero entries (seeds, user messages) lack STEP_END markers and
+    # are never valid compaction cut points — exclude them.
+    steps = [(t, s) for t, s in steps if s != 0]
     if not steps:
         from agent._loop_config import _NO_COMPACTION
 

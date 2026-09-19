@@ -84,7 +84,7 @@ class TestCompactionSurfaceIntegration:
 
         assert result.did_compact is True
         assert result.generation == 1
-        assert result.removed_count == 4  # 4 middle steps
+        assert result.removed_count == 3  # steps 1-3 (step 0 excluded from compaction)
 
         # Exactly one CONTEXT_COMPACTION event on the surface
         compaction_events = [e for e in loop.log.events if e.type == sev.CONTEXT_COMPACTION]
