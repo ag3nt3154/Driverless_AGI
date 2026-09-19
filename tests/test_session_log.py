@@ -32,7 +32,7 @@ class TestVocabulary:
         assert ev.BRANCH_START not in ev.SURFACE_EVENT_TYPES
 
     def test_format_version_is_two(self):
-        assert ev.SESSION_FORMAT_VERSION == 2
+        assert ev.SESSION_FORMAT_VERSION == 3
 
 
 class TestTurnEndReasons:

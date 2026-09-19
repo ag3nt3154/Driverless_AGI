@@ -608,7 +608,7 @@ class TestDerivedMessages:
 
         notice = loop.run("/reload")
 
-        assert loop._messages[-1] == {"role": "system", "content": notice}
+        assert loop._messages[-1] == {"role": "user", "content": notice}
         assert loop.log.open_turn is None
 
 

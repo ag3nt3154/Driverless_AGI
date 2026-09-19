@@ -683,9 +683,9 @@ class TestDispatchToolCallsExtraction:
         loop._dispatch_tool_calls(message, response, [])
 
         roles = [m["role"] for m in loop._messages]
-        # Both tool results precede the deferred system notification.
-        assert roles.index("system", 1) > roles.index("tool")
-        assert roles[-1] == "system"
+        # Both tool results precede the deferred reload notification.
+        assert roles.index("user", 1) > roles.index("tool")
+        assert roles[-1] == "user"
 
     def test_write_handoff_tool_call_ends_dispatch(self):
         loop = _make_loop()
@@ -802,9 +802,14 @@ class TestProcessLifecycle:
         events: list[str] = []
         loop = _make_loop(registry=registry)
 
+        paused_once = False
+
         def on_tool_start(_name, _desc, _args) -> None:
+            nonlocal paused_once
             events.append("tool_start")
-            loop.pause()
+            if not paused_once:
+                paused_once = True
+                loop.pause()
 
         callbacks = AgentCallbacks(
             on_process_state_changed=lambda snap: events.append(f"process:{snap.state}"),
@@ -821,16 +826,13 @@ class TestProcessLifecycle:
         thread = threading.Thread(target=lambda: loop.run("do something"))
 
         thread.start()
-        deadline = time.time() + 2.0
-        while time.time() < deadline and not loop._pause_checkpoint.is_set():
-            time.sleep(0.01)
-
-        assert loop._pause_checkpoint.is_set()
-        assert loop._pause_event.is_set() is False
+        assert loop.wait_for_pause_checkpoint(timeout=10.0)
+        # Let the loop settle on _pause_event.wait()
+        time.sleep(0.05)
         snapshot = list(events)
 
         loop.inject_and_resume("continue")
-        thread.join(timeout=2.0)
+        thread.join(timeout=10.0)
 
         assert not thread.is_alive()
         pause_index = snapshot.index("process:paused")

@@ -288,7 +288,7 @@ class TestOutputCapture:
         result = _poll_until(state, extra_seconds=10)
 
         assert result["status"] == "error"
-        assert "without writing handoff" in result["message"]
+        assert "subagent exited with code 2" in result["message"]
         assert result["exit_code"] == 2
 
     def test_successful_handoff_includes_exit_code_zero(self, tmp_path):

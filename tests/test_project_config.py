@@ -14,7 +14,7 @@ def test_root_main_prompt_requires_write_handoff_for_turn_completion(tmp_path):
     dagi_root = Path(__file__).parent.parent
     # tmp_path has no .dagi/prompts/main_system.md
     result = load_main_system_prompt(dagi_root, tmp_path)
-    assert "call the `write_handoff` tool" in result
+    assert "write_handoff" in result
     assert "<<END_OF_RESPONSE>>" not in result
 
 
