@@ -425,7 +425,7 @@ class TestWriteHandoffExit:
         result = loop.run("do something")
 
         tool_msgs = [m for m in loop._messages if m.get("role") == "tool"]
-        assert "OUTPUT TRUNCATED" in tool_msgs[0]["content"]
+        assert "TRUNCATED PREVIEW" in tool_msgs[0]["content"]
         assert any("[output filter]" in w for w in warnings)
         # Final returned/on_done value is the full, unfiltered report (JSONL/caller-facing).
         assert result == large_report
