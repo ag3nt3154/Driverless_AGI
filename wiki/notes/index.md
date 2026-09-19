@@ -26,8 +26,8 @@ Navigation to useful findings and open questions.
   across subagents, the agent loop, PySide GUI, and session persistence; verdict not
   production-ready; recommendations remain unapproved.
 - [GUI context duplication](gui-context-duplication-2026-09-18.md): confirmed narrow session-log
-  duplication fix, regression verification, reported incident details, and remaining context
-  hardening limitation.
+  duplication fix, regression verification, reported incident details, and the 2026-09-18 audit
+  of pre-request caps, output filtering, GUI compaction, recovery boundaries, and tail sizing.
 
 - [Large-file reader investigation](large-file-reader-2026-09-09.md): plan-only findings
   that informed the approved redesign below.

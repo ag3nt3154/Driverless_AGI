@@ -15,6 +15,15 @@ header. The regression test covers three repeated rebuild/run cycles and exact p
 The fix does not repair already polluted sessions or enforce a hard provider context cap; see
 [GUI context duplication](../notes/gui-context-duplication-2026-09-18.md).
 
+**Context and compaction hardening audit** · `open` · 2026-09-18:
+The follow-up audit confirmed six related findings: no pre-request cap; output filtering fails
+open after cache `OSError`; the PySide manual compact command passes a method instead of calling
+`next_turn`; handoff leaves prompt-token usage stale or zero; step-zero history can lack a
+`STEP_END` compaction boundary; and average-per-step tail sizing can retain far more than the
+configured token budget for uneven steps. Reproductions used a mocked provider and did not make
+implementation changes. Details and exact limits are recorded in
+[GUI context duplication](../notes/gui-context-duplication-2026-09-18.md#follow-up-audit--2026-09-18).
+
 **PySide GUI — 4 bugs (2026-09-05, all fixed):**
 - Right sidebar white on some Windows themes: viewport lacked explicit bg —
   set `viewport().setStyleSheet("background: #1e1e2e")` and give container `right-sidebar`

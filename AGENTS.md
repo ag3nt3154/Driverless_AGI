@@ -1,7 +1,9 @@
 # AGENTS.md
 
-> Last updated: 2026-09-18 | [README](README.md) | [Wiki](wiki/index.md) | [Code review](wiki/notes/production-review-2026-09-15.md)
+> Last updated: 2026-09-19 | [README](README.md) | [Wiki](wiki/index.md) | [Code review](wiki/notes/production-review-2026-09-15.md)
 > [Proposed image-input implementation plan](docs/image-input-implementation-plan.md)
+> [GUI context duplication and budget audit](wiki/notes/gui-context-duplication-2026-09-18.md)
+> [Context overflow audit report](docs/context-overflow-audit-2026-09-18.md)
 
 ---
 
@@ -126,6 +128,8 @@ security issues, or complexity debt would be significant.
 
 ## Errors Log
 
+- **2026-09-19**: Context overflow audit C1–C6 all fixed: pre-request budget guard, bounded cache-error output, GUI compact `next_turn()` typo, handoff usage recording, step-zero exclusion, per-step tail sizing.
+- **2026-09-18**: GUI continuation duplicated entire history → fixed in `ce37e29a`; seed only when `_session_log is None`.
 - **2026-09-05**: pytest-qt entry point name is `pytest-qt` not `qt`; `-p no:pytest-qt` required → documented in wiki/errors/index.md and wiki/workflows.md.
 - **2026-09-05**: 4 PySide GUI bugs (sidebar bg, emote timing, thinking duplication, status lines) → all fixed; details in wiki/errors/index.md.
 - **2026-09-05**: 7 deliver-workflow integration failures (stale tool names, dynamic plan read, etc.) → all fixed; details in wiki/errors/index.md.
@@ -134,8 +138,6 @@ security issues, or complexity debt would be significant.
 - **2026-08-29**: Toasts fail in restricted sandboxes → verify outside sandbox.
 - **2026-08-26**: RAM-watchdog errors every long test (≥70% RAM) → `--noconftest -p no:pytest-qt` for isolated runs.
 - **2026-08-26**: stale `ask_user` sink swallowed next message in TUI and PySide → fixed with `_ask_is_live` + `finally` retirement.
-- **2026-08-26**: DeepSeek cache plateaued due to ephemeral Session Context board → board deleted entirely.
-- **2026-08-23**: `pyside_gui/app.py` file cap stale (547+ lines vs ≤500 assertion) → open; raise cap or split module.
 
 ## Notes & Terms
 
@@ -147,9 +149,9 @@ security issues, or complexity debt would be significant.
 - **Termination**: main and child turns end through `write_handoff`; bare assistant text triggers corrective continuation.
 - **Tool filtering**: `config.yaml` `tools:` restricts main agent; mandatory `write_handoff` always injected.
 - **Subagent API**: import `tools/subagent_api.py`; never private `_subagent_runner.py`.
-- **Windows / conda**: `conda run -n dagi python`; hooks use `envs/dagi/python.exe` (conda run drops stdin).
+- **Windows / conda**: `conda run -n dagi python`; hooks use `envs/dagi/python.exe` (conda run drops stdin). `conda run` fully buffers stdout when not attached to a TTY — piped or redirected output looks like a hang. Use the env's interpreter directly with `-u` for unbuffered output.
 - **Plan UI location**: active-plan panel in PySide left sidebar, 4th rail view (`PlanView`); `LeftSidebar.update_plan()`.
-- **Emote display**: emote tool posts to both sidebar `MessageBoardView` and inline conversation pane via `appendEmoteCard()` JS; images use `file:///` URLs (safe because QWebEngineView loads from `fromLocalFile`).
+- **Pre-request budget guard**: `AgentLoop` estimates request size before each API call; if over `context_window - reserve_tokens`, compacts automatically.
 - **Wiki subagents**: tool allowlists are `[read,grep,find]` (query) or `+[write,edit]` (add); no shell/delegation.
 
 ## Wiki Use

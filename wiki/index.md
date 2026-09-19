@@ -2,7 +2,7 @@
 
 Project knowledge and navigation.
 
-> Last updated: 2026-09-18
+> Last updated: 2026-09-19
 
 - [Production review — 2026-09-15](notes/production-review-2026-09-15.md): 19 actionable
   findings; verdict **not production-ready**; recommendations remain unapproved.
@@ -13,6 +13,10 @@ Project knowledge and navigation.
 - [Decisions](decisions/index.md): choices and their rationale.
 - [Errors](errors/index.md): observed issues and verified fixes.
 - [Notes](notes/index.md): useful findings, open questions, and project todos.
+
+- [GUI context duplication audit](notes/gui-context-duplication-2026-09-18.md#follow-up-audit--2026-09-18):
+  six open context and compaction findings confirmed offline on 2026-09-18; no fixes approved or
+  implemented by that audit.
 
 ## Reviews
 

@@ -2,7 +2,7 @@
 
 Current components and their relationships.
 
-> Last updated: 2026-09-18
+> Last updated: 2026-09-19
 
 ## Entry Points
 
@@ -42,6 +42,38 @@ owning module (e.g. `agent._compaction.run_subagent`).
 - `SessionTracker` + `SessionLog` (`agent/session.py`, `agent/session_log.py`):
   persist conversation, usage, and subagent branch events.
   Format version 2 (with `branch/start` events for subagent context trees).
+- `AgentLoop.log`/`SessionLog` is the session source of truth; `AgentLoop._messages` is a
+  derived cache. `SessionEvent` records `seq`, `time`, `type`, `data`, `surface_op`,
+  `source_seqs`, `ignorable`, and `branch`; turn/step coordinates live in applicable
+  event data. The loop's append sink writes durable `.events.jsonl` records, while
+  `SessionTracker` separately records activity, usage, and full tool results.
+- The session surface projects user messages, assistant messages, tool results, and
+  context/compaction entries into OpenAI chat dictionaries. Boundary and standalone
+  tool/call bookkeeping are excluded. For main events, `surface_op` updates the surface;
+  compaction shadows the replaced range with a user-role summary while retaining raw events
+  and the recent tail.
+- Compaction collects unique turn/step pairs from the active surface. Its tail boundary uses
+  average `prompt_tokens` per step to derive a clamped keep count, rather than measured
+  per-step tokens; the last middle step must have a main `STEP_END`. The parent records the
+  replacement surface bounds, tail index, and generation, reconstructs the historical prefix
+  cut at `STEP_END`, and sends a version-1 fork request with `context_spec`.
+- The forked compaction child appends summary instructions to inherited messages, makes one
+  nonstreaming retried call, and writes validated plain summary text to its handoff. It returns
+  no replacement nodes or cache. The parent validates success, nonempty output, unchanged
+  surface generation, and live edges before appending `CONTEXT_COMPACTION` with `source_seqs`.
+  `Surface._replace` splices `_nodes` and `_cache` at inclusive edge positions; the cache
+  summary is user-role and preserves the suffix.
+- `_sync_messages` rebuilds `_messages` in place from the latest request/header system and
+  derived surface messages. `_build_request_messages` materializes stored image references;
+  each provider request sends the accumulated visible history plus separate tool schemas.
+  Assistant tool calls are appended once, and `reasoning_content` is retained when present.
+  Tool bookkeeping stores filtered context output in `TOOL_RESULT` and the full output in
+  `SessionTracker`; the next iteration sends the accumulated history.
+- PySide continuation reuses the prior log and tracker. When a supplied log exists, the
+  constructor skips initial-message reseeding, preventing duplicate history; message-only
+  resume seeds conversation events and emits a fresh header. Normal appends are durable, but `revise_last_step()` can
+  remove in-memory events and malformed-tool-argument repair can mutate event payloads, so
+  the event stream is not universally immutable.
 - Active plan: `.dagi/session-state/<thread_id>/active-plan.json` sidecar.
   Set/checked via `set_active_plan`/`check_active_plan` tools.
 - Session files: `*_logs.jsonl` in `.dagi/logs/`; old `session_*.jsonl` also supported.
