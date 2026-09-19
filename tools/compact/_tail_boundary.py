@@ -56,6 +56,7 @@ def compute_tail_boundary(
     steps: list[tuple[int, int]],
     prompt_tokens: int,
     keep_recent_tokens: int,
+    step_sizes: list[int] | None = None,
 ) -> TailBoundary:
     """Compute the step-based tail boundary.
 
@@ -64,6 +65,9 @@ def compute_tail_boundary(
     steps : List of (turn, step) pairs in chronological order.
     prompt_tokens : Total prompt tokens from the last API response.
     keep_recent_tokens : Token budget for the tail (from AgentConfig).
+    step_sizes : Per-step token estimates, parallel to ``steps``.
+        When provided, the tail is accumulated backward using actual
+        sizes. When None, falls back to average-based estimation.
 
     Returns
     -------
@@ -79,9 +83,26 @@ def compute_tail_boundary(
             middle_steps=[],
         )
 
-    avg_tokens_per_step = prompt_tokens / n
-    keep_count = int(keep_recent_tokens / avg_tokens_per_step)
-    keep_count = max(keep_count, 1)  # always keep at least one step
+    if step_sizes is not None and len(step_sizes) == n:
+        raw_total = sum(step_sizes)
+        if raw_total > 0 and prompt_tokens > 0:
+            scale = prompt_tokens / raw_total
+            scaled = [s * scale for s in step_sizes]
+        else:
+            scaled = list(step_sizes)
+        keep_count = 0
+        accumulated = 0.0
+        for i in range(n - 1, -1, -1):
+            if accumulated + scaled[i] > keep_recent_tokens:
+                break
+            accumulated += scaled[i]
+            keep_count += 1
+        keep_count = max(keep_count, 1)
+    else:
+        avg_tokens_per_step = prompt_tokens / n
+        keep_count = int(keep_recent_tokens / avg_tokens_per_step)
+        keep_count = max(keep_count, 1)
+
     keep_count = min(keep_count, n)
 
     if keep_count >= n:

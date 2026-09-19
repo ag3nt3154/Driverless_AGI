@@ -14,13 +14,41 @@ from typing import TYPE_CHECKING
 
 from agent import session_events as sev
 from agent.session_log import InvariantError
-from tools.compact._tail_boundary import TailBoundary, compute_tail_boundary
+from tools.compact._tail_boundary import (
+    TailBoundary,
+    compute_tail_boundary,
+    estimate_tokens,
+)
 from tools.subagent_api import build_fork_context, run_subagent
 
 if TYPE_CHECKING:
     from agent._loop_config import CompactionResult
     from agent.loop import AgentLoop
     from agent.session_log import SessionLog
+
+
+def compute_step_sizes(
+    log: SessionLog,
+    steps: list[tuple[int, int]],
+) -> list[int]:
+    """Estimate token count per step from surface events."""
+    step_set = {s for s in steps}
+    sizes: dict[tuple[int, int], int] = {s: 0 for s in steps}
+    event_map = {e.seq: e for e in log.events}
+    for seq in log.surface.nodes:
+        event = event_map.get(seq)
+        if event is None:
+            continue
+        key = (event.data.get("turn"), event.data.get("step"))
+        if key not in step_set:
+            continue
+        msg = event.data.get("message")
+        if msg:
+            sizes[key] += estimate_tokens(msg)
+        content = event.data.get("content")
+        if content and not msg:
+            sizes[key] += max(len(str(content)) // 4, 1)
+    return [sizes[s] for s in steps]
 
 
 def collect_steps(log: SessionLog) -> list[tuple[int, int]]:
@@ -138,10 +166,12 @@ def compact(loop: AgentLoop, force: bool = False, summarize_all: bool = False) -
             middle_steps=list(steps),
         )
     else:
+        step_sizes = compute_step_sizes(loop.log, steps)
         boundary = compute_tail_boundary(
             steps=steps,
             prompt_tokens=loop._last_prompt_tokens,
             keep_recent_tokens=loop.config.keep_recent_tokens,
+            step_sizes=step_sizes,
         )
         if not boundary.has_middle:
             from agent._loop_config import _NO_COMPACTION
