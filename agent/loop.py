@@ -837,6 +837,9 @@ class AgentLoop:
                 )
                 self._sync_messages()
 
+                _prompt_tok = getattr(response.usage, "prompt_tokens", 0) or 0
+                self._last_prompt_tokens = _prompt_tok
+
                 _short_circuit = self._dispatch_tool_calls(message, response, tool_records)
                 if _short_circuit is not None:
                     self._close_turn(_turn, sev.reason_completed())
@@ -845,8 +848,6 @@ class AgentLoop:
                 self._finalize_turn(message, response, tool_records)
 
                 # ── Compaction trigger ────────────────────────────────────────
-                _prompt_tok = getattr(response.usage, "prompt_tokens", 0) or 0
-                self._last_prompt_tokens = _prompt_tok
                 if (
                     self.config.context_window > 0
                     and _prompt_tok > 0
