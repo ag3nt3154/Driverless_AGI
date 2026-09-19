@@ -43,7 +43,7 @@ class TestPassThrough:
         result = "x" * (_RESERVE * 4)
         ctx, _ = filter_tool_output(result, _RESERVE, tmp_path)
         assert isinstance(ctx, str)
-        assert "OUTPUT TRUNCATED" in ctx
+        assert "TRUNCATED PREVIEW" in ctx
 
 
 class TestFiltering:
@@ -70,7 +70,7 @@ class TestFiltering:
 
     def test_context_result_contains_truncation_marker(self, tmp_path):
         ctx, _ = filter_tool_output(self._large(), _RESERVE, tmp_path)
-        assert "OUTPUT TRUNCATED" in ctx
+        assert "TRUNCATED PREVIEW" in ctx
 
     def test_context_result_contains_file_path(self, tmp_path):
         ctx, _ = filter_tool_output(self._large(), _RESERVE, tmp_path)
@@ -106,7 +106,7 @@ class TestFiltering:
         large_list = [{"type": "text", "text": "z" * (_RESERVE * 4 + 100)}]
         ctx, full = filter_tool_output(large_list, _RESERVE, tmp_path)
         assert isinstance(ctx, str)
-        assert "OUTPUT TRUNCATED" in ctx
+        assert "TRUNCATED PREVIEW" in ctx
         assert full == "__list__:" + json.dumps(large_list)
 
     def test_context_result_mentions_read_tool(self, tmp_path):
@@ -115,21 +115,25 @@ class TestFiltering:
 
 
 class TestErrorHandling:
-    """Disk errors fail open — return original result, no crash."""
+    """Disk errors fail bounded — return truncated preview, not full result."""
 
-    def test_mkdir_failure_returns_original(self, tmp_path):
+    def test_mkdir_failure_returns_bounded(self, tmp_path):
         bad_dir = tmp_path / "no_perms"
         with patch("tools._hash_cache.Path.mkdir", side_effect=OSError("permission denied")):
             large = "z" * (_RESERVE * 4 + 1)
             ctx, full = filter_tool_output(large, _RESERVE, bad_dir)
-        assert ctx == large   # unfiltered pass-through
+        assert ctx != large
+        assert "cache write failed" in ctx
+        assert "TRUNCATED PREVIEW" in ctx
         assert full == large
 
-    def test_write_failure_returns_original(self, tmp_path):
+    def test_write_failure_returns_bounded(self, tmp_path):
         with patch("tools._hash_cache.Path.write_text", side_effect=OSError("disk full")):
-            large = "z" * (_RESERVE * 4 + 1)
+            large = "z" * (_RESERVE * 40)
             ctx, full = filter_tool_output(large, _RESERVE, tmp_path)
-        assert ctx == large
+        assert ctx != large
+        assert "cache write failed" in ctx
+        assert len(ctx) < len(large)
 
     def test_zero_reserve_tokens_skips_filtering(self, tmp_path):
         large = "z" * 9999
@@ -223,7 +227,7 @@ class TestLoopIntegration:
         assert len(tool_messages) == 1
         content = tool_messages[0]["content"]
         assert isinstance(content, str)
-        assert "OUTPUT TRUNCATED" in content
+        assert "TRUNCATED PREVIEW" in content
         assert large_output not in content  # not the full 500-char string
 
         # Tracker must have received the FULL string for the large-output tool call

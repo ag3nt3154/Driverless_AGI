@@ -71,17 +71,23 @@ def filter_tool_output(
         return result, full_str  # pass-through — small enough to enter context raw
 
     # ── Result is large: cache it, build truncated context message ──
+    preview_chars = (reserve_tokens // 2) * _CHARS_PER_TOKEN
+    preview = full_str[:preview_chars]
+
     try:
         _, tmp_path = get_or_compute(
             full_str.encode("utf-8"), "tool_output", "txt", project_root, lambda: full_str
         )
-    except OSError:
-        # Fail open: if we can't write the file, return the original result
-        # unfiltered. The caller (AgentLoop) will emit a warning separately.
-        return result, full_str
-
-    preview_chars = (reserve_tokens // 2) * _CHARS_PER_TOKEN
-    preview = full_str[:preview_chars]
+    except OSError as exc:
+        context_result = (
+            f"⚠ TOOL OUTPUT TOO LARGE (~{estimated_tokens:,} tokens estimated) — "
+            f"cache write failed ({exc}). Full output was NOT saved.\n"
+            f"REFINE YOUR SEARCH: narrow the path to a specific subdirectory, "
+            f"add a glob filter (e.g. glob='*.py'), or use a more specific pattern.\n"
+            f"--- TRUNCATED PREVIEW ---\n"
+            f"{preview}"
+        )
+        return context_result, full_str
 
     context_result = (
         f"⚠ TOOL OUTPUT TOO LARGE (~{estimated_tokens:,} tokens estimated) — "
