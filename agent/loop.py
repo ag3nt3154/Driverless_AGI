@@ -35,7 +35,7 @@ from agent.skills import Skill, SkillLoader
 from agent.user_input import UserSubmission
 from agent.image_assets import ImageAssetStore, materialize_messages
 from tools.subagent_api import build_fork_context, run_subagent
-from tools.compact._tail_boundary import compute_tail_boundary
+from tools.compact._tail_boundary import compute_tail_boundary, estimate_tokens
 from tools.output_filter import filter_tool_output
 
 from agent._loop_helpers import (  # noqa: F401
@@ -609,6 +609,28 @@ class AgentLoop:
                 while True:
                     self._lifecycle.api_attempt_started()
                     _request = self._build_request_messages()
+
+                    # ── Pre-request budget guard ─────────────────────────
+                    if self.config.context_window > 0:
+                        _est = sum(
+                            estimate_tokens(m) for m in _request
+                        )
+                        _budget = (
+                            self.config.context_window
+                            - self.config.reserve_tokens
+                        )
+                        if _est > _budget:
+                            self.callbacks.on_assistant_text(
+                                f"[Context budget exceeded "
+                                f"(~{_est:,} tokens, "
+                                f"budget {_budget:,}). "
+                                f"Compacting...]"
+                            )
+                            self._last_prompt_tokens = _est
+                            self._compact_context()
+                            _request = self._build_request_messages()
+                    # ────────────────────────────────────────────────────
+
                     self.callbacks.on_api_call(list(_request))
                     try:
                         _create_kwargs = dict(self.config.request_kwargs)
