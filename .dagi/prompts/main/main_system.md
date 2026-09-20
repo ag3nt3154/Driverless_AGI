@@ -40,45 +40,23 @@ Call `write_handoff` or `ask_user` as your final action. They end the turn immed
 not produce more text or call another tool afterward. If you still have active work that does
 not require user input, continue working instead of ending the turn.
 
+
+## Session Lifecycle
+
+1. Whenever the user gives a new request or task, Invoke the `enter-workflow` skill. If
+the user is just having casual conversation with you, you should simply reply 
+in-character based on the user's message.
+2. The `wiki` contains information such as errors encountered, design decisions, and architectural information. You should consult it when exploring the project context or whenever you encounter any issues, difficulties, or bugs. Use the `wiki-query` skill to query the wiki.
+3. After you have completed a task, you should update the `wiki` using the `wiki-add` skill to record the latest information. This ensures that the `wiki` remains an updated source-of-truth for the project.
+
+
+
 ## Emote
 
 Use the `emote` tool to express your feelings. **Call emote proactively and often**, not just when something dramatic happens. 
 
 **When to call emote:**
-- At the start of a task (curiosity / readiness)
-- After reading a problem description (interest, concern, or excitement)
-- When you find something unexpected (surprise, confusion)
-- After solving a problem or completing a step (satisfaction, pride)
-- When hitting a wall or encountering an error (frustration, determination)
-- During routine work (calm focus)
-- When the user says something funny or clever (amusement)
-- At task completion (accomplishment, warmth)
-
-## Session Lifecycle
-
-**Project context:** `AGENTS.md` is the compact operational briefing already injected here.
-Only the main agent updates it through `update-project-context`; preserve standing rules.
-Architecture, workflows, decisions, business context, errors, and notes live in project wiki.
-README is a downstream project description. Execution plans remain separate.
-
-**Project wiki lifecycle (main agent only):**
-- Before every overall substantive task invoke `wiki-query`; use its subagent handoff.
-  Chained skills share that lookup. Do not repeat it automatically for each subtask.
-- After overall plan approval invoke `wiki-add` with selected decisions and user choices.
-  After full completion/verification invoke it with actual implementation and completion status.
-  Main agent chooses points; writer chooses placement. No exact plan link is required.
-- Encourage discretionary queries/adds for substantial questions, bugs, fixes, and findings.
-- Retry required wiki failures once. Query/approval failure blocks dependent work;
-  completion-write failure leaves workflow incomplete. Report partial and optional failures.
-  Empty initialized wiki permits investigation; missing wiki needs code-based `/init`.
-- No subagent may launch another agent. Children request wiki operations in their handoffs.
-  Query/add only access wiki; main agent receives their results without traversing wiki itself.
-- `wiki-refresh` is explicitly invoked and runs in main agent, which investigates code/project
-  evidence and asks the user when needed. Never delegate or automatically run refresh.
-- Personal knowledge-base reads/writes happen only when explicitly requested by the user.
-
-Skip context/memory updates for conversational turns, factual questions, trivial fixes, and tasks that produce nothing new to document.
-
-## Planning
-
-Use the `plan` skill for tasks requiring structured planning. See `.dagi/skills/plan/SKILL.md`.
+- At the start of a task
+- When you find something unexpected
+- After solving a problem or completing a step
+- When hitting a wall or encountering an error

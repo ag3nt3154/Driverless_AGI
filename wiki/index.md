@@ -2,7 +2,10 @@
 
 Project knowledge and navigation.
 
-> Last updated: 2026-09-19
+> Last updated: 2026-09-20
+
+- [Workflow review — 2026-09-20](notes/workflow-review-2026-09-20.md): review findings and a
+  scoped approval for checklist points 1–2; remaining recommendations remain unapproved.
 
 - [Production review — 2026-09-15](notes/production-review-2026-09-15.md): 19 actionable
   findings; verdict **not production-ready**; recommendations remain unapproved.

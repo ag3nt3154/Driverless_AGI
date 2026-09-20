@@ -2,7 +2,11 @@
 
 Current development and execution flows.
 
-> Last updated: 2026-09-06
+> Last updated: 2026-09-20
+
+> The 2026-09-20 review and implementation result supersede the earlier ownership and routing
+> summary for the approved checklist points 1–2. Remaining recommendations are still open. See
+> [Workflow review — 2026-09-20](notes/workflow-review-2026-09-20.md).
 
 ## Primary Execution Flow
 
@@ -16,29 +20,42 @@ Current development and execution flows.
 
 ## Delivery Workflow
 
-Primary entry point: `/deliver` (`.dagi/skills/deliver/SKILL.md`).
+Lifecycle owner: `enter-workflow` (`.dagi/skills/enter-workflow/SKILL.md`); delivery is the
+owner-routed `/deliver` stage (`.dagi/skills/deliver/SKILL.md`).
+
+`enter-workflow` is the sole lifecycle owner for stages, approval, active-plan state, and closure.
+The owner preserves the wiki-query gate, approval wiki-add, independent plan review, completion
+wiki-add/update-context, and closure detach. The owner routes planning, specification, writing,
+review, approval, and delivery stages; those skills return control instead of launching later
+stages. Standalone `/deliver` redirects to the owner once; an owner-invoked deliver stage does
+not redirect.
 
 ```
-/deliver → wiki-query (once, overall task)
-         → grilling (if intent unresolved)
-         → /plan → plan review → wiki-add (approved decisions)
-         → per-task: worker → reviewer → update_task_status
-         → integrated verification + final review
-         → wiki-add (completion evidence)
-         → set_active_plan(null) detach
+enter-workflow → explore/grill → approval → plan/spec → deliver
+              → per-task: worker → reviewer → update_task_status
+              → integrated verification + final review
+              → wiki-add (completion evidence) → detach before final response
 ```
 
-- `/plan` (`.dagi/skills/plan/SKILL.md`): codebase exploration, spec, plan approval,
-  `wiki-add` of approved decisions, `set_active_plan`.
+Blockers requiring a plan or scope change return to `enter-workflow`. The approved implementation
+is at the skill-instruction level; no runtime code or tests changed and no merge integration was
+added.
+
 - `/dagi-execute` (`.dagi/skills/dagi-execute/SKILL.md`): resumes interrupted deliveries
   from the first pending subtask; checks wiki-add evidence before continuing.
 - Worker outcomes: `READY_FOR_REVIEW` | `ESCALATE`.
 - Reviewer outcomes: `PASS` | `ESCALATE`. Workers return `Wiki requests` in handoffs for main.
 
+The former `/plan` adapter was removed after the user correction that planning is superseded by
+the `write-plan` skill. `write-plan` remains a standalone artifact-only writer; `enter-workflow`
+owns approval and the transition into delivery. This supersedes the earlier adapter-preservation
+summary while retaining the implementation history in the workflow review note.
+
 ## Planning
 
 - Plans are written under `wiki/plans/YYYY-MM-DD-<task-name-slug>/plan.md` using
   the `write-plan` skill.
+- Plan-format and artifact-location consistency remain open follow-up work.
 - Active plan: tracked at `.dagi/session-state/<thread_id>/active-plan.json`.
 - `handle_all_tasks_resolved` does NOT clear the association — plan stays for final verification.
 - Explicit detach: `set_active_plan(null)` after delivery accepted.

@@ -27,5 +27,6 @@ When shared understanding is reached, produce a closing summary covering:
 - what was weak, missing, or unresolved
 - concrete actions before proceeding
 
-Then return control to the caller. If grill-me was invoked via `/grill-me` directly
-(not from `deliver`), suggest invoking `/plan` or `/deliver` next.
+Then return control to `enter-workflow` when invoked as its clarification stage.
+If invoked directly via `/grill-me`, return the closing summary and suggest `write-plan`
+or `/deliver` next. Do not launch planning or implementation automatically.

@@ -1,8 +1,8 @@
 """agent/_git_branch.py — Git branch helpers.
 
 Isolated helper functions for creating task branches and querying
-the current branch. Used by the /plan skill to create dedicated
-`dagi/<slug>_<plan_id>` branches for planned tasks.
+the current branch. Supports dedicated `dagi/<slug>_<plan_id>`
+branches for planned tasks.
 """
 from __future__ import annotations
 

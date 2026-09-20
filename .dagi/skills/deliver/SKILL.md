@@ -1,84 +1,51 @@
 ---
 name: deliver
-description: Full delivery lifecycle — grill-me, planning with review, execution with per-task review, integrated verification, final review, and explicit detach. Invoke via /deliver for any non-trivial implementation request.
+description: Execute an approved plan with per-task review and integrated verification; return results to enter-workflow.
 triggers: /deliver, deliver this, implement this, build this
 ---
 
 # deliver
 
-This skill owns the complete delivery lifecycle: from clarifying intent through final
-integrated verification. It orchestrates grill-me, planning, work, review, and verification
-without a fixed attempt count or time budget. The main agent reads every subagent handoff
-before deciding the next step.
+This skill is the execution and verification stage owned by `enter-workflow`.
+It runs work, per-task review, and integrated verification without a fixed attempt count
+or time budget. The main agent reads every subagent handoff before deciding the next step.
 
 ## When to invoke
 
-Use `/deliver` for any non-trivial implementation request. Use `/plan` alone when you only
-need a plan without executing it.
+When invoked by `enter-workflow`, run the stage below and return its result to that owner.
+When invoked directly via `/deliver`, invoke `skill("enter-workflow")` once with delivery
+intent. The owner prepares or reuses the approved plan and calls this execution stage.
+Do not route back to the owner again when already running as its stage.
+Use `write-plan` to write a plan without execution; this skill does not own planning.
 
 ## Routing overview
 
 ```
-deliver -> check active plan / inspect request
-        -> grill-me when intent remains unresolved
-        -> plan -> general reviewer -> revise until satisfactory
-        -> agreed execution authority -> set active plan
+enter-workflow -> deliver -> check approved active plan and execution authority
         -> worker -> ALWAYS read handoff
              READY_FOR_REVIEW -> reviewer -> ALWAYS read handoff
                  PASS -> update accepted task, incorporate observations
-                 ESCALATE -> diagnose findings, assign repair or revise plan
-             ESCALATE -> resolve blocker or revise plan; ask user only if needed
+                 ESCALATE -> repair locally or return planning blocker to owner
+             ESCALATE -> resolve implementation blocker or return scope decision to owner
         -> integrated verification and general final review
-        -> report outcome, record final state, explicitly detach if finished
+        -> return verification result to enter-workflow for closure
 ```
 
 ## Phase 1 — Orient
 
-Only the main agent orchestrates. Invoke `wiki-query` once for this overall substantive
-task unless it already ran in this context. Retry a required lookup failure once, then
-block dependent work. An initialized empty wiki permits project investigation. Chained
-grill-me/planning and individual subtasks do not automatically repeat the query.
+Only the main agent orchestrates workers and reviewers. The enclosing owner handles
+the overall wiki lookup, planning, approval, and association.
 
-1. Call `check_active_plan()`.
-   - If a plan is already associated and matches the request, jump to Phase 4.
-   - If a different plan is associated, confirm with the user before overriding.
-   - If no plan exists, proceed to Phase 2.
+Call `check_active_plan()`. Require a matching plan, correct branch, user approval,
+execution authorization, and an accepted plan review. Missing or conflicting evidence
+returns a blocker to `enter-workflow`; do not attach a different plan, invoke writers,
+or restart grilling here. Proceed to Phase 2 only when the handoff is ready.
 
-## Phase 2 — Clarify (grill-me)
-
-If the request has unresolved ambiguity — missing requirements, unclear scope, or
-conflicting constraints — invoke `skill("grill-me")`. Grill-me returns control here
-when done; it does not launch implementation. Do not re-grill aspects already resolved
-in the current conversation.
-
-When intent is clear, proceed directly to Phase 3.
-
-## Phase 3 — Plan and plan review
-
-1. Invoke `skill("plan")`. It generates a spec, explores the codebase, writes the
-   implementation plan, gets user approval, and saves selected decisions via `wiki-add`.
-   Plan returns control here on exit — it does not launch execution.
-
-2. After plan exits, call `check_active_plan()` to confirm the plan is associated.
-
-3. Call `review_work` with:
-   - `material`: the plan file path
-   - `passing_criteria`: completeness (all subtasks have criteria), testability
-     (acceptance criteria are checkable), consistency (approach matches requirements),
-     and absence of obvious implementation traps
-   - `context`: the request and key decisions from grill-me
-
-4. Read the review handoff.
-   - **PASS**: proceed to Phase 4.
-   - **ESCALATE**: use `edit` to revise the existing plan file in place. Address each
-     blocking finding, then repeat from step 3. Ask the user
-     only if a finding requires a decision outside the original scope.
-
-## Phase 4 — Execute with per-task review
+## Phase 2 — Execute with per-task review
 
 Before the first worker, verify successful approval wiki-add evidence in the plan notes
-or prior handoff. If missing, select approved decisions/user choices and invoke wiki-add;
-retry once, then block implementation if it fails. Do not assume approval itself saved knowledge.
+or prior handoff. If missing, return to the owner for its required approval wiki-add;
+do not start a worker. Do not assume approval itself saved knowledge.
 All subagents must not launch subagents. Read their `Wiki requests` and discretionarily
 initiate queries/adds for substantial findings, bugs or fixes. No default per-subtask calls.
 
@@ -95,16 +62,16 @@ For each pending subtask in the plan (in order):
    b. Read the reviewer handoff — always.
    c. **PASS**: Call `update_task_status(task=N, status="complete")`. Incorporate any
       non-blocking observations into the plan's Notes section.
-   d. **ESCALATE**: Diagnose the findings. Either: assign a targeted repair to a new
-      worker call, or use `edit` to revise the subtask in the existing plan file in place.
-      Then repeat from step 1. Worker debugging continues locally — no fixed attempt count.
+   d. **ESCALATE**: Diagnose the findings and assign a targeted implementation repair,
+      then repeat from step 1. If the approved requirements or plan need revision,
+      return that blocker to the owner instead. Worker debugging has no fixed attempt count.
 
-3. If `ESCALATE` from the worker: resolve the blocker or revise the plan. Ask the user
-   only when a decision is needed that is outside the agreed scope.
+3. If `ESCALATE` from the worker: resolve implementation blockers locally. Return
+   requirement, plan, or scope decisions to `enter-workflow` for resolution.
 
 4. Record concise resolved errors in the plan. Link full diagnostics by handoff path.
 
-## Phase 5 — Integrated verification and final review
+## Phase 3 — Integrated verification and final review
 
 After all subtasks are accepted:
 
@@ -116,25 +83,20 @@ After all subtasks are accepted:
    - `context`: the complete delivery summary
 
 3. Read the final review handoff — always.
-   - **PASS**: proceed to Phase 6.
-   - **ESCALATE**: treat as a new blocker; assign repair or ask user for scope decision.
+   - **PASS**: proceed to Phase 4.
+   - **ESCALATE**: assign implementation repair or return a scope blocker to the owner.
 
-## Phase 6 — Report and detach
+## Phase 4 — Return delivery result
 
 1. Write a delivery summary to the plan's Verification section: what was built, what
    tests pass, any deferred items, and the final review outcome.
 
-2. Invoke `wiki-add` with main-agent-selected actual implementation, verification evidence,
-   and full-plan completion status. Read the handoff and record success in plan notes.
-   Retry failure once; on continued failure report implementation status honestly but keep
-   the workflow incomplete and the plan associated. Do not detach or claim delivery complete.
-   On partial writes reread through the writer before retrying to avoid duplicated findings.
+2. Return the plan path, implementation status, test commands/results, final review
+   outcome, and unresolved or deferred items to `enter-workflow`.
 
-3. Present the outcome to the user. Main agent checks `update-project-context`; only
-   change AGENTS when its operational briefing changed. Durable knowledge belongs in wiki.
-
-4. Call `set_active_plan(null)` to detach explicitly. The plan document is preserved on
-   disk — reference it by path if needed later.
+3. Leave the plan associated. The owner records completion through `wiki-add`, checks
+   project context, presents the outcome, and detaches. Do not merge or call another
+   lifecycle skill as part of this return.
 
 ## Constraints
 
@@ -147,13 +109,13 @@ After all subtasks are accepted:
 - Personal memory access requires an explicit user request; project wiki never falls back to it.
 - User stop is always respected. If the user stops mid-delivery, the plan remains
   associated for resumption via `deliver`.
-- Standalone `/plan` remains fully usable without `/deliver`.
-- Grilling and plan return to this skill's control flow — they do not recursively
-  launch execution or call deliver.
+- Standalone `write-plan` writes the artifact and returns without delivery.
+- Requirement or scope changes return to the owner for the affected planning/approval
+  stage. Local implementation repairs remain inside the execution/review loop.
 
 ## Plan template
 
-Use this structure when writing `plan.md` in Phase 3. Retain all headings used by
+This is the existing delivery-format reference, not a planning stage. Retain headings used by
 the worker-extraction parser (`### Subtask N:`, `**Goal:**`, `**Requirements:**`,
 `**Acceptance Criteria:**`, `#### Tests`).
 
@@ -193,7 +155,7 @@ High-level strategy and key design choices.
 - Bulleted list of checkable conditions.
 #### Tests
 Test file paths and one-line description of what each verifies.
-(The plan skill expands test snippets into full files; workers run existing tests.)
+(Workers use the supplied tests and verification instructions.)
 
 ## Notes
 Findings from exploration, traps to avoid, architectural constraints.

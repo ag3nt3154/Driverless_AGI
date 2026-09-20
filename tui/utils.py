@@ -16,7 +16,7 @@ _SLASH_HELP = {
     "/skills": "List skills", "/workflows": "List workflows",
     "/init": "Initialise .dagi/ scaffold", "/hist": "Show recent sessions",
     "/copy": "Copy last assistant response to clipboard",
-    "/plan": "Enter plan mode", "/model": "Switch model  (/model <id>)",
+    "/write-plan": "Write an implementation plan", "/model": "Switch model  (/model <id>)",
     "/wtf": "Diagnose the active conversation  (/wtf [description])",
     "/show-pet": "Toggle desktop pet visibility",
     "/revise-history": "Undo last N steps  (/revise-history [N])",

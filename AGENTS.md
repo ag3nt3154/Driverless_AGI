@@ -4,6 +4,8 @@
 > [Proposed image-input implementation plan](docs/image-input-implementation-plan.md)
 > [GUI context duplication and budget audit](wiki/notes/gui-context-duplication-2026-09-18.md)
 > [Context overflow audit report](docs/context-overflow-audit-2026-09-18.md)
+> [Workflow transition review](wiki/notes/workflow-review-2026-09-20.md) (review findings; fixes pending)
+> [Workflow change checklist and draft skill links](new_skills_planning.md) (ownership migrated; remaining integration pending)
 
 ---
 
@@ -118,8 +120,9 @@ security issues, or complexity debt would be significant.
 | `tools/read/_reader_controller.py` | `ReaderController`, `ReaderState`, `run_reader_job_mode` |
 | `tools/read/_reader_job.py` | `ReaderJob`, `write_reader_job`, `load_reader_job`, `delegate_selection` |
 | `.dagi/subagents/wiki-{query,add}/` | Wiki subagent presets (file-tool-only, no nesting) |
-| `.dagi/skills/deliver/SKILL.md` | Primary delivery lifecycle orchestration |
-| `.dagi/skills/plan/SKILL.md` | Planning lifecycle (spec, explore, approve, wiki-add) |
+| `.dagi/skills/enter-workflow/SKILL.md` | Primary lifecycle owner: stages, approval, closure |
+| `.dagi/skills/deliver/SKILL.md` | Approved-plan execution, review, verification; returns to owner |
+| `.dagi/skills/write-plan/SKILL.md` | Implementation-plan writer; returns artifact to caller |
 | `.dagi/prompts/main/main_system.md` | Main agent system prompt template |
 | `.dagi/config.yaml` | Global runtime settings: tool allowlist, context budget, memory root |
 | `.dagi/model_config/*.yaml` | Per-model catalog entries (filename = model_id); git-tracked |

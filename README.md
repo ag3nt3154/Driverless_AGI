@@ -204,7 +204,7 @@ conda run --no-capture-output -n dagi python tui.py -m deepseek-v4-pro-openroute
 - **Tokens + Context** (center) — cumulative `in / think / out / cost`; condensed context breakdown (sys / msgs / reserve / total) with colour warnings at 80%/95% usage
 - **Plan** (right) — subtask list polled every 2 s; shown only when a plan is active. Icons: `[ ]` pending · `[~]` in-progress (amber) · `[x]` complete (green) · `[!]` failed (red)
 
-**Slash commands:** `/help`, `/exit`, `/clear`, `/wd`, `/compact`, `/model <id>`, `/plan`, `/tools`, `/skills`, `/workflows`, `/hist`, `/init`, `/revise-history [n]`
+**Slash commands:** `/help`, `/exit`, `/clear`, `/wd`, `/compact`, `/model <id>`, `/write-plan`, `/tools`, `/skills`, `/workflows`, `/hist`, `/init`, `/revise-history [n]`
 
 Exit with `/exit`, `exit`, `quit`, or `Ctrl-C`. Conversation history carries across turns.
 
@@ -422,7 +422,7 @@ Fix it so it returns 400 with {"error": "password required"}.
 The handler is in api/auth.py."
 ```
 
-**Scope the task to one concern at a time.** If you have a large feature, use `/plan` to break it into subtasks first — then implement each subtask individually.
+**Scope the task to one concern at a time.** If you have a large feature, use `write-plan` to break approved requirements into subtasks before implementation.
 
 **Give context the agent can't see.** If there's a known constraint, a related PR, or a quirk of the codebase, include it:
 
@@ -435,10 +435,12 @@ in db/pool.py. Refactor the user service to use it."
 
 ### Planning
 
-For complex multi-step tasks, invoke the plan skill before implementation. The agent explores the codebase, writes a structured plan with subtasks, asks you to approve it, and then begins implementation.
+For complex multi-step tasks, use `write-plan` to write an implementation plan from a spec
+or requirements. Standalone plan writing returns the artifact without starting implementation.
+Within the full lifecycle, `enter-workflow` owns approval and the transition to `deliver`.
 
 ```
-/plan
+/write-plan
 ```
 
 Or ask naturally:
@@ -449,15 +451,11 @@ Or ask naturally:
 
 **How it works:**
 
-1. The agent creates a plan document under `wiki/plans/YYYY-MM-DD-<task-name-slug>/`
-2. It explores relevant files and writes a plan with numbered subtasks, each marked `[ ]` pending
-3. It calls `show_plan` and asks you for revisions
-4. You respond with changes or say "looks good"
-5. On approval, it calls `set_active_plan` to associate the plan, then begins implementation
-6. The **Plan** panel in the TUI header tracks subtask status in real time:
-   `[ ]` pending · `[~]` in-progress · `[x]` complete · `[!]` failed
-
-The plan document is saved to `.dagi/plans/` and referenced throughout the implementation.
+1. `write-plan` writes and self-reviews `wiki/plans/YYYY-MM-DD-<task-name-slug>/plan.md`.
+2. It returns the plan path and unresolved questions to its caller.
+3. When running the full lifecycle, `enter-workflow` handles user approval, independent
+   review, active-plan association, and the required wiki checkpoint before delivery.
+4. A standalone writing request stops with the plan; it does not authorize implementation.
 
 ---
 
@@ -473,7 +471,7 @@ All slash commands work identically in the TUI and CLI.
 | `/wd [path]` | Show the current working directory, or change it to `path` |
 | `/model [id]` | List available models, or switch to `id` immediately |
 | `/deliver` | Full delivery lifecycle — grilling, planning, per-task worker/review, integrated verification, detach |
-| `/plan` | Invoke the plan skill — agent explores and writes a structured plan (standalone or chained from deliver) |
+| `/write-plan` | Write an implementation plan; return the artifact without starting delivery |
 | `/compact` | Force-compact the current conversation context |
 | `/tools` | List all registered tools for the active session |
 | `/skills` | List all loaded skills |
@@ -555,7 +553,7 @@ The context carries over — no need to restart.
 ### Tips for Best Results
 
 - **Start sessions with a specific project.** Using `--project` scopes file access and loads project-local skills, workflows, and the project wiki automatically.
-- **Use `/plan` for anything non-trivial.** It prevents the agent from making opinionated implementation choices before you've agreed on the approach.
+- **Agree on the approach before implementation.** Use `write-plan` to turn the agreed requirements into an implementation plan.
 - **Build the memory wiki over time.** The more domain knowledge in `dagi-memory/wiki/`, the less you need to re-explain project context each session.
 - **Pause instead of cancelling.** `Esc` in the TUI preserves the agent's full context; you can inject corrections and resume rather than restarting from scratch.
 - **Review sessions with `/hist`.** Session summaries in `.dagi/logs/` capture token counts, cost, and what the agent did. The `review-session` skill accepts a free-text description of which sessions to look at and accumulates findings from all of them into one report, so patterns that recur across sessions surface as a single insight.
@@ -780,7 +778,7 @@ Driverless_AGI/
 │   ├── git/                # git_status, git_diff, git_log, git_branch, git_checkout, git_add, git_commit, git_reset
 │   │                       #   (git_add/git_commit/git_reset are whitelist-guarded to dagi/* branches only;
 │   │                       #   git_commit requires explicit git_add staging first — no implicit add -A;
-│   │                       #   the /plan skill instructs branching to dagi/<slug>_<plan_id>)
+│   │                       #   enter-workflow owns task-branch setup)
 │   ├── grep/               # Regex search across files (ripgrep)
 │   ├── find/                # Glob-pattern file finder
 │   ├── skill/               # Load a .dagi/skills/ guidance document

@@ -2,7 +2,10 @@
 
 Navigation to useful findings and open questions.
 
-> Last updated: 2026-09-18
+> Last updated: 2026-09-20
+
+- [Workflow review — 2026-09-20](workflow-review-2026-09-20.md): review findings plus the
+  user's scoped approval for checklist points 1–2; remaining recommendations remain unapproved.
 
 - Grep tool hardening (2026-09-18): **implemented**; `tools/grep/_grep.py` now excludes
   `.dagi/`, `__pycache__/`, `.git/`, `.mypy_cache/`, `.pytest_cache/`, `node_modules/`,
