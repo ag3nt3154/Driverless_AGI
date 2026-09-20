@@ -23,12 +23,10 @@ Only the main agent runs this lifecycle. Before this overall substantive task, i
 `wiki-query` unless the enclosing delivery already completed that lookup. No subtask
 queries by default. Workers request further wiki operations in their handoffs.
 
-### Step 1 — Create Plan Scaffold
+### Step 1 — Create the Plan Document
 
-Call `create_plan(task_summary)` where `task_summary` is a short kebab-case slug
-derived from the task description (e.g. `"fix-login-bug"`).
-
-This creates a `.dagi/plans/plan_{timestamp}/plan.md` with the standard template.
+Create the plan document under `wiki/plans/YYYY-MM-DD-<task-name-slug>/plan.md`
+using the `write-plan` skill's required structure.
 
 ### Step 2 — Create Git Branch
 

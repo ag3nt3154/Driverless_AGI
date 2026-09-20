@@ -134,7 +134,7 @@ security issues, or complexity debt would be significant.
 - **2026-09-05**: pytest-qt entry point name is `pytest-qt` not `qt`; `-p no:pytest-qt` required → documented in wiki/errors/index.md and wiki/workflows.md.
 - **2026-09-05**: 4 PySide GUI bugs (sidebar bg, emote timing, thinking duplication, status lines) → all fixed; details in wiki/errors/index.md.
 - **2026-09-05**: 7 deliver-workflow integration failures (stale tool names, dynamic plan read, etc.) → all fixed; details in wiki/errors/index.md.
-- **2026-09-05**: Plan mode removed → `/plan` skill + `create_plan` tool; `AgentConfig` plan fields removed.
+- **2026-09-05**: Plan mode removed → `/plan` skill with file-based plans; `AgentConfig` plan fields removed.
 - **2026-08-30**: Typed turn termination left `main_system.md` requiring `<<END_OF_RESPONSE>>` → `write_handoff` sole final action.
 - **2026-08-29**: Toasts fail in restricted sandboxes → verify outside sandbox.
 - **2026-08-26**: RAM-watchdog errors every long test (≥70% RAM) → `--noconftest -p no:pytest-qt` for isolated runs.

@@ -36,7 +36,7 @@ implementation changes. Details and exact limits are recorded in
   UI emissions; kept `worker_log` file logging.
 
 **Plan mode removed (2026-09-05):** Plan mode as a system-level feature was retired —
-replaced with `/plan` skill + `create_plan` tool. `AgentConfig` fields `plan_mode`,
+replaced with the `/plan` skill and file-based plan documents. `AgentConfig` fields `plan_mode`,
 `plan_file`, `plan_mode_initiated_by`, `previous_branch` removed; `plan_mode_initiated_by`
 replaced by `autonomous` bool. `SideEffect.ENTER_PLAN_MODE`/`EXIT_PLAN_MODE` removed.
 Registry no longer rebuilds or restricts tools during planning.

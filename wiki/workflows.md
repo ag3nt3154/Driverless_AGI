@@ -37,7 +37,8 @@ Primary entry point: `/deliver` (`.dagi/skills/deliver/SKILL.md`).
 
 ## Planning
 
-- Plan scaffold: `create_plan` tool → `.dagi/plans/plan_{timestamp}/plan.md`.
+- Plans are written under `wiki/plans/YYYY-MM-DD-<task-name-slug>/plan.md` using
+  the `write-plan` skill.
 - Active plan: tracked at `.dagi/session-state/<thread_id>/active-plan.json`.
 - `handle_all_tasks_resolved` does NOT clear the association — plan stays for final verification.
 - Explicit detach: `set_active_plan(null)` after delivery accepted.

@@ -160,11 +160,9 @@ def create_tool_registry(
         reg.register(bash_tool)
     from tools.update_task_status import UpdateTaskStatusTool
     from tools.active_plan import CheckActivePlanTool, SetActivePlanTool
-    from tools.create_plan import CreatePlanTool
     reg.register(SetActivePlanTool(config=config, callbacks=callbacks, tracker=tracker))
     reg.register(CheckActivePlanTool(config=config, callbacks=callbacks, tracker=tracker))
     reg.register(UpdateTaskStatusTool(config=config))
-    reg.register(CreatePlanTool(config=config))
     from tools.ask_user import AskUserTool
     _on_ask = callbacks.on_ask_user if callbacks else _default_ask_user
     _ask_timeout = (

@@ -449,7 +449,7 @@ Or ask naturally:
 
 **How it works:**
 
-1. The agent calls `create_plan(task_summary)` to scaffold a plan file under `.dagi/plans/`
+1. The agent creates a plan document under `wiki/plans/YYYY-MM-DD-<task-name-slug>/`
 2. It explores relevant files and writes a plan with numbered subtasks, each marked `[ ]` pending
 3. It calls `show_plan` and asks you for revisions
 4. You respond with changes or say "looks good"
@@ -794,7 +794,6 @@ Driverless_AGI/
 │   ├── subagent_main.py   # Piped subagent entry point (spawned via `python -m tools.subagent_main`)
 │   ├── extend_timeout/      # ExtendSubagentTimeoutTool — resume in-flight subagent deadline
 │   ├── compact/             # Trigger context compaction
-│   ├── create_plan/         # Scaffold a new plan directory under .dagi/plans/
 │   ├── switch_model/        # Swap models mid-session
 │   ├── show_file/           # Open a file in the GUI file viewer with optional line highlight
 │   ├── ask_user/            # Prompt user for clarification
@@ -876,7 +875,6 @@ Driverless_AGI/
 | `show_file` | Open a file in the PySide GUI's file viewer for the user, optionally jumping to and highlighting a specific line number. No-op in TUI/Telegram |
 | `ask_user` | Pause and ask the user a clarifying question with optional choices. Acts as a turn-ender — the agent should call `ask_user` instead of `write_handoff` when it needs the user to answer a question before continuing |
 | `show_plan` | Render the current plan document and ask the user for revisions. Returns "Plan approved" (call `set_active_plan`) or "Modifications requested" (revise and call `show_plan` again). In autonomous mode, auto-approves immediately |
-| `create_plan` | Create a new plan directory under `.dagi/plans/` with a scaffolded `plan.md` file. Takes `task_summary` |
 | `escalate_issue` | Worker/review subagent only: raise a blocking question to the main agent instead of guessing. Writes a sidecar file next to the subagent's handoff report; the main agent's subprocess poll loop detects it, terminates the subagent, and surfaces `"[worker escalated]"` / `"[review escalated]"` with the question and context — does not consume a `dagi-execute` retry attempt |
 | `write_handoff` | Always visible to the main agent and auto-injected into every subagent with a `handoff_path`. It writes `content` verbatim to a baked-in path and its sentinel immediately ends the turn, so no `END_OF_RESPONSE` is needed. Main-agent calls save `.dagi/handoffs/main_<thread-hash12>.md` and render the full Markdown in the TUI; inherited children reuse the exact parent-visible schema but write to their assigned child path. The lifecycle name is reserved against project-tool collisions. |
 

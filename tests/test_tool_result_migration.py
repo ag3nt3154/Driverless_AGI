@@ -5,31 +5,6 @@ import pytest
 from agent.protocol import SideEffect, ToolResult
 
 
-class TestCreatePlanTool:
-    def test_creates_plan_file(self, tmp_path):
-        from tools.create_plan._create_plan import CreatePlanTool
-        from unittest.mock import MagicMock
-
-        config = MagicMock()
-        config.project_path = tmp_path
-
-        result = CreatePlanTool(config=config).run(task_summary="fix-login-bug")
-        assert "Plan scaffolded at:" in result
-        plans = list((tmp_path / ".dagi" / "plans").glob("plan_*/plan.md"))
-        assert len(plans) == 1
-        assert "# Plan: fix-login-bug" in plans[0].read_text(encoding="utf-8")
-
-    def test_requires_task_summary(self, tmp_path):
-        from tools.create_plan._create_plan import CreatePlanTool
-        from unittest.mock import MagicMock
-
-        config = MagicMock()
-        config.project_path = tmp_path
-
-        result = CreatePlanTool(config=config).run(task_summary="")
-        assert "Error" in result
-
-
 class TestReloadSkillsTool:
     def test_returns_tool_result(self):
         from tools.reload_skills._reload_skills import ReloadSkillsTool

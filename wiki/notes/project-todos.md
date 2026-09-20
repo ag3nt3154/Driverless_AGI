@@ -24,7 +24,7 @@ No roadmap redesign; preserving existing status vocabulary and organization.
   one preexisting unrelated `test_bridge.py::test_expression_and_process_snapshots_emit_as_objects`
   failure remains because `AgentBridge.expression_changed` is absent. Details: [implementation
   and verification](pyside-thinking-display-2026-09-12.md).
-- **Plan mode removed — replaced with `/plan` skill + `create_plan` tool** · `done` · `2026-09-05`
+- **Plan mode removed — replaced with `/plan` skill and file-based plans** · `done` · `2026-09-05`
 - **Deliver workflow (Tasks 1–8)** · `done` · `2026-09-05`
 - **String-Sentinel Protocol Refactor** · `done` · `2026-08-26`
 - **TUI + GUI freeze — stale `ask_user` sink swallows the next message** · `done` · `2026-08-26`
