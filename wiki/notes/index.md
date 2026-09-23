@@ -2,7 +2,7 @@
 
 Navigation to useful findings and open questions.
 
-> Last updated: 2026-09-20
+> Last updated: 2026-09-23
 
 - [Workflow review — 2026-09-20](workflow-review-2026-09-20.md): review findings plus the
   user's scoped approval for checklist points 1–2; remaining recommendations remain unapproved.
@@ -30,7 +30,9 @@ Navigation to useful findings and open questions.
   production-ready; recommendations remain unapproved.
 - [GUI context duplication](gui-context-duplication-2026-09-18.md): confirmed narrow session-log
   duplication fix, regression verification, reported incident details, and the 2026-09-18 audit
-  of pre-request caps, output filtering, GUI compaction, recovery boundaries, and tail sizing.
+  of pre-request caps, output filtering, GUI compaction, recovery boundaries, and tail sizing;
+  includes the 2026-09-23 BookWriter compaction report, implemented targeted fix and compaction
+  policy, 158-test verification, and live-API/GUI limits.
 
 - [Large-file reader investigation](large-file-reader-2026-09-09.md): plan-only findings
   that informed the approved redesign below.

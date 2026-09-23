@@ -91,4 +91,94 @@ there. Inherited subagent prefixes remain unguarded through the common loop; no 
 bug was claimed. Priorities are preflight protection, fail-closed output filtering, and working
 recovery compaction before tail tuning.
 
+## BookWriter compaction report and implemented scope — 2026-09-23
+
+A user reported repeated compaction in the BookWriter GUI with a zero summary and unchanged
+context. The supplied matching log at `C:/Users/alexr/BookWriter/.dagi/handoffs/compact_fa0521d0.output.log`
+shows the worker failing in `tools/subagent_main.py` during `run_forked_compact_mode` while
+resolving `deepseek-flash`: the catalog identifier is `deepseek-v4-flash-deepseek`, so
+`resolve_model_config` raises `KeyError`. This confirms the cause for matching failure logs;
+it does not establish that every unchanged-context report has the same cause.
+
+At the time of the report, the compaction worker did not reuse the existing
+`_build_inherited_config` model and endpoint resolver. In `agent/_compaction.py`, a failed worker
+was silently represented as `_NO_COMPACTION`, allowing the pre-request guard to continue after
+unsuccessful compaction. No UI-only fix was indicated by this report.
+
+The user approved implementation on the current `main` branch, without commit or push. The fix
+is implemented and remains uncommitted on `main`. `tools/subagent_main.py` now calls the existing
+`_build_inherited_config(req, project)` in `run_forked_compact_mode`, so the API model and provider
+endpoint resolve through the local catalog and credentials instead of treating the API model as a
+catalog identifier. `agent/_compaction.py` now emits a visible warning containing the worker
+message/status and output-log path when the handoff fails or is empty; the original conversation
+is preserved and the existing nonfatal continuation policy is unchanged. This is a warning and
+history-preservation fix, not a new hard context cap.
+
+`tests/test_compact_integration.py` adds a real config-lookup to compaction-worker flow with a
+mocked provider response, summary injection into the next request, reduced conversation-token
+estimate, and failed/empty-handoff warning/history-preservation cases. All three new cases failed
+before the fix. Existing `tests/test_subagent_main.py` fixtures now use an actual `AgentConfig` to
+satisfy the resolver contract. Verification passed: 79 tests across
+`test_compact_integration.py`, `test_compact_subagent.py`, `test_subagent_main.py`,
+`test_compaction_extract.py`, and `test_tail_boundary.py`, using the dagi environment with
+`--noconftest -p no:pytest-qt -p no:cacheprovider` and a dedicated workspace basetemp after an
+initial default-temp sandbox `PermissionError`.
+
+Read-only resolution against the actual BookWriter configuration confirmed that API model
+`deepseek-flash` resolves to catalog `deepseek-v4-flash-deepseek` with matching endpoint and
+credentials. No live model call or GUI restart was performed, so live GUI behavior remains
+unverified. The existing session had no context/compaction event, so summary injection was not
+observed there and the original raw history was not modified. These results do not change the
+separate C1–C6 audit claims above; they record the later targeted implementation and tests.
+
+### Explicit compaction policy approval and verified completion — 2026-09-23
+
+The user explicitly approved the following follow-on behavior. It is implemented on the current
+`main` branch and remains uncommitted:
+
+- Context compaction always resolves the configured project `default_model` through the normal
+  project-override path, rather than inheriting the active or explicitly selected parent model.
+  The compaction request uses that model's default endpoint, credentials, and options as well.
+- When compaction errors, the active model context removes exactly the chunk selected for
+  summarization. The recent tail and append-only raw log remain; a small omission marker tells
+  the model that history was removed without a summary.
+- Before either a successful summary replacement or a fallback replacement, validation checks
+  the unchanged surface generation and the exact original selected span. Stale context is not
+  deleted. Once a selection exists, worker-preparation or invocation exceptions, non-OK or
+  timeout results, and empty summaries each trigger the fallback once. The existing no-candidate
+  no-op remains.
+
+The implementation now resolves `default_model` through
+`resolve_model_config(project_path=project)` without passing the parent model, then constructs
+the compaction client and request options from that project default, including client script,
+request kwargs, thinking, cache, and provider routing. Selected history and tool schemas remain
+available to the worker. The compact preset's model tier now defaults appropriately. In
+`agent/_compaction.py`, selection, worker preparation, outcome handling, and replacement are
+separate stages. After a valid completed prefix is selected, preparation or invocation
+exceptions, non-OK or timeout results, and empty summaries remove exactly the frozen source node
+span using the existing `CONTEXT_COMPACTION` replacement, with a short `CONTEXT REMOVED` notice
+when no summary is available. The recent tail and append-only raw log remain preserved; fallback
+metadata and the reason are saved, and a warning plus the normal context-update callback are
+emitted. A stale generation or changed selected span is rejected. `summarize_all` recovery is
+covered too. With no candidate, compaction remains a no-op.
+
+All seven initial policy cases failed against the previous behavior. Final verification passed
+158 targeted tests across `test_compact_integration.py`, `test_compact_subagent.py`,
+`test_subagent_main.py`, `test_compaction_extract.py`, `test_tail_boundary.py`,
+`test_context_spec.py`, `test_session_surface.py`, and `test_session_log_shadow.py`, using the
+dagi environment with `--noconftest -p no:pytest-qt -p no:cacheprovider` and a dedicated
+workspace basetemp. The regression covers project-default routing differing from an explicit
+parent model/provider, default thinking and options, summary injection and context reduction,
+normal and `summarize_all` error/empty/timeout/exception/preparation fallback, exact tail and
+raw-event preservation, replay of the same surface, and stale-selection rejection. `git diff
+--check` passed.
+
+No live API call, GUI verification, or restart was performed, so live GUI behavior remains
+unverified. The earlier model-alias fix and the historical full-context-retained-on-error policy
+are superseded for compaction; other inherited workers are unchanged.
+
+This approval supersedes the same-day inherited-model and failure-preserves-full-active-context
+policy choices. The earlier BookWriter worker-resolution fix and its verification remain
+historical implementation context; they are not treated as a conflicting account.
+
 [Project wiki](../index.md)

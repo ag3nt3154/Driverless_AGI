@@ -2,7 +2,7 @@
 
 Navigation to observed issues and verified fixes.
 
-> Last updated: 2026-09-18
+> Last updated: 2026-09-23
 
 ## Recent confirmed issues (2026-09)
 
@@ -52,6 +52,22 @@ Registry no longer rebuilds or restricts tools during planning.
 (7) `SetActivePlanTool` containment check didn't call `.resolve()`.
 
 ## Open issues
+
+**BookWriter GUI compaction repeats with zero summary** · `fixed` · reported 2026-09-23,
+verified 2026-09-23:
+A supplied matching handoff log shows `run_forked_compact_mode` failing while resolving
+`deepseek-flash`; the configured catalog identifier is `deepseek-v4-flash-deepseek`, producing a
+`KeyError`. The cause was confirmed for matching failure logs, not every unchanged-context report.
+`run_forked_compact_mode` now reuses `_build_inherited_config` for model and endpoint resolution,
+and failed or empty handoffs produce a visible warning with worker status/message and output-log
+path while preserving the original conversation. The nonfatal continuation policy is unchanged.
+The targeted 79-test verification passed; no live model call or GUI restart was performed, so
+live GUI behavior remains unverified. See [BookWriter compaction report](../notes/gui-context-duplication-2026-09-18.md#bookwriter-compaction-report-and-implemented-scope--2026-09-23).
+
+The later approved compaction policy is recorded separately in the [verified completion note](../notes/gui-context-duplication-2026-09-18.md#explicit-compaction-policy-approval-and-verified-completion--2026-09-23):
+158 targeted tests passed, including normal and `summarize_all` fallback paths, exact span and
+tail/raw-log preservation, project-default routing, and stale-selection rejection. Live API and
+GUI behavior remain unverified.
 
 - [Production review (2026-09-15)](../notes/production-review-2026-09-15.md): 19 actionable
   subagent, agent-loop, PySide GUI, and session-persistence findings; all recommendations

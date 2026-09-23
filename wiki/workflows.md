@@ -78,9 +78,15 @@ is still a known limit.
 
 ## Context Compaction
 
-Triggered automatically when context approaches the limit. The `compact` subagent inherits the
-parent's warm KV-cache prefix via retroactive branching. Compaction generation counter
-increments on success. Surface-aware step collection skips already-summarized steps.
+Triggered automatically when context approaches the limit. Surface-aware step collection skips
+already-summarized steps. The approved 2026-09-23 policy is implemented and verified: compaction
+resolves the configured project `default_model`, endpoint, credentials, and options. On error,
+it removes exactly the selected chunk from active model context while retaining the recent tail
+and raw append-only log, with a small omission marker; unchanged surface generation and the exact
+original span are validated before summary or fallback replacement. Preparation/invocation
+exceptions, non-OK or timeout results, and empty summaries use the fallback once after selection;
+no candidate remains a no-op. Recovery `summarize_all` is covered. See the [BookWriter compaction
+report](notes/gui-context-duplication-2026-09-18.md#explicit-compaction-policy-approval-and-verified-completion--2026-09-23).
 
 ## Model Switching
 

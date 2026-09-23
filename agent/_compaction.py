@@ -1,8 +1,7 @@
-"""agent/_compaction.py — context compaction.
+"""Context selection, default-model summarization, and atomic history replacement.
 
-Extracted verbatim from AgentLoop methods in agent/loop.py (instance state
-became explicit `loop` / `log` parameters) so the loop orchestrator stays
-under the 500-line cap. Only agent/loop.py imports from this module.
+Failed summarization removes the selected prefix from active context while
+retaining the raw session log. AgentLoop delegates compaction to this module.
 """
 from __future__ import annotations
 
@@ -132,31 +131,19 @@ def log_compaction(
     sync_fn()
 
 
-def compact(loop: AgentLoop, force: bool = False, summarize_all: bool = False) -> "CompactionResult":
-    """Compact context via a subprocess that inherits the parent's prefix.
-
-    The compact subprocess receives the parent's warm KV-cache prefix
-    through a fork-context file, makes a single non-streaming API call,
-    and returns the summary as its handoff. The parent surface is only
-    mutated after validating the handoff against the recorded surface
-    generation (atomic acceptance).
-
-    Exceptions propagate — callers that want them swallowed use
-    compact_context.
-    """
+def _select_compaction(
+    loop: AgentLoop, summarize_all: bool,
+) -> tuple[TailBoundary, int, tuple[int, ...]] | None:
+    """Select a complete prefix and retain its exact source nodes before starting work."""
     if loop._last_request_snapshot is None:
-        from agent._loop_config import _NO_COMPACTION
-
-        return _NO_COMPACTION
+        return None
 
     steps = collect_steps(loop.log)
     # Step-zero entries (seeds, user messages) lack STEP_END markers and
     # are never valid compaction cut points — exclude them.
     steps = [(t, s) for t, s in steps if s != 0]
     if not steps:
-        from agent._loop_config import _NO_COMPACTION
-
-        return _NO_COMPACTION
+        return None
 
     if summarize_all:
         boundary = TailBoundary(
@@ -174,61 +161,37 @@ def compact(loop: AgentLoop, force: bool = False, summarize_all: bool = False) -
             step_sizes=step_sizes,
         )
         if not boundary.has_middle:
-            from agent._loop_config import _NO_COMPACTION
-            return _NO_COMPACTION
+            return None
 
-    # --- Resolve structural values from the log ---
-    middle_last = boundary.middle_steps[-1]
-    step_end_seq: int | None = None
-    for evt in loop.log.events:
-        if (
-            evt.type == sev.STEP_END
-            and evt.branch == "main"
-            and evt.data.get("turn") == middle_last[0]
-            and evt.data.get("step") == middle_last[1]
-        ):
-            step_end_seq = evt.seq
-            break
-    if step_end_seq is None:
-        from agent._loop_config import _NO_COMPACTION
+    step_end_seq = _completed_step_end(loop.log, boundary.middle_steps[-1])
+    source_nodes = _selected_source_nodes(loop.log, boundary)
+    if step_end_seq is None or not source_nodes:
+        return None
+    return boundary, step_end_seq, source_nodes
 
-        return _NO_COMPACTION  # last summarized step incomplete
 
-    nodes = loop.log.surface.nodes
-    if boundary.tail_steps:
-        tail_first = boundary.tail_steps[0]
-        try:
-            tail_idx = find_surface_index_for_step(loop.log, tail_first)
-        except ValueError:
-            from agent._loop_config import _NO_COMPACTION
-            return _NO_COMPACTION
-        if tail_idx == 0:
-            from agent._loop_config import _NO_COMPACTION
-            return _NO_COMPACTION  # nothing to shadow
-    else:
-        # summarize_all: shadow the entire surface
-        tail_idx = len(nodes)
+def _completed_step_end(log: SessionLog, step: tuple[int, int]) -> int | None:
+    """Only completed main-branch steps may end the selected prefix."""
+    for event in log.events:
+        if (event.type == sev.STEP_END and event.branch == "main"
+                and (event.data.get("turn"), event.data.get("step")) == step):
+            return event.seq
+    return None
 
-    first_summarized_seq = nodes[0]
-    last_summarized_seq = nodes[tail_idx - 1]
-    pre_gen = loop.log.surface.generation
 
-    # --- Record retroactive BRANCH_START ---
-    from uuid import uuid4
+def _selected_source_nodes(log: SessionLog, boundary: TailBoundary) -> tuple[int, ...]:
+    """Freeze the exact prefix before the retained tail (or all nodes for recovery)."""
+    if not boundary.tail_steps:
+        return tuple(log.surface.nodes)
+    try:
+        tail_idx = find_surface_index_for_step(log, boundary.tail_steps[0])
+    except ValueError:
+        return ()
+    return tuple(log.surface.nodes[:tail_idx])
 
-    branch_id = f"compact_{uuid4().hex[:8]}"
-    loop.log.append(
-        sev.BRANCH_START,
-        {
-            "branch": branch_id,
-            "parent_branch": "main",
-            "turn": middle_last[0],
-            "step": middle_last[1],
-            "parent_cut_seq": step_end_seq,
-            "parent_surface_generation": pre_gen,
-        },
-    )
 
+def _run_compact_worker(loop: AgentLoop, branch_id: str, step_end_seq: int, pre_gen: int):
+    """Prepare the selected history and ask the default-model worker for a summary."""
     # --- Reconstruct the inherited prefix ---
     from agent.context_spec import reconstruct, spec_for_branch
 
@@ -260,7 +223,7 @@ def compact(loop: AgentLoop, force: bool = False, summarize_all: bool = False) -
     os.close(fd)
     try:
         Path(fc_path).write_text(json.dumps(fork_ctx), encoding="utf-8")
-        result = run_subagent(
+        return run_subagent(
             task="",
             preset="compact",
             project_path=loop.config.project_path,
@@ -270,62 +233,96 @@ def compact(loop: AgentLoop, force: bool = False, summarize_all: bool = False) -
     finally:
         Path(fc_path).unlink(missing_ok=True)
 
-    # --- Validate and atomically accept ---
-    if not result.is_ok or not result.handoff_text.strip():
-        from agent._loop_config import _NO_COMPACTION
 
+def _summarize_selection(
+    loop: AgentLoop, branch_id: str, step_end_seq: int, pre_gen: int,
+) -> tuple[str, str | None, str]:
+    """Convert worker/preparation failures into fallback reasons before touching history."""
+    try:
+        result = _run_compact_worker(loop, branch_id, step_end_seq, pre_gen)
+        if result.is_ok and result.handoff_text.strip():
+            return result.handoff_text, str(result.handoff_path), ""
+        reason = result.message or (
+            "worker returned an empty summary" if result.is_ok else f"worker status: {result.status}"
+        )
+        details = f" Details: {result.output_log_path}." if result.output_log_path else ""
+        return "", None, f"{reason}.{details}"
+    except Exception as exc:
+        return "", None, f"{type(exc).__name__}: {exc}"
+
+
+def compact(loop: AgentLoop, force: bool = False, summarize_all: bool = False) -> "CompactionResult":
+    """Replace a selected prefix with a summary, or an omission notice if the worker fails.
+
+    Both paths preserve raw events and the recent tail. A changed surface rejects
+    either replacement so a stale worker cannot discard newer context.
+    """
+    from uuid import uuid4
+    from agent._loop_config import CompactionResult, _NO_COMPACTION
+
+    selection = _select_compaction(loop, summarize_all)
+    if selection is None:
         return _NO_COMPACTION
-    if loop.log.surface.generation != pre_gen:
-        from agent._loop_config import _NO_COMPACTION
-
-        return _NO_COMPACTION  # surface changed during compact
-
-    current_nodes = loop.log.surface.nodes
-    if (
-        first_summarized_seq not in current_nodes
-        or last_summarized_seq not in current_nodes
-    ):
-        from agent._loop_config import _NO_COMPACTION
-
-        return _NO_COMPACTION  # replacement edges no longer live
-
-    loop._compaction_generation += 1
-    summary_content = (
-        f"[CONTEXT SUMMARY — conversation compacted "
-        f"(generation {loop._compaction_generation})]\n\n"
-        f"{result.handoff_text}"
+    boundary, step_end_seq, source_nodes = selection
+    pre_gen = loop.log.surface.generation
+    middle_last = boundary.middle_steps[-1]
+    branch_id = f"compact_{uuid4().hex[:8]}"
+    loop.log.append(
+        sev.BRANCH_START,
+        {
+            "branch": branch_id,
+            "parent_branch": "main",
+            "turn": middle_last[0],
+            "step": middle_last[1],
+            "parent_cut_seq": step_end_seq,
+            "parent_surface_generation": pre_gen,
+        },
     )
+    summary, handoff, failure = _summarize_selection(loop, branch_id, step_end_seq, pre_gen)
+
+    if (loop.log.surface.generation != pre_gen
+            or tuple(loop.log.surface.nodes[:len(source_nodes)]) != source_nodes):
+        return _NO_COMPACTION
+
+    generation = loop._compaction_generation + 1
+    if failure:
+        summary_content = (
+            "[CONTEXT REMOVED — earlier history was removed without a summary "
+            "because compaction failed. The raw session log retains the original history.]"
+        )
+    else:
+        summary_content = (
+            f"[CONTEXT SUMMARY — conversation compacted (generation {generation})]\n\n"
+            f"{summary}"
+        )
     removed_count = len(boundary.middle_steps)
-    source_nodes = list(current_nodes[:tail_idx])
     loop.log.append(
         sev.CONTEXT_COMPACTION,
         {
             "summary": summary_content,
             "removed": removed_count,
-            "generation": loop._compaction_generation,
+            "generation": generation,
             "branch": branch_id,
-            "handoff": str(result.handoff_path),
+            "handoff": handoff,
+            "fallback": bool(failure),
+            "failure_reason": failure[:1000],
         },
-        surface_op=("replace", first_summarized_seq, last_summarized_seq),
+        surface_op=("replace", source_nodes[0], source_nodes[-1]),
         source_seqs=source_nodes,
     )
+    loop._compaction_generation = generation
     loop._sync_messages()
-
-    from agent._loop_config import CompactionResult
-
-    compaction = CompactionResult(
-        did_compact=True,
-        generation=loop._compaction_generation,
-        summary_content=summary_content,
-        removed_count=removed_count,
-    )
+    if failure:
+        loop.callbacks.on_assistant_text(
+            f"[Warning: context compaction failed — {failure[:1000]} "
+            f"Selected history chunk removed without a summary ({removed_count} steps).]"
+        )
     loop.callbacks.on_compaction(len(boundary.tail_steps), removed_count)
-    return compaction
+    return CompactionResult(True, generation, summary_content, removed_count)
 
 
 def compact_context(loop: AgentLoop) -> "CompactionResult":
-    """Delegates to compact(). Failures are non-fatal — the session continues
-    with un-compacted messages rather than crashing."""
+    """Delegate to compact; report errors outside its validated worker fallback."""
     from agent._loop_config import _NO_COMPACTION
 
     try:

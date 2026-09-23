@@ -2,7 +2,7 @@
 
 Project knowledge and navigation.
 
-> Last updated: 2026-09-20
+> Last updated: 2026-09-23
 
 - [Workflow review — 2026-09-20](notes/workflow-review-2026-09-20.md): review findings and a
   scoped approval for checklist points 1–2; remaining recommendations remain unapproved.
@@ -19,7 +19,9 @@ Project knowledge and navigation.
 
 - [GUI context duplication audit](notes/gui-context-duplication-2026-09-18.md#follow-up-audit--2026-09-18):
   six open context and compaction findings confirmed offline on 2026-09-18; no fixes approved or
-  implemented by that audit.
+  implemented by that audit. The same note records the 2026-09-23 BookWriter compaction report,
+  the targeted fix and approved compaction policy now implemented on uncommitted `main`, the
+  158-test verification, and its live-API/GUI verification limits.
 
 ## Reviews
 

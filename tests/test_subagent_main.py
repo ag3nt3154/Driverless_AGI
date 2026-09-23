@@ -393,8 +393,8 @@ class TestForkedCompactMode:
         mock_client.chat.completions.create.return_value = fake_response
 
         with patch("tools.subagent_main.resolve_model_config") as mock_config:
-            mock_config.return_value = MagicMock(
-                api_key="sk-test", base_url="https://api.test.com/v1"
+            mock_config.return_value = AgentConfig(
+                model="test/model", api_key="sk-test", base_url="https://api.test.com/v1"
             )
             with patch("openai.OpenAI", return_value=mock_client):
                 run_forked_compact_mode(
@@ -451,7 +451,7 @@ class TestForkedCompactMode:
         mock_client.chat.completions.create.return_value = fake_response
 
         with patch("tools.subagent_main.resolve_model_config") as mock_config:
-            mock_config.return_value = MagicMock(api_key="sk-test", base_url="")
+            mock_config.return_value = AgentConfig(model="test/model", api_key="sk-test", base_url="")
             with patch("openai.OpenAI", return_value=mock_client):
                 run_forked_compact_mode(
                     fork_context_path=str(fc_path),

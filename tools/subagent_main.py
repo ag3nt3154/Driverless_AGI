@@ -523,8 +523,8 @@ def run_forked_compact_mode(
     subagent_type: str,
     project_path: str | None,
 ) -> None:
-    """Execute compact in forked mode: inherit prefix, single non-streaming API call."""
-    import openai
+    """Summarize the supplied history with the project's configured default model."""
+    from agent._model_switch import build_extra_body, build_openai_client
 
     project = Path(project_path).resolve() if project_path else Path.cwd()
     hp = Path(handoff_path)
@@ -534,14 +534,9 @@ def run_forked_compact_mode(
         raise ValueError(f"Unsupported fork-context version: {fc.get('version')}")
 
     req = fc["request"]
-    model = req["model"]
-
-    # Resolve credentials and endpoint together from the parent's model
-    base_config = resolve_model_config(model, project_path=project)
-    client = openai.OpenAI(
-        api_key=base_config.api_key,
-        base_url=base_config.base_url,
-    )
+    # Compaction is independent of the parent's explicit model or active tier.
+    base_config = resolve_model_config(project_path=project)
+    client, script_kwargs = build_openai_client(base_config)
 
     from tools.subagent_api import _load_preset
     prompt_text, _, _, handoff_spec, _ = _load_preset(subagent_type, project)
@@ -551,19 +546,23 @@ def run_forked_compact_mode(
     messages.append(task_msg)
 
     tools_list = req.get("tools", [])
-    extra_body = req.get("extra_body", {})
+    extra_body = build_extra_body(
+        base_config.thinking, base_config.cache_prompt, base_config.provider_order,
+    )
 
-    create_kwargs: dict = dict(
-        model=model,
+    create_kwargs = dict(script_kwargs or base_config.request_kwargs)
+    create_kwargs.update(
+        model=base_config.model,
         messages=messages,
-        parallel_tool_calls=req.get("parallel_tool_calls", False),
+        stream=False,
+        parallel_tool_calls=False,
     )
     if tools_list:
         create_kwargs["tools"] = tools_list
     else:
         del create_kwargs["parallel_tool_calls"]
     if extra_body:
-        create_kwargs["extra_body"] = extra_body
+        create_kwargs["extra_body"] = {**create_kwargs.get("extra_body", {}), **extra_body}
 
     _emit = lambda evt: print(json.dumps(evt), flush=True)
     response = _compact_call_with_retry(client, create_kwargs, _emit)
