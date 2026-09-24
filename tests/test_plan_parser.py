@@ -79,6 +79,49 @@ EMPTY_PLAN = """\
 **Goal:** Something.
 """
 
+# Plan in write-plan's current output format
+WRITE_PLAN_FORMAT = """\
+# Auth Feature Implementation Plan
+
+**Goal:** Add JWT-based authentication.
+**Architecture:** Middleware validates tokens on protected routes.
+**Tech Stack:** Python, FastAPI, PyJWT
+**Spec:** wiki/plans/2026-09-24-auth/spec.md
+
+## Global Constraints
+Python >= 3.11
+No new runtime dependencies beyond PyJWT.
+
+## Review Focus
+Expired token returns 401, not 500.
+Missing Authorization header returns 401 with clear message.
+
+---
+
+## Subtasks
+
+### Subtask 1: [ ] Add token validation
+**Goal:** Validate JWTs in middleware.
+**Requirements:**
+- Reject expired tokens
+**Acceptance Criteria:**
+- Returns 401 for expired tokens
+#### Tests
+test_auth.py — tests token validation
+
+### Subtask 2: [ ] Add login endpoint
+**Goal:** Issue JWTs on valid credentials.
+**Requirements:**
+- Accept username and password
+**Acceptance Criteria:**
+- Returns 200 with signed JWT
+#### Tests
+test_login.py — tests login flow
+
+## Notes
+PyJWT is already installed.
+"""
+
 
 # ---------------------------------------------------------------------------
 # extract_global_sections
@@ -125,9 +168,10 @@ class TestExtractGlobalSections:
         assert "## Approach" not in result
         assert "## Notes" not in result
 
-    def test_no_global_sections_returns_empty_string(self):
+    def test_no_named_global_sections_returns_preamble_only(self):
         result = extract_global_sections(EMPTY_PLAN)
-        assert result == ""
+        assert "# Plan — Empty" in result
+        assert "## Subtasks" not in result
 
     def test_empty_input_returns_empty_string(self):
         assert extract_global_sections("") == ""
@@ -264,6 +308,65 @@ class TestExtractSubtaskNotFound:
     def test_include_tests_false_on_missing_subtask_returns_empty(self):
         result = extract_subtask(SAMPLE_PLAN, "does not exist", include_tests=False)
         assert result == ""
+
+
+# ---------------------------------------------------------------------------
+# Edge cases
+# ---------------------------------------------------------------------------
+
+# ---------------------------------------------------------------------------
+# extract_global_sections — write-plan format (preamble + new sections)
+# ---------------------------------------------------------------------------
+
+class TestExtractGlobalSectionsWritePlanFormat:
+    def test_preamble_includes_title(self):
+        result = extract_global_sections(WRITE_PLAN_FORMAT)
+        assert "# Auth Feature Implementation Plan" in result
+
+    def test_preamble_includes_goal_metadata(self):
+        result = extract_global_sections(WRITE_PLAN_FORMAT)
+        assert "**Goal:** Add JWT-based authentication." in result
+
+    def test_preamble_includes_spec_reference(self):
+        result = extract_global_sections(WRITE_PLAN_FORMAT)
+        assert "wiki/plans/2026-09-24-auth/spec.md" in result
+
+    def test_returns_global_constraints(self):
+        result = extract_global_sections(WRITE_PLAN_FORMAT)
+        assert "## Global Constraints" in result
+        assert "Python >= 3.11" in result
+
+    def test_returns_review_focus(self):
+        result = extract_global_sections(WRITE_PLAN_FORMAT)
+        assert "## Review Focus" in result
+        assert "Expired token returns 401" in result
+
+    def test_returns_notes(self):
+        result = extract_global_sections(WRITE_PLAN_FORMAT)
+        assert "## Notes" in result
+        assert "PyJWT is already installed" in result
+
+    def test_excludes_subtasks(self):
+        result = extract_global_sections(WRITE_PLAN_FORMAT)
+        assert "## Subtasks" not in result
+        assert "### Subtask 1" not in result
+
+    def test_preamble_before_sections(self):
+        result = extract_global_sections(WRITE_PLAN_FORMAT)
+        title_pos = result.find("# Auth Feature")
+        constraints_pos = result.find("## Global Constraints")
+        assert title_pos < constraints_pos
+
+
+class TestExtractSubtaskWritePlanFormat:
+    def test_extracts_subtask_from_write_plan_format(self):
+        result = extract_subtask(WRITE_PLAN_FORMAT, "Add token validation")
+        assert "### Subtask 1:" in result
+        assert "Validate JWTs" in result
+
+    def test_subtask_does_not_bleed(self):
+        result = extract_subtask(WRITE_PLAN_FORMAT, "Add token validation")
+        assert "### Subtask 2" not in result
 
 
 # ---------------------------------------------------------------------------

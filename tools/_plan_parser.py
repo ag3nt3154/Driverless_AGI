@@ -64,18 +64,43 @@ def _split_into_sections(plan_text: str) -> list[tuple[str, str]]:
 # Public API
 # ---------------------------------------------------------------------------
 
-_GLOBAL_SECTION_NAMES = {"context", "approach", "notes"}
+_GLOBAL_SECTION_NAMES = {
+    "context", "approach", "notes",
+    "global constraints", "review focus",
+}
+
+
+def _extract_preamble(plan_text: str) -> str:
+    """Return text before the first ``##`` heading, stripped.
+
+    Captures the plan title and header metadata (Goal, Architecture,
+    Tech Stack, Spec).  Returns empty string if the plan starts with
+    a ``##`` heading or is empty.
+    """
+    first_h2 = re.search(r'^##\s+', plan_text, re.MULTILINE)
+    if first_h2 is None:
+        return plan_text.strip()
+    preamble = plan_text[:first_h2.start()].strip()
+    return preamble
 
 
 def extract_global_sections(plan_text: str) -> str:
-    """Return the concatenated text of the ## Context, ## Approach, and ## Notes sections.
+    """Return the plan preamble and global ``##`` sections for worker context.
 
-    Sections are separated by a blank line.  Returns an empty string if none
-    of the three sections are present.
+    The preamble (everything before the first ``##`` heading) carries the
+    plan title and header metadata.  Named global sections are:
+    Context, Approach, Notes, Global Constraints, and Review Focus.
+
+    Sections are separated by a blank line.  Returns an empty string when
+    the plan has neither a preamble nor any matching sections.
     """
     parts: list[str] = []
+
+    preamble = _extract_preamble(plan_text)
+    if preamble:
+        parts.append(preamble)
+
     for heading, body in _split_into_sections(plan_text):
-        # Strip '## ' prefix and normalise to lowercase for matching
         section_name = re.sub(r'^##\s+', '', heading).strip().lower()
         if section_name in _GLOBAL_SECTION_NAMES:
             parts.append(f"{heading}\n{body}" if body else heading)

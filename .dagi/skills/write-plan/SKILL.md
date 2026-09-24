@@ -11,8 +11,17 @@ Write comprehensive implementation plans assuming the engineer has zero context 
 
 **Announce at start:** "I'm using the `write-plan` skill to create the implementation plan."
 
-**Save plans to:** `wiki/plans/YYYY-MM-DD-<task-name-slug>/plan.md`
-- (User preferences for plan location override this default)
+**Save plans to:** `wiki/tasks/YYYY-MM-DD_<task>/plan.md`
+
+Use the artifact directory already selected by `enter-workflow`; do not recompute it on
+resume. Record the supplied parent/task branch names and starting commit in plan Notes.
+The owner presents spec and plan together for approval and commits both before delivery.
+
+Implementation tasks follow `do-TDD` (runtime name `do-tdd`), supplied by `deliver` to
+the implementer. Describe the expected failing behavior and relevant checks; for pure
+refactoring, specify passing baseline coverage. Flag changes without meaningful automated
+tests and propose alternative verification. Keep final branch finishing outside worker
+tasks: `enter-workflow` invokes `merging-git-branch` after delivery verification.
 
 ## File Structure
 
@@ -41,7 +50,10 @@ independently testable deliverable.
 - "Run it to make sure it fails" - step
 - "Implement the minimal code to make the test pass" - step
 - "Run the tests and make sure they pass" - step
-- "Commit" - step
+- "Return implementation and test evidence for review" - step
+
+The main agent commits after the whole subtask passes review, not after each TDD step.
+Do not put Git staging/commit commands in worker instructions.
 
 ## Plan Document Header
 
@@ -84,7 +96,7 @@ owns the code, in that task's own step style.]
 ## Task Structure
 
 ````markdown
-### Task N: [Component Name]
+### Subtask N: [Component Name]
 
 **Files:**
 - Create: `exact/path/to/file.py`
@@ -122,12 +134,10 @@ def function(input):
 Run: `pytest tests/path/test.py::test_name -v`
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 5: Return for review**
 
-```bash
-git add tests/path/test.py src/path/file.py
-git commit -m "feat: add specific feature"
-```
+Report changed files, test commands/results, and deviations. The main agent reviews
+and commits this subtask before starting the next one.
 ````
 
 ## No Placeholders

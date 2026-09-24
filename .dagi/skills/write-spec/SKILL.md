@@ -41,3 +41,18 @@ decisions to `enter-workflow`; it owns approval and the next stage. Do not invok
 The most useful quality check is: Could two competent implementers read this document and build systems with materially different behavior? If yes, clarify that behavior before handing it to the implementation planner.
 
 # Saving the spec
+
+Use the artifact directory already created by `enter-workflow`
+(`wiki/tasks/YYYY-MM-DD_<task>/`); do not recompute it on resume.
+The directory already exists; do not recreate or relocate it.
+
+Save the document as `spec.md` in that directory. Return the artifact path,
+a readiness assessment (ready for plan writing, or blocked with reasons), and
+any unresolved decisions to the caller.
+
+Do not invoke `write-plan`, `deliver`, or any lifecycle skill. The owner
+presents spec and plan together for approval; there is no separate spec
+approval gate.
+
+When invoked standalone (no `enter-workflow` caller), save to the supplied or
+default path and report the spec and readiness only.
