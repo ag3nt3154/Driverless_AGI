@@ -82,7 +82,7 @@ This tests the writer-consumer interface, not prose phrasing or heading counts a
 - [ ] Run `conda run -n dagi python -m pytest --noconftest -p no:pytest-qt
   tests/test_plan_parser.py tests/test_workflow_plan_template.py -q`; return evidence for review.
 
-### Subtask 2: [~] Align Dagi lifecycle, approvals, and recovery instructions
+### Subtask 2: [x] Align Dagi lifecycle, approvals, and recovery instructions
 
 **Goal:** Complete reviewed subtasks and commits autonomously under initial approval.
 **Requirements:** R1, R3-R6, R9-R11, R13, R15. Keep Dagi's native tools and grill style.
@@ -127,7 +127,7 @@ avoid rerunning accepted work, and ask only at the relevant gate.
   tests/test_project_init.py tests/test_active_plan.py tests/test_update_task_status.py -q`.
 - [ ] Return changes and scenario outcomes for independent review.
 
-### Subtask 3: [ ] Provide a portable, preserving Codex wiki bootstrap
+### Subtask 3: [~] Provide a portable, preserving Codex wiki bootstrap
 
 **Goal:** Codex can initialize a selected project's wiki without importing Dagi.
 **Requirements:** R10, R14. Use explicit project root, stdlib, exclusive creation, safe paths.
@@ -277,14 +277,16 @@ record if the current session cannot refresh its skill catalog without a restart
   status round-trip preservation. Worker observed expected missing-template red first.
 - Task-only model exception: user explicitly approved `gpt-6-astra` for remaining workers
   and reviews after `gpt-5.6-luna` hit its usage limit. Global preference remains unchanged.
-- Subtask 2: review accepted / commit pending. Independent `lifecycle_review` PASS and
+- Subtask 2: verified commit `35baf0f77e30462b1472b1f5f3d06114b93c1681`.
+  Independent `lifecycle_review` PASS and
   32 lifecycle tests passed. Instruction scenarios cover authorization, recovery, query and
   bootstrap routing, overrides, bounded closure, and failed required wiki checkpoints.
 - The do-TDD file has an existing unrelated rewrite. Commit only the equivalent ownership
   correction against its HEAD version; retain that rewrite unchanged apart from the same
   correction in the working tree. Full staged content is inspected before committing.
 - Subtask 3 prepared independently in disjoint files: worker and `bootstrap_review` PASS,
-  14 tests including real outside-directory link containment, no skips. Commit follows 2.
+  14 tests including real outside-directory link containment, no skips. Review accepted;
+  commit pending.
 - Approval wiki checkpoint: successful readback from `approval_wiki`, 2026-09-26;
   authorization recorded in `wiki/notes/workflow-review-2026-09-20.md`.
 - Pre-existing unstaged files: `.dagi/prompts/compact/compact_system.md`,
