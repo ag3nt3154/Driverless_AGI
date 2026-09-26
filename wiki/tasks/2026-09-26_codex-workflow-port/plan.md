@@ -39,8 +39,8 @@ instructions. Package Codex sources in the repository and install after scoped v
 ## Overall Status
 
 Approved for implementation and global installation after independent review PASS.
-Approval wiki checkpoint and document commit are complete. Subtask 1 is committed; subtask 2
-is in progress. Global installation and branch finishing remain pending.
+Approval wiki checkpoint and document commit are complete. Subtasks 1-3 are committed;
+the portable package is under independent review. Global installation and finishing remain pending.
 
 ## Subtasks
 
@@ -127,7 +127,7 @@ avoid rerunning accepted work, and ask only at the relevant gate.
   tests/test_project_init.py tests/test_active_plan.py tests/test_update_task_status.py -q`.
 - [ ] Return changes and scenario outcomes for independent review.
 
-### Subtask 3: [~] Provide a portable, preserving Codex wiki bootstrap
+### Subtask 3: [x] Provide a portable, preserving Codex wiki bootstrap
 
 **Goal:** Codex can initialize a selected project's wiki without importing Dagi.
 **Requirements:** R10, R14. Use explicit project root, stdlib, exclusive creation, safe paths.
@@ -174,7 +174,7 @@ cases only with an explicit platform reason; retain a portable containment check
 - [ ] Run `conda run -n dagi python -m pytest --noconftest -p no:pytest-qt
   tests/test_codex_wiki_bootstrap.py -q`; return evidence for independent review.
 
-### Subtask 4: [ ] Package the Codex workflow and existing-skill adaptations
+### Subtask 4: [~] Package the Codex workflow and existing-skill adaptations
 
 **Goal:** Produce a self-contained, reviewable Codex skill set using real host capabilities.
 **Requirements:** R1-R9, R11-R15; consume bootstrap from subtask 3.
@@ -285,8 +285,13 @@ record if the current session cannot refresh its skill catalog without a restart
   correction against its HEAD version; retain that rewrite unchanged apart from the same
   correction in the working tree. Full staged content is inspected before committing.
 - Subtask 3 prepared independently in disjoint files: worker and `bootstrap_review` PASS,
-  14 tests including real outside-directory link containment, no skips. Review accepted;
-  commit pending.
+  14 tests including real outside-directory link containment, no skips. Verified commit
+  `f39d42c55f7dd4042b9eb0cef0fb4f434fe1eee1`.
+- Subtask 4: review accepted / commit pending. Independent `package_review` PASS.
+  Eight skills validate in UTF-8 mode, five local resource links resolve, canonical template
+  hashes match, and original grill content is preserved as an exact prefix. Ten instruction
+  scenarios reviewed; these are walkthroughs, not live model execution.
+- Integrated working-tree verification: 108 tests passed with no skips, 2026-09-26.
 - Approval wiki checkpoint: successful readback from `approval_wiki`, 2026-09-26;
   authorization recorded in `wiki/notes/workflow-review-2026-09-20.md`.
 - Pre-existing unstaged files: `.dagi/prompts/compact/compact_system.md`,
@@ -309,7 +314,7 @@ record if the current session cannot refresh its skill catalog without a restart
 - The current loop handler retains active-plan association after all tasks resolve.
   Some status-tool descriptions still say complete/auto-finished; do not interpret those as
   approval or closure. Runtime status-message cleanup is outside this skills-focused scope.
-- Source packaging and bootstrap helper are proposed here for review, not already implemented.
+- Source packaging and bootstrap helper are implemented; global installation remains pending.
 
 ## Open Issues
 
@@ -344,5 +349,5 @@ Tests and installation have not run during planning.
 
 ## Next Action
 
-Implement and independently review subtask 2; subtask 1 is committed.
+Complete package review, commit subtask 4, and install/verify subtask 5.
 Merge approval remains separate at branch completion.

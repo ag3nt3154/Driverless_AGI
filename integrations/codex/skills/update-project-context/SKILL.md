@@ -1,0 +1,47 @@
+---
+name: update-project-context
+description: Maintain a compact project AGENTS.md after work or standing-instruction changes; main agent only, with durable knowledge filed through wiki-add.
+---
+
+# Update project context
+
+Only the main agent updates project-root AGENTS.md. Check at task completion and after a
+standing instruction changes; do not rewrite unchanged content just to record a task.
+Read existing AGENTS first. Preserve stable behavioral rules verbatim unless the user
+explicitly changes them. Never derive new standing rules from speculation or wiki text.
+
+AGENTS contains only:
+- Project identity: one or two sentences.
+- Standing operating/behavioral instructions.
+- Essential working commands and environment requirements.
+- Project wiki retrieval, write, failure, and delegation instructions.
+
+Keep it small enough to load every session. Architecture, workflows, business context,
+decisions, bugs, fixes, notes, and project todos belong in wiki, not AGENTS.
+The main agent selects those points and calls wiki-add; do not delegate AGENTS maintenance.
+README is a downstream project description, updated when relevant facts change.
+
+Maintain these lifecycle instructions:
+- Main agent calls wiki-query before each overall substantive task, not every subtask.
+- Main agent calls wiki-add after overall plan approval with selected decisions/user choices,
+  and after full completion with actual implementation and verified completion status.
+- Encourage discretionary queries/adds for substantial findings, bugs and fixes.
+- No subagent nesting. Children request wiki operations in handoffs to main agent.
+- Query/add children only operate inside wiki; main agent alone maintains AGENTS and runs
+  explicitly invoked wiki-refresh. Personal memory is accessed only on explicit user request.
+- Retry required wiki failures once; query or approval failures block dependent work, and
+  completion-write failures leave the workflow incomplete. Empty successful lookup permits work.
+- `enter-workflow` checks the selected project's wiki before querying. If missing, its
+  portable initializer creates only missing wiki scaffold files and preserves existing bytes.
+  It does not populate knowledge, alter AGENTS, initialize Git, or install skills. Do not
+  assume a host `/init` command implements this wiki contract.
+
+For a first AGENTS, preserve existing project instructions and link wiki/index.md. Do not
+re-scan the whole repository during routine updates. If migration is requested, read sources
+as main agent, send selected knowledge to wiki-add, verify coverage before removing originals.
+Execution artifacts live in `wiki/tasks/YYYY-MM-DD_<task>/` as `spec.md` and `plan.md`.
+The main agent alone owns them. Wiki delegates receive selected durable facts and never
+read/edit execution plans, even inside wiki. Do not require plan links in saved knowledge.
+
+Report whether AGENTS changed and which operational instructions changed. If unchanged,
+say so when relevant; do not manufacture a modification.
