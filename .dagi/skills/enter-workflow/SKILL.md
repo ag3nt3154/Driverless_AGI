@@ -75,15 +75,38 @@ only the affected stage. Preserve already settled decisions. Call `write-plan` d
 for the plan-writing stage; a standalone invocation writes the artifact without launching
 the lifecycle or authorizing implementation.
 
+## Project context at entry
+
+Before each overall substantive project task (including a read-only query), resolve the
+selected project root and Dagi installation root separately. Inspect `wiki/index.md` with
+error-reporting filesystem operations: permission errors, a directory, or a dangling link
+are not a missing wiki. If genuinely missing, initialize the scaffold before `wiki_query`.
+The user explicitly authorized this missing-wiki bootstrap as the entry exception to the
+implementation gate; it permits no other source edits or implicit Git initialization.
+
+Reuse `agent.cli_utils._cmd_init(resolved_project_root)` from the resolved Dagi installation
+with the configured Python interpreter (`DEFAULT_PYTHON_ENV`, `dagi` here), not an assumed
+current directory or system Python. Before calling it, inspect `build_init_files` targets
+and every directory `_cmd_init` creates (including `.dagi` children). Preflight every
+existing ancestor and destination for containment in the resolved project root; reject
+escaping symlinks/junctions, inaccessible paths, and incompatible file/directory types.
+Existing files must remain byte-for-byte unchanged: `_cmd_init` creates files exclusively.
+If the root or target cannot be validated, report the exact path and block bootstrap.
+Preserve partially created files for a safe retry; verify the index is a readable regular
+file afterwards. Bootstrap creates scaffold only, not project facts.
+
+Then call `wiki_query(task=<current task context>)` and read its handoff. Retry a failed
+query once; two failures block dependent substantive work. A successful empty lookup
+permits investigation. Reuse this lookup through chained stages, not once per subtask.
+Wiki delegates must never read or edit task plans, even under `wiki/tasks/`.
+
 # Steps
 1. Classify the request and state it so the user can override it. Bounded changes use
    proportionate exploration, specs, and plans; both implementation paths use the same gates:
-   - **Query** — a feasibility question ("can we...", "is it possible...",
-   "quick and dirty is fine") whose output is an answer, not code you
-   keep. Present the question and what you'll try in 2-3 sentences, get
-   a nod, then find out as cheaply as correctness allows. No design
-   doc, no spec file. Report findings as a recommendation; anything you
-   built stays labeled throwaway.
+   - **Query** - intent is a read-only answer or investigation. Answer without a
+   preliminary approval or nod; clarify only consequential ambiguity. Classify by intended
+   outcome, not phrases such as "can you": a request to make a change is implementation.
+   Ordinary casual conversation stays outside this lifecycle.
    - **Bounded** — a well-scoped change to code that already exists in
    this repo: a new flag, a small endpoint, a one-file fix.
    Understanding the kind of app is not enough — bounded means the flow
@@ -97,22 +120,14 @@ the lifecycle or authorizing implementation.
    Do NOT invoke any implementation skill, write any code, scaffold any
    project, or take any implementation action until you have told your
    user what you intend and they have approved it. This applies
-   to EVERY task on EVERY path below — the ceremony scales with the task;
-   the approval gate never does.
+   to implementation on both paths below. Read-only queries and the explicitly
+   authorized wiki bootstrap do not require this approval.
    </HARD-GATE>
 
-2. If the request is a **query**, this is the user asking for an answer to a question.
-   No code changes necessary. You should clarify with the user what the user is asking
-   and then provide an answer based on available information.
-  1. **Explore project context** — enough to frame the probe
-  2. **Clarify question from user** — Make sure that you understand what the user is
-    asking. If it is a complex query covering multiple files, produce a probe plan in 2-3 sentences
-  3. **Get approval** — a nod is enough
-  4. **Investigate** — as cheaply as correctness allows. You may write and run scripts 
-    to investigate and gather the correct information, but you should label anything 
-    built as `tmp`.
-  5. **Report findings** — report findings based on user's ask. You should remove the
-    `tmp` scripts that you built during the investigation.
+2. For a **query**, inspect enough context to answer accurately and report findings.
+   No branch, spec, plan, or preliminary permission is required. Any temporary probe must
+   remain explicitly disposable and within the authorized investigation scope. A later
+   request to keep or implement a change enters the matching implementation sequence.
 
 3. For **bounded** or **architectural** implementation, follow the matching sequence
    below. Both paths share explore/grill and the approval gate. Bounded work stays on the
@@ -125,36 +140,43 @@ the lifecycle or authorizing implementation.
 
 1. **Explore and grill.** Inspect project context and invoke `grill-me`. Resolve intent,
    scope, constraints, and meaningful alternatives until shared understanding is reached.
-2. **Check uncommitted work.** Run `git status`. If there are uncommitted staged, unstaged,
-   or untracked changes, present them and ask with `ask_user(..., no_timeout=true)` what
-   the user wants to do (e.g. commit first, stash, discard). Resolve before proceeding.
+2. **Check uncommitted work.** Run `git status` and identify staged, unstaged, and untracked
+   work. Reuse a recorded user decision to preserve existing changes. Proceed when task
+   changes can be isolated safely; do not demand a clean tree. Ask only for an unresolved
+   ownership or handling decision. Never silently stash, discard, or include unrelated work.
 3. **Present inline plan.** Summarize the change in chat: what files are affected, the
    approach, and how it will be tested. This is the plan — no document, no spec file.
 4. **Ask approval.** Use `ask_user(..., no_timeout=true)`. Wait for an explicit yes.
-   This approval covers implementation and commits on the current branch.
+   This approval covers implementation and reviewed commits on the current branch.
+   Run the approval wiki checkpoint before implementation; no per-subtask approval follows.
 5. **Implement with TDD.** Load `skill("do-tdd")` and implement directly on the current
    branch, following the red/green/refactor cycle. The main agent implements directly
    (no worker subagent needed for bounded work, though one may be used).
 6. **Review.** Call `review_work` with the full diff, acceptance criteria from the inline
    plan, and test commands. On ESCALATE, repair and re-review. On PASS, proceed to commit.
 7. **Commit.** Stage and commit the accepted changes with a Conventional Commit message.
-   Verify the commit succeeded.
+   Verify the commit succeeded; reconcile interrupted commits from history before retrying.
+8. **Close bounded work.** The owner performs proportionate integrated verification and
+   final review, runs the completion wiki checkpoint and `update-project-context`, and
+   reports the verified result. Do not invoke `deliver` or manufacture a branch/merge offer.
 
 ## Architectural sequence
 
 1. **Explore and grill.** Inspect project context and invoke `grill-me`. Resolve intent,
    scope, constraints, and meaningful alternatives until shared understanding is reached.
-2. **Check uncommitted work.** Run `git status`. If there are uncommitted staged, unstaged,
-   or untracked changes, present them and ask with `ask_user(..., no_timeout=true)` what
-   the user wants to do (e.g. commit first, stash, discard). Do not silently carry, stash,
-   or discard uncommitted work into the new branch. Resolve before proceeding.
+2. **Check uncommitted work.** Run `git status` and identify staged, unstaged, and untracked
+   work. Reuse a recorded user decision to preserve existing changes. Proceed when task
+   changes can be isolated safely; do not demand a clean tree. Ask only for an unresolved
+   ownership or handling decision. Never silently stash, discard, or include unrelated work.
 3. **Ask to create the branch.** Present the understood scope, parent branch, proposed
    `dagi/<task>` branch, and artifact directory `wiki/tasks/YYYY-MM-DD_<task>/`. The
-   `<task>` slug is the same in both. Ask with `ask_user(..., no_timeout=true)` to create
+   `<task>` slug is the same in both. Honor an explicit applicable project branch-prefix
+   override and record the actual branch once; `dagi/` is only the default. Ask with
+   `ask_user(..., no_timeout=true)` to create
    and check out that branch. This approval permits branch setup and drafting, not
    implementation or merging.
 4. **Create the branch and artifact directory.** Record parent branch, starting commit,
-   task branch (`dagi/<task>`), and the artifact directory
+   actual approved task branch, and the artifact directory
    (`wiki/tasks/YYYY-MM-DD_<task>/`) before switching. Create and check out the approved
    branch; create the artifact directory; verify success. Reuse these values on
    continuation.
@@ -173,8 +195,10 @@ the lifecycle or authorizing implementation.
    or implementation-commit permission is implied.
 7. **Record approval and commit.** Run the approval wiki checkpoint below. Stage only the
    approved spec and plan, inspect the staged diff, and commit them together with the
-   message `plan(<task>): approve spec and plan` (where `<task>` matches the branch
-   suffix). Verify the commit before advancing; record its ID in the continuation
+   message `plan(<task>): approve spec and plan` (where `<task>` is the recorded task
+   slug). Inspect its committed contents and history, not just the subject. A subject
+   is not user authorization. Verify the commit before advancing; record its ID in the
+   continuation
    checkpoint. Do not include unrelated staged work in this commit.
 8. **Attach and deliver.** Associate the approved plan using `set_active_plan(path)` and
    confirm with `check_active_plan()`. Planning-only work stops here. Otherwise invoke
@@ -188,6 +212,23 @@ Before presenting the spec and plan for approval, call `review_work` with the pl
 request and spec context, and criteria for completeness, checkable acceptance criteria,
 consistency, and implementation traps. Read the handoff. Revise through the writers on
 `ESCALATE` and repeat until accepted. Record review evidence in plan Notes.
+
+### Approval wiki checkpoint
+
+After explicit inline-plan or joint spec/plan approval, record actual user evidence and
+scope separately from document-commit evidence: approved artifact/version, execution and
+commit authority, and planning-only limits. Never infer permission from a filename, status,
+plan association, review PASS, or commit subject. Call `wiki_add(task=<selected approved
+decisions, user choices, dates and evidence>)`; supply knowledge directly, not a request to
+read the plan. Read the handoff and retry a failed write once, rereading partial writes.
+Two failures block implementation. Preserve successful checkpoint evidence on continuation.
+
+### Completion wiki checkpoint
+
+After verification, call `wiki_add(task=<selected actual results, checks, limitations and
+completion status with dates/evidence>)` and read the handoff. Never ask the delegate to
+read or edit plans. Retry failure once; two failures leave the workflow incomplete, while
+allowing an honest implementation-status report. Do not detach or claim full closure.
 
 Approval and review evidence apply only to their reviewed scope; material later changes
 require renewed approval before committing or work.
@@ -204,25 +245,33 @@ approval, and merge approval are distinct; record their scopes in the checkpoint
 
 - Inspect current branch, staged/unstaged changes, and untracked files before setup.
   Identify existing work and preserve it. If switching would carry unrelated work, paths
-  contain mixed ownership, or the parent is unclear, ask how to proceed. Never silently
+  contain mixed ownership, or the parent is unclear, reuse recorded handling decisions;
+  ask only if safe isolation or authority remains unresolved. Never silently
   stash, discard, reset, or include existing changes in task commits.
 - Record the actual parent and starting commit; do not assume main or infer it from an
-  upstream. Detached HEAD or a branch-name collision needs an explicit choice. Reuse an
+  upstream. Honor recorded explicit project branch-prefix overrides. Detached HEAD or a
+  branch-name collision needs an explicit choice. Reuse an
   existing task branch only when evidence ties it to this task; otherwise propose a new
   name. Never reset an existing branch to make setup succeed.
 - Before each commit, confirm the task branch and inspect both the task diff and the
   entire staged diff. Stage explicit task files/hunks. If unrelated content is already
-  staged or cannot be separated safely, resolve it with the user before committing.
+  staged, isolate task staging without altering that work when safely possible. Ask only
+  when ownership or safe separation remains unresolved; reuse recorded user choices.
 - Commit only approved documents or accepted subtasks, not individual red/green steps.
   Verify each commit and retain its ID in the checkpoint. A failed/interrupted commit
   leaves a commit-pending stage; inspect history before retrying, without rerunning accepted
-  implementation. If history and the committed diff prove the expected commit succeeded,
+  implementation. No routine per-subtask or per-commit user approval is required. If history
+  and the committed diff prove the expected commit succeeded,
   reconcile stale plan/checkpoint markers and its commit ID, then continue without another
   commit. If the result is uncertain, resolve it before proceeding. Report unchanged/no-op
   subtasks instead of manufacturing empty commits.
 - Task-scoped verification/progress documentation can be committed on the task branch
   under the same implementation approval before the merge offer. That permission does
   not extend to new commits on the parent after merging, pushing, or deleting anything.
+- A commit cannot contain its own final ID. Record verified IDs and completion markers
+  after committing; include those updates in the next task commit or a final verification
+  record commit. Keep that final commit's ID in the conversation checkpoint/Git history;
+  do not create an endless chain of commits solely to record each preceding ID.
 
 ## Closure
 
@@ -242,7 +291,8 @@ After successful verification and final review:
    leaves closure incomplete and the plan associated. Keeping the branch is successful
    finishing, not a failed merge. Resume an unfinished closing stage here using current
    evidence; do not rerun completed implementation just to obtain the finishing decision.
-2. Check `update-project-context`. After a merge, use the corresponding plan in the target
+2. Run the completion wiki checkpoint and check `update-project-context`. After a merge,
+   use the corresponding plan in the target
    checkout when recording closure; do not edit a stale source worktree or reattach the
    plan merely because switching to the approved target produces a branch mismatch.
    Report any final documentation changes still uncommitted; do not silently commit them.

@@ -36,32 +36,40 @@ enter-workflow -> deliver -> check approved active plan and execution authority
 Only the main agent orchestrates workers and reviewers. The enclosing owner handles
 planning, approval, and association.
 
-Run the checks below in order. **Stop and report to the user on the first failure.**
+Run the checks below in order. Reconcile recoverable evidence before returning a blocker.
+Unresolved authorization or conflicting evidence blocks dependent work.
 Do not attach a different plan, invoke writers, or restart grilling here.
 
 ### 1. Identify the task
 
 Call `check_active_plan()` to get the associated plan path. If no plan is associated,
-derive the task slug from the current branch (`dagi/<task>`) and look for
-`wiki/tasks/*_<task>/plan.md`. If neither yields a plan, return a blocker.
+recover the exact task and known artifact path from the owner's checkpoint/conversation.
+A matching slug or newest plan alone is not association evidence. If identity cannot be
+recovered unambiguously, return a blocker to the owner.
 
 ### 2. Check the branch
 
 Read the plan's `## Workspace` section for the recorded branch name. Run
-`git branch --show-current` and verify it matches. The branch name must follow the
-`dagi/<task>` convention and the `<task>` slug must match the wiki folder name.
-Mismatch → stop and report.
+`git branch --show-current` and verify it matches. `dagi/<task>` is the default;
+honor an explicitly approved project override recorded by the owner. Verify the recorded
+artifact directory instead of re-deriving it from the prefix. Unexplained mismatch blocks
+execution; an already confirmed merge returns to the owner for closure.
 
 ### 3. Check the artifacts
 
 Verify that both `spec.md` and `plan.md` exist in the task's wiki folder
 (`wiki/tasks/YYYY-MM-DD_<task>/`). Either file missing → stop and report.
 
-### 4. Check the plan-approval commit
+### 4. Check authorization and document commit separately
 
-Search `git log --oneline` on the current branch for a commit matching
-`plan(<task>): approve spec and plan`. This commit proves the spec and plan were
-formally approved and committed by `enter-workflow`. Missing → stop and report.
+Recover actual user approval from conversation/checkpoint evidence: exact artifact scope,
+execution permission, and authority for main-agent reviewed subtask commits. Planning-only
+approval does not authorize execution. A plan, label, review PASS, or matching commit
+subject proves no user permission. Return unresolved or conflicting authority to the owner.
+Then inspect Git history and the actual committed spec/plan contents against the approved
+versions. The conventional subject helps locate the commit but is insufficient evidence.
+Confirm the owner's required approval wiki checkpoint succeeded before implementation.
+Missing gates return to the owner; do not request routine per-subtask approval.
 
 ### 5. Validate plan format
 
@@ -74,14 +82,17 @@ If the plan is malformed or truncated (e.g. planning was interrupted), stop and 
 
 ### 6. Reconcile subtask progress
 
-Read the subtask status markers from the plan:
-- `[x]` (complete) — verify a corresponding subtask commit exists on the current branch.
-  Check plan Notes for recorded commit IDs; cross-reference with `git log --oneline`.
-- `[~]` (in progress) or `[!]` (failed) — note as needing attention.
-- `[ ]` (pending) — remaining work for Phase 2.
+Read markers together with plan Notes, review acceptance, history and committed diffs:
+- `[x]`: verify the recorded commit and accepted scope, or a documented valid no-op.
+- `[~]`/`[!]`: identify implementation, review, or accepted/commit-pending work from Notes.
+- `[ ]`: pending unless accepted/committed evidence proves the marker is stale.
 
-If markers contradict git evidence (e.g. marked complete but no commit, or commits exist
-for a pending subtask), stop and report the discrepancy.
+If an interrupted commit actually succeeded, verify its task-owned contents and reconcile
+the marker/ID without rerunning the worker or committing again. If review passed but no
+commit exists, resume only the commit step. Correct stale progress when evidence is clear;
+return only unresolved contradictions to the owner. Never infer acceptance from a matching
+commit subject alone. A documented no-op needs verified existing behavior and review, not
+an empty commit.
 
 ### After verification
 
@@ -112,13 +123,19 @@ do not repeat its worker or review unless changes invalidate acceptance.
       - `context`: plan context and subtask goal
       - `verification`: relevant test commands from the subtask
    b. Read the reviewer handoff — always.
-   c. **PASS**: Call `update_task_status(task=N, status="complete")`. Incorporate any
-      non-blocking observations into plan Notes. The main agent stages only this subtask's
-      accepted changes and progress records, inspects the entire staged diff, and commits
-      with a Conventional Commit message under the recorded task authority. Follow the
-      owner's Git handling rules; workers do not commit. Verify the commit and record its
-      ID in the checkpoint. Do not proceed to the next subtask on commit failure; retain
-      accepted-but-commit-pending status and resolve the Git blocker without redoing work.
+   c. **PASS**: Record review accepted / commit pending and review evidence in Notes;
+      retain `[~]` (use `update_task_status(task=N, status="in_progress")` as needed).
+      The main agent stages only accepted task changes and progress records, inspects
+      the entire staged diff, and commits under the existing scoped authority. Follow
+      the owner's Git rules; workers never commit and no per-subtask approval is needed.
+      Verify the commit and its task-owned diff, then call
+      `update_task_status(task=N, status="complete")` and record its ID. A valid reviewed
+      no-op records its evidence and completes without manufacturing an empty commit.
+      Commit failure retains accepted/commit-pending Notes and `[~]`; inspect history
+      before retrying. Do not repeat accepted work merely because the marker lagged.
+      Put post-commit progress updates in the next task commit or final verification-record
+      commit. Keep the final record commit's own ID in the conversation/Git checkpoint,
+      avoiding an infinite chain of commits to record their own IDs.
    d. **ESCALATE**: Diagnose the findings and assign a targeted implementation repair,
       then repeat from step 1. If the approved requirements or plan need revision,
       return that blocker to the owner instead. Worker debugging has no fixed attempt count.

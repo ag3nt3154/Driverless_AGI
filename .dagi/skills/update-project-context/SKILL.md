@@ -37,7 +37,10 @@ Maintain these lifecycle instructions:
 For a first AGENTS, preserve existing project instructions and link wiki/index.md. Do not
 re-scan the whole repository during routine updates. If migration is requested, read sources
 as main agent, send selected knowledge to wiki-add, verify coverage before removing originals.
-Execution plans remain outside wiki. Do not require exact plan links in saved knowledge.
+Execution artifacts live at `wiki/tasks/YYYY-MM-DD_<task>/spec.md` and `plan.md`.
+Only the main agent maintains them. Wiki delegates must never read or edit task plans,
+even though those paths are inside wiki; supply selected knowledge directly to wiki-add.
+Do not require exact plan links in saved knowledge.
 
 Report whether AGENTS changed and which operational instructions changed. If unchanged,
 say so when relevant; do not manufacture a modification.

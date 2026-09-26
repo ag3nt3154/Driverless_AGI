@@ -22,7 +22,8 @@ the main agent. This skill does not delegate or restart the planning workflow.
 3. Make the smallest implementation change that passes the test.
 4. Refactor where useful, keeping the test and relevant existing tests passing.
 5. Return the changes, test commands/results, and any unresolved issues to the caller.
-   Delivery owns independent review, task acceptance, and overall verification.
+   Delivery owns independent review, task acceptance, and overall verification for planned
+   delivery; enter-workflow owns those steps and closure for bounded implementation.
 
 Example: for a bug accepting an invalid value, first demonstrate rejection is missing,
 then implement rejection, and verify valid values still work.

@@ -54,5 +54,10 @@ Do not invoke `write-plan`, `deliver`, or any lifecycle skill. The owner
 presents spec and plan together for approval; there is no separate spec
 approval gate.
 
-When invoked standalone (no `enter-workflow` caller), save to the supplied or
-default path and report the spec and readiness only.
+When invoked standalone (no `enter-workflow` caller), honor an explicit destination;
+otherwise select `wiki/tasks/YYYY-MM-DD_<task>/spec.md` using the current date and a
+stable task slug once. Reuse that selection on continuation. Inspect the destination
+before writing: preserve existing artifacts and revise only a file clearly associated
+with this request; resolve collisions instead of overwriting another task. Create only
+missing directories needed for the selected artifact. Report path and readiness only;
+standalone writing authorizes no branch, commit, implementation, or lifecycle launch.

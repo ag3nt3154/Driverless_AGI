@@ -39,11 +39,12 @@ instructions. Package Codex sources in the repository and install after scoped v
 ## Overall Status
 
 Approved for implementation and global installation after independent review PASS.
-Document commit and approval wiki checkpoint precede implementation. No subtask has started.
+Approval wiki checkpoint and document commit are complete. Subtask 1 is committed; subtask 2
+is in progress. Global installation and branch finishing remain pending.
 
 ## Subtasks
 
-### Subtask 1: [~] Align the shared plan template with Dagi's consumers
+### Subtask 1: [x] Align the shared plan template with Dagi's consumers
 
 **Goal:** A writer-produced plan is immediately usable by delivery and worker extraction.
 **Requirements:** R2, R3, R6. Populate Workspace before approval. Preserve detailed steps,
@@ -81,7 +82,7 @@ This tests the writer-consumer interface, not prose phrasing or heading counts a
 - [ ] Run `conda run -n dagi python -m pytest --noconftest -p no:pytest-qt
   tests/test_plan_parser.py tests/test_workflow_plan_template.py -q`; return evidence for review.
 
-### Subtask 2: [ ] Align Dagi lifecycle, approvals, and recovery instructions
+### Subtask 2: [~] Align Dagi lifecycle, approvals, and recovery instructions
 
 **Goal:** Complete reviewed subtasks and commits autonomously under initial approval.
 **Requirements:** R1, R3-R6, R9-R11, R13, R15. Keep Dagi's native tools and grill style.
@@ -268,13 +269,22 @@ record if the current session cannot refresh its skill catalog without a restart
   autonomously. This is the approval evidence; merge/keep remains a later separate choice.
 - Independent plan review: PASS, 2026-09-26; no blocking findings. Reviewed scope includes
   artifact consistency, approvals, commit recovery, bootstrap, package, and installation.
-- Document approval: granted on 2026-09-26; document commit pending. Global install pending.
+- Document approval: granted on 2026-09-26. Global install pending.
 - Approved document commit verified: `4d0acab3f440ee026222a22a664db61f90abbfc3`.
-- Subtask 1: review accepted / commit pending. Independent `template_review_astra` PASS;
+- Subtask 1: verified commit `417d2244716b3e63052192cb04f68ea44c56ca60`.
+  Independent `template_review_astra` PASS;
   62 parser/template tests passed, including real worker assignment composition and exact
   status round-trip preservation. Worker observed expected missing-template red first.
 - Task-only model exception: user explicitly approved `gpt-6-astra` for remaining workers
   and reviews after `gpt-5.6-luna` hit its usage limit. Global preference remains unchanged.
+- Subtask 2: review accepted / commit pending. Independent `lifecycle_review` PASS and
+  32 lifecycle tests passed. Instruction scenarios cover authorization, recovery, query and
+  bootstrap routing, overrides, bounded closure, and failed required wiki checkpoints.
+- The do-TDD file has an existing unrelated rewrite. Commit only the equivalent ownership
+  correction against its HEAD version; retain that rewrite unchanged apart from the same
+  correction in the working tree. Full staged content is inspected before committing.
+- Subtask 3 prepared independently in disjoint files: worker and `bootstrap_review` PASS,
+  14 tests including real outside-directory link containment, no skips. Commit follows 2.
 - Approval wiki checkpoint: successful readback from `approval_wiki`, 2026-09-26;
   authorization recorded in `wiki/notes/workflow-review-2026-09-20.md`.
 - Pre-existing unstaged files: `.dagi/prompts/compact/compact_system.md`,
@@ -332,5 +342,5 @@ Tests and installation have not run during planning.
 
 ## Next Action
 
-Implement and independently review subtask 1; approval wiki and document commit are complete.
+Implement and independently review subtask 2; subtask 1 is committed.
 Merge approval remains separate at branch completion.
