@@ -43,7 +43,7 @@ Document commit and approval wiki checkpoint precede implementation. No subtask 
 
 ## Subtasks
 
-### Subtask 1: [ ] Align the shared plan template with Dagi's consumers
+### Subtask 1: [~] Align the shared plan template with Dagi's consumers
 
 **Goal:** A writer-produced plan is immediately usable by delivery and worker extraction.
 **Requirements:** R2, R3, R6. Populate Workspace before approval. Preserve detailed steps,
@@ -269,6 +269,12 @@ record if the current session cannot refresh its skill catalog without a restart
 - Independent plan review: PASS, 2026-09-26; no blocking findings. Reviewed scope includes
   artifact consistency, approvals, commit recovery, bootstrap, package, and installation.
 - Document approval: granted on 2026-09-26; document commit pending. Global install pending.
+- Approved document commit verified: `4d0acab3f440ee026222a22a664db61f90abbfc3`.
+- Subtask 1: review accepted / commit pending. Independent `template_review_astra` PASS;
+  62 parser/template tests passed, including real worker assignment composition and exact
+  status round-trip preservation. Worker observed expected missing-template red first.
+- Task-only model exception: user explicitly approved `gpt-6-astra` for remaining workers
+  and reviews after `gpt-5.6-luna` hit its usage limit. Global preference remains unchanged.
 - Approval wiki checkpoint: successful readback from `approval_wiki`, 2026-09-26;
   authorization recorded in `wiki/notes/workflow-review-2026-09-20.md`.
 - Pre-existing unstaged files: `.dagi/prompts/compact/compact_system.md`,
@@ -302,6 +308,8 @@ ownership before commit. Joint spec/plan and implementation/global-install appro
 
 - Branch creation initially lacked sandbox access to `.git`; the approved elevated retry
   succeeded. No reset, stash, commit, or deletion was performed.
+- Test baseline initially hit ACLs on the default pytest temporary/cache directories.
+  Fresh task-owned `--basetemp` plus `-p no:cacheprovider` resolved it; 32 lifecycle tests pass.
 
 ## Verification
 
@@ -324,5 +332,5 @@ Tests and installation have not run during planning.
 
 ## Next Action
 
-Complete approval wiki checkpoint, commit the approved documents, then implement subtask 1.
+Implement and independently review subtask 1; approval wiki and document commit are complete.
 Merge approval remains separate at branch completion.

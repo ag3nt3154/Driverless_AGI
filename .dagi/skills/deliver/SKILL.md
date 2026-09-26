@@ -170,66 +170,14 @@ After all subtasks are accepted and their commits verified (or documented as no-
 
 ## Plan template
 
-This is the delivery-format reference, not a planning stage. The plan header and
-subtask structure are produced by `write-plan`; runtime sections (Workspace, Overall
-Status, Notes, Open Issues, Attempts and Resolutions, Verification, Next Action)
-are filled during delivery. Retain headings used by the worker-extraction parser
-(`### Subtask N:`, `**Goal:**`, `**Requirements:**`, `**Acceptance Criteria:**`,
-`#### Tests`).
-
-```markdown
-# [Feature Name] Implementation Plan
-
-**Goal:** One sentence describing what this builds.
-**Architecture:** 2-3 sentences about approach.
-**Tech Stack:** Key technologies/libraries.
-**Spec:** path to spec.md in the same artifact directory.
-
-## Global Constraints
-Project-wide requirements from the spec — one line each.
-
-## Review Focus
-Uncovered failure modes — one line each with owning task's test.
-
----
-
-## Workspace
-- **Branch:** `dagi/<task>`
-- **Parent:** `<parent-branch>`
-- **Starting commit:** `<commit-hash>`
-- **Wiki folder:** `wiki/tasks/YYYY-MM-DD_<task>/`
-
-## Overall Status
-Pending / In Progress / Verification / Complete / Blocked
-
-## Subtasks
-
-### Subtask 1: [ ] <name>
-**Goal:** One sentence.
-**Requirements:**
-- Bulleted list of what must be true.
-**Acceptance Criteria:**
-- Bulleted list of checkable conditions.
-#### Tests
-Test file paths and one-line description of what each verifies.
-(Workers use the supplied tests and verification instructions.)
-
-## Notes
-Findings from exploration, traps to avoid, architectural constraints.
-
-## Open Issues
-Unresolved questions or blockers not yet addressed.
-
-## Attempts and Resolutions
-One block per rework cycle:
-- **Subtask N, attempt N:** blocker summary → resolution (or link to handoff)
-
-## Verification
-End-to-end verification commands and expected outcomes.
-
-## Next Action
-One sentence: what happens next after reading this plan.
-```
+Load the canonical delivery-format reference from
+`../write-plan/references/plan-template.md`, resolving that path relative to this
+skill file's directory. The writer owns the plan's structure; delivery fills runtime
+sections such as Overall Status, Notes, Attempts and Resolutions, Verification, and
+Next Action. Retain parser headings (`### Subtask N:`, `**Goal:**`,
+`**Requirements:**`, `**Acceptance Criteria:**`, `#### Tests`). Record review accepted /
+commit pending in Notes until the commit is verified, then record its commit ID and
+set the marker to `[x]`.
 
 ## Review assignments — documentation
 
