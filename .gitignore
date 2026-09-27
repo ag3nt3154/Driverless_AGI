@@ -216,6 +216,7 @@ config.yaml
 
 docs/superpowers/*
 .superpowers/
+wiki/tasks/*/backup/
 
 pycache*
 .dagi/config.yaml

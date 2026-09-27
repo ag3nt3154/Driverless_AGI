@@ -79,7 +79,7 @@ project folder.
 - `agent._loop_helpers.project_slug(project_path: Path) -> str`
 - `agent._loop_helpers._build_memory_context(memory_root: Path, project_path: Path) -> str | None`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 ```python
 # tests/test_memory_root.py
 from pathlib import Path
@@ -179,11 +179,11 @@ def test_subagent_memory_root_fallback_uses_default(monkeypatch, tmp_path):
 ```
 (Review #2 verified that `reg.get("read").cwd` and `.allowed_roots` show the scoped root.)
 
-- [ ] **Step 2: Run to confirm failure.**
+- [x] **Step 2: Run to confirm failure.**
   `...python.exe -u -m pytest -q -p no:pytest-qt tests/test_memory_root.py tests/test_loop_helpers.py`
   → ImportError.
 
-- [ ] **Step 3: Implement.**
+- [x] **Step 3: Implement.**
 `agent/_loop_config.py` (module level, near the imports):
 ```python
 DEFAULT_MEMORY_ROOT = Path(r"G:\My Drive\black_grimoire")
@@ -251,10 +251,10 @@ Also:
 - update the `_loop_helpers.py` module docstring, since `agent/_init_templates.py` now imports
   `project_slug` too.
 
-- [ ] **Step 4:** Run the tests from Step 2 plus `tests/test_subagent_main.py`,
+- [x] **Step 4:** Run the tests from Step 2 plus `tests/test_subagent_main.py`,
   `tests/test_system_prompt.py`, `tests/test_agent_loop.py`,
   `tests/test_loop_image_integration.py` and `tests/test_session_log_shadow.py` → PASS.
-- [ ] **Step 5:** Return for review.
+- [x] **Step 5:** Return for review.
 
 ---
 
@@ -292,13 +292,13 @@ Also:
 - After `git rm`, also `rm -rf` the left-over git-ignored `__pycache__/` in the four deleted
   subagent dirs.
 
-- [ ] **Step 1:** Update both test files first, then run them → FAIL, because the
+- [x] **Step 1:** Update both test files first, then run them → FAIL, because the
   directories still exist and the discovery set mismatches.
-- [ ] **Step 2:** Delete the files and edit the configs.
-- [ ] **Step 3:** Run `tests/test_subagent_configs.py tests/test_subagent_tools_new.py`,
+- [x] **Step 2:** Delete the files and edit the configs.
+- [x] **Step 3:** Run `tests/test_subagent_configs.py tests/test_subagent_tools_new.py`,
   then the full suite → PASS. If any other module imports `tools._wiki_tools` or the
   subagent folders, fix the import and report it.
-- [ ] **Step 4:** Return for review.
+- [x] **Step 4:** Return for review.
 
 ---
 
@@ -316,7 +316,7 @@ Also:
 **Interfaces:** `build_init_files(project_name: str, today: str) -> dict[str, str]`, same
 signature; it returns exactly the keys `{"AGENTS.md", "wiki/tasks/README.md"}`.
 
-- [ ] **Step 1: Rewrite the tests**
+- [x] **Step 1: Rewrite the tests**
 ```python
 """Initialization creates a slim briefing and the task-artifact folder, never overwriting."""
 import pytest
@@ -369,8 +369,8 @@ assertion `(project / "wiki" / "index.md").is_file()` to
 Note: the template renders a Windows path with backslashes (`projects\<slug>\`), so the
 test asserts that exact form, using `project_slug`.
 
-- [ ] **Step 2:** Run → FAIL.
-- [ ] **Step 3: Implement.** Rewrite `_init_templates.py`:
+- [x] **Step 2:** Run → FAIL.
+- [x] **Step 3: Implement.** Rewrite `_init_templates.py`:
 ```python
 """Project briefing and task-artifact folder; initialization never overwrites files."""
 from pathlib import Path
@@ -421,8 +421,8 @@ Replace the `cli_utils.py` hint text with:
         "memory wiki. Task specs and plans go in [bold]wiki/tasks/[/bold]. "
         "Add workflows to [bold].dagi/workflow/<name>/workflow.md[/bold].[/dim]"
 ```
-- [ ] **Step 4:** Run `tests/test_project_init.py` → PASS.
-- [ ] **Step 5:** Return for review.
+- [x] **Step 4:** Run `tests/test_project_init.py` → PASS.
+- [x] **Step 5:** Return for review.
 
 ---
 
@@ -449,7 +449,7 @@ Replace the `cli_utils.py` hint text with:
   - `.dagi/prompts/main/main_system.md` (lines 7–8, 10, 18, 65–67);
   - `.dagi/workflow/improve-yourself/workflow.md` (lines 69–77, 147–149, 330, 391).
 
-- [ ] **Step 1: Parity test (fails first, because the DAGI copies are still old)**
+- [x] **Step 1: Parity test (fails first, because the DAGI copies are still old)**
 ```python
 """The DAGI memory skills are full copies of the Claude Code ones (decision: full copies)."""
 from pathlib import Path
@@ -468,9 +468,9 @@ def test_memory_skill_matches_claude_copy(name):
     ours = REPO / ".dagi" / "skills" / name / "SKILL.md"
     assert ours.read_bytes() == claude.read_bytes(), f"{name} drifted — re-copy it"
 ```
-- [ ] **Step 2:** Copy the two SKILL.md files and `git rm` the `wiki-*` skills. Parity →
+- [x] **Step 2:** Copy the two SKILL.md files and `git rm` the `wiki-*` skills. Parity →
   PASS.
-- [ ] **Step 3: Rewrite the rules.** Apply these exact semantics (keep each file's existing
+- [x] **Step 3: Rewrite the rules.** Apply these exact semantics (keep each file's existing
   voice and structure; replace only the memory/wiki content):
   - **enter-workflow:**
     - Replace the missing-wiki bootstrap and `wiki_query` paragraph (about lines 81–101)
@@ -515,9 +515,9 @@ def test_memory_skill_matches_claude_copy(name):
       `G:\\My Drive\\black_grimoire\\wiki`.
     - Lines 330 and 391: keep the meaning, and remove the `memory-ingest` references that
       point at the retired store.
-- [ ] **Step 4:** Run the AC grep, `tests/test_workflow_plan_template.py` and
+- [x] **Step 4:** Run the AC grep, `tests/test_workflow_plan_template.py` and
   `tests/test_system_prompt.py` → no hits / PASS.
-- [ ] **Step 5:** Return for review (include the diffs of the 5 modified files).
+- [x] **Step 5:** Return for review (include the diffs of the 5 modified files).
 
 ---
 
@@ -546,9 +546,9 @@ are current.
   - `.gitignore:190` `dagi-memory/*`: keep it (harmless for old checkouts); the audit
     excludes `.gitignore`.
 
-- [ ] **Step 1:** Do the `git rm` commands and create the README.
-- [ ] **Step 2:** Doc edits.
-- [ ] **Step 3:** Run the audit grep. Don't pipe it; check the exit code:
+- [x] **Step 1:** Do the `git rm` commands and create the README.
+- [x] **Step 2:** Doc edits.
+- [x] **Step 3:** Run the audit grep. Don't pipe it; check the exit code:
   **exit 1 with no output = pass**, while exit 128 means the command itself is broken.
   ```bash
   git grep -nE "wiki_query|wiki_add|wiki-query|wiki-add|wiki-refresh|memory_query|memory_add|dagi-memory|_build_wiki_index_context" -- . \
@@ -562,7 +562,7 @@ are current.
   ```
   Expected: no output, `exit=1`. Before any edits it gives 183 hits (review #1); use that
   run as the checklist of live files.
-- [ ] **Step 4:** Full suite → PASS. Return for review.
+- [x] **Step 4:** Full suite deferred to integrated verification; independent review PASS.
 
 ---
 
@@ -575,19 +575,19 @@ are current.
 - `~/.codex/skills/{memory-add,memory-query,enter-workflow,update-project-context,deliver,merging-git-branch,wiki-add,wiki-query,wiki-refresh}`
 - `~/.codex/AGENTS.md`
 
-- [ ] **Step 1:** Copy those folders and `AGENTS.md` into
+- [x] **Step 1:** Copy those folders and `AGENTS.md` into
   `wiki/tasks/2026-09-27_rewire-central-memory/backup/codex/`. Git-ignore the backup folder
   by adding `wiki/tasks/*/backup/` to `.gitignore` (the backup is local only).
-- [ ] **Step 2:** Copy the Claude `memory-{add,query}/SKILL.md` over the Codex ones.
+- [x] **Step 2:** Copy the Claude `memory-{add,query}/SKILL.md` over the Codex ones.
   Delete `~/.codex/skills/wiki-{add,query,refresh}`.
-- [ ] **Step 3:** Codex `enter-workflow`, `update-project-context` and `deliver` (line 21:
+- [x] **Step 3:** Codex `enter-workflow`, `update-project-context` and `deliver` (line 21:
   "approval wiki checkpoint"; line 89: "wiki/context closure"), plus `merging-git-branch:33`
   ("wiki/context closure"): apply the same R5 rewrite as Subtask 4. Back these up too. Replace the `init_wiki.py` bootstrap step with "ensure `wiki/tasks/`
   exists"; delete `scripts/init_wiki.py`. Line 14's skill list: remove `wiki-query`,
   `wiki-add`; add `memory-query`, `memory-add`.
-- [ ] **Step 4:** In `~/.codex/AGENTS.md`, edit only the lines mentioning the wiki or
+- [x] **Step 4:** In `~/.codex/AGENTS.md`, edit only the lines mentioning the wiki or
   memory, to match. Check it with `diff` against the backup.
-- [ ] **Step 5:** Verify with
+- [x] **Step 5:** Verify with
   `grep -rnE "wiki-query|wiki-add|wiki_query|wiki_add|init_wiki" ~/.codex/skills ~/.codex/AGENTS.md`
   → only hits inside `memory-refresh`, if any. Also `cmp` the memory skills against the
   Claude ones.
@@ -616,7 +616,7 @@ are current.
 - **Task folder:** `wiki/tasks/2026-09-27_rewire-central-memory/`
 
 ## Overall Status
-Pending — awaiting approval of spec and plan.
+Verification — Subtasks 1–6 implemented and independently reviewed.
 
 ## Notes
 - Grilling decisions Q1–Q6: spec §10.
@@ -654,6 +654,13 @@ Pending — awaiting approval of spec and plan.
   `{memory_root} = …dagi-memory` renders confusingly now that `memory_root` is the vault.
 - Cosmetic, accepted: the TUI and GUI sidebars show `mem` only when `config.memory_root` is
   set. `.dagi/config.yaml` sets it, so it still shows here.
+- Implementation commits verified: `f00a1a5f` (Subtask 1), `f06e250d` (Subtask 2),
+  `91bc382e` (Subtask 3), `07d38635` (Subtask 4), `4cc20455` (Subtask 5).
+- Subtask 5 independent review: PASS; AC5 audit exited 1 with no output; staged diff check
+  passed before commit.
+- Subtask 6: installed Codex files backed up under the ignored task `backup/codex/` folder;
+  both memory skills match the Claude copies byte-for-byte; retired `wiki-*` skills and
+  `init_wiki.py` removed; independent review PASS. The installed files are outside Git.
 
 ## Open Issues
 - Confirm Q6's reading: remove the repo's `integrations/codex/`, and treat `~/.codex` as the
@@ -663,7 +670,8 @@ Pending — awaiting approval of spec and plan.
 (none)
 
 ## Verification
-(filled during delivery)
+- Subtasks 1–6: implementation/recovery evidence reconciled; independent reviews for
+  Subtasks 5 and 6 passed. Full integrated suite and final review remain.
 
 ## Next Action
-Plan review, then the Admiral's approval of the spec and plan.
+Run Subtask 7 integrated verification, record exact results, and obtain final review.
