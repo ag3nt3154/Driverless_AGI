@@ -39,9 +39,10 @@ instructions. Package Codex sources in the repository and install after scoped v
 ## Overall Status
 
 Approved for implementation and global installation after independent review PASS.
-All five implementation subtasks are verified and committed. Global installation/readback,
-independent final review, and wiki/context records passed. Awaiting the user's final
-merge/keep decision; the workflow checkpoint remains active until finishing.
+All five implementation subtasks are verified and committed. The user approved local merge
+on 2026-09-27; main was fast-forwarded to `6b0a4ab4` and checked out. Merged verification
+passed (108 tests). Final wiki closure readback succeeded; workflow complete. Post-merge
+records remain uncommitted on main.
 
 ## Subtasks
 
@@ -258,7 +259,7 @@ record if the current session cannot refresh its skill catalog without a restart
 - [x] Run integrated verification listed below, with an independent full-task review.
 - [x] Save selected actual results through wiki-add; update project context as main agent.
   Commit only accepted task changes and final verification records under scoped authority.
-- [ ] Owner follow-up after implementation: present the completed branch and request merge/keep.
+- [x] Owner follow-up after implementation: present the completed branch and request merge/keep.
   After the user's decision,
   finish only the chosen action and closure; report post-merge documentation left uncommitted.
 
@@ -331,7 +332,7 @@ record if the current session cannot refresh its skill catalog without a restart
 
 ## Open Issues
 
-No implementation blockers. The user's merge/keep decision and resulting closure remain.
+None. Implementation, installation, merge, verification, and required wiki/context closure succeeded.
 Pre-existing unrelated work remains unstaged and must be preserved during finishing.
 
 ## Attempts and Resolutions
@@ -371,6 +372,18 @@ Instruction walkthroughs are not live model/end-to-end execution.
 
 ## Next Action
 
-Ask whether to merge `dagi/codex-workflow-port` into `main` locally with fast-forward-only,
-or keep the branch and workspace as-is. `main` remains at the recorded starting commit.
-No merge, push, branch deletion, or unrelated cleanup has been authorized.
+No implementation action remains. Report merged completion and uncommitted post-merge
+documentation; any new main-branch commit requires separate authorization.
+
+## Branch finishing evidence
+
+- User explicitly replied `merge` to the fast-forward-only local merge offer on 2026-09-27.
+- Verified ancestry and advanced main from `5c1b6db6` to
+  `6b0a4ab41be8ce06e5b6aff63857574b57640c2e`, then checked out main at the same tree.
+- HEAD, main, and retained task branch have the same commit; all pre-merge dirty-file
+  SHA256 hashes were preserved. No push or branch deletion occurred.
+- Merged verification: the recorded six-file pytest suite passed 108 tests with no skips;
+  temporary directory `merged-tests/` under the existing baseline backup directory.
+- Post-merge plan/wiki/context updates are deliberately uncommitted on main.
+- Required closure wiki-add: `merge_wiki` success with readback on 2026-09-27; current
+  navigation records merge completion and earlier checkpoints remain preserved.

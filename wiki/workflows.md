@@ -2,7 +2,7 @@
 
 Current development and execution flows.
 
-> Last updated: 2026-09-20
+> Last updated: 2026-09-24
 
 > The 2026-09-20 review and implementation result supersede the earlier ownership and routing
 > summary for the approved checklist points 1–2. Remaining recommendations are still open. See
@@ -34,12 +34,31 @@ not redirect.
 enter-workflow → explore/grill → approval → plan/spec → deliver
               → per-task: worker → reviewer → update_task_status
               → integrated verification + final review
+              → do-tdd evidence → merging-git-branch (merge or keep)
               → wiki-add (completion evidence) → detach before final response
 ```
 
 Blockers requiring a plan or scope change return to `enter-workflow`. The approved implementation
-is at the skill-instruction level; no runtime code or tests changed and no merge integration was
-added.
+is at the prompt and skill-instruction level. `deliver` loads the lowercase runtime skill
+`do-tdd` and sends its full instructions to workers through `custom_instructions`, including
+repair guidance because workers cannot load skills themselves. Workers return red/green/refactor
+evidence and limitations without permission expansion; the bounded main implementer also receives
+the TDD instructions. If no task branch exists, no merge offer is made. `enter-workflow` captures
+the parent before branching and carries it into plan Notes; `write-plan` links both stages.
+
+After successful delivery verification, `merging-git-branch` checks current evidence and uses
+`no_timeout` `ask_user` for only an explicitly named local target or keep-as-is. It never pushes,
+creates a PR, or cleans up automatically. The owner records merged/kept/blocked, writes wiki and
+context completion records, and detaches only after success; blocked work remains attached and
+keep-as-is is valid completion. Closure documentation targets the appropriate checkout and reports
+uncommitted docs without auto-committing. No runtime Python changes, commit, branch, or merge were
+made. Point 3 entry/resume guidance is now implemented at the instruction level: the owner
+classifies new versus continuing requests, checks active-plan evidence before plan actions,
+preserves checkpoints through compaction, resumes from accepted evidence, and blocks mutations on
+unknown or stale evidence. Merge interruption checks actual Git state and keeps an explained branch
+mismatch associated through closure. README and AGENTS checklist guidance was updated; existing
+uncommitted TDD and merge work was preserved. See the [point 3 completion](notes/workflow-review-2026-09-20.md#checklist-point-3-completion--2026-09-24)
+for scope and verification limits; known plan-format gaps remain open.
 
 - `/dagi-execute` (`.dagi/skills/dagi-execute/SKILL.md`): resumes interrupted deliveries
   from the first pending subtask; checks wiki-add evidence before continuing.
@@ -112,6 +131,12 @@ See the [housekeeping review](notes/housekeeping-2026-09-06.md) for history and 
 no installation or network resolution was performed for the corrected files.
 
 ## Testing
+
+The 2026-09-24 verification loaded the five relevant skills through the actual `dagi` loader and
+tool, and mocked worker dispatch preserved the full loaded TDD instructions. All 32 tests in
+`tests/test_subagent_tools_new.py` passed with an isolated writable basetemp after four initial
+temp-fixture permission errors were resolved by changing only the basetemp. Generic merge
+validation and `git diff --check` passed. No live model or end-to-end merge execution occurred.
 
 Run isolated tests (avoids RAM watchdog and pytest-qt DLL issue):
 ```

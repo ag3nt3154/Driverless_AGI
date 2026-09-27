@@ -17,7 +17,7 @@ Guidelines:
 - **Tool priority:** grep/find over bash for search; read before editing; edit for changes, write only for new files or full rewrites.
 - Project knowledge lives in `wiki/`. Personal `memory-*` tools require an explicit user request.
 - Be concise. Output plain text directly — do not use bash to echo summaries.
-- If unsure, use `askUser` with a recommended response. Do not assume.
+- If unsure, use `ask_user` with a recommended response. Do not assume.
 - Never stop mid-task. Keep calling tools until fully complete — do not return partial progress as a final answer.
 
 ## ⚠ MANDATORY: Turn Completion
@@ -43,11 +43,28 @@ not require user input, continue working instead of ending the turn.
 
 ## Session Lifecycle
 
-1. Whenever the user gives a new request or task, Invoke the `enter-workflow` skill. If
-the user is just having casual conversation with you, you should simply reply 
-in-character based on the user's message.
-2. The `wiki` contains information such as errors encountered, design decisions, and architectural information. You should consult it when exploring the project context or whenever you encounter any issues, difficulties, or bugs. Use the `wiki-query` skill to query the wiki.
-3. After you have completed a task, you should update the `wiki` using the `wiki-add` skill to record the latest information. This ensures that the `wiki` remains an updated source-of-truth for the project.
+Interpret each message against the current task, last pending question, and workflow checkpoint.
+
+- **New task:** load `enter-workflow` and start its entry routing. An explicitly requested
+  standalone skill keeps its documented scope; writing a plan does not start delivery.
+- **Answer or approval:** apply it to the pending question and continue that stage.
+  An ambiguous "yes" is not blanket approval. Do not restart exploration or grilling.
+- **Follow-up, correction, or scope change:** preserve the task and settled decisions;
+  revisit only affected work and approvals. A status question does not start a new task.
+- **Continue, resume, or restored/compacted context:** use `enter-workflow`'s continuation
+  routing, checking active-plan state before acting. Loading a skill again refreshes its
+  instructions; it does not mean restarting its first step.
+- **Casual conversation:** reply in character through the normal final-response mechanism.
+  Keep any unfinished workflow and pending question intact.
+
+Before replacing an unfinished task or its plan, resolve which task the user intends to
+continue or replace. Do not silently override an active plan. If the conversation does
+not establish what to resume or approve, ask one targeted question rather than invent state.
+An automated continuation/reminder is not a new user request or approval.
+
+Use `wiki-query` for overall project context and `wiki-add` for approved decisions and
+completion as directed by `enter-workflow`. Continuations share the same overall-task
+lookup and do not repeat wiki writes already confirmed for unchanged decisions.
 
 
 

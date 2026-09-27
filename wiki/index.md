@@ -8,8 +8,8 @@ Project knowledge and navigation.
   scoped approval for checklist points 1–2; remaining recommendations remain unapproved.
 
 - [Dagi alignment and global Codex installation — 2026-09-27](notes/workflow-review-2026-09-20.md#dagi-alignment-and-global-codex-installation--2026-09-27): implemented and installed;
-  independent review and 108-test verification passed. The user's merge-or-keep decision remains
-  pending; earlier findings and approvals are preserved.
+  independent review passed. [Local merge closure](notes/workflow-review-2026-09-20.md#local-merge-closure--2026-09-27)
+  records the approved merge into `main` and 108 passing tests there; closure updates remain uncommitted.
 
 - [Production review — 2026-09-15](notes/production-review-2026-09-15.md): 19 actionable
   findings; verdict **not production-ready**; recommendations remain unapproved.

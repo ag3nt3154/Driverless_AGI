@@ -1,35 +1,46 @@
 ---
 name: merging-git-branch
-description: Draft sample for finishing a verified task branch and offering a user-confirmed merge.
+description: Finish a verified task branch by offering an explicitly confirmed local merge or keep-as-is.
 ---
 
 # merging-git-branch
 
-Draft for discussion. This is a minimal sample; detailed merge policy remains undecided.
+Run after `deliver` completes verification and final review. The main agent finishes
+the branch, then returns the outcome to `enter-workflow` before final closure.
 
-## Place in the workflow
+## Prepare
 
-`enter-workflow` invokes this after `deliver` returns successful verification and final
-review. The main agent runs it with the task branch, recorded parent branch, and evidence.
-This skill owns the final merge offer; delivery does not merge or detach first.
+1. Inspect repository status, task branch, intended parent, and worktree state. Resolve
+   missing target information; do not assume main or infer the parent from an upstream.
+2. Confirm verification covers the current changes. Reuse valid delivery evidence;
+   rerun required checks if it is missing or stale.
+3. Report failed checks or uncommitted changes requiring a decision before proceeding.
+   Do not commit or stash them here. The owner must finish task-scoped commits under
+   the recorded authority before this stage; return a blocker for unresolved changes.
 
-## Simple sample
+## Ask
 
-1. Inspect repository status and both branch names. Confirm the task changes and
-   verification evidence are current; report blockers or unrelated uncommitted work.
-2. Show the result and ask: "Merge `<task-branch>` into `<parent-branch>`, or leave
-   the verified branch unmerged?" Never infer merge permission from design approval.
-3. If the target is unknown, obtain it before proposing a concrete merge. If the user
-   declines, preserve the branch and return "verified, left unmerged".
-4. After explicit approval, merge the agreed branches using the agreed strategy.
-   Report conflicts or failures; do not silently discard changes or claim success.
-5. Verify the merged result and return the outcome and evidence to `enter-workflow`.
-   The caller records final wiki/plan status and detaches only after closure succeeds.
+Present only these two choices with `ask_user(question=..., no_timeout=true)`:
 
-Pushing and branch deletion are separate actions requiring their own authorization.
+- Merge `<task-branch>` into `<parent-branch>` locally.
+- Keep the branch as-is.
 
-## Still to decide
+Wait for an explicit choice. Design or implementation approval does not authorize a merge.
+For detached HEAD, keeping as-is is possible; agree a named branch before merging.
 
-- Merge versus squash, and fast-forward policy.
-- Conflicts, parent changes since verification, and checks after merging.
-- Final commits, cleanup, cancellation, and interrupted-operation recovery.
+## Execute
+
+- **Merge:** Use the agreed strategy and correct checkout. Verify the merged result
+  using the required project checks. On conflicts or failed checks, preserve the work
+  and return a blocker; do not claim the merge is successfully verified.
+- **Keep:** Preserve the branch and workspace and report their location.
+
+Do not push, create a PR, automatically pull, force-push, discard changes, delete branches,
+or remove worktrees. Cleanup requires separate explicit authorization; directory names
+alone do not establish ownership.
+
+## Return
+
+Return `merged`, `kept`, or `blocked`, with branch names, workspace location, verification
+commands/results, and remaining work. Distinguish a merge that happened but failed checks.
+`enter-workflow` owns final documentation and plan detachment. Do not call it recursively.

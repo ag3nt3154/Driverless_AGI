@@ -59,8 +59,9 @@ def _format_tools_and_skills(registry: ToolRegistry, skills: list[Skill]) -> str
             "You MUST invoke the relevant `skill` tool BEFORE beginning any task for which "
             "a matching skill exists. Treat skill invocation as a required first step — "
             "never implement a skill-governed workflow without loading it first. "
-            "If the user's request matches a skill's description or any of its trigger phrases, "
-            "call `skill(name)` immediately as your first action. "
+            "Interpret follow-ups and approvals in the current workflow before selecting a skill. "
+            "Load matching skill guidance before performing its work; reloading instructions "
+            "does not restart a stage or erase prior approval. "
             "Skills may include executable scripts — after loading a skill, use "
             "`run_skill_script(skill_name, script_name)` to run them.",
             "",

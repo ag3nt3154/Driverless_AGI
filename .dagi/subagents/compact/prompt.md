@@ -12,6 +12,10 @@ replacement for the original messages.
    into your new summary — do not discard earlier history.
 4. End with a `### Files Read/Modified` section listing every file path mentioned.
 5. Output ONLY the summary — no preamble, no greeting, no commentary after the summary.
+6. Preserve the latest workflow checkpoint: task/scope, stage, next action, artifact paths,
+   task/parent branches, pending question, approval scope and evidence, completed gates,
+   and blockers. Distinguish proposed actions from completed ones and planning approval
+   from execution/merge permission. If evidence is missing, say so; do not invent it.
 
 ## Delegation boundary
 

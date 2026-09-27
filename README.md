@@ -457,6 +457,25 @@ Or ask naturally:
    review, active-plan association, and the required wiki checkpoint before delivery.
 4. A standalone writing request stops with the plan; it does not authorize implementation.
 
+For implementation, including bounded changes, the sequence is: explore and grill;
+ask to create the named task branch; create it; write spec and plan; review and ask for
+joint approval; commit both documents; implement and commit each reviewed subtask;
+then ask separately whether to merge. The joint approval explicitly covers implementation
+and task-scoped commits. Planning-only approval covers just the documents.
+
+During delivery, implementers follow `do-TDD`; workers receive the skill instructions
+with their assignments and report test evidence. Only the main agent stages and commits
+accepted subtasks, preserving unrelated work. After verification and final review,
+`enter-workflow` calls `merging-git-branch` to offer a confirmed local merge into the
+named parent or keep-as-is. It records the outcome before detaching the plan. This flow
+does not push, create a PR, or automatically delete branches or worktrees.
+
+Approval replies and follow-ups continue the current workflow stage. On resume, dagi
+checks the active plan and the checkpoint retained in plan notes or conversation context;
+it asks when task identity or approval is unclear. Compaction preserves this checkpoint.
+Starting unrelated work does not silently replace an unfinished plan. These are agent
+instructions using existing session/plan state, not a separate persisted workflow engine.
+
 ---
 
 ### Slash Command Reference

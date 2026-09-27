@@ -897,8 +897,10 @@ class AgentLoop:
         plan = self.config.active_plan_file
         return (
             f"All tasks resolved. Active plan remains associated: {plan}\n\n"
-            "Next: run integrated verification and a final review before accepting delivery. "
-            "Call set_active_plan(null) to detach explicitly after the final review is accepted."
+            "Next: finish any pending task commits, then run integrated verification "
+            "and a final review before accepting delivery. "
+            "Then return to enter-workflow for branch finishing and closure. "
+            "Call set_active_plan(null) only after finishing and documentation succeed."
         )
 
     def _handle_switch_model(self, target: str, args: dict) -> str:

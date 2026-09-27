@@ -8,8 +8,8 @@ Navigation to useful findings and open questions.
   user's scoped approval for checklist points 1–2; remaining recommendations remain unapproved.
 
 - [Dagi alignment and global Codex installation — 2026-09-27](workflow-review-2026-09-20.md#dagi-alignment-and-global-codex-installation--2026-09-27): implemented and installed;
-  independent review and 108-test verification passed. The user's merge-or-keep decision remains
-  pending; earlier findings and approvals are preserved.
+  independent review passed. [Local merge closure](workflow-review-2026-09-20.md#local-merge-closure--2026-09-27)
+  records the approved merge into `main` and 108 passing tests there; closure updates remain uncommitted.
 
 - Grep tool hardening (2026-09-18): **implemented**; `tools/grep/_grep.py` now excludes
   `.dagi/`, `__pycache__/`, `.git/`, `.mypy_cache/`, `.pytest_cache/`, `node_modules/`,
