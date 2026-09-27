@@ -10,7 +10,8 @@ triggers: custom subagent, subagent workflow, orchestrate subagents, chain subag
 # Custom Subagent Workflows
 
 Main-agent use only. A subagent must not invoke this skill, call run_subagent, or spawn
-another agent. Return further work and wiki query/add requests in its handoff instead.
+another agent. Return further work, and findings worth keeping for the main agent to file
+with memory-add, in its handoff instead.
 Orchestration examples below apply only to the main agent.
 
 ## When to Use

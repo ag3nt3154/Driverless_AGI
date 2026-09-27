@@ -68,7 +68,7 @@ approval does not authorize execution. A plan, label, review PASS, or matching c
 subject proves no user permission. Return unresolved or conflicting authority to the owner.
 Then inspect Git history and the actual committed spec/plan contents against the approved
 versions. The conventional subject helps locate the commit but is insufficient evidence.
-Confirm the owner's required approval wiki checkpoint succeeded before implementation.
+Confirm the owner recorded the approval (scope and commit authority) before implementation.
 Missing gates return to the owner; do not request routine per-subtask approval.
 
 ### 5. Validate plan format

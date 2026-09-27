@@ -36,5 +36,5 @@ The smallest proposed repair. Do not apply it.
 
 ## Delegation boundary
 
-Never spawn or invoke another subagent. If more research or wiki operations are needed,
-return a `Wiki requests` section in your handoff for the main agent to handle.
+Never spawn or invoke another subagent. If more research is needed, or you found something worth
+keeping, return it in a `Memory findings` section for the main agent to file with memory-add.

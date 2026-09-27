@@ -48,7 +48,7 @@ resume, or restored/compacted context. Do not reclassify a continuation as a new
    - Bounded implementation/review: resume TDD or review on the current branch. No plan
      association exists; recover scope from the inline plan in conversation context.
    - Spec/plan writing/review: reuse artifacts; complete missing review, joint approval,
-     wiki, document-commit, or attachment gates before implementation.
+     document-commit, or attachment gates before implementation.
    - Approved planning-only work: remain stopped unless execution is now authorized.
    - Implementation: invoke `deliver` for pending tasks after its entry checks; an accepted
      but uncommitted subtask resumes at its commit, not at its worker.
@@ -75,30 +75,19 @@ only the affected stage. Preserve already settled decisions. Call `write-plan` d
 for the plan-writing stage; a standalone invocation writes the artifact without launching
 the lifecycle or authorizing implementation.
 
-## Project context at entry
+## Memory checkpoint (task start) — required
 
-Before each overall substantive project task (including a read-only query), resolve the
-selected project root and Dagi installation root separately. Inspect `wiki/index.md` with
-error-reporting filesystem operations: permission errors, a directory, or a dangling link
-are not a missing wiki. If genuinely missing, initialize the scaffold before `wiki_query`.
-The user explicitly authorized this missing-wiki bootstrap as the entry exception to the
-implementation gate; it permits no other source edits or implicit Git initialization.
+Before each overall substantive project task (including a read-only query), load
+`skill("memory-query")` and search the central memory wiki: first `projects/<slug>/` (the
+`[MEMORY]` pointer names it) for the task's keywords, then `knowledge/`, and list
+`projects/<slug>/todo/`. State what you found — cited paths, or "no wiki entries". Missing or
+empty results never block work. Reuse this lookup through chained stages, not once per subtask.
 
-Reuse `agent.cli_utils._cmd_init(resolved_project_root)` from the resolved Dagi installation
-with the configured Python interpreter (`DEFAULT_PYTHON_ENV`, `dagi` here), not an assumed
-current directory or system Python. Before calling it, inspect `build_init_files` targets
-and every directory `_cmd_init` creates (including `.dagi` children). Preflight every
-existing ancestor and destination for containment in the resolved project root; reject
-escaping symlinks/junctions, inaccessible paths, and incompatible file/directory types.
-Existing files must remain byte-for-byte unchanged: `_cmd_init` creates files exclusively.
-If the root or target cannot be validated, report the exact path and block bootstrap.
-Preserve partially created files for a safe retry; verify the index is a readable regular
-file afterwards. Bootstrap creates scaffold only, not project facts.
+Advisory triggers during the task: before debugging any error, grep the exact error text
+across the wiki; before a design choice, search for earlier decisions on the same thing.
 
-Then call `wiki_query(task=<current task context>)` and read its handoff. Retry a failed
-query once; two failures block dependent substantive work. A successful empty lookup
-permits investigation. Reuse this lookup through chained stages, not once per subtask.
-Wiki delegates must never read or edit task plans, even under `wiki/tasks/`.
+Task specs and plans live in this repo at `wiki/tasks/YYYY-MM-DD_<task>/`; create
+`wiki/tasks/` if it is missing. That folder holds task artifacts only, never knowledge.
 
 # Steps
 1. Classify the request and state it so the user can override it. Bounded changes use
@@ -120,8 +109,8 @@ Wiki delegates must never read or edit task plans, even under `wiki/tasks/`.
    Do NOT invoke any implementation skill, write any code, scaffold any
    project, or take any implementation action until you have told your
    user what you intend and they have approved it. This applies
-   to implementation on both paths below. Read-only queries and the explicitly
-   authorized wiki bootstrap do not require this approval.
+   to implementation on both paths below. Read-only queries and creating an empty
+   `wiki/tasks/` folder do not require this approval.
    </HARD-GATE>
 
 2. For a **query**, inspect enough context to answer accurately and report findings.
@@ -148,7 +137,7 @@ Wiki delegates must never read or edit task plans, even under `wiki/tasks/`.
    approach, and how it will be tested. This is the plan — no document, no spec file.
 4. **Ask approval.** Use `ask_user(..., no_timeout=true)`. Wait for an explicit yes.
    This approval covers implementation and reviewed commits on the current branch.
-   Run the approval wiki checkpoint before implementation; no per-subtask approval follows.
+   No per-subtask approval follows.
 5. **Implement with TDD.** Load `skill("do-tdd")` and implement directly on the current
    branch, following the red/green/refactor cycle. The main agent implements directly
    (no worker subagent needed for bounded work, though one may be used).
@@ -157,7 +146,7 @@ Wiki delegates must never read or edit task plans, even under `wiki/tasks/`.
 7. **Commit.** Stage and commit the accepted changes with a Conventional Commit message.
    Verify the commit succeeded; reconcile interrupted commits from history before retrying.
 8. **Close bounded work.** The owner performs proportionate integrated verification and
-   final review, runs the completion wiki checkpoint and `update-project-context`, and
+   final review, runs the task-end memory checkpoint and `update-project-context`, and
    reports the verified result. Do not invoke `deliver` or manufacture a branch/merge offer.
 
 ## Architectural sequence
@@ -193,7 +182,7 @@ Wiki delegates must never read or edit task plans, even under `wiki/tasks/`.
    If a decline does not say revise or cancel, clarify that choice; do not start work.
    For planning-only requests, ask only to approve and commit the documents; no execution
    or implementation-commit permission is implied.
-7. **Record approval and commit.** Run the approval wiki checkpoint below. Stage only the
+7. **Record approval and commit.** Run the approval record below. Stage only the
    approved spec and plan, inspect the staged diff, and commit them together with the
    message `plan(<task>): approve spec and plan` (where `<task>` is the recorded task
    slug). Inspect its committed contents and history, not just the subject. A subject
@@ -213,22 +202,21 @@ request and spec context, and criteria for completeness, checkable acceptance cr
 consistency, and implementation traps. Read the handoff. Revise through the writers on
 `ESCALATE` and repeat until accepted. Record review evidence in plan Notes.
 
-### Approval wiki checkpoint
+### Approval record
 
 After explicit inline-plan or joint spec/plan approval, record actual user evidence and
-scope separately from document-commit evidence: approved artifact/version, execution and
-commit authority, and planning-only limits. Never infer permission from a filename, status,
-plan association, review PASS, or commit subject. Call `wiki_add(task=<selected approved
-decisions, user choices, dates and evidence>)`; supply knowledge directly, not a request to
-read the plan. Read the handoff and retry a failed write once, rereading partial writes.
-Two failures block implementation. Preserve successful checkpoint evidence on continuation.
+scope separately from document-commit evidence (in plan Notes, or the conversation for
+bounded work): approved artifact/version, execution and commit authority, and planning-only
+limits. Never infer permission from a filename, status, plan association, review PASS, or
+commit subject. Nothing is written to the memory wiki at approval; approved decisions are
+filed at task end.
 
-### Completion wiki checkpoint
+### Memory checkpoint (task end) — required
 
-After verification, call `wiki_add(task=<selected actual results, checks, limitations and
-completion status with dates/evidence>)` and read the handoff. Never ask the delegate to
-read or edit plans. Retry failure once; two failures leave the workflow incomplete, while
-allowing an honest implementation-status report. Do not detach or claim full closure.
+After verification, load `skill("memory-add")` and file, inline: approved decisions (choice,
+rejected alternatives, rationale), errors fixed (verbatim error text, cause, fix), new todos,
+ideas, and reusable knowledge. Delete completed todos after filing their lessons. State the
+wiki paths written. A failed write is reported honestly; it does not undo verified work.
 
 Approval and review evidence apply only to their reviewed scope; material later changes
 require renewed approval before committing or work.
@@ -291,7 +279,7 @@ After successful verification and final review:
    leaves closure incomplete and the plan associated. Keeping the branch is successful
    finishing, not a failed merge. Resume an unfinished closing stage here using current
    evidence; do not rerun completed implementation just to obtain the finishing decision.
-2. Run the completion wiki checkpoint and check `update-project-context`. After a merge,
+2. Run the task-end memory checkpoint and check `update-project-context`. After a merge,
    use the corresponding plan in the target
    checkout when recording closure; do not edit a stale source worktree or reattach the
    plan merely because switching to the approved target produces a branch mismatch.
