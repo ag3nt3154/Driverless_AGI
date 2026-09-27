@@ -168,7 +168,7 @@ sandbox_mode: false  # true  = file tools (read, write, edit, grep, find, copy) 
 #                     The api_url/api_key/api_key_env fields are ignored for client construction
 #                     when client_script is set. model may still be set in config.yaml to
 #                     override whatever the script's request_kwargs specifies.
-#                     See .dagi/profiles/ for examples.
+#                     See .dagi/model_config/ for examples.
 
 models:
   gpt-4o-openai:
@@ -231,7 +231,7 @@ models:
   # ── Client script example (custom transport, mTLS, extra headers, etc.) ────
   # corp-gpt4o:
   #   name: "GPT-4o (Corporate Proxy)"
-  #   client_script: .dagi/profiles/corp_gpt4o.py
+  #   client_script: .dagi/model_config/corp_gpt4o.py
   #   model: gpt-4o              # optional: overrides request_kwargs["model"] from the script
   #   context_window: 128000
 
