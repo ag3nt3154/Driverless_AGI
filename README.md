@@ -21,12 +21,14 @@ To end a turn the agent calls either **`write_handoff`** (final response) or **`
 
 **Garbled loop recovery:** When a model produces consecutive empty-content responses (common with smaller models), the harness automatically strips the degenerate turns, compacts the full context, and retries — rather than burning through all continuation attempts.
 
-At session start, **wiki index injection** automatically reads the root and section `.index.md` files
-from the memory wiki and prepends them as a system message before the first API call — giving the
-agent a structural map of accumulated knowledge without any manual invocation. The agent then uses the
-`memory-query` subagent for targeted retrieval and the `memory-add` subagent to persist new knowledge.
-The unified wiki has four categories: projects, todos, knowledge, events. Three skills govern it:
-`memory-add`, `memory-query`, and `memory-refresh` (lint sweep + triage).
+**Memory:** knowledge lives in one central, grep-first memory wiki shared with Claude Code and
+Codex (`memory_root`, default `G:\My Drive\black_grimoire`; entries under `wiki/projects/<p>/`,
+`wiki/projects/<p>/todo/` and `wiki/knowledge/<topic>/`, each with one-line `title`,
+`description`, `tags`, `updated` frontmatter). Each turn gets a short `[MEMORY]` pointer naming the
+wiki and this project's folder. The main agent searches and files entries itself with the
+`memory-query` and `memory-add` skills — no subagents — and `enter-workflow` requires a memory
+search at task start and a memory write at task end. (`memory-refresh` is disabled pending a
+redesign for this layout.)
 
 ### Image Input (PySide GUI)
 
@@ -296,7 +298,7 @@ Electron main (main.ts)
 The legacy CLI REPL has been **archived** in favour of the TUI (`python tui.py`).
 It remains available at `archives/cli.py` for reference only — nothing in the live
 codebase imports or executes it. The piped subagent binary (used by
-`tools/_subagent_runner.py` for explore_files, web_research, memory-query, etc.) is
+`tools/_subagent_runner.py` for explore_files, web_research, read-large-text, etc.) is
 `tools/subagent_main.py`, extracted from the old CLI's pipe-mode path and run as
 `python -m tools.subagent_main` (so the project root, not `tools/`, is on `sys.path[0]` —
 running it by file path instead would let `tools/copy.py` shadow the stdlib `copy` module).
@@ -387,22 +389,17 @@ This creates:
 - `AGENTS.md` — project orientation + behavioral guidelines, injected into every session
 - `.dagi/skills/` — directory for project-specific skills
 - `.dagi/workflow/` — directory for project-specific workflows
-- `dagi-memory/raw/` — drop source material here for the wiki
-- `dagi-memory/wiki/` — structured wiki pages (populated by the `memory-ingest` skill)
+- `wiki/tasks/README.md` — the folder for task specs and plans (knowledge goes to the central
+  memory wiki, not here)
 
 You only need to run `/init` once per project. It is safe to re-run — existing files are skipped.
 
-**3. Seed the memory wiki (optional but recommended)**
+**3. Use the memory wiki**
 
-Drop any relevant documents — architecture notes, API references, prior session summaries — into `dagi-memory/raw/`. Then ask dagi to ingest them:
-
-```
-Invoke the memory-ingest skill.
-```
-
-At the start of every subsequent session, wiki index injection prepends the `.index.md` files as a
-system message, giving the agent a structural map of the wiki. Use `memory-query` for targeted
-retrieval and `memory-refresh` to lint and triage wiki health.
+Project knowledge accumulates in the central memory wiki under `projects/<project-slug>/`
+(the slug is the kebab-cased folder name, shown in the per-turn `[MEMORY]` pointer). Ask dagi
+to "remember this" or let the workflow file decisions and fixes at task end (`memory-add`);
+it searches with `memory-query` at the start of each task and before debugging.
 
 ---
 
@@ -451,10 +448,10 @@ Or ask naturally:
 
 **How it works:**
 
-1. `write-plan` writes and self-reviews `wiki/plans/YYYY-MM-DD-<task-name-slug>/plan.md`.
+1. `write-plan` writes and self-reviews `wiki/tasks/YYYY-MM-DD_<task>/plan.md`.
 2. It returns the plan path and unresolved questions to its caller.
 3. When running the full lifecycle, `enter-workflow` handles user approval, independent
-   review, active-plan association, and the required wiki checkpoint before delivery.
+   review, active-plan association, and the approval record before delivery.
 4. A standalone writing request stops with the plan; it does not authorize implementation.
 
 For implementation, including bounded changes, the sequence is: explore and grill;
@@ -496,7 +493,7 @@ All slash commands work identically in the TUI and CLI.
 | `/skills` | List all loaded skills |
 | `/workflows` | List all loaded workflows |
 | `/hist [n]` | Open the session history picker — browse the `n` most recent sessions (default 20), select a session, then pick a message turn to resume from |
-| `/init` | Scaffold `.dagi/` and `dagi-memory/` directories for the current project |
+| `/init` | Scaffold `.dagi/`, a slim `AGENTS.md` and `wiki/tasks/` for the current project |
 | `/revise-history [n]` | Remove the last `n` steps (default 1) from the session log after a confirmation dialog, then rewrite the JSONL log and re-render the conversation |
 | `/show-pet` | Toggle desktop pet window visibility (PySide GUI only) |
 | `/<skill-name>` | Invoke any loaded skill directly (e.g. `/memory-query`) |
@@ -532,10 +529,9 @@ Or as a slash command if the skill is loaded:
 
 | Skill | Purpose |
 |-------|---------|
-| `memory-add` | Add a structured note to the persistent wiki (projects, todos, knowledge, events) |
-| `memory-ingest` | Bulk-ingest raw documents into the wiki |
-| `memory-query` | Look up information in the wiki (read-only; scope parameter) |
-| `memory-refresh` | Lint sweep + interactive triage: validates frontmatter, links, overdue todos, indexes |
+| `memory-add` | File an entry in the central memory wiki (folder choice, duplicate check, one-line frontmatter) — run inline by the main agent |
+| `memory-query` | Grep the central memory wiki (project folder, then knowledge, then all) and answer with citations — inline, read-only |
+| `memory-refresh` | Legacy lint for the retired wiki layout — tool disabled pending redesign |
 | `create-skill` | Scaffold a new skill document |
 | `review-session` | Analyse sessions described in free text (folder, files, time window) into one running cross-session review report |
 | `grilling` | Adversarial interrogation of a plan or idea before implementation; returns control to caller when done |
@@ -573,7 +569,7 @@ The context carries over — no need to restart.
 
 - **Start sessions with a specific project.** Using `--project` scopes file access and loads project-local skills, workflows, and the project wiki automatically.
 - **Agree on the approach before implementation.** Use `write-plan` to turn the agreed requirements into an implementation plan.
-- **Build the memory wiki over time.** The more domain knowledge in `dagi-memory/wiki/`, the less you need to re-explain project context each session.
+- **Build the memory wiki over time.** The more decisions, fixes and knowledge filed under `projects/<slug>/` and `knowledge/` in the central memory wiki, the less you need to re-explain project context each session — and fixes found in one project help the others.
 - **Pause instead of cancelling.** `Esc` in the TUI preserves the agent's full context; you can inject corrections and resume rather than restarting from scratch.
 - **Review sessions with `/hist`.** Session summaries in `.dagi/logs/` capture token counts, cost, and what the agent did. The `review-session` skill accepts a free-text description of which sessions to look at and accumulates findings from all of them into one report, so patterns that recur across sessions surface as a single insight.
 - **Fill in `AGENTS.md`'s Behavioral Guidelines section for your project.** This whole file is injected into every session for that project. Use the Behavioral Guidelines section for coding standards, architecture invariants, and anything you would otherwise repeat in every task prompt.
@@ -752,7 +748,7 @@ Driverless_AGI/
 │   ├── tools.py           # Builds and returns the tool registry
 │   ├── loop.py            # AgentLoop orchestrator (run loop, __init__, pause/resume)
 │   ├── _loop_config.py    # AgentConfig, AgentCallbacks, CompactionResult dataclasses
-│   ├── _loop_helpers.py   # Loop sentinels, CONTINUE_PROMPT, wiki-index + reload helpers
+│   ├── _loop_helpers.py   # Loop sentinels, CONTINUE_PROMPT, [MEMORY] pointer + reload helpers
 │   ├── _system_prompt.py  # System-prompt assembly (single source of truth)
 │   ├── _plan_mode.py      # DEPRECATED stub — re-exports rebuild_for_reload from _reload.py
 │   ├── _reload.py         # Hot-reload: rebuild tool registry and system prompt after skill changes
@@ -835,7 +831,7 @@ Driverless_AGI/
 │           └── cache.py    #   Server-side content-addressed cache (.cache/<sha256>.md)
 │
 ├── .dagi/
-│   ├── config.yaml        # Global runtime settings (tool allowlist, context budget, memory root)
+│   ├── config.yaml        # Global runtime settings (tool allowlist, disabled_tools, context budget, memory_root)
 │   ├── model_config/      # Per-model YAML files (filename = model_id); git-tracked
 │   ├── prompts/           # Prompt markdown files, organized by role
 │   │   ├── main/          #   main_system.md — primary coding assistant prompt
@@ -846,16 +842,13 @@ Driverless_AGI/
 │   ├── read-large-text/ # large-text-file summarizer, directly LLM-callable as `read_large_text` (tools: read, grep, write)
 │   │   ├── explore_files/ #   exploration agent (tools: read, grep, find)
 │   │   ├── web_research/  #   web research agent (tools: web_search, web_fetch)
-│   │   ├── memory-query/  #   wiki knowledge retrieval agent
-│   │   ├── memory-add/    #   wiki knowledge persistence agent
 │   │   ├── worker/        #   full-tool worker agent (plan_utils.py helper)
 │   │   ├── review/        #   code review agent (review_utils.py helper; tools: read, grep, find, bash)
 │   │   ├── plan/          #   plan-writing agent
 │   │   └── cli/           #   custom subagent with caller-supplied system prompt
 │   ├── handoffs/          # Generated handoffs: main_<thread-hash12>.md and <type>_<uuid8>.md
-│   ├── skills/            # Structured guidance documents (gnhf, memory-*, create-skill, review-session, …)
+│   ├── skills/            # Structured guidance documents (memory-add/query copies of the Claude skills, create-skill, …)
 │   ├── workflow/          # User-directed workflows (.dagi/workflow/<name>/workflow.md)
-│   ├── memory/wiki/       # Topic-organized persistent wiki (infrastructure built)
 │   ├── tools/             # Project-local tools (auto-loaded at startup)
 │   ├── gnhf/              # GNHF session artifacts (notes.md — committed to dagi branch)
 │   ├── plans/             # Generated plan files
@@ -949,10 +942,9 @@ Built-in skills:
 
 | Skill | What it does |
 |-------|-------------|
-| `memory-add` | Add a structured note to the wiki (four categories: projects, todos, knowledge, events) |
-| `memory-ingest` | Bulk-ingest source material into the wiki |
-| `memory-query` | Look up information in the wiki (read-only; scope parameter) |
-| `memory-refresh` | Lint sweep + interactive triage: frontmatter, links, overdue todos, indexes |
+| `memory-add` | File an entry in the central memory wiki (folder choice, duplicate check, one-line frontmatter) — run inline by the main agent |
+| `memory-query` | Grep the central memory wiki (project folder, then knowledge, then all) and answer with citations — inline, read-only |
+| `memory-refresh` | Legacy lint for the retired wiki layout — tool disabled pending redesign |
 | `create-skill` | Scaffold a new skill document |
 | `review-session` | Deep-read sessions described in free text, analyse tasks/actions/errors/corrections across all of them, and accumulate findings into one running review report at `.dagi/self-review/` |
 
