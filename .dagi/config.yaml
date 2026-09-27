@@ -44,11 +44,6 @@ tools:                      # Restrict the main agent to a specific subset of to
   - web_research            # Spawn a web-research subagent
   - explore_files           # Spawn a file-exploration subagent
   - read_large_text         # Spawn a long-file summariser subagent
-  - memory_add              # Spawn a memory-add subagent
-  - memory_query            # Spawn a memory-query subagent
-  - memory_refresh          # Spawn a memory-refresh subagent
-  - wiki_query              # Query this project's wiki
-  - wiki_add                # Store selected project knowledge
   - extend_subagent_timeout # Extend timeout for an in-flight subagent
   # ── Model tools ──────────────────────────────────────────────────────────────
   - switch_model            # Switch between default / worker / advanced models
@@ -64,3 +59,5 @@ tools:                      # Restrict the main agent to a specific subset of to
   # ── GUI tools ────────────────────────────────────────────────────────────────
   - show_file               # Open a file in the GUI file viewer with optional line highlight
 sandbox_mode: false     # true = file tools have no path restrictions (allowed_roots=None)
+disabled_tools:         # Always off, even if a project config sets `tools: null`.
+  - memory_refresh      # Built for the retired memory layout; redesign pending (TODO.md).

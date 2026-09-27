@@ -44,9 +44,7 @@ def _make_runtime_args():
 
 def _run_with_minimal_arguments(tool, type_name: str) -> None:
     """Exercise each wrapper without invoking a real subagent."""
-    if type_name == "memory-add":
-        tool.run(task="Remember this", category="knowledge")
-    elif type_name == "memory-refresh":
+    if type_name == "memory-refresh":
         tool.run()
     elif type_name == "worker":
         tool.run(subtask_name="Implement it")
@@ -69,13 +67,9 @@ class TestGenericSubagentTool:
     # subagent" in the tool name (mirroring `read_large_text`, which set the
     # precedent). This dict is the sole source of truth for expected names.
     _EXPECTED_TOOL_NAMES = {
-        "wiki-query": "wiki_query",
-        "wiki-add": "wiki_add",
         "read-large-text": "read_large_text",
         "explore_files": "explore_files",
         "web_research": "web_research",
-        "memory-query": "memory_query",
-        "memory-add": "memory_add",
         "memory-refresh": "memory_refresh",
         "review": "review_work",
         "worker": "run_worker",
@@ -378,10 +372,7 @@ class TestSessionLogThreading:
         for tool in tools:
             assert tool._parent_context is provider
 
-    @pytest.mark.parametrize("type_name", sorted(
-        name for name in TestGenericSubagentTool._EXPECTED_TOOL_NAMES
-        if not name.startswith("wiki-")
-    ))
+    @pytest.mark.parametrize("type_name", sorted(TestGenericSubagentTool._EXPECTED_TOOL_NAMES))
     def test_typed_tools_forward_the_exact_parent_context(self, type_name):
         """Dropping or replacing the provider would lose inherited parent state."""
         cls = _load_tool_class(type_name)
