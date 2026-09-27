@@ -39,8 +39,9 @@ instructions. Package Codex sources in the repository and install after scoped v
 ## Overall Status
 
 Approved for implementation and global installation after independent review PASS.
-Approval wiki checkpoint and document commit are complete. Subtasks 1-3 are committed;
-the portable package is under independent review. Global installation and finishing remain pending.
+Approval wiki checkpoint and document commit are complete. Subtasks 1-4 are committed;
+global installation/readback and independent final review passed. Documentation commit and
+final branch decision remain pending.
 
 ## Subtasks
 
@@ -73,13 +74,13 @@ This tests the writer-consumer interface, not prose phrasing or heading counts a
 
 #### Steps
 
-- [ ] Add the consumer test and run it red against the missing canonical reference.
-- [ ] Create the template with header, Global Constraints, Review Focus, Workspace,
+- [x] Add the consumer test and run it red against the missing canonical reference.
+- [x] Create the template with header, Global Constraints, Review Focus, Workspace,
   Overall Status, Subtasks, Notes, Open Issues, Attempts and Resolutions, Verification,
   and Next Action. Each task has the fields listed in spec section 7.
-- [ ] Replace both embedded formats with an explicit instruction to load the shared
+- [x] Replace both embedded formats with an explicit instruction to load the shared
   reference. Specify `in_progress` plus a Notes commit-pending field until verified commit.
-- [ ] Run `conda run -n dagi python -m pytest --noconftest -p no:pytest-qt
+- [x] Run `conda run -n dagi python -m pytest --noconftest -p no:pytest-qt
   tests/test_plan_parser.py tests/test_workflow_plan_template.py -q`; return evidence for review.
 
 ### Subtask 2: [x] Align Dagi lifecycle, approvals, and recovery instructions
@@ -115,17 +116,17 @@ avoid rerunning accepted work, and ask only at the relevant gate.
 
 #### Steps
 
-- [ ] Edit owner and delivery instructions together: separate user approval, review
+- [x] Edit owner and delivery instructions together: separate user approval, review
   acceptance, commit evidence, and final branch approval.
-- [ ] Define the checkpoint's accepted/commit-pending state in Notes and the post-commit
+- [x] Define the checkpoint's accepted/commit-pending state in Notes and the post-commit
   update rule, including the final verification-record commit and no-op exception.
-- [ ] Add explicit wiki check/initializer entry and remove redundant query approval.
+- [x] Add explicit wiki check/initializer entry and remove redundant query approval.
   Define a standalone spec default under the same task-directory convention.
-- [ ] Correct context path and bounded-review ownership statements; preserve all other
+- [x] Correct context path and bounded-review ownership statements; preserve all other
   existing customization, native tools, and one-question grilling.
-- [ ] Run `conda run -n dagi python -m pytest --noconftest -p no:pytest-qt
+- [x] Run `conda run -n dagi python -m pytest --noconftest -p no:pytest-qt
   tests/test_project_init.py tests/test_active_plan.py tests/test_update_task_status.py -q`.
-- [ ] Return changes and scenario outcomes for independent review.
+- [x] Return changes and scenario outcomes for independent review.
 
 ### Subtask 3: [x] Provide a portable, preserving Codex wiki bootstrap
 
@@ -167,14 +168,14 @@ cases only with an explicit platform reason; retain a portable containment check
 
 #### Steps
 
-- [ ] Write focused failing tests for the contract above.
-- [ ] Implement CLI and `initialize_wiki`: resolve/check root, preflight target parents,
+- [x] Write focused failing tests for the contract above.
+- [x] Implement CLI and `initialize_wiki`: resolve/check root, preflight target parents,
   reject unsafe targets, create missing directories and files with exclusive mode,
   report existing/created files and actionable errors. Preserve partial successful output.
-- [ ] Run `conda run -n dagi python -m pytest --noconftest -p no:pytest-qt
+- [x] Run `conda run -n dagi python -m pytest --noconftest -p no:pytest-qt
   tests/test_codex_wiki_bootstrap.py -q`; return evidence for independent review.
 
-### Subtask 4: [~] Package the Codex workflow and existing-skill adaptations
+### Subtask 4: [x] Package the Codex workflow and existing-skill adaptations
 
 **Goal:** Produce a self-contained, reviewable Codex skill set using real host capabilities.
 **Requirements:** R1-R9, R11-R15; consume bootstrap from subtask 3.
@@ -210,17 +211,17 @@ global directory; use disposable temporary workspaces and simulated Git approval
 
 #### Steps
 
-- [ ] Adapt host tool calls and paths; retain the established lifecycle boundaries.
-- [ ] Supply worker/reviewer protocols as references and full TDD text in assignments.
+- [x] Adapt host tool calls and paths; retain the established lifecycle boundaries.
+- [x] Supply worker/reviewer protocols as references and full TDD text in assignments.
   Use fresh agents with `fork_turns="none"`, `gpt-5.6-luna`, and medium reasoning.
-- [ ] Preserve the Codex grill body and add its return contract. Correct context wording
+- [x] Preserve the Codex grill body and add its return contract. Correct context wording
   while preserving wiki retry/delegation rules and personal-memory separation.
-- [ ] Write global routing for new coding work, continuations, standalone requests, and
+- [x] Write global routing for new coding work, continuations, standalone requests, and
   questions. Resolve wiki bootstrap in the owner before query; do not activate for casual chat.
-- [ ] Validate, independently review scenarios, fix demonstrated failures, and return the
+- [x] Validate, independently review scenarios, fix demonstrated failures, and return the
   package and evidence. Do not install global files from a worker.
 
-### Subtask 5: [ ] Install globally and verify the completed branch
+### Subtask 5: [~] Install globally and verify the completed branch
 
 **Goal:** Make the reviewed package globally usable without overwriting unrelated settings.
 **Requirements:** R4, R5, R13-R15. Main agent owns installation, documentation, and commits.
@@ -249,12 +250,12 @@ record if the current session cannot refresh its skill catalog without a restart
 
 #### Steps
 
-- [ ] Confirm joint approval includes global installation and task-scoped commits, and
+- [x] Confirm joint approval includes global installation and task-scoped commits, and
   that package review/tests passed. Reinspect live destinations for intervening edits.
-- [ ] Preserve replaced files and copy only reviewed package files; apply the routing
+- [x] Preserve replaced files and copy only reviewed package files; apply the routing
   addition surgically. Use required platform permission review for global writes.
-- [ ] Verify installed files and linked resources; report partial installation accurately.
-- [ ] Run integrated verification listed below, with an independent full-task review.
+- [x] Verify installed files and linked resources; report partial installation accurately.
+- [x] Run integrated verification listed below, with an independent full-task review.
 - [ ] Save selected actual results through wiki-add; update project context as main agent.
   Commit only accepted task changes and final verification records under scoped authority.
 - [ ] Present the completed branch and request merge/keep. After the user's decision,
@@ -269,7 +270,7 @@ record if the current session cannot refresh its skill catalog without a restart
   autonomously. This is the approval evidence; merge/keep remains a later separate choice.
 - Independent plan review: PASS, 2026-09-26; no blocking findings. Reviewed scope includes
   artifact consistency, approvals, commit recovery, bootstrap, package, and installation.
-- Document approval: granted on 2026-09-26. Global install pending.
+- Document approval: granted on 2026-09-26. Global installation and readback succeeded.
 - Approved document commit verified: `4d0acab3f440ee026222a22a664db61f90abbfc3`.
 - Subtask 1: verified commit `417d2244716b3e63052192cb04f68ea44c56ca60`.
   Independent `template_review_astra` PASS;
@@ -287,7 +288,8 @@ record if the current session cannot refresh its skill catalog without a restart
 - Subtask 3 prepared independently in disjoint files: worker and `bootstrap_review` PASS,
   14 tests including real outside-directory link containment, no skips. Verified commit
   `f39d42c55f7dd4042b9eb0cef0fb4f434fe1eee1`.
-- Subtask 4: review accepted / commit pending. Independent `package_review` PASS.
+- Subtask 4: verified commit `09d4e2c9c60397b6a5184f1ef6a2d3cdd91e41ca`.
+  Independent `package_review` PASS.
   Eight skills validate in UTF-8 mode, five local resource links resolve, canonical template
   hashes match, and original grill content is preserved as an exact prefix. Ten instruction
   scenarios reviewed; these are walkthroughs, not live model execution.
@@ -314,12 +316,21 @@ record if the current session cannot refresh its skill catalog without a restart
 - The current loop handler retains active-plan association after all tasks resolve.
   Some status-tool descriptions still say complete/auto-finished; do not interpret those as
   approval or closure. Runtime status-message cleanup is outside this skills-focused scope.
-- Source packaging and bootstrap helper are implemented; global installation remains pending.
+- Global installation: 12 reviewed files across eight skills match the package byte-for-byte.
+  All eight installed skills validate. The other 73 original skill files are unchanged,
+  including grill metadata. Global AGENTS retains its original bytes plus the routing fragment.
+  Backups are under the baseline directory's `global-before/` folder.
+- Host discovery: the refreshed skill catalog lists all six new global skills and both
+  adapted skills. No restart was needed for this observed refresh.
+- Completion wiki checkpoint: `completion_wiki` succeeded on 2026-09-27; records installation,
+  reviews/tests and preserved work while leaving merge/keep explicitly pending.
+- Subtask 5: review accepted / commit pending. Independent `final_review` PASS; only
+  documentation/progress commit remains before presenting the separate branch decision.
 
 ## Open Issues
 
-Existing uncommitted work may overlap implementation hunks; resolve genuinely inseparable
-ownership before commit. Joint spec/plan and implementation/global-install approval is granted.
+No implementation blockers. Final task documentation commit and user merge/keep decision remain.
+Pre-existing unrelated work remains unstaged and must be preserved during finishing.
 
 ## Attempts and Resolutions
 
@@ -327,6 +338,8 @@ ownership before commit. Joint spec/plan and implementation/global-install appro
   succeeded. No reset, stash, commit, or deletion was performed.
 - Test baseline initially hit ACLs on the default pytest temporary/cache directories.
   Fresh task-owned `--basetemp` plus `-p no:cacheprovider` resolved it; 32 lifecycle tests pass.
+- The final reviewer initially hit a usage limit without producing a verdict. Resumed after
+  the user's 2026-09-27 continuation; do not count that failed invocation as review evidence.
 
 ## Verification
 
@@ -335,19 +348,26 @@ changes preserved by hash comparison. Local document links resolve; no unfinishe
 placeholders found; Git whitespace check passed. Independent artifact review PASS with no
 blockers. No implementation tests or global installation ran during drafting.
 
-Implementation verification command:
+Actual implementation verification command (PowerShell, required dagi interpreter):
 
 ```text
-conda run -n dagi python -m pytest --noconftest -p no:pytest-qt tests/test_plan_parser.py tests/test_workflow_plan_template.py tests/test_project_init.py tests/test_active_plan.py tests/test_update_task_status.py tests/test_codex_wiki_bootstrap.py -q
+& C:/Users/alexr/miniconda3/envs/dagi/python.exe -u -m pytest --noconftest -p no:pytest-qt -p no:cacheprovider --basetemp <fresh-task-temporary-directory> tests/test_plan_parser.py tests/test_workflow_plan_template.py tests/test_project_init.py tests/test_active_plan.py tests/test_update_task_status.py tests/test_codex_wiki_bootstrap.py -q --tb=short
 ```
 
 Also validate packaged/installed skills, template parity, resource links, behavioral
 scenarios, destination preservation, and the complete task diff from the recorded starting
 commit (plus remaining task-owned working changes). Distinguish pre-existing edits.
 Do not substitute a clean working-tree diff for the full branch review.
-Tests and installation have not run during planning.
+Results: 108 passed, no skips, both in the working tree and a clean Git archive of
+`09d4e2c9` under the baseline directory's `branch-snapshot/`. The clean snapshot excludes
+pre-existing uncommitted changes. Test directories: `integrated-final/` and `snapshot-tests/`.
+Eight packaged and eight installed validators passed using `-X utf8`. Template parity and
+resource links passed. Independent `final_review` PASS on 2026-09-27 for the full task diff
+from `5c1b6db6` through `09d4e2c9` and pending task-owned records. Reviewer independently
+repeated the clean snapshot suite (108 passed) and installation/baseline hash checks.
+Instruction walkthroughs are not live model/end-to-end execution.
 
 ## Next Action
 
-Complete package review, commit subtask 4, and install/verify subtask 5.
+Finish wiki/context records and commit subtask 5; then present the final merge/keep decision.
 Merge approval remains separate at branch completion.

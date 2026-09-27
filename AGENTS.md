@@ -1,11 +1,12 @@
 # AGENTS.md
 
-> Last updated: 2026-09-23 | [README](README.md) | [Wiki](wiki/index.md) | [Code review](wiki/notes/production-review-2026-09-15.md)
+> Last updated: 2026-09-27 | [README](README.md) | [Wiki](wiki/index.md) | [Code review](wiki/notes/production-review-2026-09-15.md)
 > [Proposed image-input implementation plan](docs/image-input-implementation-plan.md)
 > [GUI context audit and compaction policy](wiki/notes/gui-context-duplication-2026-09-18.md)
 > [Context overflow audit report](docs/context-overflow-audit-2026-09-18.md)
 > [Workflow transition review](wiki/notes/workflow-review-2026-09-20.md) (review findings; fixes pending)
 > [Workflow change checklist and draft skill links](new_skills_planning.md) (ownership migrated; remaining integration pending)
+> [Codex workflow port spec and plan](wiki/tasks/2026-09-26_codex-workflow-port/plan.md) (installed and verified; branch finishing pending)
 
 ---
 

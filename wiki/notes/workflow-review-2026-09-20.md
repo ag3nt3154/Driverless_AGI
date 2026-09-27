@@ -136,6 +136,140 @@ Verification used the `dagi` Python loader and tool: `/plan` is absent and a cal
 not-found, while `write-plan` is callable. Slash help omits the old command and includes the new
 one. Scoped `git diff --check` passed. No live model end-to-end run was performed.
 
+## Global Codex port review findings — 2026-09-26
+
+The requested examination covered the `enter-workflow` series for a possible global Codex port.
+Nothing was installed and no implementation was approved. The proposed skill set is
+`enter-workflow`, `write-spec`, `write-plan`, `deliver`, `do-tdd`, and `merging-git-branch`,
+with the existing `grill-me`, `wiki-query`, `wiki-add`, and `update-project-context` skills
+integrated as applicable.
+
+The inspection found that `write-plan` lacks the `Workspace` field and the per-subtask `Goal`,
+`Acceptance Criteria`, and status markers that `deliver` requires. It also found that `deliver`
+treats an approval commit message as proof of formal approval, while the lifecycle owner requires
+artifact/history evidence alone to remain insufficient. The draft `do-TDD` guidance assigns
+bounded review to `deliver`, while the owner directly reviews bounded work. These claims conflict
+with the corresponding prior workflow records; the conflicts are recorded for resolution rather
+than auto-resolved (`conflict_detected: 2026-09-26`).
+
+Any port must replace Dagi-specific `skill()`, `ask_user`, active-plan association,
+`run_worker`/`review_work`, status parsing, and `write_handoff` behavior with the actual Codex
+facilities and instructions. Native worker/reviewer prompt contracts must be carried as explicit
+references. The global `grill-me` skill uses frontier rounds, whereas Dagi uses one question at a
+time; the existing global preference should be preserved unless explicitly changed. Global
+activation needs routing instructions, not skill files alone. Global wiki/path/branch policy also
+needs an explicit design. All of these are proposals pending separate approval.
+
+No source code or tests were changed by this review. Verification was limited to wiki readback and
+link checks after this note update.
+
+## Decision resolution — 2026-09-26
+
+The user agreed the following design direction for Dagi alignment and the global Codex port. These
+are recorded as agreed decisions for pending implementation; they do not record an implemented
+port, committed subtasks, or global installation.
+
+- Preserve `wiki/tasks/YYYY-MM-DD_<task>/spec.md` and `plan.md`. One shared writer/delivery plan
+  template, including `Workspace` and the required per-subtask fields, applies to both hosts.
+- Preserve the initial branch-setup gate and the joint spec/plan implementation-approval gate.
+  After that approval, the main agent autonomously reviews and commits subtasks; there is no
+  per-subtask or per-commit user approval gate. Request final approval only after all subtasks and
+  verification, before merge.
+- A commit subject alone is never approval. Keep accepted, commit-pending, and verified-complete
+  evidence separate, and reconcile Git state on resume.
+- Global Codex guidance routes new coding tasks into `enter-workflow`. Continuations preserve the
+  current stage and approvals. Explicit standalone skills retain their scope, and read-only
+  questions do not require a preliminary workflow nod.
+- Preserve Codex `grill-me` frontier rounds while Dagi keeps its one-question-at-a-time style.
+- Native worker and reviewer delegates have no nesting or commit authority and use
+  `gpt-5.6-luna` with medium reasoning.
+- Replace Dagi question-tool assumptions with the actual Codex facilities. Silence and timeouts
+  never count as consent.
+- Default branches are `dagi/<task>` and `codex/<task>`, subject to an applicable project
+  override.
+
+The user authorized branch setup and drafting only. Branch `dagi/codex-workflow-port` was created
+from `main` at `5c1b6db6d56a409b12d06957786d4344a5012bb1`, with pre-existing unstaged work
+preserved. The spec and plan were drafted. Joint artifact approval, their commits, implementation,
+global installation, and merge remain pending and were not authorized or completed by this record.
+
+This decision section resolves the reviewed design questions above where the user explicitly chose
+a direction; the earlier proposal and conflict history remains intact for implementation review.
+
+## Joint implementation approval — 2026-09-26
+
+The user replied “continue” directly to the explicit joint approval request for
+`wiki/tasks/2026-09-26_codex-workflow-port/spec.md` and `plan.md`. That reply authorizes the
+reviewed artifacts and the scoped execution work: committing the documents, implementing the
+Dagi alignment, installing the agreed Codex skills globally under `C:/Users/alexr/.codex/skills`,
+and allowing the main agent to autonomously review and commit completed subtasks. It does not
+authorize merging or choosing whether to keep the task branch; that remains a separate final
+decision after completion and verification.
+
+The approved execution starts on branch `dagi/codex-workflow-port`, created from `main` at
+`5c1b6db6d56a409b12d06957786d4344a5012bb1`. Pre-existing unstaged work is preserved. No
+implementation, global installation, or commit had occurred when this authorization was recorded.
+
+This section supersedes the earlier pending-artifact-approval status for the reviewed spec and
+plan while preserving that history. It records authorization only; completion evidence belongs in
+a later wiki-add after implementation and verification.
+
+## Dagi alignment and global Codex installation — 2026-09-27
+
+The approved Dagi alignment and global Codex workflow port are implemented and verified.
+This completion evidence supersedes the earlier pending implementation and installation statuses
+and resolves the implementation gaps described in the port review, while preserving those
+historical findings and approvals. Installation is complete. At this checkpoint, the final
+documentation commit and the user's merge-or-keep decision remain pending; the workflow is not
+fully closed.
+
+Six new skills are installed globally: `enter-workflow`, `write-spec`, `write-plan`, `deliver`,
+`do-tdd`, and `merging-git-branch`. Existing `grill-me` and `update-project-context` were adapted;
+the original `grill-me` frontier body was retained exactly with an added return contract.
+`wiki-query` and `wiki-add` were reused unchanged. The tracked package is `integrations/codex`,
+and the installed root is `C:/Users/alexr/.codex/skills`. Routing was appended to global
+`AGENTS.md`, preserving the existing `gpt-5.6-luna` medium reasoning policy. After the Luna usage
+limit, the user authorized a task-only `gpt-6-astra` exception; this does not replace that standing
+policy. The refreshed host catalog exposes the six new and two adapted skills.
+
+The canonical Dagi writer/delivery template now matches its consumers. Instructions distinguish
+actual user approval from a commit subject and separate accepted, commit-pending, and
+verified-complete states with Git recovery. Joint authorization permits scoped subtask commits
+without further per-subtask or per-commit user gates. Standalone skill scope and owner closure
+are preserved, and plans use `wiki/tasks/YYYY-MM-DD_<task>/`.
+
+Entry initializes a missing wiki before querying it. The portable helper creates only the seven
+missing wiki pages, preserves existing bytes and partial output, rejects unsafe paths, reports
+clear failures, and has no Dagi dependency.
+
+Recorded commits are:
+
+| Commit | Scope |
+| --- | --- |
+| `4d0acab3` | Approved documents |
+| `417d2244` | Canonical template |
+| `35baf0f7` | Lifecycle alignment |
+| `f39d42c5` | Portable wiki bootstrap |
+| `09d4e2c9` | Codex package |
+
+Independent subtask and package reviews passed. Independent final review passed through
+`09d4e2c9`. The 108-test suite passed with no skips in both the working tree and a clean committed
+archive; the final reviewer independently repeated the archive suite successfully. Eight packaged
+and eight installed skill validations passed using UTF-8. Twelve installed files exactly matched
+their source hashes; 73 unrelated original skill files, including grill metadata, were unchanged.
+Canonical template equality and five link resolutions were verified.
+
+Instruction scenario reviews covered authorization, recovery, wiki/query behavior, standalone
+scope, branch overrides, and missing delegation. No live end-to-end model workflow was executed;
+these instructions are not runtime enforcement.
+
+The branch remains `dagi/codex-workflow-port`, with recorded parent `main` and initial commit
+`5c1b6db6`. All pre-existing unrelated working changes were preserved and were not included
+wholesale in the commits. Global backups are at
+`C:/Users/alexr/AppData/Local/Temp/codex-workflow-port-20260926-103245/global-before`.
+No merge, push, or deletion occurred. At this checkpoint, final documentation and the separate
+user branch-finishing decision are still required.
+
 ## Navigation
 
 [Workflows](../workflows.md) records the approved skill-level ownership migration and the open

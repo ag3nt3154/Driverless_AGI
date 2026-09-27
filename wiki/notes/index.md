@@ -2,10 +2,14 @@
 
 Navigation to useful findings and open questions.
 
-> Last updated: 2026-09-23
+> Last updated: 2026-09-27
 
 - [Workflow review — 2026-09-20](workflow-review-2026-09-20.md): review findings plus the
   user's scoped approval for checklist points 1–2; remaining recommendations remain unapproved.
+
+- [Dagi alignment and global Codex installation — 2026-09-27](workflow-review-2026-09-20.md#dagi-alignment-and-global-codex-installation--2026-09-27): implemented and installed;
+  independent review and 108-test verification passed. The user's merge-or-keep decision remains
+  pending; earlier findings and approvals are preserved.
 
 - Grep tool hardening (2026-09-18): **implemented**; `tools/grep/_grep.py` now excludes
   `.dagi/`, `__pycache__/`, `.git/`, `.mypy_cache/`, `.pytest_cache/`, `node_modules/`,
