@@ -39,9 +39,9 @@ instructions. Package Codex sources in the repository and install after scoped v
 ## Overall Status
 
 Approved for implementation and global installation after independent review PASS.
-Approval wiki checkpoint and document commit are complete. Subtasks 1-4 are committed;
-global installation/readback and independent final review passed. Documentation commit and
-final branch decision remain pending.
+All five implementation subtasks are verified and committed. Global installation/readback,
+independent final review, and wiki/context records passed. Awaiting the user's final
+merge/keep decision; the workflow checkpoint remains active until finishing.
 
 ## Subtasks
 
@@ -221,7 +221,7 @@ global directory; use disposable temporary workspaces and simulated Git approval
 - [x] Validate, independently review scenarios, fix demonstrated failures, and return the
   package and evidence. Do not install global files from a worker.
 
-### Subtask 5: [~] Install globally and verify the completed branch
+### Subtask 5: [x] Install globally and verify the completed branch
 
 **Goal:** Make the reviewed package globally usable without overwriting unrelated settings.
 **Requirements:** R4, R5, R13-R15. Main agent owns installation, documentation, and commits.
@@ -256,9 +256,10 @@ record if the current session cannot refresh its skill catalog without a restart
   addition surgically. Use required platform permission review for global writes.
 - [x] Verify installed files and linked resources; report partial installation accurately.
 - [x] Run integrated verification listed below, with an independent full-task review.
-- [ ] Save selected actual results through wiki-add; update project context as main agent.
+- [x] Save selected actual results through wiki-add; update project context as main agent.
   Commit only accepted task changes and final verification records under scoped authority.
-- [ ] Present the completed branch and request merge/keep. After the user's decision,
+- [ ] Owner follow-up after implementation: present the completed branch and request merge/keep.
+  After the user's decision,
   finish only the chosen action and closure; report post-merge documentation left uncommitted.
 
 ## Notes
@@ -324,12 +325,13 @@ record if the current session cannot refresh its skill catalog without a restart
   adapted skills. No restart was needed for this observed refresh.
 - Completion wiki checkpoint: `completion_wiki` succeeded on 2026-09-27; records installation,
   reviews/tests and preserved work while leaving merge/keep explicitly pending.
-- Subtask 5: review accepted / commit pending. Independent `final_review` PASS; only
-  documentation/progress commit remains before presenting the separate branch decision.
+- Subtask 5: verified documentation commit `24b8a4dd16d3a3e772a421e76cdf0cbacf166b0e`.
+  Independent `final_review` PASS, including final documentation addendum. The last progress
+  commit's ID is recorded in the conversation, avoiding a self-referential commit loop.
 
 ## Open Issues
 
-No implementation blockers. Final task documentation commit and user merge/keep decision remain.
+No implementation blockers. The user's merge/keep decision and resulting closure remain.
 Pre-existing unrelated work remains unstaged and must be preserved during finishing.
 
 ## Attempts and Resolutions
@@ -369,5 +371,6 @@ Instruction walkthroughs are not live model/end-to-end execution.
 
 ## Next Action
 
-Finish wiki/context records and commit subtask 5; then present the final merge/keep decision.
-Merge approval remains separate at branch completion.
+Ask whether to merge `dagi/codex-workflow-port` into `main` locally with fast-forward-only,
+or keep the branch and workspace as-is. `main` remains at the recorded starting commit.
+No merge, push, branch deletion, or unrelated cleanup has been authorized.
