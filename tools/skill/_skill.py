@@ -1,6 +1,7 @@
 import re
 from pathlib import Path
 
+from agent._loop_config import resolve_memory_root
 from agent.base_tool import BaseTool
 
 
@@ -77,7 +78,7 @@ class SkillTool(BaseTool):
                 result += "\n\n## Associated Files\n\n" + "\n".join(data_lines)
 
         cwd_str = str(self._cwd.resolve()) if self._cwd else str(Path.cwd())
-        memory_root_str = str(self._memory_root.resolve()) if self._memory_root else "dagi-memory"
+        memory_root_str = str(resolve_memory_root(self._memory_root))
         result = _substitute(result, {"cwd": cwd_str, "memory_root": memory_root_str})
 
         return result

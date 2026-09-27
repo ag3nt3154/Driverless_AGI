@@ -1032,7 +1032,7 @@ def test_inherited_run_skips_wiki_context_between_prefix_and_child_task(tmp_path
     loop.client = MagicMock()
     loop.client.chat.completions.create.return_value = response
 
-    with patch("agent.loop._build_wiki_index_context", return_value="WIKI CONTEXT"):
+    with patch("agent.loop._build_memory_context", return_value="WIKI CONTEXT"):
         loop.run("child task")
 
     assert loop.client.chat.completions.create.call_args.kwargs["messages"] == [

@@ -20,6 +20,7 @@ import sys
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from agent._loop_config import resolve_memory_root
 from agent.base_tool import BaseTool
 from agent.registry import ToolRegistry
 from tools.bash import BashTool
@@ -214,7 +215,7 @@ def create_tool_registry(
                 )
 
         if skill_roots:
-            _effective_memory_root = memory_root or cwd / "dagi-memory"
+            _effective_memory_root = resolve_memory_root(memory_root)
             reg.register(SkillTool(skill_roots=skill_roots, dagi_root=_DAGI_ROOT, cwd=cwd, memory_root=_effective_memory_root))
             from tools.run_skill_script import RunSkillScriptTool
             reg.register(RunSkillScriptTool(skill_roots=skill_roots, dagi_root=_DAGI_ROOT))
@@ -243,7 +244,7 @@ def create_tool_registry(
         reg.register(WebSearchTool())
         reg.register(WebFetchTool())
         if skill_roots:
-            _effective_memory_root = memory_root or cwd / "dagi-memory"
+            _effective_memory_root = resolve_memory_root(memory_root)
             reg.register(SkillTool(skill_roots=skill_roots, dagi_root=_DAGI_ROOT, cwd=cwd, memory_root=_effective_memory_root))
     if config is not None and config.tools is not None:
         reg.filter_to(config.tools)

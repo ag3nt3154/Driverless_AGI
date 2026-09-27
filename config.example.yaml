@@ -86,10 +86,10 @@ thinking: none    # Extended reasoning effort for models that support it (e.g. D
                   # Can be overridden per-model in the catalog below.
 
 # ── Memory ────────────────────────────────────────────────────────────────────
-# Absolute path to the dagi-memory directory containing wiki/, raw/, and sources/
-# sub-directories used for persistent knowledge retrieval (BM25).
-# Omit to use the default: {current working directory}/dagi-memory
-# memory_root: /absolute/path/to/dagi-memory
+# Central memory store (contains wiki/: projects/<p>/, knowledge/<topic>/).
+# Optional — defaults to G:\My Drive\black_grimoire. Searched and written by the
+# memory-query / memory-add skills (main agent, inline).
+# memory_root: /absolute/path/to/black_grimoire
 
 # ── Affect ────────────────────────────────────────────────────────────────────
 # affect:

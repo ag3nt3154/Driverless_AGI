@@ -1,25 +1,38 @@
 """agent/_loop_helpers.py — module-level helpers for the agent loop.
 
 Extracted from agent/loop.py so the loop orchestrator stays under the
-500-line cap. Only agent/loop.py imports from this module.
+500-line cap. Imported by agent/loop.py; agent/_init_templates.py also uses
+`project_slug`.
 """
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from agent.prompts import load_prompt
 
 
-def _build_wiki_index_context(memory_root: Path) -> str | None:
-    """Point the model at the wiki root path instead of inlining its contents.
+def project_slug(project_path: Path) -> str:
+    """Kebab-case project folder name, matching wiki/projects/<slug>/."""
+    slug = re.sub(r"[^a-z0-9]+", "-", project_path.name.lower()).strip("-")
+    return slug or "project"
 
-    Previously this read and concatenated every section .index.md file into
-    the context on every turn — expensive and stale-prone as the wiki grows.
-    The model has wiki-query/read tools; it only needs to know where to look.
+
+def _build_memory_context(memory_root: Path, project_path: Path) -> str | None:
+    """Short, static per-project pointer to the central memory wiki.
+
+    Only the location is injected — the model searches with the memory-query
+    skill (grep/read) rather than receiving wiki content every turn.
     """
     wiki_root = memory_root / "wiki"
     if not wiki_root.exists():
         return None
-    return f"[WIKI]\nProject wiki root: {wiki_root}\n[END WIKI]"
+    return (
+        "[MEMORY]\n"
+        f"Memory wiki: {wiki_root}\n"
+        f"This project: projects/{project_slug(project_path)}/  — search with memory-query "
+        "at task start and before debugging; file with memory-add.\n"
+        "[END MEMORY]"
+    )
 
 
 def _format_reload_notification(

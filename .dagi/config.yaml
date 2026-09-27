@@ -18,9 +18,8 @@ default_model: current-free-openrouter
 # keep_recent_tokens: 15000
 # reserve_tokens: 10000
 
-# Absolute path to the dagi-memory directory (wiki/raw/sources).
-# Omit to use the default: {current working directory}/dagi-memory
-memory_root: "G:\\My Drive\\black_grimoire\\dagi-memory"
+# Central memory store (contains wiki/). Omit to use the built-in default.
+memory_root: "G:\\My Drive\\black_grimoire"
 tools:                      # Restrict the main agent to a specific subset of tools.
                             # Omit (or set to null) to enable all available tools.
   # ── File tools ──────────────────────────────────────────────────────────────

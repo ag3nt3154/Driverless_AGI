@@ -13,6 +13,13 @@ from typing import Callable
 from agent.expression import ExpressionSnapshot
 from agent.process_state import ProcessSnapshot
 
+DEFAULT_MEMORY_ROOT = Path(r"G:\My Drive\black_grimoire")
+
+
+def resolve_memory_root(configured: Path | None) -> Path:
+    """Central memory store root: configured value, else the machine default."""
+    return (configured if configured is not None else DEFAULT_MEMORY_ROOT).resolve()
+
 
 @dataclass
 class CompactionResult:
@@ -39,8 +46,7 @@ class AgentConfig:
     keep_recent_tokens: int = 20_000  # tail kept verbatim (token budget)
     # Project scope
     project_path: Path = field(default_factory=lambda: Path(".").resolve())
-    # Memory root — absolute path to dagi-memory directory.
-    # None means "resolve at loop init time to project_path / dagi-memory".
+    # Memory root — central memory store (contains wiki/). None → DEFAULT_MEMORY_ROOT.
     memory_root: Path | None = None
     # Autonomous mode: True when the session is running as a scheduled/autonomous task.
     # Prevents self-modification of the schedule (schedule tools hidden).

@@ -5,7 +5,7 @@ prompt, and reload notifications. The extraction must be a pure move.
 """
 from agent._loop_helpers import (
     CONTINUE_PROMPT,
-    _build_wiki_index_context,
+    _build_memory_context,
     _extract_reasoning,
     _format_reload_notification,
 )
@@ -44,8 +44,8 @@ def test_extract_reasoning_from_model_extra():
     assert _extract_reasoning(msg) == "deep thought"
 
 
-def test_build_wiki_index_context_missing(tmp_path):
-    assert _build_wiki_index_context(tmp_path) is None
+def test_build_memory_context_missing(tmp_path):
+    assert _build_memory_context(tmp_path, tmp_path) is None
 
 
 def test_reexport_from_agent_loop():
