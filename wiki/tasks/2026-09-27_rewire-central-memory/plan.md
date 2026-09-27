@@ -595,16 +595,16 @@ are current.
 ---
 
 ### Subtask 7: Integrated verification (main agent)
-- [ ] Full suite: passed ≥ 1382 − (removed tests) + (added tests), 0 failed. Record the exact
+- [x] Full suite: passed ≥ 1382 − (removed tests) + (added tests), 0 failed. Record the exact
   numbers.
-- [ ] The AC5 grep audit → 0 hits.
-- [ ] Smoke test: construct `AgentLoop` with `memory_root=None` (as in
+- [x] The AC5 grep audit → 0 hits.
+- [x] Smoke test: construct `AgentLoop` with `memory_root=None` (as in
   `tests/test_subagent_main.py`) and check the first user message contains `[MEMORY]` and
   `projects/driverless-agi/`. Or run `python -c` with `_build_memory_context(resolve_memory_root(None), Path.cwd())`
   and inspect the output.
-- [ ] Knowledge from the slimmed AGENTS.md → memory-add to
+- [x] Knowledge from the slimmed AGENTS.md → memory-add to
   `projects/driverless-agi/`.
-- [ ] Final reviewer on `git diff 1bedccb9..HEAD` plus the `~/.codex` diff against the
+- [x] Final reviewer on `git diff 1bedccb9..HEAD` plus the `~/.codex` diff against the
   backup.
 
 ---
@@ -616,7 +616,7 @@ are current.
 - **Task folder:** `wiki/tasks/2026-09-27_rewire-central-memory/`
 
 ## Overall Status
-Verification — Subtasks 1–6 implemented and independently reviewed.
+Verified — all subtasks and final review passed; awaiting merge/keep decision.
 
 ## Notes
 - Grilling decisions Q1–Q6: spec §10.
@@ -663,15 +663,40 @@ Verification — Subtasks 1–6 implemented and independently reviewed.
   `init_wiki.py` removed; independent review PASS. The installed files are outside Git.
 
 ## Open Issues
-- Confirm Q6's reading: remove the repo's `integrations/codex/`, and treat `~/.codex` as the
-  only home for Codex skills.
+- None. Q6 was confirmed by the approved spec and implemented: `integrations/codex/` is
+  removed and `~/.codex` is the installed Codex skill home.
 
 ## Attempts and Resolutions
-(none)
+- **Integrated verification, attempt 1:** default pytest temp directory was sandbox-denied,
+  producing 1,349 setup errors before test bodies → central-memory guidance confirmed the
+  known issue; reran with a dedicated workspace `--basetemp`.
+- **Integrated verification, attempt 2:** the repository RAM watchdog fired once system RAM
+  crossed 70%, after 605 passes and 1 skip → used the documented `--noconftest` fallback.
+  That run passed 1,343 tests with 1 skip; its five environment-sensitive failures were
+  rerun outside the sandbox with a fresh system basetemp and all 5 passed.
+- **Task-end memory write:** the first PowerShell here-string interpreted Markdown backticks
+  as control characters → rewrote the section with a literal block, re-read the result, and
+  verified the completed todo was removed.
 
 ## Verification
 - Subtasks 1–6: implementation/recovery evidence reconciled; independent reviews for
-  Subtasks 5 and 6 passed. Full integrated suite and final review remain.
+  Subtasks 5 and 6 passed.
+- Full suite evidence: 1,343 passed / 1 skipped under `--noconftest` with a writable
+  workspace basetemp, plus 5/5 environment-sensitive tests passed outside the sandbox with
+  a fresh system basetemp. Combined: 1,348 passed / 1 skipped / 0 failed.
+- AC5 grep audit: no output, exit 1 (pass). `git ls-files wiki` lists only `wiki/tasks/**`;
+  removed Codex integration/bootstrap paths are absent.
+- Smoke test: `_build_memory_context(resolve_memory_root(None), Path.cwd())` emitted
+  `[MEMORY]`, the central wiki path, `projects/driverless-agi/`, and `[END MEMORY]` when run
+  with access to the configured `G:` drive.
+- Installed Codex verification: memory skills byte-identical to Claude sources; legacy
+  identifier grep exit 1; retired skill directories and `init_wiki.py` absent; backup verified.
+- Final independent review: PASS across R1–R8 and AC1–AC8; no blocking findings. The three
+  verification-only temp directories identified by review were removed.
+- Task-end memory checkpoint: updated
+  `wiki/projects/driverless-agi/architecture.md`; removed completed todo
+  `wiki/projects/driverless-agi/todo/task2-rewire-dagi-memory.md`.
 
 ## Next Action
-Run Subtask 7 integrated verification, record exact results, and obtain final review.
+Commit this verification record, then ask the Admiral to merge
+`task/rewire-central-memory` into `main` locally or keep the branch as-is.
