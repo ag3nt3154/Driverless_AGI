@@ -616,7 +616,7 @@ are current.
 - **Task folder:** `wiki/tasks/2026-09-27_rewire-central-memory/`
 
 ## Overall Status
-Verified — all subtasks and final review passed; awaiting merge/keep decision.
+Complete — fast-forwarded locally into `main` at `feb539b6` on 2026-09-27.
 
 ## Notes
 - Grilling decisions Q1–Q6: spec §10.
@@ -696,7 +696,10 @@ Verified — all subtasks and final review passed; awaiting merge/keep decision.
 - Task-end memory checkpoint: updated
   `wiki/projects/driverless-agi/architecture.md`; removed completed todo
   `wiki/projects/driverless-agi/todo/task2-rewire-dagi-memory.md`.
+- Branch finishing: the Admiral selected merge. `main` was fast-forwarded from `1bedccb9`
+  to `feb539b6`; `main` and `task/rewire-central-memory` are identical, the worktree is clean
+  apart from this post-merge closure record, and the AC5 audit still passes.
 
 ## Next Action
-Commit this verification record, then ask the Admiral to merge
-`task/rewire-central-memory` into `main` locally or keep the branch as-is.
+No implementation work remains. This post-merge closure record requires separate authority
+for a new commit on `main`; otherwise leave it uncommitted.
