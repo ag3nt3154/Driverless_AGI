@@ -1,2 +1,6 @@
 # Auto detect text files and perform LF normalization
 * text=auto
+
+# Byte-identical copies of ~/.claude/skills (tests/test_memory_skill_parity.py): never convert EOLs.
+.dagi/skills/memory-add/SKILL.md -text
+.dagi/skills/memory-query/SKILL.md -text

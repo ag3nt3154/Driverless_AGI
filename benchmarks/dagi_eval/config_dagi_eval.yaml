@@ -34,8 +34,6 @@ tools:
   - switch_model
   - read_large_text
   - explore_files
-  - memory_add
-  - memory_query
   - review_work
   - web_research
   - run_worker

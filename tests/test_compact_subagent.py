@@ -121,8 +121,8 @@ class TestSubagentCompaction:
         assert result.did_compact is True
         assert result.generation == 1
 
-    def test_compact_failure_returns_no_compaction(self):
-        """When subagent returns is_ok=False, compact() returns _NO_COMPACTION."""
+    def test_compact_failure_discards_selected_chunk(self):
+        """A failed worker still releases the selected context budget."""
         mock_result = MagicMock()
         mock_result.is_ok = False
         mock_result.handoff_text = ""
@@ -131,16 +131,20 @@ class TestSubagentCompaction:
         with patch("agent._compaction.run_subagent", return_value=mock_result):
             loop = _make_loop_with_history(_config(keep_recent_tokens=1_500))
             loop._last_request_snapshot = _SNAPSHOT
+            loop.log.append(sev.TURN_START, {"turn": loop.log.next_turn()})
             result = loop.compact(force=True)
-            assert result.did_compact is False
+            assert result.did_compact is True
+            assert "without a summary" in result.summary_content
 
-    def test_compact_context_swallows_exceptions(self):
-        """_compact_context() swallows all exceptions from compact()."""
+    def test_compact_context_discards_selected_chunk_on_worker_exception(self):
+        """Worker exceptions use the same fallback as unsuccessful handoffs."""
         with patch("agent._compaction.run_subagent", side_effect=RuntimeError("network down")):
             loop = _make_loop_with_history(_config(keep_recent_tokens=1_500))
             loop._last_request_snapshot = _SNAPSHOT
+            loop.log.append(sev.TURN_START, {"turn": loop.log.next_turn()})
             result = loop._compact_context()
-            assert result.did_compact is False
+            assert result.did_compact is True
+            assert "without a summary" in result.summary_content
 
     def test_generation_increments_on_each_compaction(self):
         """Repeated compactions increment the generation counter."""

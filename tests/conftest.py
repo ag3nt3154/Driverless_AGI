@@ -76,6 +76,13 @@ class _RamWatchdog:
 
 
 @pytest.fixture(autouse=True)
+def _isolate_memory_root(monkeypatch, tmp_path_factory):
+    """Tests never see the real central memory store (it exists on the dev machine)."""
+    import agent._loop_config as lc
+    monkeypatch.setattr(lc, "DEFAULT_MEMORY_ROOT", tmp_path_factory.mktemp("memroot"))
+
+
+@pytest.fixture(autouse=True)
 def _ram_watchdog(request: pytest.FixtureRequest) -> None:  # noqa: PT004
     """Auto-use fixture: starts a RAM watchdog for every test."""
     test_name = request.node.nodeid

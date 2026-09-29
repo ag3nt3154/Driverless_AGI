@@ -7,39 +7,95 @@ description: Own the task lifecycle, stage transitions, approvals, and closure.
 
 Only the main agent runs this lifecycle. `enter-workflow` owns stage transitions,
 user approvals, active-plan association, and final closure. `grill-me`, `write-spec`,
-`write-plan`, and `deliver` return their result here when running as stages; they do not
+`write-plan`, `deliver`, and `merging-git-branch` return their result here as stages; they do not
 launch one another.
 Loading a skill is not spawning an agent or ending a turn. Continue the owning
 workflow after reading its result; use `ask_user` when user input is required.
 
-- **Normal entry:** follow the request path below.
-- **Planning-only request:** follow the architectural planning stages even for
-  a bounded request, then stop after plan approval, attachment, and approval wiki-add.
+- **New task:** check for an unfinished workflow in the conversation and call
+  `check_active_plan()` before starting or replacing planned work. If another task is
+  unfinished, ask whether to continue it or switch; preserve its files and progress.
+  An explicit switch authorizes the switch, not deletion or approval of the old work.
+  Otherwise follow the request path below.
+- **Planning-only request:** follow the architectural sequence even for a bounded
+  request, then stop after approval, the spec/plan commit, and plan attachment.
   Do not invoke `deliver`; planning approval is not implementation authorization.
 - **Direct `/deliver`:** the deliver skill routes here once when invoked without this
-  owner. Call `check_active_plan()`. If the associated plan matches the request and
-  has user approval and execution authorization, reuse it at **Plan handoff** below.
-  Otherwise resolve the missing approval or follow the architectural planning stages,
-  even for a bounded request explicitly submitted to `/deliver`. Do not replace a
-  different associated plan without asking the user.
+  owner. Use the continuation routing below for existing work. With no existing task,
+  follow the architectural sequence even for a direct delivery request.
 
-Before this overall substantive task, invoke `wiki-query` unless it already ran in
-this context. Share the lookup across all stages. Retry failure once, then block
-dependent work. An initialized empty wiki permits project investigation.
+## Continuation routing
+
+Apply this before the numbered Steps for answers, corrections, status requests, explicit
+resume, or restored/compacted context. Do not reclassify a continuation as a new task.
+
+1. Identify the task, current stage, and pending question from the conversation/checkpoint.
+   On resume or compaction, or before acting on plan state, call `check_active_plan()`.
+   Read the returned plan and compare its identity and branch with the checkpoint.
+2. No active plan does not mean no workflow: grilling, spec review, and bounded work may
+   precede attachment. Recover from the retained conversation and known artifact paths.
+   A missing/unreadable plan, unexplained branch mismatch, or conflicting evidence blocks
+   dependent mutations; inspect known evidence and ask a targeted question if unresolved.
+   Never infer approval from a plan's existence or reattach just to hide a mismatch.
+   After a confirmed merge into the recorded target, that branch mismatch is explained:
+   leave the association unchanged while finishing closure, then detach normally.
+3. Bind an answer only to the pending question and the artifact/scope it concerned.
+   Preserve valid prior approval; ask again only when it is missing, ambiguous, or the
+   relevant scope changed. Use `ask_user(..., no_timeout=true)` for approval gates.
+   Silence, timeout defaults, and automated reminders are not user approval.
+4. Continue at the first unfinished stage shown by evidence:
+   - Exploration/grilling or approval: continue that stage and its pending question.
+   - Bounded implementation/review: resume TDD or review on the current branch. No plan
+     association exists; recover scope from the inline plan in conversation context.
+   - Spec/plan writing/review: reuse artifacts; complete missing review, joint approval,
+     document-commit, or attachment gates before implementation.
+   - Approved planning-only work: remain stopped unless execution is now authorized.
+   - Implementation: invoke `deliver` for pending tasks after its entry checks; an accepted
+     but uncommitted subtask resumes at its commit, not at its worker.
+   - Verification: invoke `deliver` at integrated verification, without rerunning accepted tasks.
+   - Awaiting merge/keep or closing: resume Closure. If a merge may already have happened,
+     inspect Git state before repeating it; finish only missing verification/documentation.
+5. Answer status questions from current evidence without changing the stage. Corrections
+   invalidate only affected work, review, and approval. Before repeating any interrupted
+   branch creation, commit, or merge, inspect its actual result; a missing reply is not failure.
+
+## Workflow checkpoint
+
+At stage transitions and before asking the user to decide, retain a compact checkpoint:
+task identity and scope; current stage and next action; artifact paths and task/parent
+branches and starting commit; pending question and its approval scope; completed gates,
+document/subtask commit evidence, and blockers.
+Record it in existing plan Notes/Next Action when a plan exists. Before a plan exists,
+include it in the pending question or handoff context; do not create another state file.
+Treat it as recorded evidence to reconcile, not permission to override later user choices.
+The active-plan sidecar records an association, not stage progress or approval.
 
 When a stage returns a blocker or a changed requirement, resolve it here and revisit
 only the affected stage. Preserve already settled decisions. Call `write-plan` directly
 for the plan-writing stage; a standalone invocation writes the artifact without launching
 the lifecycle or authorizing implementation.
 
+## Memory checkpoint (task start) — required
+
+Before each overall substantive project task (including a read-only query), load
+`skill("memory-query")` and search the central memory wiki: first `projects/<slug>/` (the
+`[MEMORY]` pointer names it) for the task's keywords, then `knowledge/`, and list
+`projects/<slug>/todo/`. State what you found — cited paths, or "no wiki entries". Missing or
+empty results never block work. Reuse this lookup through chained stages, not once per subtask.
+
+Advisory triggers during the task: before debugging any error, grep the exact error text
+across the wiki; before a design choice, search for earlier decisions on the same thing.
+
+Task specs and plans live in this repo at `wiki/tasks/YYYY-MM-DD_<task>/`; create
+`wiki/tasks/` if it is missing. That folder holds task artifacts only, never knowledge.
+
 # Steps
-1. Classify the request and say the classification out loud — "this looks bounded, so I'll present a short design here rather than write a spec" — so your user can override it:
-   - **Query** — a feasibility question ("can we...", "is it possible...",
-   "quick and dirty is fine") whose output is an answer, not code you
-   keep. Present the question and what you'll try in 2-3 sentences, get
-   a nod, then find out as cheaply as correctness allows. No design
-   doc, no spec file. Report findings as a recommendation; anything you
-   built stays labeled throwaway.
+1. Classify the request and state it so the user can override it. Bounded changes use
+   proportionate exploration, specs, and plans; both implementation paths use the same gates:
+   - **Query** - intent is a read-only answer or investigation. Answer without a
+   preliminary approval or nod; clarify only consequential ambiguity. Classify by intended
+   outcome, not phrases such as "can you": a request to make a change is implementation.
+   Ordinary casual conversation stays outside this lifecycle.
    - **Bounded** — a well-scoped change to code that already exists in
    this repo: a new flag, a small endpoint, a one-file fix.
    Understanding the kind of app is not enough — bounded means the flow
@@ -53,69 +109,157 @@ the lifecycle or authorizing implementation.
    Do NOT invoke any implementation skill, write any code, scaffold any
    project, or take any implementation action until you have told your
    user what you intend and they have approved it. This applies
-   to EVERY task on EVERY path below — the ceremony scales with the task;
-   the approval gate never does.
+   to implementation on both paths below. Read-only queries and creating an empty
+   `wiki/tasks/` folder do not require this approval.
    </HARD-GATE>
 
-2. If the request is a **query**, this is the user asking for an answer to a question.
-   No code changes necessary. You should clarify with the user what the user is asking
-   and then provide an answer based on available information.
-  1. **Explore project context** — enough to frame the probe
-  2. **Clarify question from user** — Make sure that you understand what the user is
-    asking. If it is a complex query covering multiple files, produce a probe plan in 2-3 sentences
-  3. **Get approval** — a nod is enough
-  4. **Investigate** — as cheaply as correctness allows. You may write and run scripts 
-    to investigate and gather the correct information, but you should label anything 
-    built as `tmp`.
-  5. **Report findings** — report findings based on user's ask. You should remove the
-    `tmp` scripts that you built during the investigation.
+2. For a **query**, inspect enough context to answer accurately and report findings.
+   No branch, spec, plan, or preliminary permission is required. Any temporary probe must
+   remain explicitly disposable and within the authorized investigation scope. A later
+   request to keep or implement a change enters the matching implementation sequence.
 
-3. If the request is **bounded**, this is a simple and bounded change. No need to open
-  a new `git` branch. You should clarify with the user what the user is asking and then
-  implement the requested changes, committing the changes to `git` after every 
-  completed step.
-  1. **Explore project context** — check files, docs, recent commits
-  2. **Ask clarifying questions** — invoke the `grill-me` skill
-  3. **Present short design in chat** — approach, files touched, testing
-  4. **Get approval** — STOP and wait for an explicit yes
-  5.  **Implement** — proceed with the normal development workflow (TDD applies); no plan document; commit to `git` after every completed step.
+3. For **bounded** or **architectural** implementation, follow the matching sequence
+   below. Both paths share explore/grill and the approval gate. Bounded work stays on the
+   current branch with no spec/plan documents; architectural work gets a dedicated branch,
+   written spec and plan, and the full deliver/merge pipeline.
 
-4. If the request is **Architectural**, this is a complex change, such as building a new feature. You should clarify with the user what the user is asking, create the implementation plan, and then begin implementation. Since this is a complex change, you should create a new `git` branch for this change, which will be merged back to the original branch once everything is done.
-  1.  **Explore project context** — check files, docs, recent commits
-  2.  **Ask clarifying questions** — invoke the `grill-me` skill
-  3.  **Propose 2-3 approaches** — with trade-offs and your recommendation
-  4.  **Present design** — in sections scaled to their complexity, get user approval after each section
-  5. **Start git workflow** — create a new task branch `dagi/<task-name-slug>` and `git checkout` to it.
-  6.  **Write design doc** — invoke `write-spec` skill. Write the spec file to `wiki/plans/YYYY-MM-DD-<task-name-slug>/spec.md`.
-  7.  **User reviews written spec** — show the spec file to the user and ask user to review. When the user approves, add and commit the spec file to the task branch.
-  8.  **Create implementation plan** — invoke `write-plan` to write
-      `wiki/plans/YYYY-MM-DD-<task-name-slug>/plan.md`, then receive its path and readiness.
-  9.  **User reviews implementation plan** — present the returned file with `show_file`
-      where available, otherwise the normal response mechanism. Call `ask_user` with
-      `no_timeout=true` for explicit approval, requested edits, or cancellation.
-      For edits, call the writer again and repeat review. On cancellation, stop.
-      Commit approved artifacts only within the user's Git authorization.
-  10. **Plan handoff** — complete the handoff below. Planning-only requests stop there.
-  11. **Implement** — invoke `deliver` as the execution stage of this workflow. Read its
-      result and resolve blockers; follow existing task-scoped commit authorization.
-  12. **Close** — after verified delivery, run **Closure** below.
+   If hidden complexity surfaces mid-bounded-work, stop and upgrade to architectural.
 
-## Plan handoff
+## Bounded sequence
 
-1. Call `set_active_plan(path)` with the approved plan and confirm association using
-   `check_active_plan()`. Attachment alone is not user approval or execution authority.
-2. Preserve the independent plan review from the previous delivery lifecycle. Call
-   `review_work` with the plan path, request and design decisions, and criteria covering
-   completeness, checkable task acceptance criteria, consistency, and implementation traps.
-   Read the handoff. On `ESCALATE`, revise through `write-plan` and repeat review; obtain
-   renewed user approval for material changes. Record the accepted review in plan Notes.
-   Reuse review evidence only when it applies to the current plan.
-3. Invoke `wiki-add` with selected approved decisions/user choices unless successful
-   evidence already covers this plan. Read the handoff and record success in plan Notes.
-   Retry once; continued failure blocks implementation and leaves the plan associated.
-4. For planning-only entry, report the approved plan is ready and return without delivery.
-   Otherwise require execution authorization and continue to the implementation stage
-   (architectural Step 11), then Closure. Reusing a plan does not restart branch creation.
+1. **Explore and grill.** Inspect project context and invoke `grill-me`. Resolve intent,
+   scope, constraints, and meaningful alternatives until shared understanding is reached.
+2. **Check uncommitted work.** Run `git status` and identify staged, unstaged, and untracked
+   work. Reuse a recorded user decision to preserve existing changes. Proceed when task
+   changes can be isolated safely; do not demand a clean tree. Ask only for an unresolved
+   ownership or handling decision. Never silently stash, discard, or include unrelated work.
+3. **Present inline plan.** Summarize the change in chat: what files are affected, the
+   approach, and how it will be tested. This is the plan — no document, no spec file.
+4. **Ask approval.** Use `ask_user(..., no_timeout=true)`. Wait for an explicit yes.
+   This approval covers implementation and reviewed commits on the current branch.
+   No per-subtask approval follows.
+5. **Implement with TDD.** Load `skill("do-tdd")` and implement directly on the current
+   branch, following the red/green/refactor cycle. The main agent implements directly
+   (no worker subagent needed for bounded work, though one may be used).
+6. **Review.** Call `review_work` with the full diff, acceptance criteria from the inline
+   plan, and test commands. On ESCALATE, repair and re-review. On PASS, proceed to commit.
+7. **Commit.** Stage and commit the accepted changes with a Conventional Commit message.
+   Verify the commit succeeded; reconcile interrupted commits from history before retrying.
+8. **Close bounded work.** The owner performs proportionate integrated verification and
+   final review, runs the task-end memory checkpoint and `update-project-context`, and
+   reports the verified result. Do not invoke `deliver` or manufacture a branch/merge offer.
+
+## Architectural sequence
+
+1. **Explore and grill.** Inspect project context and invoke `grill-me`. Resolve intent,
+   scope, constraints, and meaningful alternatives until shared understanding is reached.
+2. **Check uncommitted work.** Run `git status` and identify staged, unstaged, and untracked
+   work. Reuse a recorded user decision to preserve existing changes. Proceed when task
+   changes can be isolated safely; do not demand a clean tree. Ask only for an unresolved
+   ownership or handling decision. Never silently stash, discard, or include unrelated work.
+3. **Ask to create the branch.** Present the understood scope, parent branch, proposed
+   `dagi/<task>` branch, and artifact directory `wiki/tasks/YYYY-MM-DD_<task>/`. The
+   `<task>` slug is the same in both. Honor an explicit applicable project branch-prefix
+   override and record the actual branch once; `dagi/` is only the default. Ask with
+   `ask_user(..., no_timeout=true)` to create
+   and check out that branch. This approval permits branch setup and drafting, not
+   implementation or merging.
+4. **Create the branch and artifact directory.** Record parent branch, starting commit,
+   actual approved task branch, and the artifact directory
+   (`wiki/tasks/YYYY-MM-DD_<task>/`) before switching. Create and check out the approved
+   branch; create the artifact directory; verify success. Reuse these values on
+   continuation.
+5. **Write spec and plan.** Pass the recorded artifact directory to both writers.
+   Invoke `write-spec` (saves `spec.md`), then `write-plan` (saves `plan.md`) in that
+   directory. Carry the Git checkpoint into plan Notes. The writers return artifacts;
+   do not ask for a separate spec approval or commit either document yet. Run the plan
+   review below.
+6. **Ask to approve both.** Show spec.md and plan.md together. Ask explicitly to approve
+   both documents, commit them to the task branch, start implementation, and let the main
+   agent commit each completed/reviewed subtask and task verification records. Use
+   `ask_user(..., no_timeout=true)` and wait. Revisions return to the affected writer and
+   review before asking again. Cancellation preserves the branch/artifacts without work.
+   If a decline does not say revise or cancel, clarify that choice; do not start work.
+   For planning-only requests, ask only to approve and commit the documents; no execution
+   or implementation-commit permission is implied.
+7. **Record approval and commit.** Run the approval record below. Stage only the
+   approved spec and plan, inspect the staged diff, and commit them together with the
+   message `plan(<task>): approve spec and plan` (where `<task>` is the recorded task
+   slug). Inspect its committed contents and history, not just the subject. A subject
+   is not user authorization. Verify the commit before advancing; record its ID in the
+   continuation
+   checkpoint. Do not include unrelated staged work in this commit.
+8. **Attach and deliver.** Associate the approved plan using `set_active_plan(path)` and
+   confirm with `check_active_plan()`. Planning-only work stops here. Otherwise invoke
+   `deliver` with approval, document-commit evidence, and task-scoped commit authority.
+9. **Finish and close.** After all subtasks are reviewed/committed and integrated
+   verification succeeds, run Closure. The final merge/keep question remains separate.
+
+## Plan review and approval checkpoint
+
+Before presenting the spec and plan for approval, call `review_work` with the plan path,
+request and spec context, and criteria for completeness, checkable acceptance criteria,
+consistency, and implementation traps. Read the handoff. Revise through the writers on
+`ESCALATE` and repeat until accepted. Record review evidence in plan Notes.
+
+### Approval record
+
+After explicit inline-plan or joint spec/plan approval, record actual user evidence and
+scope separately from document-commit evidence (in plan Notes, or the conversation for
+bounded work): approved artifact/version, execution and commit authority, and planning-only
+limits. Never infer permission from a filename, status, plan association, review PASS, or
+commit subject. Nothing is written to the memory wiki at approval; approved decisions are
+filed at task end.
+
+### Memory checkpoint (task end) — required
+
+After verification, load `skill("memory-add")` and file, inline: approved decisions (choice,
+rejected alternatives, rationale), errors fixed (verbatim error text, cause, fix), new todos,
+ideas, and reusable knowledge. Delete completed todos after filing their lessons. State the
+wiki paths written. A failed write is reported honestly; it does not undo verified work.
+
+Approval and review evidence apply only to their reviewed scope; material later changes
+require renewed approval before committing or work.
+
+On resume, complete only missing gates. A plan file or association alone proves neither
+approval nor a successful document commit. Verify actual Git history before retrying a
+commit, then continue at the first unfinished stage without recreating the branch.
+
+## Git handling
+
+The main agent owns staging and commits, including while running the `deliver` stage.
+Workers return changes and evidence. Branch approval, spec/plan plus implementation-commit
+approval, and merge approval are distinct; record their scopes in the checkpoint.
+
+- Inspect current branch, staged/unstaged changes, and untracked files before setup.
+  Identify existing work and preserve it. If switching would carry unrelated work, paths
+  contain mixed ownership, or the parent is unclear, reuse recorded handling decisions;
+  ask only if safe isolation or authority remains unresolved. Never silently
+  stash, discard, reset, or include existing changes in task commits.
+- Record the actual parent and starting commit; do not assume main or infer it from an
+  upstream. Honor recorded explicit project branch-prefix overrides. Detached HEAD or a
+  branch-name collision needs an explicit choice. Reuse an
+  existing task branch only when evidence ties it to this task; otherwise propose a new
+  name. Never reset an existing branch to make setup succeed.
+- Before each commit, confirm the task branch and inspect both the task diff and the
+  entire staged diff. Stage explicit task files/hunks. If unrelated content is already
+  staged, isolate task staging without altering that work when safely possible. Ask only
+  when ownership or safe separation remains unresolved; reuse recorded user choices.
+- Commit only approved documents or accepted subtasks, not individual red/green steps.
+  Verify each commit and retain its ID in the checkpoint. A failed/interrupted commit
+  leaves a commit-pending stage; inspect history before retrying, without rerunning accepted
+  implementation. No routine per-subtask or per-commit user approval is required. If history
+  and the committed diff prove the expected commit succeeded,
+  reconcile stale plan/checkpoint markers and its commit ID, then continue without another
+  commit. If the result is uncertain, resolve it before proceeding. Report unchanged/no-op
+  subtasks instead of manufacturing empty commits.
+- Task-scoped verification/progress documentation can be committed on the task branch
+  under the same implementation approval before the merge offer. That permission does
+  not extend to new commits on the parent after merging, pushing, or deleting anything.
+- A commit cannot contain its own final ID. Record verified IDs and completion markers
+  after committing; include those updates in the next task commit or a final verification
+  record commit. Keep that final commit's ID in the conversation checkpoint/Git history;
+  do not create an endless chain of commits solely to record each preceding ID.
 
 ## Closure
 
@@ -124,13 +268,25 @@ items. A blocked or interrupted stage leaves the plan associated; do not claim c
 
 After successful verification and final review:
 
-1. Invoke `wiki-add` with actual implementation, verification evidence, and completion
-   status. Read the handoff and record success in plan Notes. Retry failure once; on
-   continued failure report the implementation status but keep the workflow incomplete
-   and plan associated. For partial writes, have the writer reread before retrying.
-2. Check `update-project-context`.
-3. Call `set_active_plan(null)` to detach. Preserve the plan document on disk, then
-   present the verified outcome through the normal final-response mechanism.
+1. Record verified delivery in plan Notes. Commit remaining task-owned verification records
+   on the task branch under the recorded commit authority, verifying the staged diff and
+   resulting commit. This precedes the merge offer; unresolved commit issues block finishing.
+   Invoke `skill("merging-git-branch")` with
+   the task/parent branch names, plan path, and verification evidence in context.
+   Keep the plan associated while awaiting the explicit merge/keep choice.
+   Record the returned `merged`, `kept`, or `blocked` outcome and evidence in the plan
+   in the appropriate checkout (the target checkout after a merge). A blocker
+   leaves closure incomplete and the plan associated. Keeping the branch is successful
+   finishing, not a failed merge. Resume an unfinished closing stage here using current
+   evidence; do not rerun completed implementation just to obtain the finishing decision.
+2. Run the task-end memory checkpoint and check `update-project-context`. After a merge,
+   use the corresponding plan in the target
+   checkout when recording closure; do not edit a stale source worktree or reattach the
+   plan merely because switching to the approved target produces a branch mismatch.
+   Report any final documentation changes still uncommitted; do not silently commit them.
+3. Call `set_active_plan(null)` to detach only after finishing and documentation succeed.
+   Preserve the plan document on disk, then present the verified outcome through the
+   normal final-response mechanism.
 
-The `do-TDD` and `merging-git-branch` drafts are not integrated in this migration step.
-This closure preserves the existing report/detach behavior; it does not authorize a merge.
+The finishing skill offers only local merge or keep-as-is. Merge permission is separate
+from design/implementation approval; pushing and cleanup are outside this workflow.

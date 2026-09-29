@@ -1,23 +1,24 @@
 # Proposed workflow change list — 2026-09-20
 
-Status: points 1 and 2 approved and implemented on 2026-09-20 at the skill-instruction
-level. `enter-workflow` now owns transitions, approvals, and closure. The obsolete
+Status: points 1 and 2 implemented on 2026-09-20; points 3, 5, 6, 7, 8, 9, 10, 14, and 15 implemented on
+2026-09-24 at the instruction level. `enter-workflow` now owns transitions, approvals, and closure. The obsolete
 `/plan` skill has been removed in favor of `write-plan`. The remaining recommendations
-are pending. The `do-TDD` and
-`merging-git-branch` samples remain drafts and are not integrated.
+are pending except the TDD/branch-finishing integration approved on 2026-09-24:
+`do-TDD` is supplied to delivery workers and used directly for bounded implementation;
+`merging-git-branch` offers local merge or keep-as-is before owner closure/detachment.
 
 Ownership transfer also moved writer approval/attachment and delivery closure into the
 owner, preserving existing review/wiki gates and removing obsolete show_plan/step calls.
-Plan format, full resume design, branch policy, and the complete proposed cycle below
+Plan format, runtime-enforced resume state, and the complete proposed cycle below
 remain unfinished; this is not a claim that every related checklist item is complete.
 
 ## Proposed cycle
 
 System prompt -> new request -> enter-workflow -> wiki-query and project exploration
--> grill-me -> design and Git-scope approval -> record parent and create task branch
--> write-spec -> user spec review -> write-plan -> independent plan review
--> user plan approval -> approval wiki-add -> attach approved plan
--> deliver (implementer uses do-TDD -> task review, repeated per task)
+-> grill-me -> explicit branch approval -> record parent/base commit and create task branch
+-> write-spec -> write-plan -> independent plan review -> joint spec/plan approval
+-> approval wiki-add -> commit spec + plan -> attach approved plan
+-> deliver (do-TDD -> task review -> main-agent commit, repeated per subtask)
 -> integrated verification and final review -> record verified delivery
 -> merging-git-branch (offer named target -> explicit user choice -> merge/check or retain)
 -> record final outcome, update project context, detach.
@@ -34,61 +35,71 @@ successful outcome; failed verification or an unresolved merge is not completion
 2. **Implemented: fix skill names and obsolete paths.** Change `write-plans` to `write-plan`, remove
    the deleted `to-spec` reference, and remove the old `/plan` skill in favor of
    `write-plan`. Keep standalone plan writing from starting implementation.
-3. **Define entry and resume behavior in the system prompt.** Route genuinely new work
+3. **Implemented: define entry and resume behavior in the system prompt.** Route genuinely new work
    through enter-workflow; approval answers and follow-ups resume the recorded stage.
-   Read active plan state before restarting, replacing, or resuming a task.
-4. **Make exploration include wiki-query first.** Share one lookup across the overall
-   task. Preserve approval/completion wiki-add, retries, main-agent ownership, and
-   failure handling from the existing lifecycle; do not postpone first lookup to deliver.
-5. **Make Git approval concrete.** Include task-branch creation and task-scoped commits
-   in the design approval proposal. Record parent branch, task branch, and artifact
-   directory before switching. Handle dirty work, existing branches, and interrupted
-   setup explicitly. Never assume the parent is main. Merge approval stays separate.
-6. **Finish write-spec's saving contract.** Accept the chosen artifact directory, save
+   Read active plan state before restarting, replacing, or resuming a task. Preserve
+   a checkpoint in existing plan/conversation context and through compaction; reconcile
+   approvals and actual side effects. No new persistent state machine was added.
+4. **Deferred: wiki/memory operations removed.** All wiki-query, wiki-add, and memory
+   references stripped from workflow skills pending redesign of how wiki and memory
+   operations should integrate with the workflow.
+5. **Implemented: make Git approval concrete.** After grilling, ask to create/check out
+   the named branch. Write spec + plan, review, ask joint approval including implementation
+   and task commits, then commit both before work. The main agent commits each accepted
+   subtask. Record parent/base commit/artifact directory; preserve unrelated dirty/staged
+   work and inspect existing/interrupted Git actions before retry. Merge approval is separate.
+6. **Implemented: finish write-spec's saving contract.** Accept the chosen artifact directory, save
    spec.md, report readiness/blockers, and return to enter-workflow for user review.
    Reuse one directory on resume; do not recompute it from the current date.
-7. **Make write-plan a writer.** Remove its direct deliver call and copied Step 7/8
+7. **Implemented: make write-plan a writer.** Remove its direct deliver call and copied Step 7/8
    jumps. Return the written plan to the owner for review and approval. Replace the
    unregistered show_plan call with supported file display (show_file where available,
    otherwise the normal response mechanism) and a single ask_user approval step.
-8. **Align the plan with its consumers.** For the smallest migration, retain Context,
-   Approach, Notes, marked task headings, task Goal/Requirements/Acceptance Criteria,
-   Tests, and integrated Verification. Put global constraints and the spec reference
-   in extracted context, or deliberately update worker extraction to carry new sections.
-   Do not assume step checkboxes alone track task acceptance.
-9. **Preserve independent plan review.** Review and repair the plan before final user
-   approval. Attachment alone is not approval/review evidence. Deliver must check the
-   approved plan, review result, correct branch, and successful approval wiki-add.
-10. **Narrow deliver to execution and verification.** Remove duplicate grilling/planning
-    ownership. Keep worker/reviewer loops, status updates, integrated tests, and final
-    review. Return a verified result to enter-workflow without prematurely detaching.
-11. **Integrate do-TDD inside each implementation assignment.** Have the worker (or main
-    implementer) load the skill and return red/green evidence with its handoff. Check
-    worker skill availability when wiring it. Review/acceptance remains with deliver;
+8. **Implemented: align the plan with its consumers.** Parser now extracts the preamble
+   (Goal, Architecture, Tech Stack, Spec) plus Global Constraints, Review Focus, and
+   Notes as worker context. Deliver template aligned to write-plan output. Task N
+   renamed to Subtask N (parser retains backward compat for both keywords).
+9. **Implemented: preserve independent plan review.** Deliver Phase 1 now runs six
+   concrete verification steps: identify task, check branch matches plan, check artifacts
+   exist, check plan-approval commit, validate plan format, reconcile subtask progress
+   with git evidence. Stops and reports on first failure. Naming standardized: branch
+   `dagi/<task>`, wiki folder `wiki/tasks/YYYY-MM-DD_<task>/`, plan commit message
+   `plan(<task>): approve spec and plan`.
+10. **Implemented: narrow deliver to execution and verification.** Deliver contains no
+    grilling, planning, or premature detach. Phases: orient/validate → worker/reviewer
+    loops → integrated verification/final review → return result with plan still associated.
+11. **Implemented: integrate do-TDD inside each implementation assignment.** The main
+    agent loads the skill and supplies its full instructions in worker assignments,
+    including repair calls. Workers return red/green evidence or test limitations.
+    Review/acceptance remains with deliver;
     wiki operations remain with the main agent. The runtime name is currently `do-tdd`.
-12. **Add merging-git-branch after verified delivery.** Supply task/parent branches and
+12. **Implemented: add merging-git-branch after verified delivery.** Supply task/parent branches and
     current verification evidence. Offer merge or retain, ask explicit confirmation of
     the named target, verify after merging, then return the precise outcome. Keep push,
     deletion, strategy, conflict handling, and cleanup policy explicit rather than inferred.
-13. **Close only after the finishing decision.** Persist awaiting-merge/left-unmerged/
+13. **Implemented at instruction level: close after the finishing decision.** Persist awaiting-merge/left-unmerged/
     merged/blocked status and verification evidence so resumption is unambiguous. Record
     final wiki status and update AGENTS as needed before detaching. Do not rerun delivery
     merely because the user postponed merging.
-14. **Resolve the bounded-path exception.** Recommend the same lifecycle for code changes,
-    with shorter specs/plans and proportionate tests. Alternatively retain a clearly
-    documented lightweight path with approval and verification; do not silently skip
-    review. Classify by intended output/risk, not phrases such as "can we" or "quick".
-15. **Reconcile artifact location and validate the whole handoff.** The new skills use
-    wiki/plans while older guidance keeps execution plans separate. Choose one location
-    and align all guidance. Check exact skill loading, worker context, approval/resume,
-    direct planning/delivery, and merge-decline/failure paths before calling migration done.
+14. **Implemented: bounded path separated from architectural.** Bounded changes use an
+    inline plan in chat, TDD on the current branch, review, and wiki-add — no spec/plan
+    documents, no dedicated branch, no merge step. Architectural path gains an explicit
+    uncommitted-work check after grilling. Hidden complexity upgrades bounded to
+    architectural. Query classification heuristics remain to refine separately.
+15. **Implemented: reconcile artifact location and validate the whole handoff.** All
+    skills unified on `wiki/tasks/YYYY-MM-DD_<task>/`. Audit confirmed: skill loading,
+    worker context (preamble + sections), approval/resume (bounded via conversation,
+    architectural via plan sidecar), direct planning/delivery routing, and merge-decline/
+    failure paths are consistent across enter-workflow, write-spec, write-plan, deliver,
+    and merging-git-branch. No stale references to docs/superpowers or wiki/plans remain.
 
-## Draft skills now available
+## Integrated skills
 
-- [do-TDD](.dagi/skills/do-TDD/SKILL.md): minimal red/green/refactor sample.
-- [merging-git-branch](.dagi/skills/merging-git-branch/SKILL.md): minimal finishing sample.
+- [do-TDD](.dagi/skills/do-TDD/SKILL.md): red/green/refactor with test evidence.
+- [merging-git-branch](.dagi/skills/merging-git-branch/SKILL.md): local merge or keep-as-is.
 
-Detailed contents and workflow integration remain for review. The notes below are
+These two skills and point 3's entry/resume instructions were integrated on 2026-09-24.
+Runtime end-to-end evaluation and the remaining checklist items are still open. The notes below are
 earlier brainstorming/reference material, not the implemented lifecycle.
 
 # Earlier structure

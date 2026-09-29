@@ -1,34 +1,43 @@
 ---
 name: do-TDD
-description: Draft sample for test-driven implementation of one approved behavior during delivery.
+description: Test-driven implementation of approved behaviors and bug fixes, with evidence returned to delivery.
 ---
 
 # do-TDD
 
-Draft for discussion. This is a minimal sample; detailed policy remains undecided.
-Dagi currently normalizes skill names to lowercase: invoke with `skill("do-tdd")`.
+Use during approved implementation. Dagi loads this name as `do-tdd`.
+Inside `deliver`, the main agent loads the skill and includes its instructions in worker
+assignments; workers follow those instructions without delegating or loading another tool.
+The main implementer follows the same cycle when implementing directly.
 
-## Place in the workflow
+## Cycle
 
-The implementer uses this inside `deliver`, once per behavior in an approved task.
-With delegated implementation, the worker runs this cycle and returns evidence to
-the main agent. This skill does not delegate or restart the planning workflow.
+1. **Red:** Write a focused test of the required behavior. Run it and confirm it fails
+   for the expected reason, not broken setup.
+2. **Green:** Implement the smallest change that passes. Run relevant existing tests too.
+3. **Refactor:** Improve the changed code without adding behavior. Keep tests passing.
+4. Repeat for the next behavior.
 
-## Simple sample
+For bug fixes, first reproduce the bug in a failing test. For pure refactoring,
+establish passing behavior tests before changing the implementation.
 
-1. Read the approved behavior, acceptance criteria, and relevant existing tests.
-2. Write a focused test of observable behavior. Run it and confirm that it fails
-   because the behavior is missing or wrong, rather than because the setup is broken.
-3. Make the smallest implementation change that passes the test.
-4. Refactor where useful, keeping the test and relevant existing tests passing.
-5. Return the changes, test commands/results, and any unresolved issues to the caller.
-   Delivery owns independent review, task acceptance, and overall verification.
+## Test quality
 
-Example: for a bug accepting an invalid value, first demonstrate rejection is missing,
-then implement rejection, and verify valid values still work.
+- Test observable behavior; explain which incorrect production behavior would fail the test.
+- Prefer real code; use mocks where isolation is necessary.
+- Cover relevant boundaries and failure cases.
+- If a new test immediately passes, check whether the behavior already exists or the
+  test misses the requirement.
 
-## Still to decide
+For changes without meaningful automated tests, explain the limitation and proposed
+verification to the caller. Do not fabricate tests merely to satisfy the process.
+If implementation preceded its test, disclose that deviation and establish regression
+coverage; do not discard existing work automatically.
 
-- Exceptions for documentation, configuration, and other changes without meaningful tests.
-- Test selection, mocks, regression scope, and evidence expected in worker handoffs.
-- How repair cycles and authorized commits fit around independent review.
+## Return
+
+Report changes, failing/passing test evidence, and unresolved issues. Never hide failures
+or unrun checks. Workers include this in their existing Checks and Results handoff.
+`deliver` owns independent review, task acceptance, and full verification for planned
+delivery; `enter-workflow` owns those steps and closure for bounded implementation.
+This skill does not delegate, commit, or advance the workflow.

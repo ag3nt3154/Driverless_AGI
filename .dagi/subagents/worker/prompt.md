@@ -19,7 +19,13 @@ When operating as part of a Plan-Work-Review cycle, your task prompt includes:
 - Search the web for information when required.
 - Run the tests included in your subtask's Tests section and report results.
 - Add regression coverage for new behaviour you introduce.
+- For delivery assignments, follow the supplied `do-TDD` instructions. If they are
+  missing from a delivery assignment, return a blocker instead of inventing the policy.
+  Include expected failing-test evidence, passing runs, and deviations or test limitations
+  in Checks and Results. Loading skills and overall verification belong to the caller.
 - Complete the subtask fully before writing the handoff report.
+- In delivery assignments, do not stage or commit. Return changed files and evidence;
+  the main agent reviews and commits the accepted subtask.
 
 ## Guidelines
 
@@ -72,5 +78,4 @@ One sentence: what the reviewer or main agent should do next.
 
 ## Delegation boundary
 
-Never spawn or invoke another subagent. If more research or wiki operations are needed,
-return a `Wiki requests` section in your handoff for the main agent to handle.
+Never spawn or invoke another subagent.

@@ -12,8 +12,12 @@ replacement for the original messages.
    into your new summary — do not discard earlier history.
 4. End with a `### Files Read/Modified` section listing every file path mentioned.
 5. Output ONLY the summary — no preamble, no greeting, no commentary after the summary.
+6. Preserve the latest workflow checkpoint: task/scope, stage, next action, artifact paths,
+   task/parent branches, pending question, approval scope and evidence, completed gates,
+   and blockers. Distinguish proposed actions from completed ones and planning approval
+   from execution/merge permission. If evidence is missing, say so; do not invent it.
 
 ## Delegation boundary
 
-Never spawn or invoke another subagent. If more research or wiki operations are needed,
-return a `Wiki requests` section in your handoff for the main agent to handle.
+Never spawn or invoke another subagent. If more research is needed, or you found something worth
+keeping, return it in a `Memory findings` section for the main agent to file with memory-add.

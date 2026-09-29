@@ -2,8 +2,16 @@
 
 ## In progress
 
+- **Redesign `memory-refresh` for the central memory wiki** — pending. The skill,
+  subagent and scripts still target the retired layout (its SKILL.md line
+  `{memory_root} = …` now renders confusingly because `memory_root` is the vault root);
+  the `memory_refresh` tool is disabled via `disabled_tools`. Rebuild it as a lint of the
+  four-field frontmatter, layout, stale todos and duplicates
+  (`black_grimoire/src/migrate_wiki/validate.py` is a starting point).
+
 - **Production review (R5, R8, R11, R17)** — remaining deferred findings from
-  `wiki/notes/production-review-2026-09-15.md`. R5 (session filename
+  `projects/driverless-agi/production-review-2026-09-15.md` in the central memory
+  wiki. R5 (session filename
   collisions) and R8 (pipe subagent prompt loss) deferred pending design
   decisions; R11 (interrupted restore from events) deferred for complexity;
   R17 (orderly GUI shutdown) deferred — needs design for worker cancellation,
@@ -20,6 +28,13 @@
   the bottom, so the agent sees it first.
 
 ## Completed
+
+- **Rewired DAGI to the central memory wiki (2026-09-27)** — `memory_root` defaults to
+  `G:\My Drive\black_grimoire`; per-turn `[MEMORY]` pointer; memory-query/memory-add run
+  inline as byte-identical copies of the Claude Code skills (parity test); required memory
+  checkpoints in `enter-workflow`; memory/wiki subagents and the per-project knowledge wiki
+  removed (`wiki/` keeps only `tasks/`); `/init` slimmed; `integrations/codex/` removed in
+  favour of `~/.codex`. Spec/plan: `wiki/tasks/2026-09-27_rewire-central-memory/`.
 
 - **Garbled Loop Recovery** — all 8 tasks complete. Detects when the model
   falls into a degenerate loop of empty-content responses, strips those
@@ -149,14 +164,10 @@
   `custom_instructions`).
 
 
-- **Wiki handoff validation made case-tolerant** — `_validate_handoff` in
-  `tools/_wiki_tools.py` now normalises heading casing before matching
-  (e.g. "Wiki Sources" → "Wiki sources"), accepts `no results` as well as
-  `no_results` for query outcomes, and tolerates trailing periods on outcome
-  and failure-details values. The split regex also accepts a missing trailing
-  newline after the last heading. Both wiki-query and wiki-add SKILL.md child
-  protocols were tightened: handoff format is now shown in a fenced code block
-  with explicit instructions against preamble text and extra sections.
+- **Wiki handoff validation made case-tolerant** — *(superseded 2026-09-27: the per-project
+  wiki delegation tools and their handoff protocol were removed; see the central-memory
+  rewire entry above.)* Handoff heading matching had been made case-tolerant and the child
+  protocols tightened to a fenced handoff format.
 
 - **Subagents now inherit the main agent's context settings** — previously,
   `_apply_worker_config` and `_apply_advanced_config` in `tools/subagent_main.py`

@@ -393,8 +393,8 @@ class TestForkedCompactMode:
         mock_client.chat.completions.create.return_value = fake_response
 
         with patch("tools.subagent_main.resolve_model_config") as mock_config:
-            mock_config.return_value = MagicMock(
-                api_key="sk-test", base_url="https://api.test.com/v1"
+            mock_config.return_value = AgentConfig(
+                model="test/model", api_key="sk-test", base_url="https://api.test.com/v1"
             )
             with patch("openai.OpenAI", return_value=mock_client):
                 run_forked_compact_mode(
@@ -451,7 +451,7 @@ class TestForkedCompactMode:
         mock_client.chat.completions.create.return_value = fake_response
 
         with patch("tools.subagent_main.resolve_model_config") as mock_config:
-            mock_config.return_value = MagicMock(api_key="sk-test", base_url="")
+            mock_config.return_value = AgentConfig(model="test/model", api_key="sk-test", base_url="")
             with patch("openai.OpenAI", return_value=mock_client):
                 run_forked_compact_mode(
                     fork_context_path=str(fc_path),
@@ -1032,7 +1032,7 @@ def test_inherited_run_skips_wiki_context_between_prefix_and_child_task(tmp_path
     loop.client = MagicMock()
     loop.client.chat.completions.create.return_value = response
 
-    with patch("agent.loop._build_wiki_index_context", return_value="WIKI CONTEXT"):
+    with patch("agent.loop._build_memory_context", return_value="WIKI CONTEXT"):
         loop.run("child task")
 
     assert loop.client.chat.completions.create.call_args.kwargs["messages"] == [

@@ -86,5 +86,4 @@ Note any material that could not be read and how that limits confidence.
 
 ## Delegation boundary
 
-Never spawn or invoke another subagent. If more research or wiki operations are needed,
-return a `Wiki requests` section in your handoff for the main agent to handle.
+Never spawn or invoke another subagent.

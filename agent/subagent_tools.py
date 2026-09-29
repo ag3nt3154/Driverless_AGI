@@ -17,6 +17,7 @@ from typing import TYPE_CHECKING
 
 import yaml
 
+from agent._loop_config import resolve_memory_root
 from agent.base_tool import BaseTool
 from agent.registry import ToolRegistry
 from tools.bash import BashTool
@@ -193,10 +194,7 @@ def build_subagent_registry(
     # Subagents with `root: memory_root` are restricted to the wiki directory only.
     root_override = cfg.get("root")
     if root_override == "memory_root":
-        if memory_root is not None:
-            wiki_root = memory_root
-        else:
-            wiki_root = (project_path / "dagi-memory").resolve()
+        wiki_root = resolve_memory_root(memory_root)
         cwd_for_tools = wiki_root
         effective_roots: list[Path] | None = [wiki_root]
     else:

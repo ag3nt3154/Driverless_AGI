@@ -48,8 +48,7 @@ def _cmd_init(project_path: Path) -> None:
     for relative in skipped:
         console.print(f"  [dim]skipped (exists):[/dim] {relative}")
     console.print(
-        "[dim]Next: use [bold]wiki-query[/bold] for project knowledge and "
-        "[bold]wiki-add[/bold] to save selected findings. Invoke [bold]wiki-refresh[/bold] "
-        "explicitly for maintenance. "
+        "[dim]Next: use [bold]memory-query[/bold] / [bold]memory-add[/bold] for the central "
+        "memory wiki. Task specs and plans go in [bold]wiki/tasks/[/bold]. "
         "Add workflows to [bold].dagi/workflow/<name>/workflow.md[/bold].[/dim]"
     )

@@ -39,8 +39,8 @@ and whose `Next:` field has not been crossed out or replaced with "done").
 4. If no `review-item` entries remain, fall back to any `priority:high` Work Queue item.
 
 Extract a **kebab-case slug** from the item name (the bold text after the `- **`):
-- `Add path resolution warning to memory-ingest SKILL.md` → `memory-ingest-path-warning`
-- `Fix redundant skill-load instruction in memory-ingest Step 6` → `memory-ingest-redundant-skill-load`
+- `Add path resolution warning to memory-add SKILL.md` → `memory-add-path-warning`
+- `Fix redundant skill-load instruction in memory-add Step 2` → `memory-add-redundant-skill-load`
 - `Error Handling & Retries` → `error-handling-retries`
 
 ---
@@ -144,9 +144,9 @@ supervision by `main.py`. Choose a task that exercises the specific code path th
 ideally one where the bug is reliably reproduced.
 
 **Good test task examples:**
-- For a memory-ingest path bug: `"Ingest the file at G:\\My Drive\\black_grimoire\\dagi-memory\\raw\\test.md into the wiki"`
+- For a memory-add path bug: `"Save a note about test.md to G:\\My Drive\\black_grimoire\\wiki\\projects\\driverless-agi"`
 - For a redundant skill-load bug: `"Add a new memory entry for the concept 'context window' to the wiki"`
-- For a path guard bug: `"List all wiki files in G:\\My Drive\\black_grimoire\\dagi-memory\\wiki"`
+- For a path guard bug: `"List all wiki files in G:\\My Drive\\black_grimoire\\wiki"`
 
 ---
 
@@ -213,8 +213,8 @@ not the live files.
 Rule: for every file path in Section A, prepend `{DAGI_ROOT}/snapshots/{snapshot_id}/`.
 
 Examples:
-- Plan says edit `.dagi/skills/memory-ingest/SKILL.md`
-  → edit `snapshots/{snapshot_id}/.dagi/skills/memory-ingest/SKILL.md`
+- Plan says edit `.dagi/skills/memory-add/SKILL.md`
+  → edit `snapshots/{snapshot_id}/.dagi/skills/memory-add/SKILL.md`
 - Plan says edit `agent/loop.py`
   → edit `snapshots/{snapshot_id}/agent/loop.py`
 
@@ -327,7 +327,7 @@ Address each of these honestly:
    to a SKILL.md is better than a five-paragraph rewrite if the root cause is narrow.
 
 4. **Generalisability**: Would this fix help with related items in TODO.md (e.g., if fixing
-   memory-ingest, does the same fix apply to memory-add)?
+   memory-add, does the same fix apply to memory-query)?
 
 ---
 

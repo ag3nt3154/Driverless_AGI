@@ -40,7 +40,7 @@ from tools.output_filter import filter_tool_output
 
 from agent._loop_helpers import (  # noqa: F401
     CONTINUE_PROMPT,
-    _build_wiki_index_context,
+    _build_memory_context,
     _extract_reasoning,
     _format_reload_notification,
 )
@@ -56,6 +56,7 @@ from agent._loop_config import (  # noqa: F401
     AgentCallbacks,
     AgentConfig,
     CompactionResult,
+    resolve_memory_root,
 )
 
 
@@ -98,10 +99,7 @@ class AgentLoop:
                 logs_dir=config.project_path / ".dagi" / "logs",
             )
 
-        self._effective_memory_root = (
-            config.memory_root if config.memory_root is not None
-            else config.project_path / "dagi-memory"
-        ).resolve()
+        self._effective_memory_root = resolve_memory_root(config.memory_root)
 
         if _session_log is not None:
             self.log = _session_log
@@ -565,7 +563,9 @@ class AgentLoop:
 
         try:
             if not self._preserve_request_prefix:
-                wiki_ctx = _build_wiki_index_context(self._effective_memory_root)
+                wiki_ctx = _build_memory_context(
+                    self._effective_memory_root, self.config.project_path
+                )
                 if wiki_ctx:
                     self._log_user_message("user", wiki_ctx, "wiki")
             _content = self._submission_content(submission)
@@ -897,8 +897,10 @@ class AgentLoop:
         plan = self.config.active_plan_file
         return (
             f"All tasks resolved. Active plan remains associated: {plan}\n\n"
-            "Next: run integrated verification and a final review before accepting delivery. "
-            "Call set_active_plan(null) to detach explicitly after the final review is accepted."
+            "Next: finish any pending task commits, then run integrated verification "
+            "and a final review before accepting delivery. "
+            "Then return to enter-workflow for branch finishing and closure. "
+            "Call set_active_plan(null) only after finishing and documentation succeed."
         )
 
     def _handle_switch_model(self, target: str, args: dict) -> str:

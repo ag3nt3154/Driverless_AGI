@@ -1,201 +1,73 @@
 # AGENTS.md
 
-> Last updated: 2026-09-20 | [README](README.md) | [Wiki](wiki/index.md) | [Code review](wiki/notes/production-review-2026-09-15.md)
-> [Proposed image-input implementation plan](docs/image-input-implementation-plan.md)
-> [GUI context duplication and budget audit](wiki/notes/gui-context-duplication-2026-09-18.md)
-> [Context overflow audit report](docs/context-overflow-audit-2026-09-18.md)
-> [Workflow transition review](wiki/notes/workflow-review-2026-09-20.md) (review findings; fixes pending)
-> [Workflow change checklist and draft skill links](new_skills_planning.md) (ownership migrated; remaining integration pending)
-
----
+> Last updated: 2026-09-27 | [README](README.md) | [Task specs & plans](wiki/tasks/)
 
 ## Overview
 
 Driverless AGI (dagi) is a Python agentic coding assistant with tool use, subagent delegation,
-session persistence, and multi-UI support (TUI, PySide desktop, Telegram). Architecture,
-workflows, errors, notes, and feature research live in [wiki/](wiki/index.md).
+session persistence, and multi-UI support (TUI, PySide desktop, Telegram).
 
 ## Rules
 
-- Use `DEFAULT_PYTHON_ENV` (`dagi`) for all Python scripts and package installs.
-- Install from the repo root: `python -m pip install -r requirements-core.txt` (core);
-  add `-r requirements-gui.txt`, `-r requirements-tui.txt`, or `-r requirements-tools.txt` as needed.
-- Always update `AGENTS.md` and `wiki/` after completing a task.
-- Architecture, workflows, errors, and project notes belong in the wiki, not AGENTS.md.
-
-## Behavioral Guidelines
-
-> Stable protocol/standards content — preserve verbatim across routine `update-project-context`
-> runs; only edit when the user gives an explicit standing behavioral instruction.
+- Always update `AGENTS.md`, `README.md` and `TODO.md` after completing a task.
+- Knowledge (architecture, decisions, errors, notes, todos) goes to the central memory wiki
+  via memory-add — not AGENTS.md. The repo's `wiki/` holds only `tasks/` (specs and plans).
+- Codex skills live in `~/.codex/skills` (the old `integrations/codex/` package was removed).
+- Subagent API: import `tools/subagent_api.py`; never the private `_subagent_runner.py`.
+- White-box tests of `agent/_*` loop modules must patch the owning module
+  (e.g. `agent._compaction`), not `agent.loop`.
+- Tool filtering: `.dagi/config.yaml` `tools:` restricts the main agent and `disabled_tools:`
+  always removes (currently `memory_refresh`); `write_handoff` is always injected.
 
 ### Coding standards
 
 - Functions: ≤ 100 lines | Cyclomatic complexity: ≤ 8 | Positional parameters: ≤ 5
 - Line length: 100 characters | Files: ≤ 500 lines
 
-### Calibrate to Ambiguity
+### Behavioral guidelines
 
-- **High ambiguity**: ask clarifying questions before acting
-- **Medium ambiguity**: ask targeted questions on gaps, then proceed
-- **Low ambiguity**: verify quickly and proceed; **Trivial changes**: trust user intent
+> Stable protocol/standards content — preserve verbatim across routine updates; only edit when
+> the user gives an explicit standing behavioral instruction.
 
-### Before Acting
+- **Calibrate to ambiguity:** high → ask clarifying questions first; medium → ask targeted
+  questions, then proceed; low → verify quickly and proceed; trivial → trust user intent.
+- **Before acting:** state assumptions; read before write (exports, immediate caller, shared
+  utilities); assess downside and reversibility before risky changes.
+- **During execution:** simplicity first — minimum code, nothing speculative; surgical scope,
+  match conventions. NEVER create files unless necessary. NEVER commit secrets or .env files.
+- **Verify invariants before shipping:** state ownership and consistency; feedback and
+  observability; blast radius; timing and ordering; existing patterns; security risks.
+- **After acting:** ground claims (mark or remove unsupported numbers); fail loud ("done" is
+  wrong if anything was skipped silently); checkpoint what was done, verified, and left.
+- **Tests** encode *why* behavior matters; a test that can't fail when logic changes is wrong.
+- **Hard stops:** flag unclear state ownership, unknown blast radius, timing/race hazards,
+  security issues, or significant complexity debt.
+- **Errors:** fail fast with clear, actionable messages; never swallow exceptions silently.
 
-- **State assumptions.** Don't smuggle them.
-- **Read before write.** Read exports, immediate caller, obvious shared utilities first.
-- **Project consequences.** Assess plausible downside and reversibility before risky changes.
-
-### During Execution
-
-- **Simplicity first.** Minimum code that solves the problem. Nothing speculative.
-- **Surgical scope.** Touch only what the task requires. Match conventions over taste.
-- NEVER create files unless absolutely necessary. NEVER commit secrets or .env files.
-
-### Verify Invariants Before Shipping
-
-- [ ] State ownership and consistency clear?
-- [ ] Feedback / observability in place?
-- [ ] Blast radius understood?
-- [ ] Timing and ordering safe?
-- [ ] Follows existing patterns (or intentionally breaks them)?
-- [ ] Security / obvious risks addressed?
-
-### After Acting
-
-- **Ground claims.** Mark unsupported numbers or remove them.
-- **Fail loud.** "Done" is wrong if anything was skipped silently.
-- **Checkpoint.** Name what was done, what's verified, what's left.
-
-### Tests
-
-- Tests must encode **why** behavior matters, not just what it does.
-- A test that can't fail when business logic changes is wrong.
-
-### Hard Stops
-
-Stop and flag when: state ownership unclear, blast radius unknown, timing/race hazards,
-security issues, or complexity debt would be significant.
-
-### Error Handling
-
-- Fail fast with clear, actionable messages. Never swallow exceptions silently.
-
-## Git Workflow
+### Git workflow
 
 - Start with `git status --short` and `git branch --show-current`; never discard existing work.
-- Stay on current branch for low-risk work; use `dagi/<task-name>` for risky/multi-file work.
-- Commit coherent changes with Conventional Commit prefixes.
-- Never commit, merge, push, stash, switch branches, or create a branch without user approval.
+- Implementation: after grilling, get branch approval and create `dagi/<task-name>` (Claude
+  Code sessions use `task/<task>`); write spec + plan in `wiki/tasks/YYYY-MM-DD_<task>/`, get
+  joint approval, commit both, then implement and commit reviewed subtasks.
+- The main agent owns task commits under that scoped approval; workers do not stage or commit.
+- Ask separately before merging a completed task branch into its recorded parent.
+- Conventional Commit prefixes. Never commit, merge, push, stash, switch or create a branch
+  without user approval.
 
-## Process Flow
+## Commands & Environment
 
-1. Entry point starts `AgentLoop` with config, tools, session state, and UI callbacks.
-2. `AgentLoop` assembles system prompt, calls provider, dispatches tools via `ToolRegistry`.
-3. `SessionTracker`/`SessionLog` persist conversation, usage, and subagent branch events.
-4. Subagents run via `tools/subagent_api.py`; inherited children reuse parent prefix; end via `write_handoff`.
-5. TUI, PySide, Telegram, CLI share the same callback/agent-state interface.
+- Python env `dagi` (`DEFAULT_PYTHON_ENV`) for all scripts and installs.
+- Install from the repo root: `python -m pip install -r requirements-core.txt`; add
+  `-r requirements-gui.txt`, `-r requirements-tui.txt` or `-r requirements-tools.txt` as needed.
+- Tests: `C:\Users\alexr\miniconda3\envs\dagi\python.exe -u -m pytest -q -p no:pytest-qt`.
+  `conda run` fully buffers stdout when not on a TTY (looks like a hang) — call the env's
+  interpreter directly with `-u`. pytest-qt must be disabled as `-p no:pytest-qt` (not `no:qt`).
+- Hooks use `envs/dagi/python.exe` directly (`conda run` drops stdin).
 
-## Architecture
+## Memory
 
-- **AgentLoop** (`agent/loop.py`) delegates to `_loop_config/_helpers/_system_prompt/_streaming/_compaction/_tool_dispatch/_reload/_model_switch`.
-- **ToolRegistry** dispatches `ToolResult(output, side_effect)` instead of string sentinels.
-- **Subagents**: typed presets in `.dagi/subagents/*/`; public API `tools/subagent_api.py`.
-- **Wiki**: `wiki/` Git-tracked Markdown; delegated via `wiki_query`/`wiki_add` tools.
-- **Personal memory**: `G:/My Drive/black_grimoire/dagi-memory`; explicit user requests only.
-
-## Key Files & Directories
-
-| Path | Purpose |
-|------|---------|
-| `agent/loop.py` | Core agent loop; re-exports internal `_*` modules |
-| `agent/cli_utils.py` | `_cmd_init` — project wiki scaffold creation |
-| `agent/_init_templates.py` | `build_init_files` — wiki + AGENTS scaffold content |
-| `tools/_wiki_tools.py` | Wiki delegation logic (scope guard, protocol inject, handoff validate) |
-| `tools/subagent_api.py` | Public subagent API; `SubagentResult` dataclass; `reader_job_spec` kwarg |
-| `tools/_handoff_format.py` | `format_handoff_content` (pure), `format_handoff_result`, `format_error_result` |
-| `tools/read/_selection.py` | `ReadSelection`, `SourceSpan`, `references_for_range`, `make_selection` |
-| `tools/read/_chunking.py` | `chunk_selection` (Chonkie + stdlib fallback), `ReaderChunk` |
-| `tools/read/_budgets.py` | `preflight_reader`, `SummaryAllocation`, `estimate_tool_output` |
-| `tools/read/_reader_provider.py` | `ReaderRuntime`, `call_reader`, `build_reader_request` |
-| `tools/read/_reader_controller.py` | `ReaderController`, `ReaderState`, `run_reader_job_mode` |
-| `tools/read/_reader_job.py` | `ReaderJob`, `write_reader_job`, `load_reader_job`, `delegate_selection` |
-| `.dagi/subagents/wiki-{query,add}/` | Wiki subagent presets (file-tool-only, no nesting) |
-| `.dagi/skills/enter-workflow/SKILL.md` | Primary lifecycle owner: stages, approval, closure |
-| `.dagi/skills/deliver/SKILL.md` | Approved-plan execution, review, verification; returns to owner |
-| `.dagi/skills/write-plan/SKILL.md` | Implementation-plan writer; returns artifact to caller |
-| `.dagi/prompts/main/main_system.md` | Main agent system prompt template |
-| `.dagi/config.yaml` | Global runtime settings: tool allowlist, context budget, memory root |
-| `.dagi/model_config/*.yaml` | Per-model catalog entries (filename = model_id); git-tracked |
-| `tests/test_wiki_tools.py` | Wiki delegation contract tests (33 tests) |
-| `tests/test_project_init.py` | Init preservation and scaffold tests |
-| `wiki/` | Project knowledge wiki (architecture, workflows, errors, notes) |
-
-## Errors Log
-
-- **2026-09-19**: Context overflow audit C1–C6 all fixed: pre-request budget guard, bounded cache-error output, GUI compact `next_turn()` typo, handoff usage recording, step-zero exclusion, per-step tail sizing.
-- **2026-09-18**: GUI continuation duplicated entire history → fixed in `ce37e29a`; seed only when `_session_log is None`.
-- **2026-09-05**: pytest-qt entry point name is `pytest-qt` not `qt`; `-p no:pytest-qt` required → documented in wiki/errors/index.md and wiki/workflows.md.
-- **2026-09-05**: 4 PySide GUI bugs (sidebar bg, emote timing, thinking duplication, status lines) → all fixed; details in wiki/errors/index.md.
-- **2026-09-05**: 7 deliver-workflow integration failures (stale tool names, dynamic plan read, etc.) → all fixed; details in wiki/errors/index.md.
-- **2026-09-05**: Plan mode removed → `/plan` skill with file-based plans; `AgentConfig` plan fields removed.
-- **2026-08-30**: Typed turn termination left `main_system.md` requiring `<<END_OF_RESPONSE>>` → `write_handoff` sole final action.
-- **2026-08-29**: Toasts fail in restricted sandboxes → verify outside sandbox.
-- **2026-08-26**: RAM-watchdog errors every long test (≥70% RAM) → `--noconftest -p no:pytest-qt` for isolated runs.
-- **2026-08-26**: stale `ask_user` sink swallowed next message in TUI and PySide → fixed with `_ask_is_live` + `finally` retirement.
-
-## Notes & Terms
-
-- **Large-file reader (controller path)**: `ReadTool` triggers when `estimate_tool_output(result) >= config.reserve_tokens`. Calls `delegate_selection` → `run_subagent(preset="read-large-text", reader_job_spec=spec)` → `subagent_main` routes via `--reader-job` to `run_reader_job_mode` (bypasses agent loop). Controller chunks file with Chonkie/stdlib fallback, calls model API sequentially, writes handoff.
-- **Sentinel display sanitization**: escape loop sentinels (`<<` → `< <`) before showing; byte-check source before editing.
-- **agent/_* loop modules**: white-box test patches must target owning module (e.g. `agent._compaction`).
-- **Prompt-cache boundary**: entire prior provider input must prefix next request; no dynamic board.
-- **Termination**: main and child turns end through `write_handoff`; bare assistant text triggers corrective continuation.
-- **Model catalog**: individual `.dagi/model_config/{id}.yaml` files (primary); inline `models:` in config.yaml still works as fallback; file-based entries win. `cache_prompt` defaults to `true`; `thinking` must be set per-model (no global default).
-- **Tool filtering**: `config.yaml` `tools:` restricts main agent; mandatory `write_handoff` always injected.
-- **Subagent API**: import `tools/subagent_api.py`; never private `_subagent_runner.py`.
-- **Windows / conda**: `conda run -n dagi python`; hooks use `envs/dagi/python.exe` (conda run drops stdin). `conda run` fully buffers stdout when not attached to a TTY — piped or redirected output looks like a hang. Use the env's interpreter directly with `-u` for unbuffered output.
-- **Pre-request budget guard**: `AgentLoop` estimates request size before each API call; if over `context_window - reserve_tokens`, compacts automatically.
-- **Wiki subagents**: tool allowlists are `[read,grep,find]` (query) or `+[write,edit]` (add); no shell/delegation.
-
-## Wiki Use
-
-Only the main agent delegates wiki operations. Personal `memory-*` for explicit user requests only.
-
-- **Before each overall substantive task**: call `wiki_query`. Empty wiki permits investigation;
-  missing wiki requires `/init`. Chained skills share the lookup.
-- **After plan approval**: select approved decisions/user choices → `wiki_add`. Retry once;
-  failure blocks implementation.
-- **After completion and verification**: select actual results/completion → `wiki_add`. Retry once;
-  failure leaves workflow incomplete.
-- **Discretionary**: query substantial questions; add bugs, fixes, findings. Report optional failures.
-- **Workers**: receive wiki findings, return `Wiki requests` in handoffs. Never delegate themselves.
-- **`wiki-refresh`**: explicit, main-agent-only; inspects project evidence and asks user when needed.
-- **`/init`**: code-based scaffold at project root; preserves all existing files; no knowledge population.
-
----
-
-## User Insights
-
-### User Tendencies
-
-- Prefers adversarial design review (/grill) before implementation on major features.
-- Runs dagi on Windows with conda; comfortable with direct env paths when conda run has limitations.
-- Approves plans before implementation; expects wiki-add for approvals and completions.
-- Tight on test discipline: only tests that can actually fail on broken logic are acceptable.
-- Keeps AGENTS.md compact intentionally; durable knowledge belongs in the wiki.
-
-### Project Shortcomings
-
-- Provider call has no timeout — worker can block silently for up to ~30 min (open issue).
-- `pyside_gui/app.py` file cap assertion is stale (547+ lines vs ≤500 cap test).
-- PySide6 QtCore DLL fails to load without full conda env activation (Windows DLL chain issue).
-- No parallel subagent dispatch support despite earlier plan for `spawn_parallel_subagents`.
-- Wiki is new (2026-09-05); no project-specific knowledge accumulated yet beyond scaffold and contract.
-
-### Potential Areas of Exploration
-
-- Config-backed `request_timeout` for the OpenAI client to surface stalls as retryable errors.
-- Split `pyside_gui/app.py` to bring it under the 500-line cap.
-- Parallel subagent dispatch (`spawn_parallel_subagents` / `wait_subagents` tools).
-- Automated wiki health checks (stale dates, broken links) triggered on commit or session start.
-- Provider cost/usage dashboard surfaced in the sidebar.
+- Project wiki: `G:\My Drive\black_grimoire\wiki\projects\driverless-agi\` (architecture,
+  errors log, notes and terms, todos, reviews).
+- Required checkpoints (see `enter-workflow`): memory-query at task start; memory-add at task
+  end. Grep the exact error text before debugging. Memory is inline — no subagents.

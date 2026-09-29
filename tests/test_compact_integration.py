@@ -163,24 +163,6 @@ class TestCompactionSurfaceIntegration:
         cc_events = [e for e in loop.log.events if e.type == sev.CONTEXT_COMPACTION]
         assert len(cc_events) == 2
 
-    def test_compact_subagent_failure_leaves_surface_intact(self):
-        """When the compact subagent fails, the session log surface is unchanged."""
-        loop = AgentLoop(config=_config(), _registry=_make_registry())
-        _seed_steps(loop, turn=1, n_steps=5)
-        loop._last_prompt_tokens = 5_000
-        loop._last_request_snapshot = _SNAPSHOT
-
-        surface_before = list(loop.log.surface.nodes)
-
-        mock_result = MagicMock()
-        mock_result.is_ok = False
-        mock_result.handoff_text = ""
-        with patch("agent._compaction.run_subagent", return_value=mock_result):
-            result = loop.compact(force=True)
-
-        assert result.did_compact is False
-        assert list(loop.log.surface.nodes) == surface_before  # surface unchanged
-
     def test_messages_list_identity_preserved(self):
         """_messages retains its list identity after compaction (slice assignment)."""
         mock_result = MagicMock()
@@ -230,30 +212,6 @@ class TestCompactionSurfaceIntegration:
         # No duplicates â€” every seq is unique
         seqs = [e.seq for e in loop.log.events]
         assert len(seqs) == len(set(seqs))
-
-    def test_failure_leaves_surface_generation_unchanged(self):
-        """Failed compaction must not change surface generation or messages."""
-        loop = AgentLoop(config=_config(), _registry=_make_registry())
-        _seed_steps(loop, turn=1, n_steps=5)
-        loop._last_prompt_tokens = 5_000
-        loop._last_request_snapshot = _SNAPSHOT
-
-        gen_before = loop.log.surface.generation
-        nodes_before = loop.log.surface.nodes
-        msgs_before = [m.copy() for m in loop._messages]
-
-        mock_result = MagicMock()
-        mock_result.is_ok = False
-        mock_result.handoff_text = ""
-        with patch("agent._compaction.run_subagent", return_value=mock_result):
-            result = loop.compact(force=True)
-
-        assert result.did_compact is False
-        assert loop.log.surface.generation == gen_before
-        assert loop.log.surface.nodes == nodes_before
-        assert [m.get("content") for m in loop._messages] == [
-            m.get("content") for m in msgs_before
-        ]
 
     def test_repeated_compaction_summary_replaces_prior(self):
         """A second compaction replaces the prior summary in messages."""
@@ -309,3 +267,144 @@ class TestCompactionSurfaceIntegration:
         all_content = " ".join(str(m.get("content", "")) for m in non_sys2)
         assert "Summary v2." in all_content, "Second summary should be present in messages"
         assert "Summary v1." not in all_content, "First summary should be gone from messages"
+
+    def test_default_model_compaction_reduces_next_request(self, tmp_path):
+        """Compaction uses the project default even when the parent selected a different provider."""
+        from types import SimpleNamespace
+
+        from tools.compact._tail_boundary import estimate_tokens
+        from tools.subagent_api import SubagentResult
+        from tools.subagent_main import run_forked_compact_mode
+
+        config_dir = tmp_path / ".dagi"
+        config_dir.mkdir()
+        (config_dir / "config.yaml").write_text(
+            "default_model: compact-regression-provider\n"
+            "models:\n"
+            "  compact-regression-provider:\n"
+            "    model: compact-regression-api-name\n"
+            "    api_url: https://compact.example/v1\n"
+            "    api_key: test-key\n"
+            "    thinking: low\n"
+            "    provider_order: [default-provider]\n",
+            encoding="utf-8",
+        )
+        loop = AgentLoop(
+            config=_config(project_path=tmp_path), _registry=_make_registry()
+        )
+        _seed_steps(loop, turn=1, n_steps=5, prefix="history " * 500)
+        loop._last_prompt_tokens = 5_000
+        loop._last_request_snapshot = {
+            **_SNAPSHOT,
+            "model": "parent-explicit-model",
+            "base_url": "https://parent.example/v1",
+            "extra_body": {"provider": {"order": ["parent-provider"]}},
+        }
+        before = sum(map(estimate_tokens, loop._build_request_messages()[1:]))
+        provider = MagicMock()
+        provider.chat.completions.create.return_value = SimpleNamespace(
+            choices=[SimpleNamespace(
+                message=SimpleNamespace(content="Retained task summary.", tool_calls=None),
+                finish_reason="stop",
+            )],
+            usage=None,
+        )
+
+        def run_compact_worker(**kwargs):
+            handoff = tmp_path / "compact.md"
+            run_forked_compact_mode(
+                kwargs["fork_context_path"], str(handoff), "compact", str(tmp_path)
+            )
+            return SubagentResult("ok", handoff.read_text(encoding="utf-8"), handoff, None, None)
+
+        with patch("agent._compaction.run_subagent", side_effect=run_compact_worker), \
+                patch("openai.OpenAI", return_value=provider) as client:
+            turn = loop.log.next_turn()
+            loop.log.append(sev.TURN_START, {"turn": turn})
+            result = loop.compact()
+            loop.log.append(sev.TURN_END, {"turn": turn, "reason": {"kind": "completed"}})
+
+        client.assert_called_once_with(api_key="test-key", base_url="https://compact.example/v1")
+        assert provider.chat.completions.create.call_args.kwargs["model"] == (
+            "compact-regression-api-name"
+        )
+        options = provider.chat.completions.create.call_args.kwargs
+        assert options["extra_body"]["provider"]["order"] == ["default-provider"]
+        assert options["extra_body"]["reasoning"] == {"effort": "low"}
+        request = loop._build_request_messages()
+        assert result.did_compact
+        assert "Retained task summary." in request[1]["content"]
+        assert sum(map(estimate_tokens, request[1:])) < before / 2
+
+    @pytest.mark.parametrize("mode", ["error", "empty", "timeout", "exception", "prepare"])
+    @pytest.mark.parametrize("summarize_all", [False, True])
+    def test_failure_removes_only_selected_chunk_and_preserves_raw_log(self, mode, summarize_all):
+        """Failure must shrink active context without losing the tail or durable history."""
+        from agent.session_log import SessionLog
+        from tools.compact._tail_boundary import estimate_tokens
+        from tools.subagent_api import SubagentResult
+
+        loop = AgentLoop(config=_config(), _registry=_make_registry())
+        _seed_steps(loop, turn=1, n_steps=5, prefix="history " * 500)
+        loop._last_prompt_tokens = 5_000
+        loop._last_request_snapshot = _SNAPSHOT
+        before = loop._build_request_messages()
+        raw_before = loop.log.events
+        nodes_before = loop.log.surface.nodes
+        tail_index = len(nodes_before) if summarize_all else (
+            loop._find_surface_index_for_step((1, 4))
+        )
+        tail_nodes = nodes_before[tail_index:]
+        loop.callbacks.on_assistant_text = MagicMock()
+        loop.callbacks.on_compaction = MagicMock()
+        failure = SubagentResult(
+            "ok" if mode == "empty" else mode, "", Path("compact.md"), None, None,
+            message="worker failed" if mode == "error" else "",
+            output_log_path=Path("compact.output.log"),
+        )
+        effect = RuntimeError("network down") if mode == "exception" else None
+        target = "agent.image_assets.materialize_messages" if mode == "prepare" else (
+            "agent._compaction.run_subagent"
+        )
+        if mode == "prepare":
+            effect = RuntimeError("image missing")
+        with patch(target, return_value=failure, side_effect=effect):
+            turn = loop.log.next_turn()
+            loop.log.append(sev.TURN_START, {"turn": turn})
+            result = loop.compact(summarize_all=summarize_all)
+            loop.log.append(sev.TURN_END, {"turn": turn, "reason": {"kind": "completed"}})
+
+        request = loop._build_request_messages()
+        assert result.did_compact
+        assert "without a summary" in request[1]["content"]
+        assert request[2:] == before[tail_index + 1:]
+        assert loop.log.surface.nodes[1:] == tail_nodes
+        assert sum(map(estimate_tokens, request)) < sum(map(estimate_tokens, before))
+        assert loop.log.events[:len(raw_before)] == raw_before
+        event = next(e for e in loop.log.events if e.type == sev.CONTEXT_COMPACTION)
+        assert event.source_seqs == nodes_before[:tail_index]
+        assert event.data["fallback"] is True
+        assert SessionLog(loop.log.events).derive_messages() == loop.log.derive_messages()
+        loop.callbacks.on_compaction.assert_called_once_with(
+            0 if summarize_all else 1, 4 if summarize_all else 3,
+        )
+        warning = loop.callbacks.on_assistant_text.call_args.args[0]
+        assert "context compaction failed" in warning
+        assert "removed" in warning
+
+    def test_failed_worker_does_not_remove_changed_surface(self):
+        """Failure fallback must never apply its stale selection after another replacement."""
+        loop = AgentLoop(config=_config(), _registry=_make_registry())
+        _seed_steps(loop, turn=1, n_steps=5)
+        loop._last_prompt_tokens = 5_000
+        loop._last_request_snapshot = _SNAPSHOT
+        before = loop._build_request_messages()
+
+        def stale_failure(**kwargs):
+            loop.log.surface.generation += 1
+            raise RuntimeError("worker failed after context changed")
+
+        with patch("agent._compaction.run_subagent", side_effect=stale_failure):
+            result = loop.compact()
+        assert not result.did_compact
+        assert loop._build_request_messages() == before
