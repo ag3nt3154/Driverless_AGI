@@ -1,0 +1,82 @@
+/* Catppuccin Mocha palette, matching conversation.css. */
+:root {
+    --bg: #1e1e2e;
+    --surface: #282839;
+    --text: #cdd6f4;
+    --text-dim: #6c7086;
+    --accent: #89b4fa;
+    --magenta: #cba6f7;
+    --cyan: #94e2d5;
+    --border: #45475a;
+    --font-ui: 'Segoe UI', 'Inter', system-ui, sans-serif;
+    --font-mono: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+}
+
+html, body {
+    margin: 0;
+    height: 100%;
+    background: var(--bg);
+    overflow: hidden;
+}
+
+#editor.vditor {
+    height: 100% !important;
+    border: none;
+    --border-color: var(--border);
+    --panel-background-color: var(--bg);
+    --textarea-background-color: var(--bg);
+    --textarea-text-color: var(--text);
+    --second-color: var(--text-dim);
+    --ir-heading-color: var(--magenta);
+    --ir-title-color: var(--text-dim);
+    --ir-bi-color: var(--accent);
+    --ir-link-color: var(--cyan);
+    --ir-bracket-color: var(--accent);
+    --ir-paren-color: var(--cyan);
+    --blockquote-color: var(--text-dim);
+    --heading-border-color: var(--border);
+}
+
+#editor .vditor-reset {
+    font-family: var(--font-ui);
+    font-size: 14px;
+    line-height: 1.6;
+    color: var(--text);
+    padding: 10px 14px !important;
+}
+
+#editor .vditor-reset code,
+#editor .vditor-reset pre {
+    font-family: var(--font-mono);
+}
+
+#editor .vditor-reset code:not(.hljs):not(.highlight-chroma) {
+    background: var(--surface);
+}
+
+#editor .vditor-reset a,
+#editor .vditor-ir__link {
+    color: var(--cyan);
+}
+
+#editor .vditor-reset h1,
+#editor .vditor-reset h2 {
+    border-bottom-color: var(--border);
+}
+
+#editor .vditor-reset blockquote {
+    border-left-color: var(--border);
+    color: var(--text-dim);
+}
+
+#editor .vditor-toolbar {
+    display: none;
+}
+
+::-webkit-scrollbar { width: 8px; }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+
+#editor input[type="checkbox"] {
+    accent-color: var(--accent);
+}
