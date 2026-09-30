@@ -39,6 +39,23 @@ def build_extra_body(
     return body
 
 
+# (resolved path, mtime_ns) -> (client, request_kwargs, dagi_config).
+# Config resolution and every AgentLoop/tier switch load the same script, so
+# cache it: one client (and one httpx pool / cert load) per script version.
+_SCRIPT_CACHE: dict[tuple[Path, int], tuple[openai.OpenAI, dict, dict]] = {}
+
+
+def _resolve_script_path(script_path: str) -> Path:
+    from agent import DAGI_ROOT
+    path = Path(script_path)
+    if not path.is_absolute():
+        path = DAGI_ROOT / path
+    path = path.resolve()
+    if not path.exists():
+        raise FileNotFoundError(f"Client script not found: {path}")
+    return path
+
+
 def load_client_script(script_path: str) -> tuple[openai.OpenAI, dict]:
     """Execute a Python client script and extract `client` and `request_kwargs`.
 
@@ -48,14 +65,27 @@ def load_client_script(script_path: str) -> tuple[openai.OpenAI, dict]:
 
     Returns (client, request_kwargs).
     """
-    from agent import DAGI_ROOT
-    path = Path(script_path)
-    if not path.is_absolute():
-        path = DAGI_ROOT / path
-    path = path.resolve()
-    if not path.exists():
-        raise FileNotFoundError(f"Client script not found: {path}")
+    client, request_kwargs, _ = load_client_script_full(script_path)
+    return client, request_kwargs
 
+
+def load_client_script_full(script_path: str) -> tuple[openai.OpenAI, dict, dict]:
+    """Like load_client_script, but also returns the optional `dagi_config` dict.
+
+    Results are cached per (path, mtime), so editing the script takes effect
+    on the next load without re-executing it on every call.
+    """
+    path = _resolve_script_path(script_path)
+    key = (path, path.stat().st_mtime_ns)
+    cached = _SCRIPT_CACHE.get(key)
+    if cached is not None:
+        return cached
+    result = _exec_client_script(path)
+    _SCRIPT_CACHE[key] = result
+    return result
+
+
+def _exec_client_script(path: Path) -> tuple[openai.OpenAI, dict, dict]:
     spec = importlib.util.spec_from_file_location(f"_dagi_client_{path.stem}", path)
     mod = importlib.util.module_from_spec(spec)
     sys.modules[mod.__name__] = mod
@@ -69,6 +99,14 @@ def load_client_script(script_path: str) -> tuple[openai.OpenAI, dict]:
     if client is None:
         del sys.modules[mod.__name__]
         raise AttributeError(f"Client script {path} must define a `client` variable")
+    if isinstance(client, openai.AsyncOpenAI):
+        del sys.modules[mod.__name__]
+        raise TypeError(
+            f"Client script {path}: `client` is an openai.AsyncOpenAI, but dagi "
+            "calls the API synchronously. Build an openai.OpenAI instead — the "
+            "sync equivalents are http_client=openai.DefaultHttpxClient(...) "
+            "and transport=httpx.HTTPTransport(...)."
+        )
     if not isinstance(client, openai.OpenAI):
         del sys.modules[mod.__name__]
         raise TypeError(
@@ -84,7 +122,15 @@ def load_client_script(script_path: str) -> tuple[openai.OpenAI, dict]:
             f"got {type(request_kwargs).__name__}"
         )
 
-    return client, request_kwargs
+    dagi_config = getattr(mod, "dagi_config", {})
+    if not isinstance(dagi_config, dict):
+        del sys.modules[mod.__name__]
+        raise TypeError(
+            f"Client script {path}: `dagi_config` must be a dict, "
+            f"got {type(dagi_config).__name__}"
+        )
+
+    return client, request_kwargs, dagi_config
 
 
 def build_openai_client(config: AgentConfig) -> tuple[openai.OpenAI, dict]:

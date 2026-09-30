@@ -21,7 +21,12 @@ load_dotenv()  # populate os.environ from .env before config_loader reads API ke
 import yaml
 
 from agent import DAGI_ROOT
-from agent.config_loader import load_raw_config, resolve_model_config
+from agent.config_loader import (
+    _load_project_config,
+    _resolve_script_entry,
+    load_raw_config,
+    resolve_model_config,
+)
 from agent.inherited_registry import build_inherited_registry
 from agent.loop import AgentCallbacks, AgentConfig, AgentLoop
 from agent.prompts import load_subagent_prompt
@@ -309,21 +314,28 @@ def _build_inherited_config(request: dict, project_path: Path) -> AgentConfig:
 def _find_inherited_model_id(model: str, base_url: object, project_path: Path) -> str:
     """Find the local catalog ID matching a provider-facing model and endpoint."""
     raw = load_raw_config()
-    project_config = project_path / ".dagi" / "config.yaml"
-    project_raw = (
-        yaml.safe_load(project_config.read_text(encoding="utf-8")) or {}
-        if project_config.exists()
-        else {}
-    )
+    # Includes {project}/.dagi/model_config/ (YAML and client-script models).
+    project_raw = _load_project_config(project_path) or {}
     catalog = {**(raw.get("models") or {}), **(project_raw.get("models") or {})}
     requested_url = _normalise_provider_url(str(base_url or ""))
+
+    def _identity(model_id: str, entry: dict) -> dict:
+        # Client-script entries only know their model/base_url once executed.
+        if not entry.get("client_script"):
+            return entry
+        try:
+            return _resolve_script_entry(entry, model_id)
+        except Exception:
+            return entry
+
     matches = [
         model_id
         for model_id, entry in catalog.items()
-        if entry.get("model") == model
+        for ident in (_identity(model_id, entry),)
+        if ident.get("model") == model
         and (
             not requested_url
-            or _normalise_provider_url(str(entry.get("api_url") or "")) == requested_url
+            or _normalise_provider_url(str(ident.get("api_url") or "")) == requested_url
         )
     ]
     if len(matches) != 1:

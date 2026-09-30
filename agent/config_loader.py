@@ -13,11 +13,16 @@ Model catalog — loaded from individual files in .dagi/model_config/:
     api_key_env: "ENV_VAR_NAME"    # pointer into .env — never the key itself
     api_key: "sk-..."              # optional: inline key (overrides api_key_env)
 
+  A {model_id}.py client script is also a model on its own (no YAML needed):
+  it must define `client` (openai.OpenAI) and may define `request_kwargs`
+  and `dagi_config` (same keys as a YAML entry, e.g. name/context_window).
+
   Legacy inline `models:` in config.yaml is still loaded as a fallback;
   file-based entries win on collision.
 """
 from __future__ import annotations
 
+import ast
 import os
 import sys
 import math
@@ -85,16 +90,63 @@ def load_telegram_config() -> TelegramConfig:
     return TelegramConfig(bot_token=token, allowed_chat_ids=allowed_chat_ids)
 
 
-def _load_model_config_dir(config_dir: Path) -> dict[str, dict]:
-    """Load individual model YAML files from {config_dir}/model_config/.
+def _static_script_metadata(path: Path) -> dict:
+    """Read catalog metadata from a client script without executing it.
 
-    Each file is named {model_id}.yaml; its contents become the catalog entry.
+    Picks up a literal module-level ``dagi_config = {...}`` and a literal
+    ``"model"`` key in ``request_kwargs = {...}``. Anything non-literal (env
+    lookups, function calls) is skipped here and filled in by
+    _resolve_script_entry when the model is actually selected.
+    """
+    try:
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    except (SyntaxError, UnicodeDecodeError):
+        return {}
+    meta: dict = {}
+    request_model = None
+    for node in tree.body:
+        if not (isinstance(node, ast.Assign) and len(node.targets) == 1
+                and isinstance(node.targets[0], ast.Name)):
+            continue
+        target = node.targets[0].id
+        if target == "dagi_config":
+            try:
+                value = ast.literal_eval(node.value)
+            except ValueError:
+                continue
+            if isinstance(value, dict):
+                meta = value
+        elif target == "request_kwargs" and isinstance(node.value, ast.Dict):
+            for k, v in zip(node.value.keys, node.value.values):
+                if (isinstance(k, ast.Constant) and k.value == "model"
+                        and isinstance(v, ast.Constant) and isinstance(v.value, str)):
+                    request_model = v.value
+    if request_model and "model" not in meta:
+        meta = {**meta, "model": request_model}
+    return meta
+
+
+def _load_model_config_dir(config_dir: Path) -> dict[str, dict]:
+    """Load individual model files from {config_dir}/model_config/.
+
+    {model_id}.yaml — contents become the catalog entry.
+    {model_id}.py   — a client script is itself a model: the entry is
+                      {"client_script": <abs path>, **static dagi_config}.
+                      Files starting with "_" are ignored (helpers).
+    A YAML file wins over a same-named script.
     Returns an empty dict if the directory is absent.
     """
     model_dir = config_dir / "model_config"
     if not model_dir.is_dir():
         return {}
     models: dict[str, dict] = {}
+    for path in sorted(model_dir.glob("*.py")):
+        if path.stem.startswith("_"):
+            continue
+        models[path.stem] = {
+            **_static_script_metadata(path),
+            "client_script": str(path.resolve()),
+        }
     for path in sorted(model_dir.glob("*.yaml")):
         model_id = path.stem
         try:
@@ -177,6 +229,37 @@ def _load_expression_interval(raw: dict) -> float:
     if not isinstance(value, (int, float)) or not math.isfinite(value) or value < 0:
         raise ValueError("expression interval must be finite and non-negative")
     return float(value)
+
+
+def _resolve_script_entry(entry: dict, model_id: str) -> dict:
+    """Execute an entry's client_script and fill in its provider identity.
+
+    Returns a new entry where:
+      - explicit entry fields (YAML / static dagi_config) win over the
+        script's executed dagi_config;
+      - model falls back to request_kwargs["model"];
+      - api_url / api_key always come from the constructed client, since
+        that is what requests actually use (and what subagents match on).
+    Entries without client_script are returned unchanged.
+    """
+    script = entry.get("client_script")
+    if not script:
+        return entry
+    from agent._model_switch import load_client_script_full
+
+    client, request_kwargs, dagi_config = load_client_script_full(script)
+    resolved = {**dagi_config, **entry}
+    if not resolved.get("model"):
+        resolved["model"] = request_kwargs.get("model", "")
+    if not resolved["model"]:
+        raise ValueError(
+            f"Model '{model_id}': client script {script} does not name a model. "
+            'Set request_kwargs["model"] or dagi_config["model"] in the script '
+            "(or model: in a YAML entry)."
+        )
+    resolved["api_url"] = str(client.base_url)
+    resolved["api_key"] = client.api_key
+    return resolved
 
 
 def _build_config_from_entry(
@@ -333,7 +416,7 @@ def resolve_model_config(
             f"Available model IDs: {available}"
         )
 
-    entry = catalog.get(chosen_id, _FALLBACK_ENTRY)
+    entry = _resolve_script_entry(catalog.get(chosen_id, _FALLBACK_ENTRY), chosen_id)
     if not entry.get("api_key", ""):
         api_key_env = entry.get("api_key_env", "OPENAI_API_KEY")
         if not os.environ.get(api_key_env, ""):
@@ -353,25 +436,29 @@ def resolve_model_config(
     if project_path is not None:
         cfg = replace(cfg, project_path=project_path)
 
-    # Resolve optional worker model for sub-agents; silently fall back if unset/invalid.
-    worker_id = raw.get("worker_model")
-    worker_cfg: AgentConfig | None = None
-    if worker_id and worker_id in catalog:
-        worker_cfg = _build_config_from_entry(
-            catalog[worker_id], raw, model_id=worker_id, python_env=python_env
+    def _tier_config(tier_id: str | None, tier: str) -> AgentConfig | None:
+        # Optional tiers silently fall back to the default model if unset/unknown;
+        # a broken client script only warns so it can't block startup.
+        if not tier_id or tier_id not in catalog:
+            return None
+        try:
+            tier_entry = _resolve_script_entry(catalog[tier_id], tier_id)
+        except Exception as exc:
+            print(
+                f"Warning: {tier} '{tier_id}' unavailable, using default model: {exc}",
+                file=sys.stderr,
+            )
+            return None
+        tier_cfg = _build_config_from_entry(
+            tier_entry, raw, model_id=tier_id, python_env=python_env
         )
-        worker_cfg = replace(worker_cfg, display_name=catalog[worker_id].get("name", worker_id))
+        return replace(tier_cfg, display_name=tier_entry.get("name", tier_id))
 
-    # Resolve optional advanced model for plan mode; silently fall back if unset/invalid.
-    advanced_id = raw.get("advanced_model")
-    advanced_cfg: AgentConfig | None = None
-    if advanced_id and advanced_id in catalog:
-        advanced_cfg = _build_config_from_entry(
-            catalog[advanced_id], raw, model_id=advanced_id, python_env=python_env
-        )
-        advanced_cfg = replace(advanced_cfg, display_name=catalog[advanced_id].get("name", advanced_id))
-
-    return replace(cfg, worker_config=worker_cfg, advanced_config=advanced_cfg)
+    return replace(
+        cfg,
+        worker_config=_tier_config(raw.get("worker_model"), "worker_model"),
+        advanced_config=_tier_config(raw.get("advanced_model"), "advanced_model"),
+    )
 
 
 def save_config(default_model: str) -> None:

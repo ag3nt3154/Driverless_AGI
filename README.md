@@ -592,7 +592,7 @@ services:
 
 ### Model Catalog
 
-Each model is a separate YAML file in `.dagi/model_config/`. The filename (without `.yaml`) is the model ID.
+Each model is a separate file in `.dagi/model_config/` — a YAML entry, or a Python client script (see [Client Scripts](#client-scripts-custom-transport--request-profiles)). The filename (without `.yaml`/`.py`) is the model ID.
 
 ```yaml
 # .dagi/model_config/gpt-4o-openai.yaml
@@ -629,37 +629,43 @@ Legacy inline `models:` entries in `config.yaml` still work as a fallback, but f
 
 ### Client Scripts (Custom Transport & Request Profiles)
 
-For full control over the OpenAI client — custom httpx transports, mTLS, proxies, extra headers, request-level defaults — use a **client script**: a Python file that exports a configured `openai.OpenAI` client and optional `request_kwargs`.
-
-```yaml
-# .dagi/model_config/corp-gpt4o.yaml
-name: "GPT-4o (Corporate Proxy)"
-client_script: .dagi/profiles/corp_gpt4o.py
-model: gpt-4o              # optional: overrides request_kwargs["model"]
-context_window: 128000
-```
+For full control over the OpenAI client — mTLS certificates, custom httpx transports, proxies, guardrail headers, request-level defaults — drop a **client script** into `.dagi/model_config/`. A `.py` file there is a model on its own; no YAML is needed. The filename (without `.py`) is the model ID:
 
 ```python
-# .dagi/profiles/corp_gpt4o.py
-import os, httpx, openai
+# .dagi/model_config/corp_gpt4o.py
+import os, ssl, httpx, openai
+
+ctx = ssl.create_default_context(cafile="C:/certs/corp-ca.pem")
+ctx.load_cert_chain("C:/certs/client.pem", "C:/certs/client.key")
 
 client = openai.OpenAI(
     api_key=os.environ["CORP_API_KEY"],
-    base_url="https://llm-proxy.corp.example.com/v1",
-    default_headers={"X-Organization": "my-team"},
-    http_client=httpx.Client(
-        transport=httpx.HTTPTransport(local_address="0.0.0.0", verify=False),
+    base_url="https://llm-gateway.corp.example.com/v1",
+    default_headers={"ENABLE-GUARDRAILS-INPUT-CHECK": "false"},
+    http_client=openai.DefaultHttpxClient(
+        transport=httpx.HTTPTransport(verify=ctx, retries=2),
         timeout=120.0,
     ),
 )
 
-request_kwargs = {
-    "temperature": 0.7,
-    "max_tokens": 4096,
-}
+request_kwargs = {"model": "gpt-4o", "temperature": 0.7}   # "model" = name sent to the API
+
+dagi_config = {"name": "GPT-4o (Corp Gateway)", "context_window": 128000}  # optional
 ```
 
-The script must define `client` (an `openai.OpenAI` instance). It may optionally define `request_kwargs` (a dict spread into `chat.completions.create()`). Harness-managed keys (`model`, `messages`, `tools`, `stream`) always take precedence over `request_kwargs`. When `client_script` is set, the `api_url`/`api_key`/`api_key_env` fields are ignored for client construction. An example script is provided at `.dagi/profiles/example_corp.py`.
+```yaml
+# .dagi/config.yaml
+default_model: corp_gpt4o
+```
+
+- `client` (required) must be a **sync** `openai.OpenAI`. `AsyncOpenAI` is rejected because dagi calls the API synchronously — use `openai.DefaultHttpxClient` / `httpx.HTTPTransport` rather than `DefaultAsyncHttpxClient` / `httpx.AsyncHTTPTransport`.
+- `request_kwargs` (optional) is spread into `chat.completions.create()`. The model name comes from `request_kwargs["model"]` (or `dagi_config["model"]`); a script with neither fails to resolve. `messages`/`tools`/`stream` are always harness-managed.
+- `dagi_config` (optional) takes the same keys as a YAML model entry (`name`, `context_window`, `reserve_tokens`, `keep_recent_tokens`, `max_output_tokens`, `thinking`, `stream`, `cache_prompt`, `supports_images`, …). Keep it a plain literal so the model picker can show `name` without executing the script.
+- `base_url` / `api_key` for the resolved config are read off the constructed client, so subagents re-resolve the same script-defined provider.
+- Scripts are executed once per file version (cached by mtime) and only when selected as `default_model`, `worker_model` or `advanced_model`. A broken worker/advanced script only warns and falls back to the default model.
+- Files starting with `_` are ignored (use them for shared helpers). A same-named `.yaml` wins over a `.py`; YAML entries can still point at a script elsewhere with `client_script: path/to/script.py` (relative to the dagi root), with YAML fields taking precedence over the script's `dagi_config`.
+
+See `.dagi/model_config/example_corp.py` for a working example.
 
 ### Thinking / Reasoning
 
@@ -832,7 +838,7 @@ Driverless_AGI/
 │
 ├── .dagi/
 │   ├── config.yaml        # Global runtime settings (tool allowlist, disabled_tools, context budget, memory_root)
-│   ├── model_config/      # Per-model YAML files (filename = model_id); git-tracked
+│   ├── model_config/      # Per-model YAML files or .py client scripts (filename = model_id); git-tracked
 │   ├── prompts/           # Prompt markdown files, organized by role
 │   │   ├── main/          #   main_system.md — primary coding assistant prompt
 │   │   └── compact/       #   compact_system, compact_user (Pi-style summariser)

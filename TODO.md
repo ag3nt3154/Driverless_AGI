@@ -29,6 +29,16 @@
 
 ## Completed
 
+- **Standalone client-script models (2026-09-29)** — a `.py` file in
+  `.dagi/model_config/` is now a catalog model on its own (no YAML): it defines
+  `client` (sync `openai.OpenAI`, for mTLS / guardrail headers / custom transports),
+  optional `request_kwargs` (model name via `request_kwargs["model"]`) and optional
+  `dagi_config` (YAML-entry keys, read statically for the picker). Scripts are
+  cached per mtime; `base_url`/`api_key` come from the built client so subagent
+  inheritance re-resolves the script; `AsyncOpenAI` is rejected with a sync hint;
+  broken worker/advanced scripts warn and fall back. Tests:
+  `tests/test_client_script_models.py`.
+
 - **Rewired DAGI to the central memory wiki (2026-09-27)** — `memory_root` defaults to
   `G:\My Drive\black_grimoire`; per-turn `[MEMORY]` pointer; memory-query/memory-add run
   inline as byte-identical copies of the Claude Code skills (parity test); required memory
