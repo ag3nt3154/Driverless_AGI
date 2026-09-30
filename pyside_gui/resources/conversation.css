@@ -94,6 +94,7 @@ body {
     align-self: flex-end;
     max-width: 78%;
     background: var(--user-bubble-bg);
+    color: var(--fg);
     border-radius: 18px 18px 4px 18px;
     padding: 9px 15px;
     white-space: pre-wrap;
@@ -138,8 +139,8 @@ body {
     min-width: 0;
 }
 
-.tool-head:hover { color: var(--fg); }
-.tool-call.open .tool-head { color: var(--fg); }
+.tool-head { color: var(--tool-fg); }
+.tool-head:hover, .tool-call.open .tool-head { color: var(--tool-fg); filter: brightness(1.15); }
 .tool-call.open .chevron,
 .reasoning-message[open] > summary .chevron { transform: rotate(90deg); }
 
@@ -192,7 +193,10 @@ body {
 
 /* ---- reasoning -------------------------------------------------------- */
 
-.reasoning-message { font-size: 13.5px; color: var(--fg-secondary); }
+.reasoning-message { font-size: 13.5px; color: var(--thinking-fg); }
+.reasoning-message .md strong,
+.reasoning-message .md h1, .reasoning-message .md h2, .reasoning-message .md h3,
+.reasoning-message .md h4, .reasoning-message .md h5, .reasoning-message .md h6 { color: inherit; }
 
 .reasoning-message > summary,
 .thought-live {
@@ -205,13 +209,13 @@ body {
 }
 
 .reasoning-message > summary::-webkit-details-marker { display: none; }
-.reasoning-message > summary:hover { color: var(--fg); }
+.reasoning-message > summary:hover { filter: brightness(1.15); }
 
 .reasoning-message > .message-body {
     margin: 8px 0 0 5px;
     padding-left: 14px;
-    border-left: 2px solid var(--border);
-    color: var(--fg-secondary);
+    border-left: 2px solid color-mix(in srgb, var(--thinking-fg) 30%, transparent);
+    color: color-mix(in srgb, var(--thinking-fg) 85%, transparent);
 }
 
 .thought-live span { animation: pulse 1.6s ease-in-out infinite; }
@@ -225,7 +229,8 @@ body {
     overflow: hidden;
     white-space: pre-wrap;
     overflow-wrap: anywhere;
-    color: var(--fg-tertiary);
+    border-left-color: color-mix(in srgb, var(--thinking-fg) 30%, transparent);
+    color: color-mix(in srgb, var(--thinking-fg) 60%, transparent);
 }
 
 /* ---- markdown (Vditor .vditor-reset overrides) ------------------------ */

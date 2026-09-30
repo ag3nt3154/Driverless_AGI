@@ -22,7 +22,7 @@ _LOGGER = logging.getLogger(__name__)
 class ExpressionWidget(QWidget):
     """Renders the current process-state emote in the right sidebar."""
 
-    n = 1.4
+    n = 1.0
     _GIF_BOUND = QSize(int(150 * n), int(130 * n))
 
     def __init__(self, emotes_root: Path) -> None:

@@ -7,6 +7,7 @@ import pytest
 from PySide6.QtCore import QEventLoop, QTimer
 
 from pyside_gui.conversation import ConversationView
+from pyside_gui.theme import TOKENS
 from pyside_gui.tests.test_conversation_reasoning import evaluate, view  # noqa: F401
 
 
@@ -32,7 +33,7 @@ def test_theme_tokens_are_spliced_into_the_page(view):
     assert evaluate(view, """
         return getComputedStyle(document.documentElement)
             .getPropertyValue('--chat-bg').trim();
-    """) == "#191919"
+    """) == TOKENS["chat_bg"]
 
 
 def test_math_renders_with_katex_for_all_delimiters(view):

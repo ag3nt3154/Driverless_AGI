@@ -5,34 +5,37 @@ values: Qt through :func:`qss`, which swaps ``@token`` placeholders, and the web
 pages through :func:`css_variables`, which is spliced into their HTML as
 ``--token`` custom properties.
 
-The palette is a neutral dark theme adapted from OpenGhost
-(https://github.com/ANDRETRIPOL/OpenGhost, (c) 2026 Andrew). OpenGhost's
-visual design is licensed for non-commercial use only: keep this notice and do
-not ship this palette in a commercial product.
+The structure (surface ladder, one foreground at four opacities) is adapted
+from OpenGhost (https://github.com/ANDRETRIPOL/OpenGhost, (c) 2026 Andrew).
+OpenGhost's visual design is licensed for non-commercial use only: keep this
+notice and do not ship this palette in a commercial product.
 
-Principles: grey surfaces, one foreground colour at four opacities, colour only
-for meaning (danger / success / warn / link), a white accent.
+Palette: one hue (240°, ~20% saturation) for every surface, told apart by
+lightness only — sidebars darkest, chat pane lighter, composer lifted — a cool
+off-white foreground at four opacities, an indigo-blue accent, and colour
+reserved for meaning: tool titles (sky), thinking (lavender), right-sidebar
+values (sand tokens, mint context) and status (danger / success / warn / link).
 """
 from __future__ import annotations
 
 import re
 
-_FG = "255, 255, 255"
+_FG = "238, 237, 250"
 
 TOKENS: dict[str, str] = {
-    # Surfaces, darkest to lightest.
-    "contour": "#111111",
-    "app_bg": "#161616",
-    "chat_bg": "#191919",
-    "composer_bg": "#1e1e1e",
-    "contour_inner": "#202020",
-    "popover_bg": "#212121",
-    "composer_border": "#262626",
-    "hover_bg": "#242424",
-    "menu_bg": "#242424",
-    "active_bg": "#272727",
-    "border": "#2c2c2c",
-    "well_bg": "rgba(0, 0, 0, 0.28)",
+    # Surfaces, all hsl(240°, ~20%): sidebars 8%, chat 12%, composer 17%.
+    "contour": "#0a0a10",
+    "app_bg": "#101019",
+    "chat_bg": "#191924",
+    "contour_inner": "#1d1d2a",
+    "popover_bg": "#20202f",
+    "menu_bg": "#232332",
+    "border": "#242432",
+    "composer_bg": "#232334",
+    "hover_bg": "#252535",
+    "active_bg": "#2a2a3f",
+    "composer_border": "#323248",
+    "well_bg": "rgba(6, 6, 16, 0.35)",
     # Foreground: one colour, four strengths.
     "fg": f"rgba({_FG}, 0.85)",
     "fg_secondary": f"rgba({_FG}, 0.55)",
@@ -43,14 +46,20 @@ TOKENS: dict[str, str] = {
     "danger": "rgb(255, 115, 105)",
     "success": "rgb(110, 205, 140)",
     "warn": "rgb(255, 180, 96)",
-    "link": "rgb(140, 190, 255)",
-    "selection": "rgba(130, 180, 245, 0.35)",
+    "link": "rgb(150, 170, 255)",
+    "selection": "rgba(110, 104, 225, 0.40)",
     "diff_removed": "rgb(255, 188, 181)",
     "diff_added": "rgb(192, 238, 206)",
-    # Accent: white, with near-black on top of it.
-    "accent": "#fafafa",
-    "on_accent": "#0f0f0f",
-    "user_bubble_bg": "#2a2a2a",
+    # Accent: indigo blue (Coronation Blue nudged bluer), white on top.
+    "accent": "#5651b8",
+    "on_accent": "#ffffff",
+    "user_bubble_bg": "#2c2c44",
+    # Text roles in the chat pane (user text stays plain fg: the bubble marks it).
+    "tool_fg": "#8db8e2",        # tool call title: sky blue
+    "thinking_fg": "#b09bd4",    # thinking block: soft lavender
+    # Right sidebar values (labels stay dim).
+    "tokens_fg": "#e4c081",      # token counts: sand
+    "context_fg": "#81cfb3",     # context breakdown: mint
     # Type.
     "font_ui": "'Segoe UI', system-ui, -apple-system, sans-serif",
     "font_mono": "'Cascadia Code', 'Consolas', ui-monospace, monospace",
@@ -96,6 +105,16 @@ def solid(name: str, over: str = "app_bg") -> str:
     br, bg, bb, _ = _rgba(TOKENS[over])
     mix = [round(c * a + base * (1 - a)) for c, base in ((r, br), (g, bg), (b, bb))]
     return "#" + "".join(f"{c:02x}" for c in mix)
+
+
+SCROLLBAR_QSS = qss("""
+QScrollBar:vertical { background: transparent; width: 8px; margin: 2px; }
+QScrollBar:horizontal { background: transparent; height: 8px; margin: 2px; }
+QScrollBar::handle { background: @fg_quaternary; border-radius: 3px; min-height: 24px; min-width: 24px; }
+QScrollBar::handle:hover { background: @fg_tertiary; }
+QScrollBar::add-line, QScrollBar::sub-line { width: 0; height: 0; }
+QScrollBar::add-page, QScrollBar::sub-page { background: transparent; }
+""")
 
 
 def css_variables() -> str:

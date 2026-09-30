@@ -28,7 +28,7 @@ from pyside_gui.overlays import CopyPicker
 from pyside_gui.prompt_input import PromptInput
 from pyside_gui.desktop_pet import DesktopPetWindow
 from pyside_gui.right_sidebar import RightSidebar
-from pyside_gui.theme import qss
+from pyside_gui.theme import SCROLLBAR_QSS, qss
 from pyside_gui.utils import format_elapsed, idle_emote_path
 
 _WINDOW_CSS = qss("""
@@ -71,7 +71,7 @@ class DagiMainWindow(QMainWindow):
 
         self.setWindowTitle(f"Driverless AGI — {config.display_name}")
         self.setMinimumSize(1200, 700)
-        self.setStyleSheet(_WINDOW_CSS)
+        self.setStyleSheet(_WINDOW_CSS + SCROLLBAR_QSS)
         _icon_path = Path(__file__).with_name("resources") / "icon.png"
         if _icon_path.exists():
             self.setWindowIcon(QIcon(str(_icon_path)))

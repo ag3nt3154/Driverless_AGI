@@ -216,7 +216,7 @@ Exit with `/exit`, `exit`, `quit`, or `Ctrl-C`. Conversation history carries acr
 
 ### PySide6 Desktop GUI (`pyside_gui/`)
 
-A native Qt 6 desktop app with a neutral dark theme. Functionally equivalent to the TUI — full streaming conversation (rendered with Vditor in a QWebEngineView), right sidebar with token stats and plan tracker, left sidebar with session history/file tree/plan/message board, overlay dialogs, and the full slash-command set. The **message board** tab in the left sidebar displays posts from the `emote` tool — each post shows a meme asset, a text line, and a timestamp.
+A native Qt 6 desktop app with a slate-indigo dark theme. Functionally equivalent to the TUI — full streaming conversation (rendered with Vditor in a QWebEngineView), right sidebar with token stats and plan tracker, left sidebar with session history/file tree/plan/message board, overlay dialogs, and the full slash-command set. The **message board** tab in the left sidebar displays posts from the `emote` tool — each post shows a meme asset, a text line, and a timestamp.
 
 ```bash
 # Launch (Windows/Linux/macOS — requires conda dagi env):
@@ -245,7 +245,7 @@ Vditor 3.11.3 is vendored (trimmed to ~5.8 MB: core, lute, KaTeX woff2 fonts, en
 > **Windows note:** PySide6 DLL loading is handled automatically by `pyside_gui/__init__.py`.
 
 **Look and layout (OpenGhost-inspired, UI pass 1):**
-- **One token table:** `pyside_gui/theme.py` holds every colour and font. The palette is neutral greys, one white foreground at 0.85/0.55/0.25/0.10 opacity, colour only for danger/success/warn/link, and a white accent.
+- **One token table:** `pyside_gui/theme.py` holds every colour and font. The palette uses one hue (240°, ~20% saturation) for every surface, told apart by lightness only: sidebars darkest (`app_bg`), the chat pane lighter (`chat_bg`) and the composer lifted (`composer_bg`). Text is one cool off-white at 0.85/0.55/0.25/0.10 opacity. Colour is kept for meaning: tool titles sky, thinking lavender, right-sidebar token values sand and context values mint, plus danger/success/warn/link for status. The accent is indigo blue (`#5651b8`: send button, selection). Qt scrollbars use the shared `theme.SCROLLBAR_QSS`.
   - Qt stylesheets use `@token` placeholders through `theme.qss()`, which raises `KeyError` on a typo.
   - The web pages (conversation, notepad) get the same values as CSS custom properties spliced into their HTML's `/*@THEME@*/` slot (`theme.with_theme()`).
   - `theme.qcolor()` / `theme.solid()` cover `QColor` and Qt rich text.
@@ -270,6 +270,8 @@ Vditor 3.11.3 is vendored (trimmed to ~5.8 MB: core, lute, KaTeX woff2 fonts, en
   - a white round send button that turns into ■ Stop (same as `Esc`) while the agent runs with the input locked.
 - **Chrome:**
   - A slim header over the conversation has buttons to hide or show the whole left and right sidebars (`pyside_gui/header.py`).
+  - The right sidebar has a compact pet emote box (150×130), a status pill, the model name and dim `cwd`/`app`/`mem` rows (full path on hover). Its token and context sections use dim labels with right-aligned coloured values, and context has a usage bar with per-bucket %.
+  - Session history rows show the title with a dim `time · model` line.
   - The left rail uses checkable icon buttons. The message board opens as wide as the right sidebar; other left views split the space with the chat. Either can be dragged.
   - Splitters are 1px.
 - Design notes, decisions and the mockup: `docs/openghost-ui-review.md`, `docs/mockups/dagi-ui-mockup.html`.

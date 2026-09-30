@@ -13,6 +13,8 @@ from PySide6.QtCore import QByteArray, QRectF, Qt
 from PySide6.QtGui import QIcon, QPainter, QPixmap
 from PySide6.QtSvg import QSvgRenderer
 
+from pyside_gui.theme import TOKENS
+
 _PATHS: dict[str, str] = {
     "history": '<circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/>',
     "folder": '<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>',
@@ -23,6 +25,7 @@ _PATHS: dict[str, str] = {
     "panel_right": '<rect x="3" y="4" width="18" height="16" rx="3"/><path d="M15 4v16"/>',
     "plus": '<path d="M12 5v14M5 12h14"/>',
     "arrow_up": '<path d="M12 19V5M6 11l6-6 6 6"/>',
+    "arrow_down": '<path d="M12 5v14M6 13l6 6 6-6"/>',
     "spark": '<path d="M12 3l2 5 5 2-5 2-2 5-2-5-5-2 5-2z"/>',
     "chevron_down": '<path d="M6 9l6 6 6-6"/>',
     "close": '<path d="M6 6l12 12M18 6L6 18"/>',
@@ -33,10 +36,10 @@ _FILLED: dict[str, str] = {
 
 # Stroke/fill strengths for the three icon states (see theme fg opacities).
 _STATES = {
-    QIcon.Mode.Normal: "rgba(255,255,255,0.55)",
-    QIcon.Mode.Active: "rgba(255,255,255,0.85)",
-    QIcon.Mode.Selected: "rgba(255,255,255,0.95)",
-    QIcon.Mode.Disabled: "rgba(255,255,255,0.25)",
+    QIcon.Mode.Normal: TOKENS["fg_secondary"],
+    QIcon.Mode.Active: TOKENS["fg"],
+    QIcon.Mode.Selected: TOKENS["fg"].replace("0.85", "0.95"),
+    QIcon.Mode.Disabled: TOKENS["fg_tertiary"],
 }
 
 

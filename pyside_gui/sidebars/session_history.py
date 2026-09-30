@@ -33,10 +33,12 @@ QListWidget {
     border: none;
     font-family: @font_ui;
     font-size: 13px;
+    outline: none;
+    padding: 0 6px;
 }
 QListWidget::item {
-    padding: 6px 8px;
     border: none;
+    border-radius: 8px;
 }
 QListWidget::item:hover {
     background: @hover_bg;
@@ -44,7 +46,26 @@ QListWidget::item:hover {
 QListWidget::item:selected {
     background: @active_bg;
 }
+QLabel#session-title { color: @fg; font-family: @font_ui; font-size: 13px; }
+QLabel#session-meta { color: @fg_tertiary; font-family: @font_ui; font-size: 11.5px; }
 """)
+
+
+class _SessionRow(QWidget):
+    """Two-line history row: the session title, then a dim time · model line."""
+
+    def __init__(self, title: str, meta: str) -> None:
+        super().__init__()
+        self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(10, 7, 10, 7)
+        layout.setSpacing(1)
+        top = QLabel(title)
+        top.setObjectName("session-title")
+        bottom = QLabel(meta)
+        bottom.setObjectName("session-meta")
+        layout.addWidget(top)
+        layout.addWidget(bottom)
 
 
 class SessionHistoryView(QWidget):
@@ -77,16 +98,18 @@ class SessionHistoryView(QWidget):
         self._sessions = load_sessions(logs_dir, max_sessions)
         self._list.clear()
         for s in self._sessions:
-            label = (
-                f"{s.get('started_at', '?')[:16]}  "
-                f"{s.get('model', '?')}"
+            title = (s.get("title") or "").strip() or Path(s.get("path", "?")).stem
+            meta = (
+                f"{s.get('started_at', '?')[:16].replace('T', ' ')}"
+                f"  ·  {s.get('model', '?')}"
             )
-            title = s.get("title", "")
-            if title:
-                label += f"\n  {title[:60]}"
-            item = QListWidgetItem(label)
+            item = QListWidgetItem()
             item.setData(Qt.ItemDataRole.UserRole, s)
+            item.setToolTip(title)
+            row = _SessionRow(title[:80], meta)
+            item.setSizeHint(row.sizeHint())
             self._list.addItem(item)
+            self._list.setItemWidget(item, row)
 
     def _on_item_selected(
         self, item: QListWidgetItem

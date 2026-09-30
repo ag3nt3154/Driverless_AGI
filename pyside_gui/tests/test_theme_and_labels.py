@@ -21,17 +21,17 @@ def test_qss_unknown_token_fails_loudly():
 
 def test_css_variables_and_template_slot():
     css = css_variables()
-    assert "--chat-bg: #191919;" in css
-    assert "--fg-secondary: rgba(255, 255, 255, 0.55);" in css
+    assert f"--chat-bg: {TOKENS['chat_bg']};" in css
+    assert f"--fg-secondary: {TOKENS['fg_secondary']};" in css
     assert with_theme("<style>/*@THEME@*/</style>") == f"<style>{css}</style>"
 
 
 def test_qcolor_keeps_alpha_and_solid_flattens():
     colour = qcolor("fg_secondary")
-    assert (colour.red(), colour.green(), colour.blue(), colour.alpha()) == (255, 255, 255, 140)
-    assert solid("app_bg") == "#161616"
-    # 55% white over #161616
-    assert solid("fg_secondary") == "#969696"
+    assert (colour.red(), colour.green(), colour.blue(), colour.alpha()) == (238, 237, 250, 140)
+    assert solid("app_bg") == TOKENS["app_bg"]
+    # 55% of rgb(238, 237, 250) over app_bg #101019
+    assert solid("fg_secondary") == "#8a8a95"
 
 
 def test_no_catppuccin_hex_left_in_qt_sources():
