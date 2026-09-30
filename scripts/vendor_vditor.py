@@ -5,7 +5,7 @@ scripts/vendor_vditor.py — Vendor a trimmed Vditor build for the pet notepad.
 Vditor's built bundle is published only to npm (the GitHub repo ships no
 dist/ and no release assets), so this maintainer-only script downloads the
 pinned npm tarball once, verifies its sha512 integrity, and extracts just the
-files the notepad needs into pyside_gui/resources/notepad/vditor/. The result
+files the notepad and conversation pane need into pyside_gui/resources/vditor/. The result
 is committed, so a plain git clone of dagi works offline with no Node/npm.
 
 The dist/ layout is preserved because Vditor resolves its lazy-loaded assets
@@ -30,7 +30,7 @@ from pathlib import Path
 VDITOR_VERSION = "3.11.3"
 HLJS_STYLE = "tokyo-night-dark"
 _REGISTRY = "https://registry.npmjs.org/vditor"
-_DEST = Path(__file__).resolve().parent.parent / "pyside_gui" / "resources" / "notepad" / "vditor"
+_DEST = Path(__file__).resolve().parent.parent / "pyside_gui" / "resources" / "vditor"
 
 # Exact files kept from the tarball (paths relative to the package root).
 _KEEP_FILES = frozenset({

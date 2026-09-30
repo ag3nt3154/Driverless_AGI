@@ -2,42 +2,86 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from urllib.parse import urljoin
-from urllib.request import pathname2url
 
 from PySide6.QtCore import QUrl
+from PySide6.QtGui import QDesktopServices
+from PySide6.QtWebEngineCore import QWebEnginePage
 from PySide6.QtWebEngineWidgets import QWebEngineView
 
-from pyside_gui.markdown_renderer import render_markdown
+from pyside_gui.theme import with_theme
+from pyside_gui.tool_labels import tool_kind, tool_label
 
 
 _RESOURCES = Path(__file__).parent / "resources"
 
 
+def _file_url(path: str | Path) -> str:
+    return QUrl.fromLocalFile(str(path)).toString()
+
+
+def _is_error_result(result: str) -> bool:
+    head = result.lstrip()[:12].lower()
+    return head.startswith(("error:", "[error"))
+
+
+class _ConversationPage(QWebEnginePage):
+    """Keeps the pane on the conversation: clicked links open externally."""
+
+    def acceptNavigationRequest(self, url, nav_type, is_main_frame):  # noqa: N802
+        if nav_type == QWebEnginePage.NavigationType.NavigationTypeLinkClicked:
+            if url.scheme() in ("http", "https", "mailto", "file"):
+                QDesktopServices.openUrl(url)
+            return False
+        return super().acceptNavigationRequest(url, nav_type, is_main_frame)
+
+
 class ConversationView(QWebEngineView):
     """QWebEngineView wrapper that loads the conversation template and
-    exposes Python methods mapped to JS DOM-manipulation functions."""
+    exposes Python methods mapped to JS DOM-manipulation functions.
+
+    Assistant text, reasoning and questions are passed as raw markdown; the
+    page renders them with Vditor (Lute + KaTeX + highlight.js). Calls made
+    before the page finishes loading are queued and replayed.
+    """
 
     def __init__(self, verbose: bool = False) -> None:
         super().__init__()
         self._verbose = verbose
         self._ready = False
+        self._pending: list[str] = []
         self._stream_reasoning = ""
         self._reasoning_dirty = False
-        html_path = _RESOURCES / "conversation.html"
-        self.load(QUrl.fromLocalFile(str(html_path)))
+        self.setPage(_ConversationPage(self))
         self.loadFinished.connect(self._on_load_finished)
+        html = (_RESOURCES / "conversation.html").read_text(encoding="utf-8")
+        self.setHtml(with_theme(html), QUrl.fromLocalFile(str(_RESOURCES) + "/"))
 
     def _on_load_finished(self, ok: bool) -> None:
         self._ready = ok
+        if ok:
+            pending, self._pending = self._pending, []
+            for js in pending:
+                self.page().runJavaScript(js)
 
     def _run_js(self, js: str) -> None:
         if self._ready:
             self.page().runJavaScript(js)
+        else:
+            self._pending.append(js)
 
     @staticmethod
     def _js_str(text: str) -> str:
         return json.dumps(text)
+
+    def show_welcome(
+        self, title: str, subtitle: str, image_path: str | Path | None = None,
+    ) -> None:
+        """Centered empty-chat screen; it disappears with the first message."""
+        url = _file_url(image_path) if image_path else ""
+        self._run_js(
+            f"showWelcome({self._js_str(title)}, {self._js_str(subtitle)}, "
+            f"{self._js_str(url)})"
+        )
 
     def append_user_message(self, text: str) -> None:
         self._run_js(
@@ -59,28 +103,23 @@ class ConversationView(QWebEngineView):
             f"appendUserMessageWithImages({self._js_str(text)}, {paths_json})"
         )
 
-    def append_assistant(self, html: str) -> None:
-        self._run_js(f"appendMarkdown({self._js_str(html)})")
+    def append_assistant(self, markdown: str) -> None:
+        self._run_js(f"appendMarkdown({self._js_str(markdown)})")
 
     def append_tool_start(self, name: str, args: str) -> None:
         self._run_js(
-            f"appendToolCall({self._js_str(name)}, "
+            f"appendToolCall({self._js_str(tool_label(name, args))}, "
+            f"{self._js_str(tool_kind(name))}, "
             f"{self._js_str(args)}, "
             f"{'true' if self._verbose else 'false'})"
         )
 
     def append_tool_end(self, name: str, result: str) -> None:
-        self._run_js(
-            f"updateToolResult({self._js_str(name)}, "
-            f"{self._js_str(result)}, "
-            f"{'true' if self._verbose else 'false'})"
-        )
+        failed = "true" if _is_error_result(result) else "false"
+        self._run_js(f"updateToolResult({self._js_str(result)}, {failed})")
 
-    def append_reasoning(self, text: str) -> None:
-        html = render_markdown(text, allow_html=False)
-        self._run_js(
-            f"appendReasoning({self._js_str(html)})"
-        )
+    def append_reasoning(self, markdown: str) -> None:
+        self._run_js(f"appendReasoning({self._js_str(markdown)})")
 
     def append_info(self, text: str) -> None:
         self._run_js(f"appendInfo({self._js_str(text)})")
@@ -109,14 +148,13 @@ class ConversationView(QWebEngineView):
             f"{self._js_str(chunk)})"
         )
 
-    def stream_end(self, html: str) -> None:
+    def stream_end(self, markdown: str) -> None:
         self._finish_reasoning()
-        self._run_js(f"finalizeStream({self._js_str(html)})")
+        self._run_js(f"finalizeStream({self._js_str(markdown)})")
 
     def _finish_reasoning(self) -> None:
         if self._reasoning_dirty:
-            html = render_markdown(self._stream_reasoning, allow_html=False)
-            self._run_js(f"finalizeReasoning({self._js_str(html)})")
+            self._run_js(f"finalizeReasoning({self._js_str(self._stream_reasoning)})")
             self._reasoning_dirty = False
 
     def clear(self) -> None:
@@ -130,10 +168,9 @@ class ConversationView(QWebEngineView):
     def append_emote(
         self, name: str, file_path: str, text: str, timestamp: str,
     ) -> None:
-        file_url = "file:///" + pathname2url(file_path).lstrip("/")
         self._run_js(
             f"appendEmoteCard({self._js_str(name)}, "
-            f"{self._js_str(file_url)}, "
+            f"{self._js_str(_file_url(file_path))}, "
             f"{self._js_str(text)}, "
             f"{self._js_str(timestamp)})"
         )
@@ -152,9 +189,8 @@ class ConversationView(QWebEngineView):
         options: list[dict],
         timeout: float | None,
     ) -> None:
-        question_html = render_markdown(question, allow_html=False)
         self._run_js(
-            f"appendQuestion({self._js_str(question_html)}, "
+            f"appendQuestion({self._js_str(question)}, "
             f"{json.dumps(options)}, "
             f"{timeout if timeout else 'null'})"
         )

@@ -16,6 +16,8 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
+from pyside_gui.theme import qss
+
 
 _HIDDEN_DIRS = {
     ".git", "__pycache__", "node_modules", ".mypy_cache",
@@ -23,12 +25,12 @@ _HIDDEN_DIRS = {
 _HIDDEN_DIR_PATHS = {"logs"}  # only under .dagi/
 _HIDDEN_EXTENSIONS = {".pyc", ".pyo"}
 
-_CSS = """
+_CSS = qss("""
 QWidget#file-tree {
-    background: #1e1e2e;
+    background: @app_bg;
 }
 QLabel#sidebar-title {
-    color: #6c7086;
+    color: @fg_secondary;
     font-size: 11px;
     font-weight: bold;
     text-transform: uppercase;
@@ -36,25 +38,25 @@ QLabel#sidebar-title {
     padding: 8px;
 }
 QTreeView {
-    background: #1e1e2e;
-    color: #cdd6f4;
+    background: @app_bg;
+    color: @fg;
     border: none;
-    font-family: 'Segoe UI', system-ui, sans-serif;
+    font-family: @font_ui;
     font-size: 13px;
 }
 QTreeView::item {
     padding: 2px 4px;
 }
 QTreeView::item:hover {
-    background: #313147;
+    background: @hover_bg;
 }
 QTreeView::item:selected {
-    background: #1a3a5c;
+    background: @active_bg;
 }
 QTreeView::branch {
-    background: #1e1e2e;
+    background: @app_bg;
 }
-"""
+""")
 
 
 class _FilterProxy(QSortFilterProxyModel):

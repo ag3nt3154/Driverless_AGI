@@ -8,7 +8,6 @@ from typing import Callable
 from PySide6.QtCore import QObject, Signal
 
 from agent.loop import AgentCallbacks
-from pyside_gui.markdown_renderer import render_markdown
 from tui.utils import _Stats, _breakdown
 
 worker_log = logging.getLogger("dagi.pyside.worker")
@@ -32,8 +31,8 @@ class AgentBridge(QObject):
 
     tool_started = Signal(str, str)        # name, args
     tool_ended = Signal(str, str)          # name, result
-    assistant_text = Signal(str)           # rendered HTML
-    handoff_text = Signal(str)             # rendered HTML (bypasses stream guard)
+    assistant_text = Signal(str)           # markdown
+    handoff_text = Signal(str)             # markdown (bypasses stream guard)
     reasoning_received = Signal(str)       # text
     token_update = Signal(int, int, object, int, int)
     context_update = Signal(object)        # dict
@@ -130,8 +129,7 @@ class AgentBridge(QObject):
 
     def _on_done(self, result: str) -> None:
         if self._handoff_pending and result.strip():
-            html = render_markdown(result, allow_html=False)
-            self.handoff_text.emit(html)
+            self.handoff_text.emit(result)
         self._handoff_pending = False
         self.agent_done.emit(result)
 
@@ -159,8 +157,7 @@ class AgentBridge(QObject):
 
         def on_assistant_text(text: str) -> None:
             if text.strip():
-                html = render_markdown(text, allow_html=False)
-                self.assistant_text.emit(html)
+                self.assistant_text.emit(text)
 
         def on_reasoning(text: str) -> None:
             if text.strip():

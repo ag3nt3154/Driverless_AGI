@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from PySide6.QtCore import Qt, QRect, QSize, QTimer
-from PySide6.QtGui import QColor, QFont, QPainter, QTextCursor
+from PySide6.QtGui import QFont, QPainter, QTextCursor
 from PySide6.QtWebEngineWidgets import QWebEngineView
 from PySide6.QtWidgets import (
     QLabel,
@@ -14,39 +14,43 @@ from PySide6.QtWidgets import (
 )
 
 from pyside_gui.markdown_renderer import render_markdown_with_source_lines
+from pyside_gui.theme import qcolor, qss
+
 
 _MAX_FILE_SIZE = 500_000  # 500 KB
 
-_CSS = """
+_CSS = qss("""
 QWidget#file-viewer {
-    background: #1e1e2e;
+    background: @app_bg;
 }
 QLabel#file-path-label {
-    color: #6c7086;
+    color: @fg_secondary;
     font-size: 11px;
-    font-family: 'Cascadia Code', 'Consolas', monospace;
+    font-family: @font_mono;
     padding: 4px 8px;
-    background: #181825;
-    border-bottom: 1px solid #45475a;
+    background: @app_bg;
+    border-bottom: 1px solid @border;
 }
 QPlainTextEdit {
-    background: #1e1e2e;
-    color: #cdd6f4;
+    background: @app_bg;
+    color: @fg;
     border: none;
-    font-family: 'Cascadia Code', 'Consolas', monospace;
+    font-family: @font_mono;
     font-size: 12px;
-    selection-background-color: #1a3a5c;
+    selection-background-color: @selection;
 }
-"""
+""")
 
-_MD_PAGE = """<!DOCTYPE html>
+_MD_PAGE = qss("""<!DOCTYPE html>
 <html><head><style>
+html {{ color-scheme: dark; }}
 :root {{
-    --bg: #1e1e2e; --text: #cdd6f4; --surface: #282839;
-    --border: #45475a; --accent: #89b4fa; --highlight: #2a2a4a;
-    --gutter: #181825; --line-num: #6c7086;
-    --font-ui: 'Segoe UI', system-ui, sans-serif;
-    --font-mono: 'Cascadia Code', 'Consolas', monospace;
+    --bg: @app_bg; --text: @fg; --surface: @popover_bg;
+    --border: @border; --accent: @fg; --highlight: @active_bg;
+    --gutter: @app_bg; --line-num: @fg_tertiary; --link: @link;
+    --dim: @fg_secondary;
+    --font-ui: @font_ui;
+    --font-mono: @font_mono;
 }}
 * {{ box-sizing: border-box; margin: 0; padding: 0; }}
 body {{
@@ -97,10 +101,10 @@ th, td {{
     text-align: left; word-wrap: break-word;
 }}
 th {{ background: var(--surface); }}
-a {{ color: var(--accent); }}
+a {{ color: var(--link); }}
 blockquote {{
-    border-left: 3px solid var(--accent);
-    padding-left: 12px; color: #a6adc8; margin: 8px 0;
+    border-left: 3px solid var(--border);
+    padding-left: 12px; color: var(--dim); margin: 8px 0;
 }}
 ul, ol {{ padding-left: 24px; margin: 6px 0; }}
 li {{ margin: 2px 0; }}
@@ -128,7 +132,7 @@ function jumpToLine(line) {{
     }}
 }}
 </script>
-</head><body>{body}</body></html>"""
+</head><body>{body}</body></html>""")
 
 
 class _TextEditor(QPlainTextEdit):
@@ -180,7 +184,7 @@ class LineNumberArea(QWidget):
 
     def paintEvent(self, event) -> None:
         painter = QPainter(self)
-        painter.fillRect(event.rect(), QColor("#181825"))
+        painter.fillRect(event.rect(), qcolor("app_bg"))
         block = self._editor.firstVisibleBlock()
         geo = self._editor.blockBoundingGeometry(block)
         top = round(
@@ -192,7 +196,7 @@ class LineNumberArea(QWidget):
         line_h = self._editor.fontMetrics().height()
         while block.isValid() and top <= event.rect().bottom():
             if block.isVisible() and bottom >= event.rect().top():
-                painter.setPen(QColor("#6c7086"))
+                painter.setPen(qcolor("fg_tertiary"))
                 painter.drawText(
                     0, top, self.width() - 4, line_h,
                     Qt.AlignmentFlag.AlignRight,
@@ -298,7 +302,7 @@ class FileViewerView(QWidget):
         self._text_edit.setTextCursor(cursor)
         self._text_edit.centerCursor()
         sel = self._text_edit.ExtraSelection()
-        sel.format.setBackground(QColor("#2a2a4a"))
+        sel.format.setBackground(qcolor("active_bg"))
         sel.format.setProperty(
             sel.format.Property.FullWidthSelection, True
         )

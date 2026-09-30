@@ -1,0 +1,224 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>DAGI UI mockup</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/contrib/auto-render.min.js"></script>
+<style>
+:root{color-scheme:dark;
+  --contour:#111;--app-bg:#161616;--chat-bg:#191919;--composer-bg:#1e1e1e;--popover-bg:#212121;
+  --composer-border:#262626;--hover-bg:#242424;--active-bg:#272727;--border:#2c2c2c;--well-bg:rgba(0,0,0,.28);
+  --fg:rgba(255,255,255,.85);--fg2:rgba(255,255,255,.55);--fg3:rgba(255,255,255,.25);--fg4:rgba(255,255,255,.10);
+  --danger:rgb(255,115,105);--success:rgb(110,205,140);--warn:rgb(255,180,96);--link:rgb(140,190,255);
+  --accent:#fafafa;--on-accent:#0f0f0f;--bubble:#2a2a2a;
+  --ui:'Segoe UI',system-ui,sans-serif;--mono:'Cascadia Code',Consolas,monospace;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#0c0c0c;font-family:var(--ui);color:var(--fg);padding:24px;min-width:1280px}
+.caption{color:#888;font-size:13px;margin-bottom:12px}
+.window{display:flex;height:820px;border-radius:10px;overflow:hidden;background:var(--app-bg);box-shadow:0 0 0 1px var(--contour),0 20px 60px rgba(0,0,0,.6)}
+svg{width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
+
+/* left rail + panel */
+.rail{width:44px;background:var(--app-bg);display:flex;flex-direction:column;align-items:center;padding:8px 0;gap:2px;border-right:1px solid var(--border)}
+.rail button{width:34px;height:34px;border:0;border-radius:8px;background:transparent;color:var(--fg2);display:grid;place-items:center;cursor:pointer}
+.rail button:hover{background:var(--hover-bg);color:var(--fg)}
+.rail button.on{background:var(--active-bg);color:var(--accent)}
+.panel{width:236px;background:var(--app-bg);border-right:1px solid var(--border);padding:12px 8px;font-size:13.5px}
+.panel h4{font-size:12px;color:var(--fg2);font-weight:600;padding:6px 8px}
+.row{display:flex;justify-content:space-between;padding:7px 8px;border-radius:7px;color:var(--fg);cursor:pointer}
+.row:hover{background:var(--hover-bg)}.row.on{background:var(--active-bg)}
+.row span:last-child{color:var(--fg3);font-size:12px}
+
+/* main column */
+.main{flex:1;min-width:0;display:flex;flex-direction:column;background:var(--chat-bg);position:relative}
+.header{height:40px;display:flex;align-items:center;justify-content:space-between;padding:0 10px}
+.header button{width:30px;height:30px;border:0;border-radius:7px;background:transparent;color:var(--fg2);display:grid;place-items:center}
+.header button:hover{background:var(--hover-bg);color:var(--fg)}
+.header .title{font-size:12.5px;color:var(--fg3)}
+.scroll{flex:1;overflow-y:auto;overflow-x:hidden;padding:8px 24px 24px}
+.col{min-width:0;max-width:760px;margin:0 auto;display:flex;flex-direction:column;gap:14px;font-size:15px;line-height:1.65}
+
+.user{align-self:flex-end;max-width:78%;background:var(--bubble);border-radius:18px 18px 4px 18px;padding:9px 15px}
+.thought,.tool{font-size:13.5px;color:var(--fg2);display:flex;align-items:center;gap:8px;cursor:pointer;line-height:1.4}
+.thought:hover,.tool:hover{color:var(--fg)}
+.thought svg,.tool svg{width:15px;height:15px}
+.tool .st{margin-left:auto;font-size:12px;color:var(--fg3)}
+.tool .ok{color:var(--success)}
+.tool .run{color:var(--fg2)}
+.chev{width:11px!important;height:11px!important;opacity:.6}
+.tools{display:flex;flex-direction:column;gap:7px;padding-left:2px}
+.tool.open{color:var(--fg)}
+.tool-detail{overflow-x:auto;margin:-2px 0 2px 23px;background:var(--well-bg);border-radius:8px;padding:10px 12px;font:12.5px/1.5 var(--mono);color:var(--fg2);white-space:pre}
+.a h3{font-size:17px;font-weight:600;margin:6px 0 2px}
+.a p{margin:0 0 10px}
+.a code{font-family:var(--mono);font-size:13.5px;background:var(--fg4);border-radius:5px;padding:1px 5px}
+.a pre{background:var(--well-bg);border:1px solid var(--border);border-radius:10px;padding:12px 14px;font:13.5px/1.55 var(--mono);position:relative;margin:4px 0 12px;overflow:auto}
+.a pre .copy{position:absolute;top:8px;right:8px;color:var(--fg3)}
+.k{color:#c792ea}.s{color:#c3e88d}.f{color:#82aaff}.c{color:#636d83}.n{color:#f78c6c}
+.a table{border-collapse:collapse;margin:4px 0 12px;font-size:14px}
+.a th,.a td{border-bottom:1px solid var(--border);padding:6px 14px 6px 0;text-align:left}
+.a th{color:var(--fg2);font-weight:600}
+.a a{color:var(--link);text-decoration:none}
+.katex-display{margin:8px 0 12px}
+.info{font-size:12.5px;color:var(--fg3);text-align:center}
+.streaming::after{content:'';display:inline-block;width:7px;height:15px;background:var(--fg2);margin-left:3px;vertical-align:-2px;animation:b 1s steps(2) infinite}
+@keyframes b{50%{opacity:0}}
+
+/* composer */
+.dock{padding:0 24px 14px}
+.running{max-width:760px;margin:0 auto 6px;font-size:12.5px;color:var(--fg3);padding-left:4px}
+.composer{max-width:760px;margin:0 auto;background:var(--composer-bg);border:1px solid var(--composer-border);border-radius:18px;padding:10px 10px 8px 16px;box-shadow:0 8px 24px rgba(0,0,0,.35)}
+.thumbs{display:flex;gap:8px;margin-bottom:8px}
+.thumb{width:54px;height:54px;border-radius:10px;background:linear-gradient(135deg,#3a4a5a,#23303c);position:relative}
+.thumb b{position:absolute;top:-5px;right:-5px;width:18px;height:18px;border-radius:50%;background:var(--popover-bg);border:1px solid var(--border);font-size:10px;display:grid;place-items:center;color:var(--fg2)}
+.field{min-height:24px;font-size:15px;color:var(--fg3);padding:2px 0 8px}
+.bar{display:flex;align-items:center;gap:6px}
+.icon-btn{width:30px;height:30px;border-radius:50%;border:0;background:transparent;color:var(--fg2);display:grid;place-items:center}
+.icon-btn:hover{background:var(--hover-bg);color:var(--fg)}
+.pill{height:28px;border-radius:14px;border:0;background:transparent;color:var(--fg2);font:13px var(--ui);padding:0 10px;display:flex;align-items:center;gap:6px}
+.pill:hover{background:var(--hover-bg);color:var(--fg)}
+.send{margin-left:auto;width:32px;height:32px;border-radius:50%;border:0;background:var(--accent);color:var(--on-accent);display:grid;place-items:center}
+.send svg{stroke-width:2.2;width:16px;height:16px}
+.send.stop svg{fill:var(--on-accent);stroke:none;width:12px;height:12px}
+
+/* right sidebar */
+.right{width:250px;background:var(--app-bg);border-left:1px solid var(--border);padding:12px 14px;font-size:12.5px;display:flex;flex-direction:column;gap:6px}
+.pet{height:150px;border-radius:12px;background:var(--well-bg);display:grid;place-items:center;color:var(--fg3);font-size:12px;margin-bottom:6px}
+.status{display:flex;align-items:center;gap:6px;font-weight:600;font-size:13px}
+.dot{width:7px;height:7px;border-radius:50%;background:var(--success)}
+.model{font-size:13.5px;font-weight:600}
+.sec{font-size:11px;color:var(--fg3);letter-spacing:.8px;font-weight:600;margin-top:10px}
+.kv{display:flex;justify-content:space-between;font-family:var(--mono);font-size:12px;color:var(--fg2)}
+.kv b{color:var(--fg);font-weight:400}
+.meter{height:4px;border-radius:2px;background:var(--fg4);overflow:hidden;margin-top:4px}
+.meter i{display:block;height:100%;width:38%;background:var(--fg2)}
+
+/* empty state */
+.empty{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;color:var(--fg3);font-size:13px}
+.empty .petbig{width:120px;height:120px;border-radius:16px;background:var(--well-bg);display:grid;place-items:center;font-size:12px}
+.empty .t{color:var(--fg2);font-size:14px}
+.tabs{display:flex;gap:8px;margin:0 0 14px}
+.tabs button{background:#222;color:#bbb;border:1px solid #333;border-radius:8px;padding:6px 12px;font:13px var(--ui);cursor:pointer}
+.tabs button.on{background:#fafafa;color:#111}
+</style>
+</head>
+<body>
+<p class="caption">Mockup of the planned DAGI UI (neutral dark theme). Static HTML, not the real app: pet images are placeholders.</p>
+<div class="tabs"><button class="on" onclick="show('busy',this)">During a turn</button><button onclick="show('empty',this)">Empty chat</button></div>
+
+<div class="window">
+  <!-- left rail: history / files / viewer / plan / board -->
+  <div class="rail">
+    <button class="on" title="History"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/></svg></button>
+    <button title="Files"><svg viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg></button>
+    <button title="Viewer"><svg viewBox="0 0 24 24"><path d="M6 3h8l4 4v14H6z"/><path d="M14 3v4h4"/></svg></button>
+    <button title="Plan"><svg viewBox="0 0 24 24"><path d="M9 6h11M9 12h11M9 18h11"/><path d="M4 6l1 1 2-2M4 12l1 1 2-2"/><circle cx="5" cy="18" r="1"/></svg></button>
+    <button title="Board"><svg viewBox="0 0 24 24"><path d="M4 5h16v11H9l-5 4z"/></svg></button>
+  </div>
+  <div class="panel">
+    <h4>Sessions</h4>
+    <div class="row on"><span>Fix compaction math</span><span>2m</span></div>
+    <div class="row"><span>Pet notepad Enter key</span><span>3h</span></div>
+    <div class="row"><span>Qtbot fixture errors</span><span>5h</span></div>
+    <div class="row"><span>Async bash timeouts</span><span>2d</span></div>
+    <div class="row"><span>Subagent briefing</span><span>6d</span></div>
+  </div>
+
+  <div class="main">
+    <div class="header">
+      <button title="Hide left sidebar"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="3"/><path d="M9 4v16"/></svg></button>
+      <span class="title">Driverless_AGI · claude-opus-5-5</span>
+      <button title="Hide right sidebar"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="3"/><path d="M15 4v16"/></svg></button>
+    </div>
+
+    <div class="scroll" id="busy">
+      <div class="col">
+        <div class="user">Why does compaction trigger early on the 200k model? Show me the threshold math.</div>
+
+        <div class="thought"><svg class="chev" viewBox="0 0 12 12"><path d="M4 2l4 4-4 4"/></svg>Thought for 9s</div>
+
+        <div class="tools">
+          <div class="tool"><svg viewBox="0 0 24 24"><path d="M6 3h8l4 4v14H6z"/></svg>Read agent/_compaction.py<span class="st ok">✓</span></div>
+          <div class="tool"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6"/><path d="M20 20l-4-4"/></svg>Searched "reserve_tokens" in agent/<span class="st ok">✓ 7 matches</span></div>
+          <div class="tool open"><svg class="chev" viewBox="0 0 12 12" style="transform:rotate(90deg)"><path d="M4 2l4 4-4 4"/></svg>Ran python -c "from agent.loop import …"<span class="st ok">✓ 0.8s</span></div>
+          <div class="tool-detail">$ python -c "from agent.loop import AgentConfig; c=AgentConfig.load('opus'); print(c.context_window, c.reserve_tokens)"
+200000 48000</div>
+        </div>
+
+        <div class="a">
+          <p>It's the <strong>reserve</strong>, not the window. Compaction fires when the estimated prompt crosses</p>
+          $$T = W - R - S = 200{,}000 - 48{,}000 - 12{,}400 \approx 139{,}600$$
+          <p>where \(W\) is the context window, \(R\) = <code>reserve_tokens</code> and \(S\) is the system prompt. So you only get about <strong>70%</strong> of the window for history.</p>
+          <h3>Options</h3>
+          <table>
+            <tr><th>Change</th><th>New threshold</th><th>Risk</th></tr>
+            <tr><td><code>reserve_tokens: 24000</code></td><td>≈ 163k (82%)</td><td>Long handoffs may truncate</td></tr>
+            <tr><td>Scale reserve with window</td><td>≈ 170k (85%)</td><td>Needs a config migration</td></tr>
+          </table>
+          <pre><span class="copy"><svg viewBox="0 0 24 24" style="width:15px;height:15px"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V5a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h3"/></svg></span><span class="k">def</span> <span class="f">compaction_threshold</span>(cfg) -&gt; <span class="k">int</span>:
+    <span class="c"># reserve scales with the window instead of a fixed 48k</span>
+    reserve = <span class="f">max</span>(<span class="n">16_000</span>, <span class="k">int</span>(cfg.context_window * <span class="n">0.12</span>))
+    <span class="k">return</span> cfg.context_window - reserve - cfg.system_tokens</pre>
+          <p class="streaming">Want me to apply the scaled version and add a test</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="empty" id="empty" style="display:none">
+      <div class="petbig">[pet idle emote]</div>
+      <div class="t">Driverless AGI · claude-opus-5-5</div>
+      <div>C:\Users\alexr\Driverless_AGI · type /help for commands</div>
+    </div>
+
+    <div class="dock">
+      <div class="running" id="running">⠹ Running… 14s</div>
+      <div class="composer">
+        <div class="thumbs" id="thumbs"><div class="thumb"><b>✕</b></div></div>
+        <div class="field">Message DAGI…  (Enter to send, Shift+Enter for newline)</div>
+        <div class="bar">
+          <button class="icon-btn" title="Attach image"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>
+          <button class="pill"><svg viewBox="0 0 24 24" style="width:14px;height:14px"><path d="M12 3l2 5 5 2-5 2-2 5-2-5-5-2 5-2z"/></svg>claude-opus-5-5<svg class="chev" viewBox="0 0 12 12" style="transform:rotate(90deg)"><path d="M4 2l4 4-4 4"/></svg></button>
+          <button class="send stop" id="send" title="Stop (Esc)"><svg viewBox="0 0 12 12"><rect x="1" y="1" width="10" height="10" rx="2"/></svg></button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="right">
+    <div class="pet">[pet process emote]</div>
+    <div class="status"><span class="dot" id="dot"></span><span id="st">running</span></div>
+    <div class="model">claude-opus-5-5</div>
+    <div class="kv"><span>cwd</span><b>…\Driverless_AGI</b></div>
+    <div class="sec">TOKENS</div>
+    <div class="kv"><span>in</span><b>~41,220</b></div>
+    <div class="kv"><span>out</span><b>~3,104</b></div>
+    <div class="kv"><span>cache</span><b>~36,800</b></div>
+    <div class="sec">CONTEXT</div>
+    <div class="kv"><span>sys-prompt</span><b>~12,400 6%</b></div>
+    <div class="kv"><span>tools</span><b>~18,900 9%</b></div>
+    <div class="kv"><span>total</span><b>~76,000 38%</b></div>
+    <div class="meter"><i></i></div>
+  </div>
+</div>
+
+<script>
+renderMathInElement(document.body,{delimiters:[{left:'$$',right:'$$',display:true},{left:'\\(',right:'\\)',display:false}]});
+function show(which,btn){
+  document.querySelectorAll('.tabs button').forEach(b=>b.classList.toggle('on',b===btn));
+  const busy=which==='busy';
+  document.getElementById('busy').style.display=busy?'':'none';
+  document.getElementById('empty').style.display=busy?'none':'';
+  document.getElementById('running').style.display=busy?'':'none';
+  document.getElementById('thumbs').style.display=busy?'':'none';
+  const s=document.getElementById('send');
+  s.classList.toggle('stop',busy);
+  s.innerHTML=busy?'<svg viewBox="0 0 12 12"><rect x="1" y="1" width="10" height="10" rx="2"/></svg>':'<svg viewBox="0 0 24 24"><path d="M12 19V5M6 11l6-6 6 6"/></svg>';
+  document.getElementById('st').textContent=busy?'running':'idle';
+  document.getElementById('dot').style.background=busy?'var(--success)':'var(--fg3)';
+}
+</script>
+</body>
+</html>

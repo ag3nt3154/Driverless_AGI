@@ -13,6 +13,7 @@ from PySide6.QtWidgets import (
 )
 
 from pyside_gui.expression_widget import ExpressionWidget
+from pyside_gui.theme import qss, solid
 from tui.utils import _system_breakdown
 
 
@@ -22,29 +23,29 @@ def _path_tail(path: Path | str, max_chars: int = 22) -> str:
 
 
 _STATUS_DOTS = {
-    "running":    ("●", "#a6e3a1", "running"),
-    "paused":     ("⏸", "#f9e2af", "paused"),
-    "compacting": ("⟳", "#89b4fa", "compacting"),
-    "idle":       ("○", "#6c7086", "idle"),
+    "running":    ("●", solid("success"), "running"),
+    "paused":     ("⏸", solid("warn"), "paused"),
+    "compacting": ("⟳", solid("link"), "compacting"),
+    "idle":       ("○", solid("fg_secondary"), "idle"),
 }
 
-_SIDEBAR_CSS = """
+_SIDEBAR_CSS = qss("""
 QWidget#right-sidebar {
-    background: #1e1e2e;
-    border-left: 1px solid #45475a;
+    background: @app_bg;
+    border-left: 1px solid @border;
 }
 QLabel {
-    color: #cdd6f4;
-    font-family: 'Cascadia Code', 'Consolas', monospace;
+    color: @fg;
+    font-family: @font_mono;
     font-size: 12px;
 }
 QLabel#expression-image {
-    color: #89b4fa;
+    color: @fg_secondary;
     font-size: 11px;
     padding: 4px;
 }
 QLabel#expression-caption {
-    color: #6c7086;
+    color: @fg_tertiary;
     font-size: 11px;
     padding-bottom: 4px;
 }
@@ -52,10 +53,10 @@ QLabel#status-label { font-weight: bold; }
 QLabel#model-label {
     font-weight: bold;
     font-size: 13px;
-    font-family: 'Segoe UI', system-ui, sans-serif;
+    font-family: @font_ui;
 }
 QLabel#section-header {
-    color: #6c7086;
+    color: @fg_tertiary;
     font-size: 11px;
     font-weight: bold;
     text-transform: uppercase;
@@ -63,14 +64,14 @@ QLabel#section-header {
     padding-top: 8px;
 }
 QPushButton#scroll-to-bottom-button {
-    background: #313244;
-    border: 1px solid #45475a;
-    border-radius: 4px;
-    color: #cdd6f4;
+    background: @popover_bg;
+    border: 1px solid @border;
+    border-radius: 8px;
+    color: @fg;
     padding: 6px;
 }
-QPushButton#scroll-to-bottom-button:hover { background: #45475a; }
-"""
+QPushButton#scroll-to-bottom-button:hover { background: @hover_bg; color: @fg; }
+""")
 
 
 class RightSidebar(QScrollArea):
@@ -111,7 +112,7 @@ class RightSidebar(QScrollArea):
 
         container = QWidget()
         container.setObjectName("right-sidebar")
-        self.viewport().setStyleSheet("background: #1e1e2e;")
+        self.viewport().setStyleSheet(qss("background: @app_bg;"))
         self._layout = QVBoxLayout(container)
         self._layout.setAlignment(Qt.AlignmentFlag.AlignTop)
         self._layout.setSpacing(4)
@@ -198,7 +199,7 @@ class RightSidebar(QScrollArea):
 
     def _refresh_status(self) -> None:
         dot, colour, label = _STATUS_DOTS.get(
-            self._status, ("○", "#6c7086", "idle")
+            self._status, _STATUS_DOTS["idle"]
         )
         self._status_label.setText(
             f'<span style="color:{colour}">{dot} {label}</span>'

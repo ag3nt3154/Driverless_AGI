@@ -15,27 +15,29 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
+from pyside_gui.theme import qss
+
 
 _IMG_MAX = QSize(160, 140)
 
-_CARD_CSS = """
+_CARD_CSS = qss("""
 QWidget#board-card {
-    background: #313244;
-    border: 1px solid #45475a;
+    background: @popover_bg;
+    border: 1px solid @border;
     border-radius: 6px;
 }
-"""
+""")
 
-_HEADER_CSS = """
+_HEADER_CSS = qss("""
 QLabel#board-header {
-    color: #6c7086;
+    color: @fg_secondary;
     font-size: 11px;
     font-weight: bold;
     text-transform: uppercase;
     letter-spacing: 1px;
     padding: 8px 0 4px 0;
 }
-"""
+""")
 
 
 @dataclass
@@ -62,21 +64,20 @@ class _PostCard(QWidget):
 
         author_label = QLabel(post.author)
         author_label.setStyleSheet(
-            "color: #89b4fa; font-size: 11px; font-weight: bold;"
-            "font-family: 'Segoe UI', system-ui, sans-serif;"
+            qss("color: @fg; font-size: 11px; font-weight: bold; font-family: @font_ui;")
         )
         header_row.addWidget(author_label)
         header_row.addStretch()
 
         ts_label = QLabel(post.timestamp.strftime("%Y-%m-%d %H:%M:%S"))
-        ts_label.setStyleSheet("color: #6c7086; font-size: 10px;")
+        ts_label.setStyleSheet(qss("color: @fg_secondary; font-size: 10px;"))
         header_row.addWidget(ts_label)
 
         layout.addLayout(header_row)
 
         divider = QWidget()
         divider.setFixedHeight(1)
-        divider.setStyleSheet("background: #45475a;")
+        divider.setStyleSheet(qss("background: @border;"))
         layout.addWidget(divider)
 
         img_label = QLabel()
@@ -115,8 +116,7 @@ class _PostCard(QWidget):
         text_label = QLabel(post.text)
         text_label.setWordWrap(True)
         text_label.setStyleSheet(
-            "color: #cdd6f4; font-size: 12px; padding: 4px 0;"
-            "font-family: 'Segoe UI', system-ui, sans-serif;"
+            qss("color: @fg; font-size: 12px; padding: 4px 0; font-family: @font_ui;")
         )
         layout.addWidget(text_label)
 
@@ -124,7 +124,7 @@ class _PostCard(QWidget):
 class MessageBoardView(QWidget):
     def __init__(self) -> None:
         super().__init__()
-        self.setStyleSheet("background: #1e1e2e;")
+        self.setStyleSheet(qss("background: @app_bg;"))
 
         outer = QVBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
@@ -141,13 +141,11 @@ class MessageBoardView(QWidget):
         self._scroll.setHorizontalScrollBarPolicy(
             Qt.ScrollBarPolicy.ScrollBarAlwaysOff
         )
-        self._scroll.setStyleSheet(
-            "QScrollArea { border: none; background: #1e1e2e; }"
-        )
-        self._scroll.viewport().setStyleSheet("background: #1e1e2e;")
+        self._scroll.setStyleSheet(qss("QScrollArea { border: none; background: @app_bg; }"))
+        self._scroll.viewport().setStyleSheet(qss("background: @app_bg;"))
 
         self._container = QWidget()
-        self._container.setStyleSheet("background: #1e1e2e;")
+        self._container.setStyleSheet(qss("background: @app_bg;"))
         self._posts_layout = QVBoxLayout(self._container)
         self._posts_layout.setContentsMargins(8, 4, 8, 8)
         self._posts_layout.setSpacing(12)

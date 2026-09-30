@@ -1,16 +1,15 @@
-/* Catppuccin Mocha palette, matching conversation.css. */
+/* Neutral dark theme: every colour comes from pyside_gui/theme.py tokens,
+   spliced into <style id="theme-tokens"> (see notepad_editor.py). */
 :root {
-    --bg: #1e1e2e;
-    --surface: #282839;
-    --text: #cdd6f4;
-    --text-dim: #6c7086;
-    --accent: #89b4fa;
-    --magenta: #cba6f7;
-    --cyan: #94e2d5;
-    --border: #45475a;
-    --font-ui: 'Segoe UI', 'Inter', system-ui, sans-serif;
-    --font-mono: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+    --bg: var(--chat-bg);
+    --surface: var(--fg-quaternary);
+    --text: var(--fg);
+    --text-dim: var(--fg-secondary);
+    --accent: var(--fg);
+    --heading: var(--fg);
 }
+
+html { color-scheme: dark; }
 
 html, body {
     margin: 0;
@@ -27,12 +26,12 @@ html, body {
     --textarea-background-color: var(--bg);
     --textarea-text-color: var(--text);
     --second-color: var(--text-dim);
-    --ir-heading-color: var(--magenta);
-    --ir-title-color: var(--text-dim);
-    --ir-bi-color: var(--accent);
-    --ir-link-color: var(--cyan);
-    --ir-bracket-color: var(--accent);
-    --ir-paren-color: var(--cyan);
+    --ir-heading-color: var(--heading);
+    --ir-title-color: var(--fg-tertiary);
+    --ir-bi-color: var(--fg-tertiary);
+    --ir-link-color: var(--link);
+    --ir-bracket-color: var(--fg-tertiary);
+    --ir-paren-color: var(--link);
     --blockquote-color: var(--text-dim);
     --heading-border-color: var(--border);
 }
@@ -56,7 +55,7 @@ html, body {
 
 #editor .vditor-reset a,
 #editor .vditor-ir__link {
-    color: var(--cyan);
+    color: var(--link);
 }
 
 #editor .vditor-reset h1,
@@ -74,7 +73,7 @@ html, body {
 }
 
 ::-webkit-scrollbar { width: 8px; }
-::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+::-webkit-scrollbar-thumb { background: var(--fg-quaternary); border-radius: 4px; }
 ::-webkit-scrollbar-track { background: transparent; }
 
 #editor input[type="checkbox"] {

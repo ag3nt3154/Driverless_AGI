@@ -2,14 +2,17 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import QSize, Qt, Signal
 from PySide6.QtWidgets import (
     QHBoxLayout,
-    QPushButton,
     QStackedWidget,
+    QToolButton,
     QVBoxLayout,
     QWidget,
 )
+
+from pyside_gui.icons import icon
+from pyside_gui.theme import qss
 
 from pyside_gui.sidebars import (
     FileTreeView,
@@ -20,30 +23,30 @@ from pyside_gui.sidebars import (
 )
 
 _VIEW_NAMES = ("history", "files", "viewer", "plan", "board")
-_RAIL_ICONS = ("\U0001f4cb", "\U0001f4c1", "\U0001f4c4", "\U0001f4dd", "\U0001f4e2")
-_RAIL_WIDTH = 40
+_RAIL_ICONS = ("history", "folder", "file", "plan", "board")
+_RAIL_TIPS = ("Session history", "Files", "File viewer", "Plan", "Message board")
+_RAIL_WIDTH = 44
 
-_RAIL_CSS = """
-QWidget#rail {{
-    background: #181825;
-    border-right: 1px solid #45475a;
-}}
-QPushButton {{
+_RAIL_CSS = qss("""
+QWidget#rail {
+    background: @app_bg;
+    border-right: 1px solid @border;
+}
+QToolButton {
     background: transparent;
-    color: {default_color};
     border: none;
-    font-size: 18px;
-    padding: 8px 0;
-    min-height: 36px;
-}}
-QPushButton:hover {{
-    color: #cdd6f4;
-    background: #313147;
-}}
-"""
+    border-radius: 8px;
+}
+QToolButton:hover { background: @hover_bg; }
+QToolButton:checked { background: @active_bg; }
+""")
 
-_ACTIVE_COLOR = "#89b4fa"
-_DEFAULT_COLOR = "#6c7086"
+_PANEL_CSS = qss("""
+QStackedWidget#left-panel {
+    background: @app_bg;
+    border-right: 1px solid @border;
+}
+""")
 
 
 class LeftSidebar(QWidget):
@@ -63,18 +66,20 @@ class LeftSidebar(QWidget):
         rail = QWidget()
         rail.setObjectName("rail")
         rail.setFixedWidth(_RAIL_WIDTH)
-        rail.setStyleSheet(
-            _RAIL_CSS.format(default_color=_DEFAULT_COLOR)
-        )
+        rail.setStyleSheet(_RAIL_CSS)
         rail_layout = QVBoxLayout(rail)
-        rail_layout.setContentsMargins(0, 4, 0, 4)
-        rail_layout.setSpacing(0)
+        rail_layout.setContentsMargins(5, 8, 5, 8)
+        rail_layout.setSpacing(2)
         rail_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
 
-        self._rail_buttons: list[QPushButton] = []
-        for name, icon in zip(_VIEW_NAMES, _RAIL_ICONS):
-            btn = QPushButton(icon)
-            btn.setFixedSize(_RAIL_WIDTH, 36)
+        self._rail_buttons: list[QToolButton] = []
+        for name, glyph, tip in zip(_VIEW_NAMES, _RAIL_ICONS, _RAIL_TIPS):
+            btn = QToolButton()
+            btn.setIcon(icon(glyph, 18))
+            btn.setIconSize(QSize(18, 18))
+            btn.setCheckable(True)
+            btn.setToolTip(tip)
+            btn.setFixedSize(34, 34)
             btn.setCursor(Qt.CursorShape.PointingHandCursor)
             btn.clicked.connect(
                 lambda checked=False, n=name: (
@@ -89,11 +94,8 @@ class LeftSidebar(QWidget):
 
         self._panel = QStackedWidget()
         self._panel.setVisible(False)
-        self._panel.setStyleSheet(
-            "QStackedWidget {"
-            "  border-right: 1px solid #45475a;"
-            "}"
-        )
+        self._panel.setObjectName("left-panel")
+        self._panel.setStyleSheet(_PANEL_CSS)
 
         self._history_view = SessionHistoryView()
         self._file_tree = FileTreeView(project_path)
@@ -175,11 +177,5 @@ class LeftSidebar(QWidget):
         self.open_file(path)
 
     def _update_rail_styles(self) -> None:
-        for i, name in enumerate(_VIEW_NAMES):
-            btn = self._rail_buttons[i]
-            if name == self._active_view and self._expanded:
-                btn.setStyleSheet(
-                    f"color: {_ACTIVE_COLOR};"
-                )
-            else:
-                btn.setStyleSheet("")
+        for name, btn in zip(_VIEW_NAMES, self._rail_buttons):
+            btn.setChecked(name == self._active_view and self._expanded)

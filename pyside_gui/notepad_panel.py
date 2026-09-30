@@ -12,23 +12,24 @@ from PySide6.QtWidgets import (
 from agent import notepad_store as store
 from pyside_gui.notepad_controller import NotepadController
 from pyside_gui.notepad_editor import NotepadEditor
+from pyside_gui.theme import TOKENS, qss
 
 HEADER_HEIGHT = 24
 _NOTICE_MS = 5000
-_SAVED_COLOR = "#a6e3a1"
-_DIRTY_COLOR = "#f9e2af"
+_SAVED_COLOR = TOKENS["success"]
+_DIRTY_COLOR = TOKENS["warn"]
 
-_STYLE = """
+_STYLE = qss("""
 #notepadPanel {
-    background: #1e1e2e;
-    border: 1px solid #45475a;
-    border-radius: 8px;
+    background: @chat_bg;
+    border: 1px solid @border;
+    border-radius: 10px;
 }
-#notepadHeader { background: #282839; border-top-left-radius: 8px; border-top-right-radius: 8px; }
-#notepadHeader QLabel { color: #6c7086; font-family: 'Segoe UI', system-ui, sans-serif; font-size: 12px; }
-#notepadHeader QToolButton { color: #6c7086; border: none; font-size: 12px; padding: 0 6px; }
-#notepadHeader QToolButton:hover { color: #f38ba8; }
-"""
+#notepadHeader { background: @app_bg; border-top-left-radius: 10px; border-top-right-radius: 10px; }
+#notepadHeader QLabel { color: @fg_secondary; font-family: @font_ui; font-size: 12px; }
+#notepadHeader QToolButton { color: @fg_secondary; border: none; font-size: 12px; padding: 0 6px; }
+#notepadHeader QToolButton:hover { color: @danger; }
+""")
 
 
 class _Header(QFrame):

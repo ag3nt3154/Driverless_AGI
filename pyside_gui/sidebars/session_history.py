@@ -12,13 +12,15 @@ from PySide6.QtWidgets import (
 )
 
 from agent.history import load_sessions
+from pyside_gui.theme import qss
 
-_CSS = """
+
+_CSS = qss("""
 QWidget#session-history {
-    background: #1e1e2e;
+    background: @app_bg;
 }
 QLabel#sidebar-title {
-    color: #6c7086;
+    color: @fg_secondary;
     font-size: 11px;
     font-weight: bold;
     text-transform: uppercase;
@@ -26,23 +28,23 @@ QLabel#sidebar-title {
     padding: 8px;
 }
 QListWidget {
-    background: #1e1e2e;
-    color: #cdd6f4;
+    background: @app_bg;
+    color: @fg;
     border: none;
-    font-family: 'Segoe UI', system-ui, sans-serif;
+    font-family: @font_ui;
     font-size: 13px;
 }
 QListWidget::item {
     padding: 6px 8px;
-    border-bottom: 1px solid #313147;
+    border: none;
 }
 QListWidget::item:hover {
-    background: #313147;
+    background: @hover_bg;
 }
 QListWidget::item:selected {
-    background: #1a3a5c;
+    background: @active_bg;
 }
-"""
+""")
 
 
 class SessionHistoryView(QWidget):

@@ -1,15 +1,35 @@
 from __future__ import annotations
 
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QBrush, QColor
+from PySide6.QtGui import QBrush
 from PySide6.QtWidgets import QListWidget, QListWidgetItem, QWidget
+
+from pyside_gui.theme import qcolor, qss
 
 _MAX_VISIBLE = 10
 _ITEM_HEIGHT = 28
-_HIGHLIGHT_FG = QColor("#cdd6f4")
-_DIM_FG = QColor("#6c7086")
-_BG = QColor("#313244")
-_SELECTED_BG = QColor("#45475a")
+_HIGHLIGHT_FG = qcolor("fg")
+_DIM_FG = qcolor("fg_secondary")
+
+_POPUP_CSS = qss("""
+QListWidget {
+  background: @menu_bg;
+  color: @fg;
+  border: 1px solid @border;
+  border-radius: 10px;
+  padding: 4px;
+  font-family: @font_ui;
+  font-size: 13px;
+  outline: none;
+}
+QListWidget::item {
+  padding: 4px 8px;
+  border-radius: 6px;
+}
+QListWidget::item:selected {
+  background: @active_bg;
+}
+""")
 
 
 class SlashCompleterPopup(QListWidget):
@@ -24,23 +44,7 @@ class SlashCompleterPopup(QListWidget):
         )
         self.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        self.setStyleSheet(
-            f"QListWidget {{"
-            f"  background: {_BG.name()};"
-            f"  border: 1px solid #45475a;"
-            f"  border-radius: 6px;"
-            f"  padding: 4px;"
-            f"  font-family: 'Segoe UI', system-ui, sans-serif;"
-            f"  font-size: 13px;"
-            f"}}"
-            f"QListWidget::item {{"
-            f"  padding: 4px 8px;"
-            f"  border-radius: 4px;"
-            f"}}"
-            f"QListWidget::item:selected {{"
-            f"  background: {_SELECTED_BG.name()};"
-            f"}}"
-        )
+        self.setStyleSheet(_POPUP_CSS)
         self._all_items: list[tuple[str, str]] = []
         self.hide()
 

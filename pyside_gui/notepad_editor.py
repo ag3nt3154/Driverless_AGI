@@ -11,6 +11,8 @@ from PySide6.QtWebChannel import QWebChannel
 from PySide6.QtWebEngineCore import QWebEnginePage
 from PySide6.QtWebEngineWidgets import QWebEngineView
 
+from pyside_gui.theme import with_theme
+
 _LOGGER = logging.getLogger(__name__)
 
 _PAGE = Path(__file__).parent / "resources" / "notepad" / "notepad.html"
@@ -56,6 +58,10 @@ class _NotepadPage(QWebEnginePage):
     def acceptNavigationRequest(self, url, nav_type, is_main_frame) -> bool:  # noqa: N802
         if url.isLocalFile() and url.path().endswith("notepad.html"):
             return True
+        # setHtml() (used to splice in the theme tokens) loads via a data: URL.
+        link = QWebEnginePage.NavigationType.NavigationTypeLinkClicked
+        if url.scheme() == "data" and is_main_frame and nav_type != link:
+            return True
         open_external(url.toString())
         return False
 
@@ -79,7 +85,10 @@ class NotepadEditor(QWebEngineView):
         self._channel = QWebChannel(self)
         self._channel.registerObject("notepad", self._bridge)
         self.page().setWebChannel(self._channel)
-        self.load(QUrl.fromLocalFile(str(_PAGE)))
+        # setHtml with the page's own file URL as base: relative asset paths
+        # resolve as before and _NotepadPage still accepts the navigation.
+        html = with_theme(_PAGE.read_text(encoding="utf-8"))
+        self.setHtml(html, QUrl.fromLocalFile(str(_PAGE)))
 
     def is_ready(self) -> bool:
         return self._ready

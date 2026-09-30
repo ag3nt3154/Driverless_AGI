@@ -17,6 +17,8 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
+from pyside_gui.theme import qcolor, qss, solid
+
 
 _STATUS_GLYPHS = {
     "pending": "[ ]",
@@ -25,21 +27,21 @@ _STATUS_GLYPHS = {
     "failed": "[!]",
 }
 _STATUS_COLORS = {
-    "pending": "#6c7086",
-    "in_progress": "#f9e2af",
-    "complete": "#a6e3a1",
-    "failed": "#f38ba8",
+    "pending": solid("fg_secondary"),
+    "in_progress": solid("warn"),
+    "complete": solid("success"),
+    "failed": solid("danger"),
 }
 _UNKNOWN_GLYPH = "[?]"
-_UNKNOWN_COLOR = "#a6adc8"
+_UNKNOWN_COLOR = solid("fg_secondary")
 _PLACEHOLDER_TEXT = "No active plan"
 
-_CSS = """
+_CSS = qss("""
 QWidget#plan-view {
-    background: #1e1e2e;
+    background: @app_bg;
 }
 QLabel#sidebar-title {
-    color: #6c7086;
+    color: @fg_secondary;
     font-size: 11px;
     font-weight: bold;
     text-transform: uppercase;
@@ -47,28 +49,28 @@ QLabel#sidebar-title {
     padding: 8px;
 }
 QLabel#plan-title {
-    color: #cdd6f4;
+    color: @fg;
     font-size: 13px;
     font-weight: bold;
-    font-family: 'Segoe UI', system-ui, sans-serif;
+    font-family: @font_ui;
     padding: 0 8px 6px 8px;
 }
 QListWidget {
-    background: #1e1e2e;
-    color: #cdd6f4;
+    background: @app_bg;
+    color: @fg;
     border: none;
     outline: none;
-    font-family: 'Segoe UI', system-ui, sans-serif;
+    font-family: @font_ui;
     font-size: 13px;
 }
 QListWidget::item {
     padding: 4px 8px;
-    border-bottom: 1px solid #313147;
+    border: none;
 }
 QListWidget::item:hover {
     background: transparent;
 }
-"""
+""")
 
 
 class PlanView(QWidget):
@@ -147,6 +149,6 @@ class PlanView(QWidget):
 
     def _show_placeholder(self) -> None:
         item = QListWidgetItem(_PLACEHOLDER_TEXT)
-        item.setForeground(QBrush(QColor("#6c7086")))
+        item.setForeground(QBrush(qcolor("fg_secondary")))
         item.setFlags(Qt.ItemFlag.ItemIsEnabled)
         self._list.addItem(item)

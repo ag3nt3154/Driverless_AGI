@@ -146,8 +146,8 @@ class TestSlashCompleterPopup:
         items = [("/help", "Show help")]
         popup.set_items(items)
         item = popup.item(0)
-        fg = item.foreground().color().name()
-        assert fg == "#cdd6f4"  # Catppuccin Mocha text color
+        from pyside_gui.theme import qcolor
+        assert item.foreground().color() == qcolor("fg")  # primary text token
 
     def test_visible_count_after_filter(self, qapp):
         popup = SlashCompleterPopup(None)

@@ -21,14 +21,24 @@ from pyside_gui import _dispatch
 from pyside_gui.bridge import AgentBridge, init_worker_logger
 from pyside_gui.commands import SlashCommandHandler, UIWidgets
 from pyside_gui.conversation import ConversationView
+from pyside_gui.header import ConversationHeader
 from pyside_gui.left_sidebar import LeftSidebar, _RAIL_WIDTH
-from pyside_gui.markdown_renderer import render_markdown
 from pyside_gui.menu import build_main_menu
 from pyside_gui.overlays import CopyPicker
 from pyside_gui.prompt_input import PromptInput
 from pyside_gui.desktop_pet import DesktopPetWindow
 from pyside_gui.right_sidebar import RightSidebar
-from pyside_gui.utils import format_elapsed
+from pyside_gui.theme import qss
+from pyside_gui.utils import format_elapsed, idle_emote_path
+
+_WINDOW_CSS = qss("""
+QMainWindow { background: @app_bg; }
+QSplitter::handle { background: @border; }
+QWidget#main-column { background: @chat_bg; }
+QLabel#running-label {
+    color: @fg_tertiary; font-family: @font_ui; font-size: 12.5px; padding: 0 0 6px 0;
+}
+""")
 
 _SPINNER = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
 
@@ -61,7 +71,7 @@ class DagiMainWindow(QMainWindow):
 
         self.setWindowTitle(f"Driverless AGI — {config.display_name}")
         self.setMinimumSize(1200, 700)
-        self.setStyleSheet("QMainWindow { background: #1e1e2e; }")
+        self.setStyleSheet(_WINDOW_CSS)
         _icon_path = Path(__file__).with_name("resources") / "icon.png"
         if _icon_path.exists():
             self.setWindowIcon(QIcon(str(_icon_path)))
@@ -77,23 +87,24 @@ class DagiMainWindow(QMainWindow):
 
     def _build_ui(self) -> None:
         self._splitter = QSplitter(Qt.Orientation.Horizontal)
+        self._splitter.setHandleWidth(1)
 
         self._left_sidebar = LeftSidebar(self._project_path)
         self._splitter.addWidget(self._left_sidebar)
 
         main_col = QWidget()
+        main_col.setObjectName("main-column")
         col_layout = QVBoxLayout(main_col)
         col_layout.setContentsMargins(0, 0, 0, 0)
         col_layout.setSpacing(0)
+        col_layout.addWidget(self._build_header())
 
         self._conversation = ConversationView(self._verbose)
         col_layout.addWidget(self._conversation, stretch=1)
 
         self._running_label = QLabel()
+        self._running_label.setObjectName("running-label")
         self._running_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self._running_label.setStyleSheet(
-            "color: #a6e3a1; font-size: 13px; padding: 4px;"
-        )
         self._running_label.hide()
         col_layout.addWidget(self._running_label)
 
@@ -118,6 +129,34 @@ class DagiMainWindow(QMainWindow):
         self._desktop_pet.set_save_dir(self._project_path)
 
         self._copy_picker = CopyPicker(self._conversation)
+
+    def _build_header(self) -> ConversationHeader:
+        self._header = ConversationHeader()
+        self._header.left_toggled.connect(self._toggle_left_sidebar)
+        self._header.right_toggled.connect(self._toggle_right_sidebar)
+        self._refresh_title()
+        return self._header
+
+    def _refresh_title(self) -> None:
+        self._header.set_title(f"{self._project_path.name} · {self._config.display_name}")
+
+    def _toggle_left_sidebar(self) -> None:
+        self._left_sidebar.setVisible(not self._left_sidebar.isVisible())
+
+    def _toggle_right_sidebar(self) -> None:
+        self._right_sidebar.setVisible(not self._right_sidebar.isVisible())
+
+    def _refresh_models(self) -> None:
+        from agent.config_loader import list_model_ids
+        try:
+            ids = list_model_ids()
+        except Exception:
+            ids = []
+        self._prompt.set_models(ids, self._config.model_id, self._config.display_name)
+
+    def _on_model_selected(self, model_id: str) -> None:
+        if model_id != self._config.model_id:
+            self._cmd_handler.handle(f"/model {model_id}")
 
     def _build_menu(self) -> None:
         build_main_menu(
@@ -145,6 +184,7 @@ class DagiMainWindow(QMainWindow):
         # Push initial completions explicitly; the callback below handles future refreshes
         # (e.g. after /wd changes the project path and reloads skill/workflow maps).
         self._prompt.set_completions(self._cmd_handler.completions())
+        self._refresh_models()
         self._cmd_handler.set_on_completions_changed(
             lambda: self._prompt.set_completions(self._cmd_handler.completions())
         )
@@ -152,6 +192,8 @@ class DagiMainWindow(QMainWindow):
     def _on_config_changed(self, config: AgentConfig, project_path: Path) -> None:
         self._config, self._project_path = config, project_path
         self._desktop_pet.set_save_dir(project_path)
+        self._refresh_models()
+        self._refresh_title()
         self._active_loop = None
 
     def _on_session_cleared(self) -> None:
@@ -161,6 +203,8 @@ class DagiMainWindow(QMainWindow):
 
     def _connect_signals(self) -> None:
         self._prompt.submitted.connect(self._on_input_submitted)
+        self._prompt.stop_requested.connect(self._action_pause)
+        self._prompt.model_selected.connect(self._on_model_selected)
         self._prompt.attachment_error.connect(self._conversation.append_error)
         self._left_sidebar.session_selected.connect(self._on_session_selected)
         self._left_sidebar.expansion_changed.connect(self._on_sidebar_expansion)
@@ -209,9 +253,10 @@ class DagiMainWindow(QMainWindow):
         self._plan_timer.start(2000)
 
     def _show_welcome(self) -> None:
-        self._conversation.append_info(
-            f"Driverless AGI · {self._config.display_name} · {self._project_path}"
-            "\nType /help for commands"
+        self._conversation.show_welcome(
+            f"Driverless AGI · {self._config.display_name}",
+            f"{self._project_path}\nType /help for commands",
+            idle_emote_path(DAGI_ROOT),
         )
 
     @Slot(object)
@@ -281,7 +326,7 @@ class DagiMainWindow(QMainWindow):
             self._stream_had_reasoning = True
         if text:
             self._stream_had_content = True
-            self._conversation.stream_end(render_markdown(text, allow_html=False))
+            self._conversation.stream_end(text)
         else:
             self._conversation.stream_end("")
         self._streaming_active = False
@@ -292,11 +337,11 @@ class DagiMainWindow(QMainWindow):
             self._conversation.append_reasoning(text)
 
     @Slot(str)
-    def _on_assistant_text(self, html: str) -> None:
+    def _on_assistant_text(self, markdown: str) -> None:
         if self._stream_had_content:
             self._stream_had_content = False
             return
-        self._conversation.append_assistant(html)
+        self._conversation.append_assistant(markdown)
 
     @Slot()
     def _on_compaction_started(self) -> None:
@@ -310,6 +355,7 @@ class DagiMainWindow(QMainWindow):
     def _on_model_switched(self, from_name: str, to_name: str) -> None:
         self._conversation.append_info(f"Model switch: {from_name} → {to_name}")
         self._right_sidebar.update_model(to_name)
+        self._prompt.set_model_name(to_name)
 
     @Slot(str)
     def _on_agent_done(self, result: str) -> None:
@@ -388,7 +434,7 @@ class DagiMainWindow(QMainWindow):
                 self._bridge.error_occurred.emit(f"/wtf failed: {exc}"); return
             rp = Path(r.report_path).resolve()
             self._bridge.assistant_text.emit(
-                f"<p>Diagnosis: {r.description}</p><p>Report: {rp}</p>"
+                f"Diagnosis: {r.description}\n\nReport: `{rp}`"
             )
         self._show_running()
         threading.Thread(target=_work, daemon=True).start()
@@ -396,9 +442,11 @@ class DagiMainWindow(QMainWindow):
     def _show_running(self) -> None:
         self._run_start_time = time.monotonic()
         self._running_label.setText(f"  {_SPINNER[0]} Running…  0s"); self._running_label.show()
+        self._prompt.set_running(True)
 
     def _hide_running(self) -> None:
         self._run_start_time = None; self._running_label.hide()
+        self._prompt.set_running(False)
 
     def _enable_input(self) -> None:
         self._hide_running(); self._prompt.setDisabled(False); self._prompt.setFocus()

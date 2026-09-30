@@ -86,7 +86,8 @@ def test_activate_plan_expands_to_plan_view(sidebar):
 
 def test_activate_plan_marks_rail_active(sidebar):
     sidebar.activate_view("plan")
-    assert "color: #89b4fa" in sidebar._rail_buttons[3].styleSheet()
+    assert sidebar._rail_buttons[3].isChecked()
+    assert not any(b.isChecked() for i, b in enumerate(sidebar._rail_buttons) if i != 3)
 
 
 def test_activate_plan_twice_collapses(sidebar):

@@ -2,6 +2,16 @@
 
 ## In progress
 
+- **OpenGhost-inspired GUI refresh — next passes (branch `feat/openghost-ui-review`)** —
+  UI pass 1 is done (see Completed). Remaining, in order:
+  - Mermaid rendering: vendor `dist/js/mermaid` and call `Vditor.mermaidRender` in `renderMarkdownInto`.
+  - A formatting prompt plus a `files` block.
+  - "Talk while you work" and a model-written tool `description` that overrides the derived label.
+  - Selection menu and mini chat.
+  - Permission modes and approval cards.
+  - Deferred from pass 1: context meter, long-paste cards, typing while the agent runs.
+  - Mind the LICENSE carve-out on OpenGhost's visual design (non-commercial only, keep attribution).
+
 - **Redesign `memory-refresh` for the central memory wiki** — pending. The skill,
   subagent and scripts still target the retired layout (its SKILL.md line
   `{memory_root} = …` now renders confusingly because `memory_root` is the vault root);
@@ -28,6 +38,20 @@
   the bottom, so the agent sees it first.
 
 ## Completed
+
+- **GUI UI pass 1 (2026-09-30, branch `feat/openghost-ui-review`)** — neutral dark theme
+  from one token table (`pyside_gui/theme.py`, `icons.py`) replacing every hard-coded
+  Catppuccin colour in Qt and web.
+  - The conversation pane is rendered with Vditor (Lute + KaTeX + highlight.js + callouts) from raw markdown.
+  - Model HTML stays literal; `\(\)` and `\[\]` math works.
+  - OpenGhost-style layout:
+    - user bubbles;
+    - quiet tool one-liners with derived labels (`tool_labels.py`);
+    - "Thought for Ns";
+    - a pet welcome screen.
+  - A composer card (auto-grow, `+` attach, model pill, send/stop) and a header bar with sidebar toggles.
+  - Vditor moved to the shared `pyside_gui/resources/vditor/`.
+  - Review, decisions and mockup: `docs/openghost-ui-review.md`, `docs/mockups/`.
 
 - **Pet notepad (2026-09-30, branch `feat/pet-notepad`)** — pinote-style WYSIWYG
   markdown notepad in the desktop-pet window: right-click the pet to open/close/save-as;

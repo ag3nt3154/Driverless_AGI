@@ -47,15 +47,16 @@ def test_tool_started_signal_emits():
     assert received[0] == ("bash", '{"command": "ls"}')
 
 
-def test_assistant_text_renders_markdown():
+def test_assistant_text_emits_raw_markdown():
+    """The conversation page renders markdown itself (Vditor), so the bridge
+    passes the model's text through untouched."""
     bridge = AgentBridge()
     received = []
     bridge.assistant_text.connect(lambda h: received.append(h))
     callbacks = bridge.build_callbacks()
     callbacks.on_assistant_text("**bold**")
     _app.processEvents()
-    assert len(received) == 1
-    assert "<strong>bold</strong>" in received[0]
+    assert received == ["**bold**"]
 
 
 def test_stream_deltas_emit():
@@ -160,8 +161,7 @@ def test_handoff_text_emits_on_done():
     callbacks.on_handoff()
     callbacks.on_done("**report**")
     _app.processEvents()
-    assert len(handoff_received) == 1
-    assert "<strong>report</strong>" in handoff_received[0]
+    assert handoff_received == ["**report**"]
     assert len(assistant_received) == 0
 
 

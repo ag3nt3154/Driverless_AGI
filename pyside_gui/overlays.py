@@ -11,34 +11,37 @@ from PySide6.QtWidgets import (
 )
 
 from agent.history import build_copyable_messages
+from pyside_gui.theme import qss
 
-_OVERLAY_CSS = """
+_OVERLAY_CSS = qss("""
 QWidget#overlay-backdrop {
-    background: rgba(0, 0, 0, 180);
+    background: rgba(0, 0, 0, 128);
 }
 QWidget#overlay-panel {
-    background: #282839;
-    border: 1px solid #45475a;
-    border-radius: 12px;
+    background: @popover_bg;
+    border: 1px solid @border;
+    border-radius: 16px;
     padding: 16px;
 }
-QLabel { color: #cdd6f4; font-size: 14px; }
+QLabel { color: @fg; font-family: @font_ui; font-size: 14px; }
 QLabel#overlay-title {
-    color: #94e2d5;
-    font-weight: bold;
+    color: @fg;
+    font-weight: 600;
     font-size: 16px;
 }
 QListWidget {
-    background: #1e1e2e;
-    color: #cdd6f4;
-    border: 1px solid #45475a;
-    border-radius: 6px;
+    background: @app_bg;
+    color: @fg;
+    border: 1px solid @border;
+    border-radius: 10px;
+    font-family: @font_ui;
     font-size: 13px;
+    outline: none;
 }
-QListWidget::item { padding: 8px; }
-QListWidget::item:hover { background: #313147; }
-QListWidget::item:selected { background: #1a3a5c; }
-"""
+QListWidget::item { padding: 8px; border-radius: 6px; }
+QListWidget::item:hover { background: @hover_bg; }
+QListWidget::item:selected { background: @active_bg; color: @fg; }
+""")
 
 
 class CopyPicker(QWidget):

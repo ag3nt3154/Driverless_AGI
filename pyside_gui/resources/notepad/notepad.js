@@ -7,7 +7,7 @@
 (function () {
     "use strict";
 
-    const CDN = new URL("vditor", location.href).href.replace(/\/$/, "");
+    const CDN = new URL("../vditor", location.href).href.replace(/\/$/, "");
     let bridge = null;
     let vditor = null;
     let suppressInput = false;

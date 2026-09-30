@@ -2,19 +2,25 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PySide6.QtCore import QBuffer, QIODevice, QMimeData, Qt, Signal
-from PySide6.QtGui import QFocusEvent, QImage, QKeyEvent, QPixmap
+from PySide6.QtCore import QBuffer, QIODevice, QMimeData, QSize, Qt, Signal
+from PySide6.QtGui import QAction, QFocusEvent, QImage, QKeyEvent, QPixmap
 from PySide6.QtWidgets import (
+    QFileDialog,
+    QFrame,
     QHBoxLayout,
     QLabel,
+    QMenu,
     QPlainTextEdit,
-    QPushButton,
+    QToolButton,
     QVBoxLayout,
     QWidget,
 )
 
 from agent.user_input import ImageAttachment, UserSubmission
+from pyside_gui.icons import icon
+from pyside_gui.menu_style import MENU_STYLESHEET
 from pyside_gui.slash_completer import SlashCompleterPopup
+from pyside_gui.theme import TOKENS, qss
 
 # Mirrors agent._loop_config.AgentConfig defaults (image_input_*). Kept as
 # local constants so the GUI can reject oversized pastes before they ever
@@ -23,7 +29,65 @@ MAX_IMAGES_PER_MESSAGE = 4
 MAX_IMAGE_BYTES = 8 * 1024 * 1024
 MAX_IMAGE_PIXELS = 24_000_000
 _SUPPORTED_EXTENSIONS = (".png", ".jpg", ".jpeg")
-_THUMB_SIZE = 64
+_THUMB_SIZE = 56
+
+# The card matches the conversation's reading column (conversation.css).
+CARD_MAX_WIDTH = 760
+MAX_EDITOR_HEIGHT = 240
+COMPOSE_MIN_HEIGHT = 320
+PLACEHOLDER = "Message DAGI…  (Enter to send, Shift+Enter for newline)"
+
+_CARD_CSS = qss("""
+QFrame#composer-card {
+    background: @composer_bg;
+    border: 1px solid @composer_border;
+    border-radius: 18px;
+}
+QFrame#composer-card[focused="true"] { border-color: @fg_quaternary; }
+QPlainTextEdit#composer-editor {
+    background: transparent;
+    color: @fg;
+    border: none;
+    padding: 0;
+    font-family: @font_ui;
+    font-size: 15px;
+    selection-background-color: @selection;
+}
+QToolButton#composer-attach {
+    background: transparent;
+    border: none;
+    border-radius: 15px;
+}
+QToolButton#composer-attach:hover { background: @hover_bg; }
+QToolButton#composer-model {
+    background: transparent;
+    color: @fg_secondary;
+    border: none;
+    border-radius: 14px;
+    padding: 0 10px 0 6px;
+    font-family: @font_ui;
+    font-size: 13px;
+}
+QToolButton#composer-model:hover { background: @hover_bg; color: @fg; }
+QToolButton#composer-model:disabled { color: @fg_tertiary; }
+QToolButton#composer-model::menu-indicator { image: none; width: 0; }
+QToolButton#composer-send {
+    background: @accent;
+    border: none;
+    border-radius: 16px;
+}
+QToolButton#composer-send:disabled { background: @fg_quaternary; }
+QLabel#attachment-pic {
+    background: @well_bg;
+    border-radius: 10px;
+}
+QToolButton#attachment-remove {
+    background: @popover_bg;
+    border: 1px solid @border;
+    border-radius: 9px;
+}
+QToolButton#attachment-remove:hover { background: @danger; }
+""")
 
 
 def _encode_png(image: QImage) -> bytes | None:
@@ -36,18 +100,17 @@ def _encode_png(image: QImage) -> bytes | None:
 
 
 class _AttachmentThumb(QWidget):
-    """A single thumbnail preview with a remove (X) button."""
+    """A single rounded thumbnail with a small remove (✕) badge."""
 
     remove_requested = Signal(int)
 
     def __init__(self, index: int, image: QImage) -> None:
         super().__init__()
         self._index = index
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(2, 2, 2, 2)
-        layout.setSpacing(2)
+        self.setFixedSize(_THUMB_SIZE + 8, _THUMB_SIZE + 8)
 
-        pic = QLabel()
+        pic = QLabel(self)
+        pic.setObjectName("attachment-pic")
         thumb = QPixmap.fromImage(image).scaled(
             _THUMB_SIZE,
             _THUMB_SIZE,
@@ -57,20 +120,17 @@ class _AttachmentThumb(QWidget):
         pic.setPixmap(thumb)
         pic.setFixedSize(_THUMB_SIZE, _THUMB_SIZE)
         pic.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        pic.setStyleSheet(
-            "border: 1px solid #45475a; border-radius: 4px; background: #181825;"
-        )
-        layout.addWidget(pic)
+        pic.move(0, 8)
 
-        close_btn = QPushButton("✕")
+        close_btn = QToolButton(self)
+        close_btn.setObjectName("attachment-remove")
+        close_btn.setIcon(icon("close", 10, stroke_width=2.4))
+        close_btn.setIconSize(QSize(10, 10))
         close_btn.setFixedSize(18, 18)
-        close_btn.setStyleSheet(
-            "QPushButton { background: #45475a; color: #cdd6f4; border: none;"
-            " border-radius: 9px; font-size: 10px; }"
-            "QPushButton:hover { background: #f38ba8; color: #1e1e2e; }"
-        )
+        close_btn.setToolTip("Remove image")
+        close_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        close_btn.move(_THUMB_SIZE - 10, 0)
         close_btn.clicked.connect(lambda: self.remove_requested.emit(self._index))
-        layout.addWidget(close_btn, alignment=Qt.AlignmentFlag.AlignHCenter)
 
 
 class _AttachmentStrip(QWidget):
@@ -81,8 +141,8 @@ class _AttachmentStrip(QWidget):
     def __init__(self) -> None:
         super().__init__()
         self._layout = QHBoxLayout(self)
-        self._layout.setContentsMargins(0, 4, 0, 4)
-        self._layout.setSpacing(6)
+        self._layout.setContentsMargins(0, 0, 0, 6)
+        self._layout.setSpacing(8)
         self._layout.addStretch(1)
         self.hide()
 
@@ -156,8 +216,13 @@ class _Editor(QPlainTextEdit):
 
         super().keyPressEvent(event)
 
+    def focusInEvent(self, event: QFocusEvent) -> None:  # noqa: N802
+        self._owner._set_card_focused(True)
+        super().focusInEvent(event)
+
     def focusOutEvent(self, event: QFocusEvent) -> None:  # noqa: N802
         self._owner._completer.hide()
+        self._owner._set_card_focused(False)
         super().focusOutEvent(event)
 
     def canInsertFromMimeData(self, source: QMimeData) -> bool:  # noqa: N802
@@ -170,60 +235,111 @@ class _Editor(QPlainTextEdit):
 
 
 class PromptInput(QWidget):
-    """Multi-line input with image-paste support.
+    """The composer: a rounded card holding image attachments, an
+    auto-growing text field and a toolbar (attach, model pill, send/stop).
 
     Enter submits (text and/or attachments), Shift+Enter/Ctrl+Enter insert a
-    newline. Emits a single ``UserSubmission`` object per submit.
+    newline. Emits a single ``UserSubmission`` object per submit. While the
+    agent runs with the editor locked, the send button turns into Stop and
+    emits ``stop_requested``.
     """
 
     submitted = Signal(object)  # UserSubmission
     attachment_error = Signal(str)
-
-    COLLAPSED_HEIGHT = 100
-    BORDER_STYLE = (
-        "QPlainTextEdit {"
-        "  background: #282839;"
-        "  color: #cdd6f4;"
-        "  border: 1px solid #45475a;"
-        "  border-radius: 8px;"
-        "  padding: 8px;"
-        "  font-family: 'Segoe UI', system-ui, sans-serif;"
-        "  font-size: 14px;"
-        "}"
-        "QPlainTextEdit:focus {"
-        "  border-color: #89b4fa;"
-        "}"
-    )
+    stop_requested = Signal()
+    model_selected = Signal(str)  # model id
 
     def __init__(self) -> None:
         super().__init__()
         self._attachments: list[ImageAttachment] = []
         self._draft_rejected: bool = False
         self._attachment_previews: list[QImage] = []
+        self._running = False
+        self._compose = False
 
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(0)
+        outer = QHBoxLayout(self)
+        outer.setContentsMargins(24, 0, 24, 14)
+        outer.setSpacing(0)
+
+        self._card = QFrame()
+        self._card.setObjectName("composer-card")
+        self._card.setMaximumWidth(CARD_MAX_WIDTH)
+        self._card.setStyleSheet(_CARD_CSS)
+        outer.addStretch(1)
+        outer.addWidget(self._card, stretch=100)
+        outer.addStretch(1)
+
+        layout = QVBoxLayout(self._card)
+        layout.setContentsMargins(16, 12, 10, 8)
+        layout.setSpacing(6)
 
         self._strip = _AttachmentStrip()
         self._strip.remove_requested.connect(self._remove_attachment)
         layout.addWidget(self._strip)
 
         self._editor = _Editor(self)
-        self._editor.setPlaceholderText(
-            "Type a message… (Enter to send, Shift+Enter for newline)"
+        self._editor.setObjectName("composer-editor")
+        self._editor.setPlaceholderText(PLACEHOLDER)
+        self._editor.setFrameShape(QFrame.Shape.NoFrame)
+        self._editor.document().setDocumentMargin(2)
+        self._editor.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        self._editor.document().documentLayout().documentSizeChanged.connect(
+            lambda _size: self._fit_editor()
         )
-        self._editor.setStyleSheet(self.BORDER_STYLE)
-        self._editor.setFixedHeight(self.COLLAPSED_HEIGHT)
         layout.addWidget(self._editor)
+
+        toolbar = QHBoxLayout()
+        toolbar.setContentsMargins(0, 0, 0, 0)
+        toolbar.setSpacing(4)
+
+        self._attach_btn = QToolButton()
+        self._attach_btn.setObjectName("composer-attach")
+        self._attach_btn.setIcon(icon("plus", 18))
+        self._attach_btn.setIconSize(QSize(18, 18))
+        self._attach_btn.setFixedSize(30, 30)
+        self._attach_btn.setToolTip("Attach images")
+        self._attach_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._attach_btn.clicked.connect(self._pick_images)
+        toolbar.addWidget(self._attach_btn)
+
+        self._model_btn = QToolButton()
+        self._model_btn.setObjectName("composer-model")
+        self._model_btn.setIcon(icon("spark", 14))
+        self._model_btn.setIconSize(QSize(14, 14))
+        self._model_btn.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
+        self._model_btn.setFixedHeight(28)
+        self._model_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._model_btn.setToolTip("Switch model")
+        self._model_btn.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        self._model_menu = QMenu(self._model_btn)
+        self._model_menu.setStyleSheet(MENU_STYLESHEET)
+        self._model_btn.setMenu(self._model_menu)
+        self._model_btn.hide()
+        toolbar.addWidget(self._model_btn)
+
+        toolbar.addStretch(1)
+
+        self._send_btn = QToolButton()
+        self._send_btn.setObjectName("composer-send")
+        self._send_btn.setFixedSize(32, 32)
+        self._send_btn.setIconSize(QSize(16, 16))
+        self._send_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._send_btn.clicked.connect(self._on_send_clicked)
+        toolbar.addWidget(self._send_btn)
+        layout.addLayout(toolbar)
 
         self._completer = SlashCompleterPopup(self)
         self._editor.textChanged.connect(self._on_text_changed)
+        self._fit_editor()
+        self._refresh_send_button()
 
     # ---- forwarded widget-ish API (keeps app.py's existing call sites) ----
 
     def setDisabled(self, disabled: bool) -> None:  # noqa: N802
         self._editor.setDisabled(disabled)
+        self._attach_btn.setDisabled(disabled)
+        self._model_btn.setDisabled(disabled)
+        self._refresh_send_button()
 
     def setFocus(self) -> None:  # noqa: N802
         self._editor.setFocus()
@@ -239,15 +355,74 @@ class PromptInput(QWidget):
         self._clear_attachments()
 
     def set_compose_mode(self, expanded: bool) -> None:
-        if expanded:
-            self._editor.setMinimumHeight(200)
-            self._editor.setMaximumHeight(16777215)  # QWIDGETSIZE_MAX
-        else:
-            self._editor.setFixedHeight(self.COLLAPSED_HEIGHT)
+        self._compose = expanded
+        self._fit_editor()
+
+    def set_running(self, running: bool) -> None:
+        """The agent is working: the send button can stop it."""
+        self._running = running
+        self._refresh_send_button()
+
+    def set_models(self, model_ids: list[str], active_id: str, active_name: str) -> None:
+        """Fill the model pill's menu and show the active model's name."""
+        self._model_menu.clear()
+        for model_id in model_ids:
+            action = QAction(model_id, self._model_menu)
+            action.setCheckable(True)
+            action.setChecked(model_id == active_id)
+            action.triggered.connect(
+                lambda _checked=False, m=model_id: self.model_selected.emit(m)
+            )
+            self._model_menu.addAction(action)
+        self.set_model_name(active_name)
+        self._model_btn.setVisible(bool(model_ids))
+
+    def set_model_name(self, name: str) -> None:
+        self._model_btn.setText(name)
 
     def set_completions(self, items: list[tuple[str, str]]) -> None:
         """Load the list of available slash commands for autocomplete."""
         self._completer.set_items(items)
+
+    # ---- layout ----
+
+    def _fit_editor(self) -> None:
+        """Grow with the text from one line up to MAX_EDITOR_HEIGHT; compose
+        mode (Ctrl+O) instead gives the editor a tall fixed minimum."""
+        if self._compose:
+            self._editor.setMinimumHeight(COMPOSE_MIN_HEIGHT)
+            self._editor.setMaximumHeight(16777215)  # QWIDGETSIZE_MAX
+            return
+        doc = self._editor.document()
+        line = self._editor.fontMetrics().lineSpacing()
+        lines = max(1, int(doc.documentLayout().documentSize().height()))
+        height = lines * line + 2 * int(doc.documentMargin()) + 4
+        self._editor.setFixedHeight(min(max(height, line + 8), MAX_EDITOR_HEIGHT))
+
+    def _set_card_focused(self, focused: bool) -> None:
+        self._card.setProperty("focused", "true" if focused else "false")
+        self._card.style().unpolish(self._card)
+        self._card.style().polish(self._card)
+
+    def _stop_mode(self) -> bool:
+        return self._running and not self._editor.isEnabled()
+
+    def _refresh_send_button(self) -> None:
+        on_accent = TOKENS["on_accent"]
+        if self._stop_mode():
+            self._send_btn.setIcon(icon("stop", 16, color=on_accent))
+            self._send_btn.setToolTip("Stop (Esc)")
+        else:
+            self._send_btn.setIcon(icon("arrow_up", 16, color=on_accent, stroke_width=2.4))
+            self._send_btn.setToolTip("Send (Enter)")
+
+    def _on_send_clicked(self) -> None:
+        if self._stop_mode():
+            self.stop_requested.emit()
+        elif self._editor.isEnabled():
+            self._submit()
+
+    # ---- slash completion ----
 
     def _current_slash_prefix(self) -> str | None:
         """Return the /command prefix being typed, or None if not applicable."""
@@ -268,12 +443,12 @@ class PromptInput(QWidget):
         self._position_completer()             # then position with correct height
 
     def _position_completer(self) -> None:
-        """Position the popup just above the editor."""
-        editor_rect = self._editor.geometry()
+        """Position the popup just above the composer card."""
+        card_rect = self._card.geometry()
         popup_height = self._completer.height()
-        global_pos = self.mapToGlobal(editor_rect.topLeft())
-        self._completer.setFixedWidth(editor_rect.width())
-        self._completer.move(global_pos.x(), global_pos.y() - popup_height)
+        global_pos = self.mapToGlobal(card_rect.topLeft())
+        self._completer.setFixedWidth(card_rect.width())
+        self._completer.move(global_pos.x(), global_pos.y() - popup_height - 4)
 
     def _accept_completion(self) -> None:
         """Replace the current text with the selected command + trailing space."""
@@ -331,9 +506,16 @@ class PromptInput(QWidget):
             del self._attachment_previews[index]
             self._strip.set_images(self._attachment_previews)
 
-    # ---- paste handling ----
+    # ---- paste / attach handling ----
     # TODO: for large batches/files, move decode+PNG-encode off the UI
     # thread (QThread/worker). Fine on the GUI thread for v1's small pastes.
+
+    def _pick_images(self) -> None:
+        names, _filter = QFileDialog.getOpenFileNames(
+            self, "Attach images", "", "Images (*.png *.jpg *.jpeg)"
+        )
+        if names:
+            self._add_image_paths([Path(n) for n in names])
 
     def _handle_paste(self, source: QMimeData) -> None:
         if source.hasImage():
@@ -352,19 +534,19 @@ class PromptInput(QWidget):
         self._try_add_image(image, name=f"pasted-{len(self._attachments) + 1}.png")
 
     def _paste_urls(self, source: QMimeData) -> None:
-        urls = source.urls()
         paths: list[Path] = []
-        for url in urls:
+        for url in source.urls():
             if not url.isLocalFile():
                 self._report_error("Only local image files can be pasted.")
                 return
-            path = Path(url.toLocalFile())
+            paths.append(Path(url.toLocalFile()))
+        self._add_image_paths(paths)
+
+    def _add_image_paths(self, paths: list[Path]) -> None:
+        for path in paths:
             if path.suffix.lower() not in _SUPPORTED_EXTENSIONS:
                 self._report_error(f"Unsupported file type: {path.name}")
                 return
-            paths.append(path)
-        if not paths:
-            return
         decoded: list[tuple[QImage, str]] = []
         for path in paths:
             img = QImage(str(path))

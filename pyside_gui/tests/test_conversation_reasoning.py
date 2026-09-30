@@ -99,7 +99,7 @@ def test_answer_start_expands_full_markdown_without_duplicate_on_stream_end(view
         "title": "Approach", "bold": "Check", "items": 2,
         "code": "print('ok')\n", "limit": "none", "previewCount": 0,
     }
-    view.stream_end("<p>Answer</p>")
+    view.stream_end("Answer")
     assert evaluate(view, """
         return [document.querySelectorAll('.reasoning-message').length,
                 document.querySelectorAll('.assistant-message').length,
@@ -142,7 +142,7 @@ def test_clear_discards_preview_and_late_reasoning_preserves_all_text(view):
     view.stream_delta("reasoning", "**Kept**")
     view.stream_delta("text", "Answer")
     view.stream_delta("reasoning", " and *late tokens*")
-    view.stream_end("<p>Answer</p>")
+    view.stream_end("Answer")
     assert evaluate(view, """
         const bodies = document.querySelectorAll('.reasoning-message .message-body');
         return [bodies.length, bodies[0].textContent.trim(),
@@ -155,7 +155,7 @@ def test_turn_without_reasoning_does_not_create_thinking_block(view, text):
     view.stream_start()
     view.stream_delta("reasoning", " \n")
     view.stream_delta("text", text)
-    view.stream_end(f"<p>{text}</p>" if text else "")
+    view.stream_end(text)
     assert evaluate(view, """
         return [document.querySelectorAll('.reasoning-message').length,
                 document.querySelectorAll('.assistant-message').length];
