@@ -4,3 +4,5 @@
 # Byte-identical copies of ~/.claude/skills (tests/test_memory_skill_parity.py): never convert EOLs.
 .dagi/skills/memory-add/SKILL.md -text
 .dagi/skills/memory-query/SKILL.md -text
+# Vendored third-party assets: store byte-for-byte, no EOL conversion
+pyside_gui/resources/notepad/vditor/** -text
