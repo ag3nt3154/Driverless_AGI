@@ -39,7 +39,7 @@ html, body {
 
 #editor .vditor-reset {
     font-family: var(--font-ui);
-    font-size: 14px;
+    font-size: 13px;
     line-height: 1.6;
     color: var(--text);
     padding: 10px 14px !important;
