@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 import pyside_gui  # noqa: F401 - must be imported before any PySide6 import
 
 
@@ -12,3 +14,11 @@ def pytest_configure(config) -> None:
 
     if not config.pluginmanager.is_registered(pytestqt.plugin):
         config.pluginmanager.register(pytestqt.plugin, "pytestqt-local")
+
+
+@pytest.fixture(autouse=True)
+def _isolated_recent_folders(tmp_path, monkeypatch):
+    """Keep GUI tests from writing the real DAGI_ROOT/.dagi/recent_folders.json."""
+    from pyside_gui import recent_folders
+
+    monkeypatch.setattr(recent_folders, "_STORE", tmp_path / "recent_folders.json")

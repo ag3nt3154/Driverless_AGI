@@ -17,7 +17,7 @@ from agent import DAGI_ROOT
 from agent import session_events as sev
 from agent.loop import AgentConfig, AgentLoop
 
-from pyside_gui import _dispatch, esc_stop
+from pyside_gui import _dispatch, esc_stop, recent_folders
 from pyside_gui.bridge import AgentBridge, init_worker_logger
 from pyside_gui.commands import SlashCommandHandler, UIWidgets
 from pyside_gui.conversation import ConversationView
@@ -135,11 +135,15 @@ class DagiMainWindow(QMainWindow):
         self._header = ConversationHeader()
         self._header.left_toggled.connect(self._toggle_left_sidebar)
         self._header.right_toggled.connect(self._toggle_right_sidebar)
+        # Route through /wd so button and typed command share guards and side effects.
+        self._header.folder_chosen.connect(lambda p: self._cmd_handler.handle(f"/wd {p}"))
+        recent_folders.push(self._project_path)
         self._refresh_title()
         return self._header
 
     def _refresh_title(self) -> None:
-        self._header.set_title(f"{self._project_path.name} · {self._config.display_name}")
+        self._header.set_folder(self._project_path)
+        self._header.set_title(self._config.display_name)
 
     def _toggle_left_sidebar(self) -> None:
         self._left_sidebar.setVisible(not self._left_sidebar.isVisible())

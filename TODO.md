@@ -39,6 +39,11 @@
 
 ## Completed
 
+- **GUI open-folder button (2026-09-30)** — header folder button performs `/wd` with a
+  native picker and the 5 most recent folders (missing ones greyed); `/wd <path>` is now
+  refused while the agent runs; recents in `.dagi/recent_folders.json`
+  (`pyside_gui/recent_folders.py`, `header.py`).
+
 - **Global instant Esc (2026-09-30, branch `feat/instant-esc`)** — `AgentLoop.interrupt()`
   closes the in-flight stream (verified: `stream.close()` from another thread unblocks the
   httpx read at once), drops late blocking responses, cancels the rest of the tool batch,

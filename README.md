@@ -278,6 +278,7 @@ Vditor 3.11.3 is vendored (trimmed to ~9.4 MB: core, lute, KaTeX woff2 fonts, en
   - a white round send button that turns into ■ Stop (same as `Esc`) while the agent runs with the input locked.
 - **Chrome:**
   - A slim header over the conversation has buttons to hide or show the whole left and right sidebars (`pyside_gui/header.py`).
+  - Next to the left toggle, a folder button (`📁 <folder> ▾`) works like VS Code's *Open Folder*: its menu has **Open Folder…** (native picker), the 5 most recent folders (current one ticked, missing ones greyed out) and **Clear recent**. Picks run through `/wd`, so the button and the typed command share the same checks — switching is refused while the agent runs (press `Esc` first). Recents are saved to `.dagi/recent_folders.json` (git-ignored) on every successful `/wd` and at startup (`pyside_gui/recent_folders.py`). The centred header title shows the model.
   - The right sidebar has a compact pet emote box (150×130), a status pill, the model name and dim `cwd`/`app`/`mem` rows (full path on hover). Its token and context sections use dim labels with right-aligned coloured values, and context has a usage bar with per-bucket %.
   - Session history rows show the title with a dim `time · model` line.
   - The left rail uses checkable icon buttons. The message board opens as wide as the right sidebar; other left views split the space with the chat. Either can be dragged.
@@ -532,7 +533,7 @@ All slash commands work identically in the TUI and CLI.
 | `/help` | Show the command list |
 | `/exit` | Exit dagi |
 | `/clear` | Clear conversation context and reset the session |
-| `/wd [path]` | Show the current working directory, or change it to `path` |
+| `/wd [path]` | Show the current working directory, or change it to `path` (GUI: also the header folder button; refused while the agent runs) |
 | `/model [id]` | List available models, or switch to `id` immediately |
 | `/deliver` | Full delivery lifecycle — grilling, planning, per-task worker/review, integrated verification, detach |
 | `/write-plan` | Write an implementation plan; return the artifact without starting delivery |

@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Callable
 
 from agent import DAGI_ROOT
+from pyside_gui import recent_folders
 from tui.utils import _SLASH_HELP
 
 _DESC_WRAP = 72
@@ -198,6 +199,9 @@ class SlashCommandHandler:
         if not arg:
             conv.append_info(f"Working directory: {self._project_path}")
             return None
+        if self._worker_alive():
+            conv.append_info("Agent is running — press ESC to pause first")
+            return None
         new = Path(arg).expanduser()
         if not new.is_absolute():
             new = self._project_path / new
@@ -215,6 +219,7 @@ class SlashCommandHandler:
         self._w.left_sidebar.set_project_path(new)
         self._active_loop = None
         self.load_maps()
+        recent_folders.push(new)
         conv.append_info(f"Working directory -> {new}")
         return None
 

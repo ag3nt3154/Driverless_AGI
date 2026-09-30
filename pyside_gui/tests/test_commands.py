@@ -337,3 +337,70 @@ def test_revise_history_rerender_shows_tool_role_via_append_info(tmp_path: Path)
 
     info_msgs = [c.args[0] for c in w.conversation.append_info.call_args_list]
     assert any("tool result" in m for m in info_msgs)
+
+
+# ── /wd ──────────────────────────────────────────────────────────────────────
+
+
+@pytest.fixture
+def recent_store(tmp_path: Path, monkeypatch) -> Path:
+    from pyside_gui import recent_folders
+
+    store = tmp_path / "recent.json"
+    monkeypatch.setattr(recent_folders, "_STORE", store)
+    return store
+
+
+def _wd_handler(project: Path) -> tuple[UIWidgets, SlashCommandHandler]:
+    w = _make_widgets()
+    handler = SlashCommandHandler(w, MagicMock(), project)
+    handler.load_maps = MagicMock()
+    return w, handler
+
+
+def test_wd_switch_blocked_while_worker_alive(tmp_path: Path, recent_store: Path):
+    target = tmp_path / "other"
+    target.mkdir()
+    w, handler = _wd_handler(tmp_path)
+    handler._worker_alive = lambda: True
+    handler.handle(f"/wd {target}")
+    assert handler._project_path == tmp_path
+    w.left_sidebar.set_project_path.assert_not_called()
+    assert "ESC" in w.conversation.append_info.call_args.args[0]
+    assert not recent_store.exists()
+
+
+def test_wd_show_allowed_while_worker_alive(tmp_path: Path):
+    w, handler = _wd_handler(tmp_path)
+    handler._worker_alive = lambda: True
+    handler.handle("/wd")
+    assert str(tmp_path) in w.conversation.append_info.call_args.args[0]
+
+
+def test_wd_success_records_recent_folder(tmp_path: Path, recent_store: Path):
+    from pyside_gui import recent_folders
+
+    target = tmp_path / "other"
+    target.mkdir()
+    _, handler = _wd_handler(tmp_path)
+    with patch("agent.config_loader.resolve_model_config", return_value=MagicMock()):
+        handler.handle(f"/wd {target}")
+    assert handler._project_path == target.resolve()
+    assert recent_folders.load() == [target.resolve()]
+
+
+def test_wd_invalid_dir_does_not_record(tmp_path: Path, recent_store: Path):
+    w, handler = _wd_handler(tmp_path)
+    handler.handle(f"/wd {tmp_path / 'missing'}")
+    w.conversation.append_error.assert_called_once()
+    assert not recent_store.exists()
+
+
+def test_wd_config_failure_does_not_record(tmp_path: Path, recent_store: Path):
+    target = tmp_path / "other"
+    target.mkdir()
+    _, handler = _wd_handler(tmp_path)
+    with patch("agent.config_loader.resolve_model_config", side_effect=ValueError("bad yaml")):
+        with pytest.raises(ValueError):
+            handler.handle(f"/wd {target}")
+    assert not recent_store.exists()
