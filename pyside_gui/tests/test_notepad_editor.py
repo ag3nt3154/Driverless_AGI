@@ -112,3 +112,42 @@ def test_fetch_before_ready_returns_pending_text():
 @pytest.mark.parametrize("url", ["file:///C:/Windows/system32/calc.exe", "javascript:alert(1)", "notepad.html"])
 def test_open_external_rejects_unsafe_schemes(url):
     assert open_external(url) is False
+
+
+def _type(editor: NotepadEditor, keys) -> str:
+    from PySide6.QtCore import Qt
+    from PySide6.QtTest import QTest
+
+    def pause(ms: int) -> None:
+        loop = QEventLoop()
+        QTimer.singleShot(ms, loop.quit)
+        loop.exec()
+
+    editor.set_markdown("")
+    pause(200)
+    editor.focus_editor()
+    pause(200)
+    target = editor.focusProxy()
+    for key in keys:
+        if isinstance(key, str):
+            QTest.keyClicks(target, key)
+        else:
+            shift = Qt.KeyboardModifier.ShiftModifier if key is _SHIFT_ENTER else Qt.KeyboardModifier.NoModifier
+            QTest.keyClick(target, Qt.Key.Key_Return, shift)
+        pause(80)
+    pause(300)
+    return _fetch(editor)
+
+
+_ENTER, _SHIFT_ENTER = object(), object()
+
+
+@pytest.mark.parametrize("keys, expected", [
+    (["aa", _ENTER, "bb"], "aa\nbb\n"),               # Enter: single line break
+    (["aa", _SHIFT_ENTER, "bb"], "aa\n\nbb\n"),       # Shift+Enter: new paragraph
+    (["aa", _ENTER, _ENTER, "bb"], "aa\n\nbb\n"),     # blank line = paragraph
+    (["- one", _ENTER, "two"], "- one\n- two\n"),     # lists keep Vditor's Enter
+    (["# hh", _ENTER, "body"], "# hh\n\nbody\n"),     # headings too
+], ids=["enter", "shift-enter", "double-enter", "list", "heading"])
+def test_enter_key_behaviour(editor, keys, expected):
+    assert _type(editor, keys) == expected

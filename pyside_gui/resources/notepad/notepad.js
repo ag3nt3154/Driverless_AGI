@@ -67,6 +67,30 @@
         if (vditor) vditor.focus();
     };
 
+    function inPlainParagraph() {
+        const sel = window.getSelection();
+        if (!sel || !sel.anchorNode) return false;
+        const node = sel.anchorNode.nodeType === Node.ELEMENT_NODE
+            ? sel.anchorNode : sel.anchorNode.parentElement;
+        if (!node || !node.closest(".vditor-ir")) return false;
+        const block = node.closest("[data-block]");
+        return !!block && block.tagName === "P" && !node.closest("li, table, pre:not(.vditor-reset)");
+    }
+
+    // Notepad-style line breaks: in plain paragraphs Enter inserts a single line
+    // break and Shift+Enter starts a new paragraph (Vditor's defaults, swapped).
+    // Lists, headings, code and math blocks keep Vditor's own Enter handling.
+    document.addEventListener("keydown", function (event) {
+        if (event.key !== "Enter" || !event.isTrusted || event.isComposing
+            || event.ctrlKey || event.altKey || event.metaKey || !inPlainParagraph()) {
+            return;
+        }
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        // execCommand fires a native input event, which Vditor re-renders from.
+        document.execCommand(event.shiftKey ? "insertParagraph" : "insertLineBreak");
+    }, true);
+
     document.addEventListener("keydown", function (event) {
         if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "s") {
             event.preventDefault();
