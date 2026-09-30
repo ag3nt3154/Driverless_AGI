@@ -124,7 +124,9 @@ the original snapshot was not a complete cross-platform lockfile.
 `pyproject.toml` separately declares dagi's direct dependencies and optional extras
 for editable installation. The original snapshot did not contain ddgs or crawl4ai;
 use `pip install -e ".[web]"` for those web backends and run `crawl4ai-setup` for browser
-setup. Telegram and benchmark extras remain available too.
+setup. Telegram and benchmark extras remain available too. The `chunking` extra
+(`pip install -e ".[chunking]"`, also in `requirements-tools.txt`) installs `chonkie` for
+semantic chunking in the read tool; without it the stdlib chunker is used.
 
 PDF/DOCX/XLSX/PPTX reading no longer requires any dagi-side extras — it's handled entirely by the standalone doc-converter service, set up separately. See [Document Conversion Service](#document-conversion-service).
 

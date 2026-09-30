@@ -29,6 +29,12 @@
 
 ## Completed
 
+- **Test-suite skips/failures triage (2026-09-30)** — `chonkie` (used optionally by
+  `tools/read/_chunking.py`) was undeclared, so 6 chunking tests always skipped; now in
+  `requirements-tools.txt` and the `chunking` extra. Remaining skips are environmental:
+  `test_memory_skill_parity` needs `~/.claude/skills/memory-{add,query}` installed, and one
+  `test_image_assets` symlink test needs Windows Developer Mode.
+
 - **Standalone client-script models (2026-09-29)** — a `.py` file in
   `.dagi/model_config/` is now a catalog model on its own (no YAML): it defines
   `client` (sync `openai.OpenAI`, for mTLS / guardrail headers / custom transports),

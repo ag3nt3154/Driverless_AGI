@@ -4,6 +4,7 @@
 # Exact versions preserved from the original requirements.txt.
 beautifulsoup4==4.15.0
 charset-normalizer==3.4.9
+chonkie==1.7.0  # read tool: semantic chunking (stdlib fallback if absent)
 colorama==0.4.6
 colorlog==6.11.0
 jsonlines==4.0.0

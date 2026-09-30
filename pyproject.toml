@@ -28,6 +28,8 @@ telegram = ["python-telegram-bot>=21.0", "typer>=0.24,<0.25"]
 # Install to enable the web_search and web_fetch tools' primary (non-fallback) path.
 # dagi starts and runs without these; affected tools return a friendly error message.
 web = ["ddgs>=2.0", "crawl4ai>=0.8.7", "beautifulsoup4>=4.12"]
+# Semantic chunking for the read tool; without it the stdlib chunker is used.
+chunking = ["chonkie>=1.7"]
 
 [project.scripts]
 dagi = "main:main"
