@@ -3,8 +3,9 @@
 ## In progress
 
 - **OpenGhost-inspired GUI refresh — next passes** —
-  UI pass 1 and mermaid are done (see Completed). Remaining, in order:
-  - A formatting prompt plus a `files` block.
+  UI pass 1, mermaid and the visualize prompt line are done (see Completed). Remaining, in order:
+  - A `files` block: a ```` ```files ```` card for file/folder listings (rows open in the
+    file viewer), then add a clause for it to the Visualize line in `main_system.md`.
   - "Talk while you work" and a model-written tool `description` that overrides the derived label.
   - Selection menu and mini chat.
   - Permission modes and approval cards.
@@ -37,6 +38,12 @@
   the bottom, so the agent sees it first.
 
 ## Completed
+
+- **Visualize prompt line (2026-09-30)** — one `Guidelines` bullet in
+  `.dagi/prompts/main/main_system.md` asks for a mermaid diagram when structure, flow,
+  sequence, timeline or numbers explain better than prose (≤ ~15 nodes, short quoted
+  labels, no colours / `%%{init}` / `click`). Shared by every frontend; the TUI and
+  Telegram show the fence as a code block.
 
 - **Mermaid diagrams in the conversation pane (2026-09-30, branch `feat/mermaid`)** —
   mermaid 11.16.1 vendored via `scripts/vendor_vditor.py`; own renderer in

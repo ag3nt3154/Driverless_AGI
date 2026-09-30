@@ -256,7 +256,7 @@ Vditor 3.11.3 is vendored (trimmed to ~9.4 MB: core, lute, KaTeX woff2 fonts, en
   - GitHub callouts (`> [!NOTE]`, `[!TIP]`, `[!WARNING]`, `[!CAUTION]`) render.
   - HTML written by the model stays literal text: `prepareMarkdown()` escapes `<` outside code, math and autolinks, and Lute's sanitizer is on as well.
   - A streamed answer is re-rendered about every 120 ms.
-  - ```` ```mermaid ```` fences are drawn as diagrams (flowchart, sequence, class, state, ER, gantt, pie, …) by the vendored mermaid 11, loaded on first use.
+  - ```` ```mermaid ```` fences are drawn as diagrams (flowchart, sequence, class, state, ER, gantt, pie, …) by the vendored mermaid 11, loaded on first use. The model is asked for them by the **Visualize** guideline in `.dagi/prompts/main/main_system.md` (shared by every frontend; the TUI shows the fence as code).
     - They are coloured from the theme tokens (`theme: 'base'` + `themeVariables`); pie slices and other series cycle the role colours.
     - They are drawn with `securityLevel: "strict"`, so `click` callbacks and HTML labels in model-written diagrams stay inert.
     - Each card has a hover toolbar: **Code** toggles to the source, **Copy** copies it. Diagrams keep their natural size and scroll sideways when wider than the column.
