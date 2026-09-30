@@ -29,6 +29,17 @@
 
 ## Completed
 
+- **Pet notepad (2026-09-30, branch `feat/pet-notepad`)** — pinote-style WYSIWYG
+  markdown notepad in the desktop-pet window: right-click the pet to open/close/save-as;
+  vendored Vditor 3.11.3 (IR mode, no toolbar, KaTeX, highlight.js, Catppuccin) via
+  `scripts/vendor_vditor.py`; global autosaved `.dagi/notepad/notepad.md` with a file
+  watcher and `conflict-<ts>.md` backups; read-only `read_notepad` tool (always
+  registered, flushes GUI edits first). Plan: `docs/pet-notepad-implementation-plan.md`.
+  Follow-ups: optional `append_notepad` write tool; opacity / fade-when-unfocused;
+  pasted images; Vditor 4.x bump once it matures. Pre-existing unrelated GUI test
+  failures on main (32 `qtbot` fixture errors, 7 `ExpressionWidget.update_expression`)
+  still need fixing.
+
 - **Test-suite skips/failures triage (2026-09-30)** — `chonkie` (used optionally by
   `tools/read/_chunking.py`) was undeclared, so 6 chunking tests always skipped; now in
   `requirements-tools.txt` and the `chunking` extra. Remaining skips are environmental:

@@ -230,6 +230,10 @@ conda run --no-capture-output -n dagi python -m pyside_gui --model <id> --projec
 
 **Desktop pet:** A floating always-on-top window that displays VAD expression emotes (GIF animations) as a desktop pet. Hidden by default — toggle with `/show-pet`. The pet is draggable, defaults to the bottom-right corner of the screen, and stays on top of all other windows. The right sidebar's expression widget shows only process-state emotes (idle, thinking, tool:bash, etc.).
 
+**Pet notepad:** a pinote-style WYSIWYG markdown scratch pad attached below the desktop pet. Right-click the pet → **Open notepad** / **Close notepad** / **Save notepad as…** (left-click stays drag-only; the header ✕ also collapses; the header strip is a drag handle and the corner grip resizes). The pet always reappears collapsed after `/show-pet`. Editing uses [Vditor](https://github.com/Vanessa219/vditor) in instant-rendering mode (no toolbar — type markdown, `Ctrl+B/I/K`, `Ctrl+Z/Y`), KaTeX math (`$…$` inline, `$$…$$` blocks), highlight.js code blocks, and a Catppuccin reskin; `Ctrl+click` opens links in the system browser. The note is **global** and auto-saved (1 s debounce, plus on collapse/hide/quit) to `.dagi/notepad/notepad.md` (git-ignored); `Ctrl+S` / **Save notepad as…** writes a copy anywhere (dialog starts in the project dir). External edits to the file reload automatically when there are no unsaved changes; otherwise local edits win and the disk version is backed up to `.dagi/notepad/conflict-<timestamp>.md`. `.dagi/notepad/state.json` remembers the notepad size. The editor web view is created lazily on first open. Code: `pyside_gui/desktop_pet.py`, `notepad_panel.py`, `notepad_editor.py`, `notepad_controller.py`, `agent/notepad_store.py`, `pyside_gui/resources/notepad/`.
+
+Vditor 3.11.3 is vendored (trimmed to ~5.8 MB: core, lute, KaTeX woff2 fonts, en_US, ant icons, highlight.js) under `pyside_gui/resources/notepad/vditor/` because its built bundle is published only to npm — no Node is needed at install or run time. To bump it, change `VDITOR_VERSION` in `scripts/vendor_vditor.py` and run `conda run -n dagi python scripts/vendor_vditor.py` (downloads the npm tarball, verifies sha512, re-extracts).
+
 **Keyboard shortcuts:** `Enter` submit · `Shift+Enter`/`Ctrl+N` newline · `Ctrl+O` compose mode · `Esc` pause · `Ctrl+Q` quit
 
 **Image attachments (image input, all 6 stages complete):** paste an image (clipboard pixels or local `.png`/`.jpg`/`.jpeg` file paths) into the composer to attach it — a thumbnail strip appears below the text box with a remove (✕) button per image. Limits mirror `AgentConfig` defaults (max 4 images/message, 8 MiB/image, 24M px/image); exceeding one shows an inline error and leaves the draft untouched. Enter submits text and/or attachments together as a `UserSubmission`; the conversation bubble now renders the sent images as thumbnails (up to 200x150, rounded corners, wrapping flex row) below the message text via `ConversationView.append_user_message_with_images()` / `conversation.js`'s `appendUserMessageWithImages()`, resolving each attachment's file path from the `ImageAssetStore` and loading it as a `file://` URL — falling back to the old `"text [N images]"` text bubble if path resolution fails. Pending-ask answers and slash commands are text-only and reject a submission that carries images, restoring the draft instead of discarding it.
@@ -497,7 +501,7 @@ All slash commands work identically in the TUI and CLI.
 | `/hist [n]` | Open the session history picker — browse the `n` most recent sessions (default 20), select a session, then pick a message turn to resume from |
 | `/init` | Scaffold `.dagi/`, a slim `AGENTS.md` and `wiki/tasks/` for the current project |
 | `/revise-history [n]` | Remove the last `n` steps (default 1) from the session log after a confirmation dialog, then rewrite the JSONL log and re-render the conversation |
-| `/show-pet` | Toggle desktop pet window visibility (PySide GUI only) |
+| `/show-pet` | Toggle desktop pet window visibility (PySide GUI only); right-click the pet for the notepad |
 | `/<skill-name>` | Invoke any loaded skill directly (e.g. `/memory-query`) |
 | `/<workflow-name>` | Run any loaded workflow (e.g. `/improve-yourself`) |
 
@@ -890,6 +894,7 @@ Driverless_AGI/
 | `extend_subagent_timeout` | Extend the deadline of an in-flight subagent by PID. Called by the agent when `spawn_*` returns a timeout dict |
 | `compact` | Manually trigger Pi-style context compaction |
 | `switch_model` | Swap to a different model (from the model catalog) mid-session |
+| `read_notepad` | Read-only: return the user's global pet-notepad markdown (`.dagi/notepad/notepad.md`, LaTeX math kept as source) with a last-edited/char-count header; truncated at 20k chars. Always registered (GUI, TUI, Telegram); in the GUI it first flushes unsaved editor text (≤2 s wait). No parameters |
 | `show_file` | Open a file in the PySide GUI's file viewer for the user, optionally jumping to and highlighting a specific line number. No-op in TUI/Telegram |
 | `ask_user` | Pause and ask the user a clarifying question with optional choices. Acts as a turn-ender — the agent should call `ask_user` instead of `write_handoff` when it needs the user to answer a question before continuing |
 | `show_plan` | Render the current plan document and ask the user for revisions. Returns "Plan approved" (call `set_active_plan`) or "Modifications requested" (revise and call `show_plan` again). In autonomous mode, auto-approves immediately |

@@ -1,6 +1,6 @@
 # Pet Notepad — Implementation Plan
 
-Branch: `feat/pet-notepad` · Date: 2026-09-30 · Status: **approved** (Vditor 3.11.3, highlight.js included)
+Branch: `feat/pet-notepad` · Date: 2026-09-30 · Status: **implemented** (Vditor 3.11.3, highlight.js included) — T1–T8 committed on this branch
 
 A pinote-style WYSIWYG markdown notepad attached below the dagi desktop pet,
 with KaTeX math, global auto-save, "Save as…", and a read-only `read_notepad`
