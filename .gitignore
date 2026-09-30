@@ -223,3 +223,4 @@ pycache*
 
 # Vendored Vditor keeps its dist/ layout (see scripts/vendor_vditor.py)
 !pyside_gui/resources/notepad/vditor/dist/
+.dagi/notepad/
