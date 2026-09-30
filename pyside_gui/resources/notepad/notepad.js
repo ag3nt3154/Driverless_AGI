@@ -12,6 +12,22 @@
     let vditor = null;
     let suppressInput = false;
 
+    // Vditor's preview configures mermaid with securityLevel "loose" (click
+    // callbacks, raw HTML labels). Notes can hold model-written text, so every
+    // configuration is pinned to "strict" as soon as the library loads.
+    let mermaidLib;
+    Object.defineProperty(window, "mermaid", {
+        configurable: true,
+        get: function () { return mermaidLib; },
+        set: function (lib) {
+            const initialize = lib.initialize.bind(lib);
+            lib.initialize = function (config) {
+                initialize(Object.assign({}, config, { securityLevel: "strict" }));
+            };
+            mermaidLib = lib;
+        },
+    });
+
     function linkUnder(target) {
         const anchor = target.closest("a[href]");
         if (anchor) return anchor.getAttribute("href");

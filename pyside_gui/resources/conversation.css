@@ -311,6 +311,66 @@ body {
 #conversation .md .vditor-copy span:hover { color: var(--fg); }
 #conversation .md .vditor-copy svg { fill: currentColor; }
 
+/* Mermaid diagram card: the drawing on a well, a toolbar on hover. */
+#conversation .md .mermaid-card {
+    position: relative;
+    margin: 4px 0 14px;
+    background: var(--well-bg);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+}
+.mermaid-diagram {
+    padding: 16px 14px;
+    overflow-x: auto;
+    text-align: center;
+}
+.mermaid-diagram svg { display: inline-block; max-width: none; height: auto; }
+.mermaid-pending {
+    color: var(--fg-tertiary);
+    font-size: 12.5px;
+    padding: 18px 0;
+}
+.mermaid-card.pending .mermaid-toolbar { display: none; }
+.mermaid-toolbar {
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    display: flex;
+    gap: 4px;
+    opacity: 0;
+    transition: opacity .15s;
+    z-index: 1;
+}
+.mermaid-card:hover .mermaid-toolbar,
+.mermaid-card.failed .mermaid-toolbar { opacity: 1; }
+.mermaid-btn {
+    font: 11.5px var(--font-ui);
+    color: var(--fg-secondary);
+    background: var(--popover-bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 2px 8px;
+    cursor: pointer;
+}
+.mermaid-btn:hover { color: var(--fg); background: var(--hover-bg); }
+#conversation .md pre.mermaid-source {
+    margin: 0;
+    background: transparent;
+    border: none;
+}
+#conversation .md pre.mermaid-source > code.mermaid-code {
+    display: block;
+    padding: 12px 14px;
+    font: 12.5px/1.55 var(--font-mono);
+    color: var(--fg);
+    background: transparent;
+    font-variant-ligatures: none;
+    white-space: pre;
+    overflow-x: auto;
+}
+.mermaid-card.failed .mermaid-diagram { padding: 0 14px 10px; text-align: left; }
+.mermaid-error { color: var(--fg-tertiary); font-size: 12px; }
+
 #conversation .md table {
     display: table;
     width: auto;

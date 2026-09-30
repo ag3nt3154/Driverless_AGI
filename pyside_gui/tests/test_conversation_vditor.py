@@ -206,3 +206,112 @@ def test_tool_args_are_shown_as_labelled_fields_with_real_newlines(view):
         "list": "[\n  1,\n  2\n]",
         "raw": "not json {",
     }
+
+
+# ---- mermaid ----------------------------------------------------------------
+
+FLOW = "```mermaid\ngraph TD\n  A[Start] --> B{Ok?}\n  B -->|yes| C[Done]\n```"
+CARD_STATE = """
+    const card = document.querySelector('.assistant-message .mermaid-card');
+    if (!card) return null;
+    if (card.classList.contains('pending')) return 'pending';
+    return card.classList.contains('failed') ? 'failed' : 'drawn';
+"""
+
+
+def test_mermaid_fence_is_drawn_as_a_themed_svg(view):
+    view.append_assistant("Flow:\n\n" + FLOW)
+    assert poll(view, CARD_STATE, "drawn", 20000) == "drawn"
+    state = evaluate(view, """
+        const card = document.querySelector('.mermaid-card');
+        const svg = card.querySelector('.mermaid-diagram svg');
+        return {
+            labels: Array.from(svg.querySelectorAll('.nodeLabel'), n => n.textContent),
+            accent: svg.outerHTML.toLowerCase().includes(
+                getComputedStyle(document.documentElement).getPropertyValue('--accent').trim()),
+            sourceHidden: card.querySelector('.mermaid-source').hidden,
+            source: card.querySelector('.mermaid-source code').textContent,
+            stray: document.querySelectorAll('body > [id^="dmermaid-"]').length,
+        };
+    """)
+    assert state["labels"] == ["Start", "Ok?", "Done"]
+    assert state["accent"] is True
+    assert state["sourceHidden"] is True
+    assert state["source"].startswith("graph TD")
+    assert state["stray"] == 0
+
+
+def test_mermaid_toggle_shows_the_source(view):
+    view.append_assistant(FLOW)
+    assert poll(view, CARD_STATE, "drawn", 20000) == "drawn"
+    assert evaluate(view, """
+        const card = document.querySelector('.mermaid-card');
+        const button = card.querySelector('[data-act="toggle"]');
+        button.click();
+        const shown = [card.querySelector('.mermaid-source').hidden,
+                       card.querySelector('.mermaid-diagram').hidden, button.textContent];
+        button.click();
+        return shown.concat([card.querySelector('.mermaid-source').hidden, button.textContent]);
+    """) == [False, True, "Diagram", True, "Code"]
+
+
+def test_invalid_mermaid_falls_back_to_source_and_an_error_line(view):
+    view.append_assistant("```mermaid\ngraph TD\n  A --> --> ((\n```")
+    assert poll(view, CARD_STATE, "failed", 20000) == "failed"
+    state = evaluate(view, """
+        const card = document.querySelector('.mermaid-card');
+        return {
+            source: card.querySelector('.mermaid-source').hidden,
+            error: card.querySelector('.mermaid-error').textContent,
+            bomb: document.querySelectorAll('.error-icon').length,
+        };
+    """)
+    assert state["source"] is False
+    assert state["error"].startswith("Couldn't draw this diagram:")
+    assert state["bomb"] == 0
+
+
+def test_mermaid_click_directives_and_html_stay_inert(view):
+    view.append_assistant(
+        "```mermaid\ngraph TD\n  A[\"<img src=x onerror='window.pwned=1'>\"] --> B\n"
+        "  click A call pwn()\n```"
+    )
+    assert poll(view, CARD_STATE, "drawn", 20000) in ("drawn", "failed")
+    settle(300)
+    assert evaluate(view, """
+        return [!!window.pwned,
+                document.querySelectorAll('.mermaid-card img[onerror]').length];
+    """) == [False, 0]
+
+
+def test_streaming_mermaid_waits_for_the_closing_fence(view):
+    view.stream_start()
+    view.stream_delta("text", "Here:\n\n```mermaid\ngraph TD\n  A --> B")
+    settle(1500)
+    assert evaluate(view, """
+        const b = document.getElementById('streaming-bubble');
+        const card = b.querySelector('.mermaid-card');
+        return [card.classList.contains('pending'),
+                card.querySelector('.mermaid-pending').textContent];
+    """) == [True, "Drawing diagram…"]
+    view.stream_delta("text", "\n```\n\nafter")
+    assert poll(view, """
+        const card = document.querySelector('#streaming-bubble .mermaid-card');
+        return card && !card.classList.contains('pending') && !!card.querySelector('svg');
+    """, True, 20000) is True
+    view.stream_end("Here:\n\n```mermaid\ngraph TD\n  A --> B\n```\n\nafter")
+    # Final render reuses the cached drawing: no placeholder in between.
+    assert evaluate(view, """
+        const card = document.querySelector('.assistant-message .mermaid-card');
+        return [card.classList.contains('pending'), !!card.querySelector('svg')];
+    """) == [False, True]
+
+
+def test_open_code_fence_after_a_mermaid_block_does_not_hold_it_back(view):
+    view.stream_start()
+    view.stream_delta("text", FLOW + "\n\n```python\nprint(1)")
+    assert poll(view, """
+        const card = document.querySelector('#streaming-bubble .mermaid-card');
+        return !!(card && card.querySelector('svg'));
+    """, True, 20000) is True
+    view.stream_end(FLOW + "\n\n```python\nprint(1)\n```")

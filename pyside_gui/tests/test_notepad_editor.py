@@ -91,6 +91,30 @@ def test_math_renders_with_katex(editor):
     assert found and found[-1] > 0, "KaTeX did not render the formula"
 
 
+def _poll_js(editor: NotepadEditor, script: str, timeout_ms: int = 20000):
+    loop = QEventLoop()
+    found = []
+
+    def poll():
+        editor.page().runJavaScript(
+            script, 0,
+            lambda v: (found.append(v), loop.quit()) if v else QTimer.singleShot(200, poll),
+        )
+
+    QTimer.singleShot(0, poll)
+    QTimer.singleShot(timeout_ms, loop.quit)
+    loop.exec()
+    return found[-1] if found else None
+
+
+def test_mermaid_renders_with_strict_security(editor):
+    editor.set_markdown("```mermaid\ngraph TD\n  A --> B\n```\n")
+    assert _poll_js(editor, "!!document.querySelector('.language-mermaid svg')"), \
+        "mermaid diagram was not drawn"
+    level = _poll_js(editor, "window.mermaid && window.mermaid.mermaidAPI.getConfig().securityLevel")
+    assert level == "strict"
+
+
 def test_set_markdown_does_not_echo_content_changed(editor):
     echoed = []
     editor.content_changed.connect(echoed.append)

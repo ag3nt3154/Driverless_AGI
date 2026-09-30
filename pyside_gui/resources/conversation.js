@@ -168,7 +168,9 @@ function _prepareInline(s) {
     return out;
 }
 
-function prepareMarkdown(md) {
+// Returns the prepared text plus whether it ends inside an unclosed fence
+// (a code block still being streamed).
+function _scanMarkdown(md) {
     const lines = md.replace(/\r\n?/g, '\n').split('\n');
     const out = [];
     let fence = null;           // open ``` / ~~~ fence: {ch, len}
@@ -214,15 +216,221 @@ function prepareMarkdown(md) {
         out.push(_prepareInline(line));
     }
     if (math === '\\]') out.push('$$');
-    return out.join('\n');
+    return { text: out.join('\n'), openFence: !!fence };
 }
 
-function renderMarkdownInto(el, md) {
-    el.innerHTML = _getLute().Md2HTML(prepareMarkdown(md || ''));
+function prepareMarkdown(md) {
+    return _scanMarkdown(md).text;
+}
+
+// `streaming`: the text is still arriving, so a mermaid fence left open at
+// the end is shown as a placeholder instead of being drawn half-written.
+function renderMarkdownInto(el, md, streaming = false) {
+    const { text, openFence } = _scanMarkdown(md || '');
+    el.innerHTML = _getLute().Md2HTML(text);
     el.classList.add('vditor-reset', 'md');
     Vditor.codeRender(el);
     Vditor.highlightRender(HLJS, el, _cdn());
     Vditor.mathRender(el, { cdn: _cdn(), math: MATH_OPTIONS });
+    renderMermaid(el, streaming && openFence);
+}
+
+// ---- mermaid ---------------------------------------------------------------
+//
+// Mermaid is loaded on first use from the vendored copy and always runs with
+// securityLevel "strict": diagram source comes from the model, so `click`
+// callbacks and raw HTML labels stay inert. Colours come from the theme
+// tokens. Each source is drawn once; the stream bubble re-renders every
+// 120 ms and reuses the cached SVG instead of redrawing.
+
+const _mermaidCache = new Map();    // source -> Promise<{svg} | {error}>
+let _mermaidLoad = null;
+let _mermaidSeq = 0;
+
+function _token(name) {
+    return getComputedStyle(document.documentElement).getPropertyValue(`--${name}`).trim();
+}
+
+// Mermaid derives shades from its colours, so translucent tokens are
+// flattened onto the chat background first.
+function _solid(name) {
+    const value = _token(name);
+    const m = /^rgba?\(([^)]+)\)$/.exec(value);
+    if (!m) return value;
+    const [r, g, b, a = 1] = m[1].split(',').map(Number);
+    const bg = _token('chat-bg').replace('#', '');
+    const mix = (c, i) => Math.round(c * a + parseInt(bg.slice(i, i + 2), 16) * (1 - a));
+    return '#' + [mix(r, 0), mix(g, 2), mix(b, 4)].map((c) => c.toString(16).padStart(2, '0')).join('');
+}
+
+// Pie slices, git branches and quadrant/xy series cycle through the role
+// colours (desaturated onto the chat background so labels stay readable).
+const _SERIES = ['accent', 'tool-fg', 'thinking-fg', 'context-fg', 'tokens-fg', 'link', 'success', 'warn'];
+
+function _seriesColours() {
+    const out = { pieStrokeColor: _token('chat-bg'), pieOuterStrokeColor: _token('chat-bg'),
+                  pieStrokeWidth: '2px', pieOpacity: '0.85', pieTitleTextColor: _solid('fg'),
+                  pieSectionTextColor: _token('chat-bg'), pieLegendTextColor: _solid('fg') };
+    for (let i = 0; i < 12; i++) {
+        const colour = _solid(_SERIES[i % _SERIES.length]);
+        out[`pie${i + 1}`] = colour;
+        out[`git${i}`] = colour;
+        out[`cScale${i}`] = colour;
+    }
+    return out;
+}
+
+function _mermaidConfig() {
+    const fg = _solid('fg');
+    return {
+        startOnLoad: false,
+        securityLevel: 'strict',
+        suppressErrorRendering: true,
+        theme: 'base',
+        fontFamily: _token('font-ui'),
+        themeVariables: Object.assign(_seriesColours(), {
+            darkMode: true,
+            fontFamily: _token('font-ui'),
+            fontSize: '13px',
+            background: _token('chat-bg'),
+            primaryColor: _token('composer-bg'),
+            primaryTextColor: fg,
+            primaryBorderColor: _token('accent'),
+            secondaryColor: _token('active-bg'),
+            tertiaryColor: _token('hover-bg'),
+            mainBkg: _token('composer-bg'),
+            nodeBorder: _token('accent'),
+            textColor: fg,
+            titleColor: fg,
+            lineColor: _solid('fg-secondary'),
+            clusterBkg: _token('app-bg'),
+            clusterBorder: _token('composer-border'),
+            edgeLabelBackground: _token('chat-bg'),
+            noteBkgColor: _token('menu-bg'),
+            noteTextColor: fg,
+            noteBorderColor: _token('composer-border'),
+        }),
+    };
+}
+
+function _loadMermaid() {
+    if (!_mermaidLoad) {
+        _mermaidLoad = new Promise((resolve, reject) => {
+            const script = document.createElement('script');
+            script.src = `${_cdn()}/dist/js/mermaid/mermaid.min.js`;
+            script.onload = () => {
+                mermaid.initialize(_mermaidConfig());
+                resolve();
+            };
+            script.onerror = () => {
+                _mermaidLoad = null;
+                reject(new Error('the diagram renderer failed to load'));
+            };
+            document.head.appendChild(script);
+        });
+    }
+    return _mermaidLoad;
+}
+
+function _drawMermaid(source) {
+    if (!_mermaidCache.has(source)) {
+        const id = `mermaid-${++_mermaidSeq}`;
+        const job = _loadMermaid()
+            .then(() => mermaid.render(id, source))
+            .then(({ svg }) => ({ svg }))
+            .catch((err) => {
+                for (const stray of [id, `d${id}`]) {
+                    const el = document.getElementById(stray);
+                    if (el) el.remove();
+                }
+                // Parse errors are "Parse error on line N:", the offending line,
+                // a caret line, then "Expecting …": keep the first and last.
+                const lines = String((err && err.message) || err).trim().split('\n');
+                const message = lines.length > 1 ? `${lines[0]} ${lines[lines.length - 1]}` : lines[0];
+                return { error: message || 'invalid diagram' };
+            });
+        _mermaidCache.set(source, job);
+    }
+    return _mermaidCache.get(source);
+}
+
+function _copyText(text) {
+    const area = document.createElement('textarea');
+    area.value = text;
+    area.style.position = 'fixed';
+    area.style.opacity = '0';
+    document.body.appendChild(area);
+    area.select();
+    document.execCommand('copy');
+    area.remove();
+}
+
+function _mermaidCard(source) {
+    const card = _el('div', 'mermaid-card pending',
+        '<div class="mermaid-toolbar">' +
+        '<button type="button" class="mermaid-btn" data-act="toggle">Code</button>' +
+        '<button type="button" class="mermaid-btn" data-act="copy">Copy</button>' +
+        '</div>' +
+        '<div class="mermaid-diagram"><div class="mermaid-pending">Drawing diagram…</div></div>' +
+        '<pre class="mermaid-source" hidden><code class="mermaid-code"></code></pre>');
+    card.querySelector('.mermaid-source code').textContent = source;
+    card.querySelector('[data-act="toggle"]').addEventListener('click', (event) => {
+        const showCode = card.classList.toggle('show-code');
+        card.querySelector('.mermaid-source').hidden = !showCode && !card.classList.contains('failed');
+        card.querySelector('.mermaid-diagram').hidden = showCode;
+        event.currentTarget.textContent = showCode ? 'Diagram' : 'Code';
+    });
+    card.querySelector('[data-act="copy"]').addEventListener('click', (event) => {
+        const button = event.currentTarget;
+        _copyText(source);
+        button.textContent = 'Copied';
+        setTimeout(() => { button.textContent = 'Copy'; }, 1200);
+    });
+    return card;
+}
+
+function _fillMermaidCard(card, result) {
+    card.classList.remove('pending');
+    const diagram = card.querySelector('.mermaid-diagram');
+    if (result.error) {
+        card.classList.add('failed');
+        card.querySelector('[data-act="toggle"]').hidden = true;
+        card.querySelector('.mermaid-source').hidden = false;
+        diagram.innerHTML = '<div class="mermaid-error"></div>';
+        diagram.firstChild.textContent = `Couldn't draw this diagram: ${result.error}`;
+        card.appendChild(diagram);      // error line goes under the source
+        return;
+    }
+    diagram.innerHTML = result.svg;
+    // Natural size: wide diagrams scroll sideways rather than shrink.
+    const svg = diagram.querySelector('svg');
+    if (svg && svg.style.maxWidth) {
+        svg.setAttribute('width', svg.style.maxWidth);
+        svg.style.maxWidth = '';
+    }
+}
+
+// Swaps every mermaid fence Lute produced (`.language-mermaid`) for a card.
+// `lastPending`: the final fence is still streaming; show a placeholder.
+function renderMermaid(el, lastPending = false) {
+    let tail = el;
+    while (tail.lastElementChild) tail = tail.lastElementChild;
+    const blocks = Array.from(el.querySelectorAll('.language-mermaid'))
+        .filter((block) => !block.closest('.mermaid-card'));
+    blocks.forEach((block) => {
+        const host = block.parentElement && block.parentElement.tagName === 'PRE'
+            ? block.parentElement : block;
+        const source = block.textContent.trim();
+        const open = lastPending && host.contains(tail);   // the fence still streaming
+        const card = _mermaidCard(source);
+        host.replaceWith(card);
+        if (!source || open) return;
+        _drawMermaid(source).then((result) => {
+            if (!card.isConnected) return;
+            _fillMermaidCard(card, result);
+            _scrollToBottom();
+        });
+    });
 }
 
 // ---- welcome ---------------------------------------------------------------
@@ -407,7 +615,7 @@ function finalizeReasoning(md) {
 
 function _renderStream(bubble) {
     bubble._timer = 0;
-    renderMarkdownInto(bubble.querySelector('.message-body'), bubble._md);
+    renderMarkdownInto(bubble.querySelector('.message-body'), bubble._md, true);
     _scrollToBottom();
 }
 

@@ -44,6 +44,7 @@ _KEEP_FILES = frozenset({
     "dist/js/katex/mhchem.min.js",
     "dist/js/icons/ant.js",
     "dist/js/i18n/en_US.js",
+    "dist/js/mermaid/mermaid.min.js",
     "dist/js/highlight.js/LICENSE",
     "dist/js/highlight.js/highlight.min.js",
     "dist/js/highlight.js/third-languages.js",
