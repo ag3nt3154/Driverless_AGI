@@ -187,6 +187,9 @@ def create_tool_registry(
             on_show_file=callbacks.on_show_file,
             project_path=config.project_path if config else cwd,
         ))
+    # Global pet notepad: file-backed, so it is readable from every frontend.
+    from tools.read_notepad import ReadNotepadTool
+    reg.register(ReadNotepadTool(on_flush=callbacks.on_flush_notepad if callbacks else None))
     if config is not None:
         for spawn_tool in _discover_subagent_tools(
             cwd=cwd, config=config, callbacks=callbacks,

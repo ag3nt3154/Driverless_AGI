@@ -1,0 +1,1 @@
+from tools.read_notepad._read_notepad import ReadNotepadTool

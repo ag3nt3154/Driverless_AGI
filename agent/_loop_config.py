@@ -204,3 +204,6 @@ class AgentCallbacks:
     on_show_file: Callable[[str, int | None], None] = field(
         default=lambda path, line: None
     )
+    # Pet notepad: persist unsaved editor text before read_notepad reads the file.
+    # Returns True once flushed. None when no notepad editor exists (TUI, Telegram).
+    on_flush_notepad: Callable[[], bool] | None = None
