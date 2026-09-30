@@ -24,6 +24,9 @@ def init_worker_logger(logs_dir: Path) -> None:
     worker_log.setLevel(logging.DEBUG)
 
 
+NOTEPAD_FLUSH_TIMEOUT_S = 2.0
+
+
 class AgentBridge(QObject):
     """Translates AgentCallbacks into Qt Signals for thread-safe UI updates."""
 
@@ -51,6 +54,7 @@ class AgentBridge(QObject):
     subagent_event = Signal(str, str)      # type, json line
     message_board_post = Signal(str, str, str, str, str)  # author, meme_name, asset_path, text, timestamp
     show_file_requested = Signal(str, object)             # path, line (int | None)
+    notepad_flush_requested = Signal(object)              # threading.Event set once flushed
 
     def __init__(self) -> None:
         super().__init__()
@@ -80,6 +84,12 @@ class AgentBridge(QObject):
             self._stats.thinking_tok,
             self._stats.cached_tok,
         )
+
+    def _flush_notepad(self) -> bool:
+        """Worker thread: ask the GUI to persist unsaved notepad edits; wait briefly."""
+        done = threading.Event()
+        self.notepad_flush_requested.emit(done)
+        return done.wait(NOTEPAD_FLUSH_TIMEOUT_S)
 
     def _ask_user(self, question: str, options: list, timeout: float | None) -> str:
         evt = threading.Event()
@@ -227,4 +237,5 @@ class AgentBridge(QObject):
             on_reasoning_delta=self._on_reasoning_delta,
             on_message_board_post=on_message_board_post,
             on_show_file=on_show_file,
+            on_flush_notepad=self._flush_notepad,
         )

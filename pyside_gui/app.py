@@ -115,6 +115,7 @@ class DagiMainWindow(QMainWindow):
         self.setCentralWidget(self._splitter)
 
         self._desktop_pet = DesktopPetWindow()
+        self._desktop_pet.set_save_dir(self._project_path)
 
         self._copy_picker = CopyPicker(self._conversation)
 
@@ -150,6 +151,7 @@ class DagiMainWindow(QMainWindow):
 
     def _on_config_changed(self, config: AgentConfig, project_path: Path) -> None:
         self._config, self._project_path = config, project_path
+        self._desktop_pet.set_save_dir(project_path)
         self._active_loop = None
 
     def _on_session_cleared(self) -> None:
@@ -196,6 +198,7 @@ class DagiMainWindow(QMainWindow):
         b.show_file_requested.connect(
             lambda path, line: self._left_sidebar.open_file(path, line)
         )
+        b.notepad_flush_requested.connect(self._on_notepad_flush_requested)
 
     def _start_timers(self) -> None:
         self._spinner_timer = QTimer(self)
@@ -223,6 +226,9 @@ class DagiMainWindow(QMainWindow):
 
     def _agent_work(self, task: object, callbacks: object, loop_ref: list) -> None:
         _dispatch.agent_work(self, task, callbacks, loop_ref)
+
+    def _on_notepad_flush_requested(self, done: object) -> None:
+        self._desktop_pet.flush_notepad_async(done.set)
 
     def closeEvent(self, event) -> None:
         self._desktop_pet.close()
