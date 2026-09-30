@@ -10,6 +10,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import time
 from datetime import datetime
 from pathlib import Path
 
@@ -18,6 +19,8 @@ from agent import DAGI_ROOT
 NOTEPAD_DIR = DAGI_ROOT / ".dagi" / "notepad"
 _NOTE_NAME = "notepad.md"
 _STATE_NAME = "state.json"
+_REPLACE_RETRIES = 10
+_REPLACE_DELAY_S = 0.02
 
 
 def notepad_path(root: Path = NOTEPAD_DIR) -> Path:
@@ -45,7 +48,16 @@ def atomic_write(path: Path, text: str) -> Path:
     # newline="" keeps the editor's "\n" line endings byte-for-byte.
     with open(tmp, "w", encoding="utf-8", newline="") as fh:
         fh.write(text)
-    os.replace(tmp, path)
+    # Windows refuses the replace while another handle (a reader, the file
+    # watcher, an antivirus scan) briefly holds the target open; retry.
+    for attempt in range(_REPLACE_RETRIES):
+        try:
+            os.replace(tmp, path)
+            return path
+        except PermissionError:
+            if attempt == _REPLACE_RETRIES - 1:
+                raise
+            time.sleep(_REPLACE_DELAY_S)
     return path
 
 

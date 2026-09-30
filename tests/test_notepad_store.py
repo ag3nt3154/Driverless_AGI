@@ -40,3 +40,20 @@ def test_state_round_trip_and_corruption(tmp_path):
     assert store.load_state(tmp_path) == {}
     (tmp_path / "state.json").write_text("[1, 2]", encoding="utf-8")
     assert store.load_state(tmp_path) == {}
+
+
+def test_atomic_write_retries_transient_permission_error(tmp_path, monkeypatch):
+    real_replace = store.os.replace
+    calls = []
+
+    def flaky_replace(src, dst):
+        calls.append(dst)
+        if len(calls) < 3:
+            raise PermissionError("locked")
+        real_replace(src, dst)
+
+    monkeypatch.setattr(store.os, "replace", flaky_replace)
+    monkeypatch.setattr(store, "_REPLACE_DELAY_S", 0)
+    store.write_text("ok", tmp_path)
+    assert len(calls) == 3
+    assert store.read_text(tmp_path) == "ok"
