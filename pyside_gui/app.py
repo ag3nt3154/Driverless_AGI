@@ -17,7 +17,7 @@ from agent import DAGI_ROOT
 from agent import session_events as sev
 from agent.loop import AgentConfig, AgentLoop
 
-from pyside_gui import _dispatch
+from pyside_gui import _dispatch, esc_stop
 from pyside_gui.bridge import AgentBridge, init_worker_logger
 from pyside_gui.commands import SlashCommandHandler, UIWidgets
 from pyside_gui.conversation import ConversationView
@@ -129,6 +129,7 @@ class DagiMainWindow(QMainWindow):
         self._desktop_pet.set_save_dir(self._project_path)
 
         self._copy_picker = CopyPicker(self._conversation)
+        self._esc = esc_stop.install(self)
 
     def _build_header(self) -> ConversationHeader:
         self._header = ConversationHeader()
@@ -303,18 +304,12 @@ class DagiMainWindow(QMainWindow):
         if not (self._worker and self._worker.is_alive()):
             if self._left_sidebar.is_expanded(): self._left_sidebar.collapse()
             return
-        if not self._current_loop_ref:
+        loop = self._current_loop_ref[0] if self._current_loop_ref else None
+        if loop is None or self._pending_ask is not None or not loop.interrupt():
             return
-        loop = self._current_loop_ref[0]
-        if not loop._pause_event.is_set():
-            return
-        bash = loop.registry._tools.get("bash")
-        if bash is not None: bash.force_kill()
-        from tools._subagent_runner import force_kill_active_subagents
-        force_kill_active_subagents()
-        loop.pause()
+        if self._streaming_active: self._streaming_active = False; self._conversation.interrupt_stream()
         self._right_sidebar.set_status("paused")
-        self._conversation.append_info("Paused — type a message and press Enter to continue")
+        self._conversation.append_info("Interrupted — type a message to continue")
         self._hide_running(); self._enable_input()
 
     @Slot()
@@ -326,6 +321,7 @@ class DagiMainWindow(QMainWindow):
 
     @Slot(str, str)
     def _on_stream_ended(self, stream_text: str, stream_reasoning: str) -> None:
+        if not self._streaming_active: return  # interrupted: the bubble is already frozen
         text = stream_text.strip()
         if stream_reasoning.strip():
             self._stream_had_reasoning = True

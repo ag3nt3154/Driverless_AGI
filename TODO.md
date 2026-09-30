@@ -39,6 +39,16 @@
 
 ## Completed
 
+- **Global instant Esc (2026-09-30, branch `feat/instant-esc`)** — `AgentLoop.interrupt()`
+  closes the in-flight stream (verified: `stream.close()` from another thread unblocks the
+  httpx read at once), drops late blocking responses, cancels the rest of the tool batch,
+  and keeps partial streamed text. A separate `_abort_request` flag plus loop-thread
+  injection at the checkpoint fixes a race where a quick resume let the interrupted
+  response's tools run, or logged the user's message between a tool call and its result.
+  GUI: app-wide event filter (`pyside_gui/esc_stop.py`) so Esc works from web views and the
+  pet window; popups, dialogs and `claim_escape()` widgets get Esc first; the stream bubble
+  freezes. TUI's Esc uses the same `interrupt()`.
+
 - **Visualize prompt line (2026-09-30)** — one `Guidelines` bullet in
   `.dagi/prompts/main/main_system.md` asks for a mermaid diagram when structure, flow,
   sequence, timeline or numbers explain better than prose (≤ ~15 nodes, short quoted

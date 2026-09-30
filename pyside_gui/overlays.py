@@ -11,6 +11,7 @@ from PySide6.QtWidgets import (
 )
 
 from agent.history import build_copyable_messages
+from pyside_gui.esc_stop import claim_escape
 from pyside_gui.theme import qss
 
 _OVERLAY_CSS = qss("""
@@ -47,6 +48,7 @@ QListWidget::item:selected { background: @active_bg; color: @fg; }
 class CopyPicker(QWidget):
     def __init__(self, parent: QWidget) -> None:
         super().__init__(parent)
+        claim_escape(self)
         self.setObjectName("overlay-backdrop")
         self.setStyleSheet(_OVERLAY_CSS)
         self.hide()

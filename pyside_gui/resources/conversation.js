@@ -644,6 +644,13 @@ function finalizeStream(md) {
     _scrollToBottom();
 }
 
+// Esc: freeze the live answer as it stands. Late deltas then find no
+// bubble and are dropped; the eventual finalizeStream is a no-op.
+function interruptStream() {
+    const bubble = document.getElementById('streaming-bubble');
+    if (bubble) finalizeStream(bubble._md || '');
+}
+
 function clearConversation() {
     const conv = document.getElementById('conversation');
     const sentinel = document.getElementById('scroll-sentinel');

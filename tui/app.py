@@ -160,14 +160,8 @@ class DagiApp(SlashCommandsMixin, App[None]):
         if not self._current_loop_ref:
             return
         loop = self._current_loop_ref[0]
-        if not loop._pause_event.is_set():
+        if not loop.interrupt():
             return  # already paused
-        bash_tool = loop.registry._tools.get("bash")
-        if bash_tool is not None:
-            bash_tool.force_kill()
-        from tools._subagent_runner import force_kill_active_subagents
-        force_kill_active_subagents()
-        loop.pause()
         self.query_one(Sidebar).set_status("paused")
         self.query_one(ConversationPane).append_info(
             "[yellow]⏸ Paused — type a message and press Enter to continue[/yellow]"

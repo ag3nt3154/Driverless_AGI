@@ -4,6 +4,7 @@ from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QBrush
 from PySide6.QtWidgets import QListWidget, QListWidgetItem, QWidget
 
+from pyside_gui.esc_stop import claim_escape
 from pyside_gui.theme import qcolor, qss
 
 _MAX_VISIBLE = 10
@@ -39,6 +40,7 @@ class SlashCompleterPopup(QListWidget):
 
     def __init__(self, parent: QWidget | None) -> None:
         super().__init__(parent)
+        claim_escape(self)
         self.setWindowFlags(
             Qt.WindowType.ToolTip | Qt.WindowType.FramelessWindowHint
         )

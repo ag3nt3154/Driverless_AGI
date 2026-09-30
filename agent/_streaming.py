@@ -7,6 +7,7 @@ this module.
 """
 from __future__ import annotations
 
+import threading
 from types import SimpleNamespace
 from typing import TYPE_CHECKING
 
@@ -17,6 +18,7 @@ if TYPE_CHECKING:
 def consume_stream(
     stream,
     callbacks: AgentCallbacks,
+    abort: threading.Event | None = None,
 ) -> "tuple[SimpleNamespace, object | None]":
     """Accumulate a chat-completions chunk stream into the same
     (message, usage) shapes the blocking path produces, firing per-delta
@@ -27,6 +29,10 @@ def consume_stream(
     .reasoning_content (for _extract_reasoning). usage is the provider's
     trailing usage object, or None if it never arrived — downstream
     getattr(usage, ..., 0) patterns already tolerate None.
+
+    ``abort`` (set by AgentLoop.interrupt) stops consumption at the next
+    chunk; interrupt() also closes the stream, and the read error that close
+    raises is swallowed. The message then holds whatever arrived so far.
     """
     content_parts: list[str] = []
     reasoning_parts: list[str] = []
@@ -34,7 +40,7 @@ def consume_stream(
     usage = None
     callbacks.on_stream_start()
     try:
-        for chunk in stream:
+        for chunk in _chunks(stream, abort):
             if getattr(chunk, "usage", None) is not None:
                 usage = chunk.usage
             if not getattr(chunk, "choices", None):
@@ -87,3 +93,16 @@ def consume_stream(
         reasoning_content="".join(reasoning_parts) or None,
     )
     return message, usage
+
+
+def _chunks(stream, abort: threading.Event | None):
+    """Yield chunks until the stream ends or ``abort`` is set."""
+    try:
+        for chunk in stream:
+            if abort is not None and abort.is_set():
+                return
+            yield chunk
+    except Exception:
+        if abort is not None and abort.is_set():
+            return  # the stream was closed under us by interrupt()
+        raise

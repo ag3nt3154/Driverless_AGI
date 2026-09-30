@@ -209,17 +209,70 @@ class AgentLoop:
         self._lifecycle = LifecyclePublisher(self._process)
         self._pause_event = self._lifecycle.pause_event
         self._pause_checkpoint = threading.Event()
+        # Esc / stop button: interrupt() sets this to abandon the request in
+        # flight. It is separate from the pause flag because a resume may
+        # arrive before the loop has noticed, and the late response must still
+        # be dropped, not acted on.
+        self._abort_request = threading.Event()
+        self._active_stream = None
+        # Messages injected while the loop thread is mid-step are logged by
+        # that thread at its next checkpoint, so they never land between a
+        # tool call and its result.
+        self._inject_lock = threading.RLock()
+        self._injected: list[UserSubmission] = []
+        self._mid_step = False
         self._expression_timer: threading.Timer | None = None
         self._expression_controller = self.tracker.expression_controller
 
     def pause(self) -> None:
         self._lifecycle.pause()
 
+    def interrupt(self) -> bool:
+        """Stop now: pause, kill bash and subagents, abandon the request in flight.
+
+        A streamed request is closed at once; a blocking one is left to finish
+        and its response is discarded. Returns False when already paused.
+        """
+        if not self._pause_event.is_set():
+            return False
+        self._abort_request.set()
+        self.pause()
+        bash = self.registry._tools.get("bash")
+        if bash is not None:
+            bash.force_kill()
+        from tools._subagent_runner import force_kill_active_subagents
+        force_kill_active_subagents()
+        self._close_active_stream()
+        return True
+
+    def _close_active_stream(self) -> None:
+        stream = self._active_stream
+        if stream is not None:
+            try:
+                stream.close()
+            except Exception:  # noqa: BLE001 - best effort; the chunk check still stops it
+                pass
+
     def inject_and_resume(self, message: str | UserSubmission) -> None:
         submission = message if isinstance(message, UserSubmission) else UserSubmission(text=message)
-        content = self._submission_content(submission)
-        self._log_user_message("user", content, "inject")
+        with self._inject_lock:
+            if self._mid_step:
+                self._injected.append(submission)
+            else:
+                self._log_injected(submission)
         self._lifecycle.resume_thinking()
+
+    def _log_injected(self, submission: UserSubmission) -> None:
+        self._log_user_message("user", self._submission_content(submission), "inject")
+
+    def _set_mid_step(self, busy: bool) -> None:
+        """Flip the mid-step flag; on reaching a checkpoint, log queued injections."""
+        with self._inject_lock:
+            self._mid_step = busy
+            if not busy:
+                queued, self._injected = self._injected, []
+                for submission in queued:
+                    self._log_injected(submission)
 
     def _submission_content(self, submission: UserSubmission) -> str | list[dict]:
         """Build the content payload for a UserSubmission.
@@ -369,7 +422,7 @@ class AgentLoop:
         """Delegate to agent/_streaming.consume_stream (moved verbatim)."""
         from agent._streaming import consume_stream
 
-        return consume_stream(stream, self.callbacks)
+        return consume_stream(stream, self.callbacks, self._abort_request)
 
     _SLUG_SYSTEM = (
         "Generate a 3-5 word snake_case slug summarising this task. "
@@ -560,6 +613,7 @@ class AgentLoop:
 
         _turn = self.log.next_turn()
         self.log.append(sev.TURN_START, {"turn": _turn})
+        self._set_mid_step(True)
 
         try:
             if not self._preserve_request_prefix:
@@ -590,11 +644,14 @@ class AgentLoop:
                 iteration += 1
                 self.log.append(sev.STEP_START, {"turn": _turn, "step": iteration})
                 self.callbacks.on_iteration(iteration)
+                self._set_mid_step(False)
                 self._pause_checkpoint.set()
                 try:
                     self._pause_event.wait()  # blocks here when paused; instant no-op otherwise
                 finally:
                     self._pause_checkpoint.clear()
+                    self._set_mid_step(True)
+                self._abort_request.clear()
 
                 # ── API call with retry ────────────────────────────────────
                 # Retries on two classes of failure:
@@ -606,7 +663,10 @@ class AgentLoop:
                 _null_retries = 0
                 _error_retries = 0
                 _paused_on_error = False
+                response = None
                 while True:
+                    if self._abort_request.is_set():
+                        break  # interrupted (e.g. during a retry back-off)
                     self._lifecycle.api_attempt_started()
                     _request = self._build_request_messages()
 
@@ -650,7 +710,13 @@ class AgentLoop:
                                 stream_options={"include_usage": True},
                                 **_create_kwargs,
                             )
-                            _msg, _usage = self._consume_stream(_stream)
+                            self._active_stream = _stream
+                            if self._abort_request.is_set():
+                                self._close_active_stream()
+                            try:
+                                _msg, _usage = self._consume_stream(_stream)
+                            finally:
+                                self._active_stream = None
                             response = SimpleNamespace(
                                 choices=[SimpleNamespace(message=_msg)], usage=_usage
                             )
@@ -699,6 +765,8 @@ class AgentLoop:
                         time.sleep(delay)
                         continue
 
+                    if self._abort_request.is_set():
+                        break  # interrupted: skip the ghost check, keep partial text
                     message = response.choices[0].message
                     _prompt_tok = getattr(response.usage, "prompt_tokens", 0) or 0
                     _is_ghost = (
@@ -724,6 +792,10 @@ class AgentLoop:
 
                 if _paused_on_error:
                     continue  # restart outer loop → _pause_event.wait() will block
+                if self._abort_request.is_set():
+                    self._keep_interrupted_text(response, _turn, iteration)
+                    self._continuing_step_finished(_turn, iteration)
+                    continue  # → checkpoint; waits for the user's next message
 
                 _reasoning = _extract_reasoning(message)
                 if _reasoning:
@@ -864,10 +936,30 @@ class AgentLoop:
             self.callbacks.on_error(e)
             raise
         finally:
+            with self._inject_lock:
+                self._mid_step = False
+                self._injected.clear()
             self._stop_expression_timer()
             # Defensive: any exit path added later without an explicit close
             # still leaves the log well-formed rather than half-open.
             self._close_turn(_turn, sev.reason_error("turn closed without a reason"))
+
+    def _keep_interrupted_text(self, response, turn: int, step: int) -> None:
+        """Log what an interrupted *stream* had said, so "continue" makes sense.
+
+        Half-streamed tool calls and reasoning are dropped; a blocking response
+        that arrives after the interrupt is dropped entirely.
+        """
+        if not self.config.stream or response is None:
+            return
+        text = (response.choices[0].message.content or "").strip()
+        if text:
+            self.log.append(
+                sev.ASSISTANT_MESSAGE,
+                {"turn": turn, "step": step, "message": {"role": "assistant", "content": text}},
+                surface_op="append",
+            )
+            self._sync_messages()
 
     def _dispatch_tool_calls(self, message, response, tool_records) -> str | None:
         """Delegate to agent/_tool_dispatch.dispatch_tool_calls (moved verbatim)."""

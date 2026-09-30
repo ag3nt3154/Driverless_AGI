@@ -202,7 +202,7 @@ conda run --no-capture-output -n dagi python tui.py -m deepseek-v4-pro-openroute
 - `Enter` — submit the input box contents as a task (single or multi-line)
 - `Shift+Enter` / `Ctrl+N` / `Ctrl+Enter` — insert a newline in the input box for multi-line messages (`Ctrl+N` and `Ctrl+Enter` are reliable alternatives on Windows Terminal, which sends identical bytes for `Shift+Enter` and `Enter`)
 - `Ctrl+O` — toggle compose mode: hides the conversation pane and expands the input box to fill the screen, giving a distraction-free writing area for long multi-line messages. Press `Ctrl+O` again to restore normal layout, or just press `Enter` to submit (auto-collapses on submit).
-- `Esc` — pause the running agent. If a `bash` command is currently running (in the main loop or inside an active worker/review subagent), it is force-killed immediately; otherwise the agent pauses at the end of the current iteration (after all tool calls in the current LLM response complete). Status changes to `⏸ Paused`. Type any message and press Enter to inject it into the agent's context and resume. ESC has no effect when idle or during an `ask_user` prompt.
+- `Esc` — interrupt the running agent at once (`AgentLoop.interrupt()`, see [Pausing and Resuming](#pausing-and-resuming)): a running `bash` command or subagent is force-killed, a streamed model reply is cut off where it is, and the remaining tool calls of the current response are cancelled. Status changes to `⏸ Paused`. Type any message and press Enter to inject it into the agent's context and resume. ESC has no effect when idle or during an `ask_user` prompt.
 - `Ctrl-C` — quit the TUI entirely
 
 **Header panels (left → center → right):**
@@ -236,7 +236,9 @@ conda run --no-capture-output -n dagi python -m pyside_gui --model <id> --projec
 
 Vditor 3.11.3 is vendored (trimmed to ~9.4 MB: core, lute, KaTeX woff2 fonts, en_US, ant icons, highlight.js, mermaid) under `pyside_gui/resources/vditor/` (shared by the notepad and the conversation pane) because its built bundle is published only to npm — no Node is needed at install or run time. To bump it, change `VDITOR_VERSION` in `scripts/vendor_vditor.py` and run `conda run -n dagi python scripts/vendor_vditor.py` (downloads the npm tarball, verifies sha512, re-extracts).
 
-**Keyboard shortcuts:** `Enter` submit · `Shift+Enter`/`Ctrl+N` newline · `Ctrl+O` compose mode · `Esc` pause · `Ctrl+Q` quit
+**Keyboard shortcuts:** `Enter` submit · `Shift+Enter`/`Ctrl+N` newline · `Ctrl+O` compose mode · `Esc` interrupt · `Ctrl+Q` quit
+
+**Global Esc** (`pyside_gui/esc_stop.py`): an application-wide event filter catches `Esc` before any widget, so it interrupts the agent from anywhere — including the conversation and file-viewer web views (which otherwise swallow keys) and the desktop pet/notepad window. Whatever is open gets `Esc` first: menus and other Qt popups, modal dialogs, and widgets marked with `claim_escape()` (slash completer, copy picker). When the agent is idle, paused or waiting on an `ask_user` answer, `Esc` passes through (idle `Esc` still collapses the left sidebar). On interrupt the streaming bubble freezes where it is (late deltas are dropped) and an "Interrupted — type a message to continue" line appears.
 
 **Image attachments (image input, all 6 stages complete):** paste an image (clipboard pixels or local `.png`/`.jpg`/`.jpeg` file paths) into the composer, or pick files with its `+` button, to attach it — a thumbnail strip appears inside the composer card with a remove (✕) badge per image. Limits mirror `AgentConfig` defaults (max 4 images/message, 8 MiB/image, 24M px/image); exceeding one shows an inline error and leaves the draft untouched. Enter submits text and/or attachments together as a `UserSubmission`; the conversation bubble now renders the sent images as thumbnails (up to 200x150, rounded corners, wrapping flex row) below the message text via `ConversationView.append_user_message_with_images()` / `conversation.js`'s `appendUserMessageWithImages()`, resolving each attachment's file path from the `ImageAssetStore` and loading it as a `file://` URL — falling back to the old `"text [N images]"` text bubble if path resolution fails. Pending-ask answers and slash commands are text-only and reject a submission that carries images, restoring the draft instead of discarding it.
 
@@ -547,11 +549,18 @@ All slash commands work identically in the TUI and CLI.
 
 ---
 
-### Pausing and Resuming (TUI only)
+### Pausing and Resuming
 
-Press `Esc` at any time while the agent is running to pause it. If a `bash` command is currently running — in the main loop, or inside an active worker/review subagent — it is force-killed immediately (surfaced as `[killed by user]` in the conversation, or as a tool error for the subagent call). Otherwise, remaining tool calls in the current LLM response are cancelled individually (each gets a `[paused]` result) and the agent pauses before the next iteration. The status indicator switches to `⏸ Paused`.
+Press `Esc` at any time while the agent is running (TUI or GUI) to interrupt it. `AgentLoop.interrupt()` stops the step in flight:
 
-Type any message and press `Enter` to inject it into the agent's context and resume — this is equivalent to the agent asking you a question and you answering it. The agent receives your message and continues from where it stopped, with full context intact.
+- A running `bash` command — in the main loop, or inside an active worker/review subagent — is force-killed immediately (surfaced as `[killed by user]` in the conversation, or as a tool error for the subagent call).
+- A **streamed** model reply is cut off at once: the stream is closed from the UI thread and `consume_stream` stops on the abort flag. The text received so far is kept in history (so "continue" makes sense); half-streamed tool calls and reasoning are dropped.
+- A **blocking** (`stream: false`) request can't be aborted mid-flight; its response is discarded when it lands — nothing is logged and none of its tools run.
+- Remaining tool calls in the current response are cancelled individually (each gets a `[paused]` result). A non-`bash` tool that is already running finishes, and a compaction in progress completes.
+
+The abort flag (`_abort_request`) is separate from the pause flag, so resuming quickly can never revive the interrupted response. The status indicator switches to `⏸ Paused`.
+
+Type any message and press `Enter` to inject it into the agent's context and resume — this is equivalent to the agent asking you a question and you answering it. The agent receives your message and continues from where it stopped, with full context intact. A message sent while the loop is still finishing its step is queued and logged by the loop thread at its next checkpoint, so it never lands between a tool call and its result.
 
 Useful for: course-correcting mid-task, adding constraints you forgot to mention, or answering a question the agent was about to ask.
 

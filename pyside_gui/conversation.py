@@ -152,6 +152,11 @@ class ConversationView(QWebEngineView):
         self._finish_reasoning()
         self._run_js(f"finalizeStream({self._js_str(markdown)})")
 
+    def interrupt_stream(self) -> None:
+        """Freeze the streaming bubble (and its thinking block) as it stands."""
+        self._finish_reasoning()
+        self._run_js("interruptStream()")
+
     def _finish_reasoning(self) -> None:
         if self._reasoning_dirty:
             self._run_js(f"finalizeReasoning({self._js_str(self._stream_reasoning)})")
