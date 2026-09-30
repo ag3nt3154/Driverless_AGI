@@ -36,9 +36,17 @@
   watcher and `conflict-<ts>.md` backups; read-only `read_notepad` tool (always
   registered, flushes GUI edits first). Plan: `docs/pet-notepad-implementation-plan.md`.
   Follow-ups: optional `append_notepad` write tool; opacity / fade-when-unfocused;
-  pasted images; Vditor 4.x bump once it matures. Pre-existing unrelated GUI test
-  failures on main (32 `qtbot` fixture errors, 7 `ExpressionWidget.update_expression`)
-  still need fixing.
+  pasted images; Vditor 4.x bump once it matures.
+
+- **PySide GUI test suite green (2026-09-30)** — `pyside_gui/tests` went from 7 failed /
+  32 errors to 135 passed. `qtbot` errors: pytest-qt stays disabled globally in
+  `pyproject.toml` (Windows QtCore DLL crash, added in 3815cb7) and is now re-registered
+  from `pyside_gui/tests/conftest.py` after the `pyside_gui` DLL bootstrap. Rewrote
+  `test_expression_widget.py` for the process-only `ExpressionWidget.update_process` API
+  (affect channel + rotation timer were removed), updated the bridge test for the removed
+  `expression_changed` signal, and fixed the stale 4-button rail assertion in
+  `test_left_sidebar.py` (5 views since the message board). Full
+  `pytest tests pyside_gui/tests`: 1518 passed, 3 skipped.
 
 - **Test-suite skips/failures triage (2026-09-30)** — `chonkie` (used optionally by
   `tools/read/_chunking.py`) was undeclared, so 6 chunking tests always skipped; now in

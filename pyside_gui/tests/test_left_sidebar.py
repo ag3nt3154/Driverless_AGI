@@ -70,8 +70,10 @@ def test_set_project_path(sidebar, tmp_path):
     mock.assert_called_once_with(new_dir)
 
 
-def test_rail_has_four_buttons(sidebar):
-    assert len(sidebar._rail_buttons) == 4
+def test_rail_has_one_button_per_view(sidebar):
+    # history, files, viewer, plan, board
+    assert len(sidebar._rail_buttons) == 5
+    assert sidebar._panel.count() == 5
 
 
 def test_activate_plan_expands_to_plan_view(sidebar):

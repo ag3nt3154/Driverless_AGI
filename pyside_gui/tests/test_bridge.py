@@ -132,23 +132,21 @@ def test_token_update_accumulates():
     assert received[1][1] == 130  # output
 
 
-def test_expression_and_process_snapshots_emit_as_objects(tmp_path) -> None:
+def test_process_snapshot_emits_as_object_and_expression_is_ignored(tmp_path) -> None:
     bridge = AgentBridge()
     received = []
-    bridge.expression_changed.connect(lambda s: received.append(("expression", s)))
-    bridge.process_state_changed.connect(
-        lambda s: received.append(("process", s))
-    )
+    bridge.process_state_changed.connect(lambda s: received.append(s))
     callbacks = bridge.build_callbacks()
     asset = TextFallback(tmp_path / "default.md", "test", "fallback")
-    expression = ExpressionSnapshot("focused", asset)
     process = ProcessSnapshot("thinking", asset)
 
-    callbacks.on_expression_changed(expression)
+    # The GUI renders only the process channel; expression updates are a no-op.
+    callbacks.on_expression_changed(ExpressionSnapshot("focused", asset))
     callbacks.on_process_state_changed(process)
     _app.processEvents()
 
-    assert received == [("expression", expression), ("process", process)]
+    assert not hasattr(bridge, "expression_changed")
+    assert received == [process]
 
 
 def test_handoff_text_emits_on_done():
