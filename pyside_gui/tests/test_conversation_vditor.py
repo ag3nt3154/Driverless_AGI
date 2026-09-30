@@ -184,3 +184,24 @@ def test_clicked_links_open_externally_never_in_the_pane(monkeypatch, view, url,
     )
     assert accepted is False
     assert bool(calls) is opened
+
+
+def test_tool_args_are_shown_as_labelled_fields_with_real_newlines(view):
+    view.append_tool_start("write_handoff", json.dumps({"content": "Hello\n\n- item", "n": [1, 2]}))
+    view.append_tool_start("bash", "not json {")
+    state = evaluate(view, """
+        const rows = document.querySelectorAll('.tool-call');
+        const fields = rows[0].querySelectorAll('.tool-arg');
+        return {
+            keys: Array.from(fields, f => f.querySelector('.tool-arg-key').textContent),
+            content: fields[0].querySelector('.tool-arg-value').textContent,
+            list: fields[1].querySelector('.tool-arg-value').textContent,
+            raw: rows[1].querySelector('pre.tool-args').textContent,
+        };
+    """)
+    assert state == {
+        "keys": ["content", "n"],
+        "content": "Hello\n\n- item",
+        "list": "[\n  1,\n  2\n]",
+        "raw": "not json {",
+    }

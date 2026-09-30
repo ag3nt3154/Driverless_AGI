@@ -115,3 +115,22 @@ def test_session_selected_signal_bubbles(
         sidebar._history_view.session_selected.emit(
             {"test": True}
         )
+
+
+def test_panel_sizes_board_uses_given_width_other_views_split_evenly():
+    from pyside_gui.left_sidebar import _RAIL_WIDTH, panel_sizes
+
+    assert panel_sizes([_RAIL_WIDTH, 1000, 250], 250) == [_RAIL_WIDTH + 250, 1000 - 250, 250]
+    assert panel_sizes([_RAIL_WIDTH, 1000, 250], None) == [_RAIL_WIDTH + 500, 500, 250]
+    # the chat never drops below 200px
+    assert panel_sizes([_RAIL_WIDTH, 300, 250], 250)[1] == 200
+
+
+def test_view_changed_fires_for_rail_and_file_viewer(sidebar, tmp_path):
+    seen = []
+    sidebar.view_changed.connect(seen.append)
+    sidebar.activate_view("board")
+    f = tmp_path / "a.txt"
+    f.write_text("x", encoding="utf-8")
+    sidebar.open_file(str(f))
+    assert seen == ["board", "viewer"]

@@ -284,6 +284,30 @@ function appendError(text) {
 
 // ---- tool calls ------------------------------------------------------------
 
+// JSON arguments become one labelled field per key: strings keep their real
+// line breaks, other values are pretty-printed. Anything else stays raw.
+function _renderArgs(args) {
+    let data = null;
+    try { data = JSON.parse(args); } catch (e) { data = null; }
+    if (!data || typeof data !== 'object' || Array.isArray(data) || !Object.keys(data).length) {
+        const raw = _el('pre', 'tool-args');
+        raw.textContent = data && typeof data === 'object' ? JSON.stringify(data, null, 2) : args;
+        return raw;
+    }
+    const box = _el('div', 'tool-args');
+    for (const [key, value] of Object.entries(data)) {
+        const field = _el('div', 'tool-arg');
+        const name = _el('div', 'tool-arg-key');
+        name.textContent = key;
+        const val = _el('pre', 'tool-arg-value');
+        val.textContent = typeof value === 'string' ? value : JSON.stringify(value, null, 2);
+        field.appendChild(name);
+        field.appendChild(val);
+        box.appendChild(field);
+    }
+    return box;
+}
+
 function _toggle(row) {
     const open = row.classList.toggle('open');
     row.querySelector('.tool-detail').hidden = !open;
@@ -299,9 +323,7 @@ function appendToolCall(label, kind, args, verbose) {
     head.addEventListener('click', () => _toggle(row));
     const detail = _el('div', 'tool-detail');
     detail.hidden = true;
-    const argPre = _el('pre', 'tool-args');
-    argPre.textContent = args;
-    detail.appendChild(argPre);
+    detail.appendChild(_renderArgs(args));
     row.appendChild(head);
     row.appendChild(detail);
     _insert(row);

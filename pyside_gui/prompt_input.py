@@ -50,7 +50,7 @@ QPlainTextEdit#composer-editor {
     border: none;
     padding: 0;
     font-family: @font_ui;
-    font-size: 15px;
+    font-size: 14px;
     selection-background-color: @selection;
 }
 QToolButton#composer-attach {

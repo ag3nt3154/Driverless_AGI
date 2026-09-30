@@ -11,8 +11,8 @@ body {
     background: var(--chat-bg);
     color: var(--fg);
     font-family: var(--font-ui);
-    font-size: 15px;
-    line-height: 1.65;
+    font-size: 14px;
+    line-height: 1.6;
     overflow-y: auto;
 }
 
@@ -172,6 +172,24 @@ body {
 
 .tool-detail .tool-result { border-top: 1px solid var(--border); color: var(--fg); }
 
+.tool-args:not(pre) { padding: 8px 12px 10px; max-height: 360px; overflow: auto; }
+.tool-arg + .tool-arg { margin-top: 8px; }
+.tool-arg-key {
+    font: 600 11px/1.4 var(--font-ui);
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    color: var(--fg-tertiary);
+    margin-bottom: 2px;
+}
+.tool-detail pre.tool-arg-value {
+    padding: 0 0 0 10px;
+    border-left: 2px solid var(--border);
+    max-height: none;
+    overflow: visible;
+    word-break: normal;
+    overflow-wrap: anywhere;
+}
+
 /* ---- reasoning -------------------------------------------------------- */
 
 .reasoning-message { font-size: 13.5px; color: var(--fg-secondary); }
@@ -234,10 +252,10 @@ body {
     border: 0;
 }
 
-#conversation .md h1 { font-size: 21px; }
-#conversation .md h2 { font-size: 18px; }
-#conversation .md h3 { font-size: 16.5px; }
-#conversation .md h4, #conversation .md h5, #conversation .md h6 { font-size: 15px; }
+#conversation .md h1 { font-size: 19px; }
+#conversation .md h2 { font-size: 16.5px; }
+#conversation .md h3 { font-size: 15.5px; }
+#conversation .md h4, #conversation .md h5, #conversation .md h6 { font-size: 14px; }
 
 #conversation .md strong { color: var(--fg); font-weight: 650; }
 #conversation .md a { color: var(--link); text-decoration: none; }
@@ -257,7 +275,7 @@ body {
 
 #conversation .md code:not(.hljs):not(.highlight-chroma) {
     font-family: var(--font-mono);
-    font-size: 13.5px;
+    font-size: 12.5px;
     background: var(--fg-quaternary);
     color: var(--fg);
     border-radius: 5px;
@@ -277,7 +295,7 @@ body {
     display: block;
     background: transparent;
     padding: 12px 14px;
-    font: 13.5px/1.55 var(--font-mono);
+    font: 12.5px/1.55 var(--font-mono);
     color: var(--fg);
     overflow-x: auto;
     border-radius: 10px;
@@ -294,7 +312,7 @@ body {
     max-width: 100%;
     border-collapse: collapse;
     margin: 4px 0 14px;
-    font-size: 14px;
+    font-size: 13.5px;
 }
 
 #conversation .md table tr { background: transparent; border: 0; }

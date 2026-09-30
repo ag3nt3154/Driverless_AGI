@@ -256,8 +256,8 @@ Vditor 3.11.3 is vendored (trimmed to ~5.8 MB: core, lute, KaTeX woff2 fonts, en
   - GitHub callouts (`> [!NOTE]`, `[!TIP]`, `[!WARNING]`, `[!CAUTION]`) render.
   - HTML written by the model stays literal text: `prepareMarkdown()` escapes `<` outside code, math and autolinks, and Lute's sanitizer is on as well.
   - A streamed answer is re-rendered about every 120 ms.
-  - Layout: a centred 760px reading column (15px / 1.65); user messages are right-aligned bubbles and assistant text sits on the background with no card.
-  - Tool calls are one quiet line: an icon, a label derived by `pyside_gui/tool_labels.py` ("Read agent/loop.py", "Ran pytest -q", `Searched "foo" in tools/`) and a ✓/✕ status. Click a line to expand its args and output; `--verbose` expands them by default.
+  - Layout: a centred 760px reading column (14px / 1.6); user messages are right-aligned bubbles and assistant text sits on the background with no card.
+  - Tool calls are one quiet line: an icon, a label derived by `pyside_gui/tool_labels.py` ("Read agent/loop.py", "Ran pytest -q", `Searched "foo" in tools/`) and a ✓/✕ status. Click a line to expand its output and its arguments, shown as one labelled field per argument (strings keep their real line breaks, other values are pretty-printed JSON). `--verbose` expands them by default.
   - Reasoning streams as a live tail, then collapses to "Thought for Ns".
   - The empty chat shows the pet's idle emote, the model and the project path until the first message.
   - Clicked links open in the system browser.
@@ -270,7 +270,7 @@ Vditor 3.11.3 is vendored (trimmed to ~5.8 MB: core, lute, KaTeX woff2 fonts, en
   - a white round send button that turns into ■ Stop (same as `Esc`) while the agent runs with the input locked.
 - **Chrome:**
   - A slim header over the conversation has buttons to hide or show the whole left and right sidebars (`pyside_gui/header.py`).
-  - The left rail uses checkable icon buttons.
+  - The left rail uses checkable icon buttons. The message board opens as wide as the right sidebar; other left views split the space with the chat. Either can be dragged.
   - Splitters are 1px.
 - Design notes, decisions and the mockup: `docs/openghost-ui-review.md`, `docs/mockups/dagi-ui-mockup.html`.
 

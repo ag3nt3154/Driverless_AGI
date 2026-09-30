@@ -22,7 +22,7 @@ from pyside_gui.bridge import AgentBridge, init_worker_logger
 from pyside_gui.commands import SlashCommandHandler, UIWidgets
 from pyside_gui.conversation import ConversationView
 from pyside_gui.header import ConversationHeader
-from pyside_gui.left_sidebar import LeftSidebar, _RAIL_WIDTH
+from pyside_gui.left_sidebar import LeftSidebar, _RAIL_WIDTH, panel_sizes
 from pyside_gui.menu import build_main_menu
 from pyside_gui.overlays import CopyPicker
 from pyside_gui.prompt_input import PromptInput
@@ -208,6 +208,7 @@ class DagiMainWindow(QMainWindow):
         self._prompt.attachment_error.connect(self._conversation.append_error)
         self._left_sidebar.session_selected.connect(self._on_session_selected)
         self._left_sidebar.expansion_changed.connect(self._on_sidebar_expansion)
+        self._left_sidebar.view_changed.connect(self._on_left_view_changed)
         b, cv, rs = self._bridge, self._conversation, self._right_sidebar
         b.tool_started.connect(cv.append_tool_start)
         b.tool_ended.connect(cv.append_tool_end)
@@ -287,12 +288,16 @@ class DagiMainWindow(QMainWindow):
 
     def _on_sidebar_expansion(self, expanded: bool) -> None:
         s = self._splitter.sizes()
-        if expanded:
-            half = s[1] // 2
-            self._splitter.setSizes([_RAIL_WIDTH + half, s[1] - half, s[2]])
-        else:
-            total = s[0] + s[1]
-            self._splitter.setSizes([_RAIL_WIDTH, total - _RAIL_WIDTH, s[2]])
+        if not expanded:
+            self._splitter.setSizes([_RAIL_WIDTH, s[0] + s[1] - _RAIL_WIDTH, s[2]]); return
+        self._left_narrow = self._left_sidebar.active_view() == "board"
+        rs = self._right_sidebar
+        width = (rs.width() if rs.isVisible() else rs.maximumWidth()) if self._left_narrow else None
+        self._splitter.setSizes(panel_sizes(s, width))
+
+    def _on_left_view_changed(self, view: str) -> None:
+        # Re-size only when switching to or from the narrow message board.
+        if (view == "board") != getattr(self, "_left_narrow", False): self._on_sidebar_expansion(True)
 
     def _action_pause(self) -> None:
         if not (self._worker and self._worker.is_alive()):
