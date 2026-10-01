@@ -6,7 +6,9 @@ from pathlib import Path
 from agent.base_tool import BaseTool
 from tools._path_guard import validate_path
 
-_MAX_RESULTS = 200
+# No display cap: large results go through the shared output filter (head + marker
+# + tail, full text saved). This ceiling only guards memory against runaway searches.
+_SAFETY_LIMIT = 100_000
 _FALLBACK_TIMEOUT = 15  # seconds — wall-clock cap for the Python fallback
 
 _EXCLUDED_DIRS = {
@@ -40,7 +42,9 @@ class GrepTool(BaseTool):
         "__pycache__, .git, .dagi, and other non-source directories. "
         "IMPORTANT: 'path' must be a specific subdirectory or file, NOT '.' — "
         "narrow searches to the relevant directory (e.g. 'src/', 'tools/') to "
-        "avoid excessive output. Use 'glob' to further filter by file type."
+        "avoid excessive output. Use 'glob' to further filter by file type. "
+        "Very large results show only the first and last matches, with the full "
+        "list saved to a file you can read or grep."
     )
     _parameters = {
         "type": "object",
@@ -77,9 +81,11 @@ class GrepTool(BaseTool):
         search_path = validate_path(sp, self.allowed_roots)
 
         lines = self._search_one(pattern, search_path, glob, literal)
-        if len(lines) > _MAX_RESULTS:
-            lines = lines[:_MAX_RESULTS]
-            lines.append(f"[truncated — showing first {_MAX_RESULTS} results]")
+        if len(lines) > _SAFETY_LIMIT:
+            lines = lines[:_SAFETY_LIMIT]
+            lines.append(
+                f"[stopped at {_SAFETY_LIMIT:,} results — narrow the path, glob or pattern]"
+            )
         return "\n".join(lines) if lines else "[no matches]"
 
     @staticmethod

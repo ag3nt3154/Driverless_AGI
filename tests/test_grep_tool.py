@@ -5,7 +5,8 @@ import pytest
 
 from tools._path_guard import PathNotAllowedError
 from tools.grep import GrepTool
-from tools.grep._grep import _MAX_RESULTS
+from tools.grep import _grep as grep_module
+from tools.output_filter import filter_tool_output
 
 
 def _make_tool(tmp_path):
@@ -170,23 +171,39 @@ class TestPathValidation:
             tool.run(pattern="x", path="C:\\Windows\\System32")
 
 
-class TestTruncation:
-    def test_results_truncated_at_max(self, tmp_path):
-        lines = [f"match {i}" for i in range(_MAX_RESULTS + 50)]
+class TestLargeResults:
+    """No display cap in grep itself — the shared output filter truncates."""
+
+    def _write_matches(self, tmp_path, n):
+        lines = [f"match {i}" for i in range(n)]
         (tmp_path / "big.txt").write_text(
             "\n".join(lines), encoding="utf-8", newline="\n",
         )
-        tool = _make_tool(tmp_path)
 
-        with patch(
-            "tools.grep._grep.subprocess.run",
-            side_effect=FileNotFoundError,
-        ):
-            result = tool.run(pattern="match", path=str(tmp_path))
+    def test_all_results_returned(self, tmp_path):
+        self._write_matches(tmp_path, 1_000)
+        with patch("tools.grep._grep.subprocess.run", side_effect=FileNotFoundError):
+            result = _make_tool(tmp_path).run(pattern="match", path=str(tmp_path))
+        assert len(result.splitlines()) == 1_000
+        assert "stopped at" not in result
 
-        assert "[truncated" in result
-        result_lines = result.splitlines()
-        assert len(result_lines) == _MAX_RESULTS + 1
+    def test_shared_filter_keeps_first_and_last_matches(self, tmp_path):
+        self._write_matches(tmp_path, 5_000)
+        with patch("tools.grep._grep.subprocess.run", side_effect=FileNotFoundError):
+            result = _make_tool(tmp_path).run(pattern="match", path=str(tmp_path))
+        ctx, _ = filter_tool_output(result, 1_000, tmp_path)
+        assert "big.txt:1: match 0" in ctx
+        assert "big.txt:5000: match 4999" in ctx
+        assert "of 5,000 omitted" in ctx
+
+    def test_safety_limit(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(grep_module, "_SAFETY_LIMIT", 10)
+        self._write_matches(tmp_path, 50)
+        with patch("tools.grep._grep.subprocess.run", side_effect=FileNotFoundError):
+            result = _make_tool(tmp_path).run(pattern="match", path=str(tmp_path))
+        lines = result.splitlines()
+        assert len(lines) == 11
+        assert lines[-1].startswith("[stopped at 10 results")
 
 
 class TestSingleFileSearch:

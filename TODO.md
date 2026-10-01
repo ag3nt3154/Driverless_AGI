@@ -2,10 +2,10 @@
 
 ## In progress
 
-- **Shared truncation for remaining self-capping tools** — `grep`/`find` (`_MAX_RESULTS`),
-  `web_fetch` (`_MAX_CHARS`, rest lost) and `read_notepad` (`MAX_CHARS`) still cut their own
-  output; move them onto the shared head + marker + tail filter so the full output is saved
-  and reachable with `read_large_file`. Also decide on pruning `.dagi/hash_cache/tool_output/`.
+- **Shared truncation for remaining self-capping tools** — `web_fetch` (`_MAX_CHARS`, rest
+  lost) and `read_notepad` (`MAX_CHARS`) still cut their own output; move them onto the
+  shared head + marker + tail filter so the full output is saved and reachable with
+  `read_large_file`. Also decide on pruning `.dagi/hash_cache/tool_output/`.
 
 - **OpenGhost-inspired GUI refresh — next passes** —
   UI pass 1, mermaid, the visualize prompt line, global instant Esc and the context
@@ -41,6 +41,11 @@
   the head + marker + tail format — see the large-file reading entry in Completed.)
 
 ## Completed
+
+- **grep/find on the shared truncation filter (2026-10-01)** — the 200-line (`grep`) and
+  500-path (`find`) caps are gone; results go through `filter_tool_output`, so large ones
+  show the first and last matches with the full list saved. A 100,000-line `_SAFETY_LIMIT`
+  in each tool only guards memory against runaway searches. New `tests/test_find_tool.py`.
 
 - **RAM watchdog threshold raised to 85% (2026-10-01)** — `tests/conftest.py`
   (`RAM_WARN_PCT`) and `scripts/monitor_tests.py` (`RAM_THRESHOLD_PCT`) went from 70% to
