@@ -3,13 +3,11 @@
 ## In progress
 
 - **OpenGhost-inspired GUI refresh — next passes** —
-  UI pass 1, mermaid and the visualize prompt line are done (see Completed). Remaining, in order:
-  - A `files` block: a ```` ```files ```` card for file/folder listings (rows open in the
-    file viewer), then add a clause for it to the Visualize line in `main_system.md`.
-  - "Talk while you work" and a model-written tool `description` that overrides the derived label.
-  - Selection menu and mini chat.
-  - Permission modes and approval cards.
-  - Deferred from pass 1: context meter, long-paste cards, typing while the agent runs.
+  UI pass 1, mermaid, the visualize prompt line, global instant Esc and the context
+  meter are done (see Completed). Remaining: long-paste cards, typing while the agent runs.
+  Decided against (2026-10-01): the `files` block, "talk while you work" / tool
+  `description`, selection menu + mini chat, and permission modes / approval cards —
+  DAGI stays yolo-only (no approval gate).
   - Mind the LICENSE carve-out on OpenGhost's visual design (non-commercial only, keep attribution).
 
 - **Redesign `memory-refresh` for the central memory wiki** — pending. The skill,
@@ -38,6 +36,11 @@
   the bottom, so the agent sees it first.
 
 ## Completed
+
+- **Context meter (2026-10-01, branch `feat/context-meter`)** — ring in the composer
+  (`pyside_gui/context_meter.py`) fed by a new `RightSidebar.context_usage(total, window)`
+  signal, so it shows exactly the sidebar's CONTEXT total; warn ≥ 70%, danger ≥ 90%,
+  compaction at 100%.
 
 - **GUI open-folder button (2026-09-30)** — header folder button performs `/wd` with a
   native picker and the 5 most recent folders (missing ones greyed); `/wd <path>` is now

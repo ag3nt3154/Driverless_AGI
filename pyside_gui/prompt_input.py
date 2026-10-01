@@ -17,6 +17,7 @@ from PySide6.QtWidgets import (
 )
 
 from agent.user_input import ImageAttachment, UserSubmission
+from pyside_gui.context_meter import ContextMeter
 from pyside_gui.icons import icon
 from pyside_gui.menu_style import MENU_STYLESHEET
 from pyside_gui.slash_completer import SlashCompleterPopup
@@ -317,6 +318,9 @@ class PromptInput(QWidget):
         self._model_btn.hide()
         toolbar.addWidget(self._model_btn)
 
+        self._context_meter = ContextMeter()
+        toolbar.addWidget(self._context_meter)
+
         toolbar.addStretch(1)
 
         self._send_btn = QToolButton()
@@ -343,6 +347,10 @@ class PromptInput(QWidget):
 
     def setFocus(self) -> None:  # noqa: N802
         self._editor.setFocus()
+
+    def set_context_usage(self, used: int, window: int) -> None:
+        """Feed the context ring (same total as the right sidebar)."""
+        self._context_meter.set_usage(used, window)
 
     def setPlaceholderText(self, text: str) -> None:  # noqa: N802
         self._editor.setPlaceholderText(text)

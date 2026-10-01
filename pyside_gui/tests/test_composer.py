@@ -81,3 +81,42 @@ def test_attach_adds_image_files(prompt, tmp_path):
     prompt._add_image_paths([path])
     assert len(prompt._attachments) == 1
     assert prompt._strip.isVisibleTo(prompt)
+
+
+def test_context_meter_hidden_until_known_then_tracks_usage(prompt):
+    meter = prompt._context_meter
+    assert not meter.isVisibleTo(prompt)
+    prompt.set_context_usage(62_000, 100_000)
+    assert meter.isVisibleTo(prompt)
+    assert meter.usage == pytest.approx(0.62)
+    assert meter.toolTip().startswith("Context 62% · 62,000 / 100,000 tokens")
+    prompt.set_context_usage(10, 0)  # unknown window
+    assert not meter.isVisibleTo(prompt)
+
+
+@pytest.mark.parametrize("usage, role", [
+    (0.0, "fg_secondary"), (0.69, "fg_secondary"), (0.70, "warn"),
+    (0.89, "warn"), (0.90, "danger"), (1.3, "danger"),
+])
+def test_context_meter_colour_thresholds(usage, role):
+    from pyside_gui.context_meter import meter_role
+
+    assert meter_role(usage) == role
+
+
+def test_context_meter_paints_without_error(prompt):
+    prompt.set_context_usage(95_000, 100_000)
+    image = prompt._context_meter.grab().toImage()
+    assert not image.isNull()
+
+
+def test_sidebar_context_total_feeds_the_meter(prompt, tmp_path):
+    from pyside_gui.right_sidebar import RightSidebar
+
+    sidebar = RightSidebar("test", 10_000, 1_000, tmp_path, tmp_path)
+    sidebar.context_usage.connect(prompt.set_context_usage)
+    sidebar.update_context({"user": 2_000, "assistant": 3_000, "tools": 0, "summary": 0})
+    # user + assistant + reserve (no AGENTS.md / system prompt in tmp_path)
+    assert prompt._context_meter.usage == pytest.approx(0.6, abs=0.05)
+    assert sidebar._context_bar.value() == round(prompt._context_meter.usage * 1000)
+    sidebar.deleteLater()

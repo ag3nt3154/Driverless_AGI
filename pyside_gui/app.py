@@ -225,7 +225,7 @@ class DagiMainWindow(QMainWindow):
         b.stream_reasoning_delta.connect(lambda c: cv.stream_delta("reasoning", c))
         b.stream_ended.connect(self._on_stream_ended)
         b.token_update.connect(rs.update_stats)
-        b.context_update.connect(rs.update_context)
+        b.context_update.connect(rs.update_context); rs.context_usage.connect(self._prompt.set_context_usage)
         b.compaction_started.connect(self._on_compaction_started)
         b.compaction_done.connect(self._on_compaction)
         b.model_switched.connect(self._on_model_switched)

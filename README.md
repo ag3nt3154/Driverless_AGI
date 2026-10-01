@@ -275,6 +275,7 @@ Vditor 3.11.3 is vendored (trimmed to ~9.4 MB: core, lute, KaTeX woff2 fonts, en
   - a text field that grows from one line to 240px (`Ctrl+O` compose mode makes it tall);
   - a `+` button that opens a file dialog for PNG/JPEG;
   - a model pill that lists the catalog and switches through `/model`;
+  - a context ring (`context_meter.py`) beside it that fills with context-window use — the same total as the right sidebar's CONTEXT bar (system prompt + history + reserve), so 100% is where the loop compacts. Neutral below 70%, `warn` from 70%, `danger` from 90%; the tooltip shows exact tokens; hidden until the first model call or when the window is unknown; clicking does nothing;
   - a white round send button that turns into ■ Stop (same as `Esc`) while the agent runs with the input locked.
 - **Chrome:**
   - A slim header over the conversation has buttons to hide or show the whole left and right sidebars (`pyside_gui/header.py`).

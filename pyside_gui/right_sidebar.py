@@ -141,6 +141,7 @@ class _Rows(QWidget):
 
 class RightSidebar(QScrollArea):
     scroll_to_bottom_requested = Signal()
+    context_usage = Signal(int, int)  # total tokens incl. reserve, context window
 
     def __init__(
         self,
@@ -333,3 +334,4 @@ class RightSidebar(QScrollArea):
         self._context.set_rows(rows)
         self._context_bar.setValue(round(min(usage, 1.0) * 1000))
         self._context_bar.setToolTip(f"{total:,} of {W:,} tokens ({usage*100:.0f}%)")
+        self.context_usage.emit(total, W)
