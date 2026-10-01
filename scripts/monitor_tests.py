@@ -12,7 +12,7 @@ from pathlib import Path
 
 import psutil
 
-RAM_THRESHOLD_PCT = 70.0
+RAM_THRESHOLD_PCT = 85.0
 POLL_INTERVAL = 0.25  # seconds
 
 # Test files ordered from oldest git creation date to newest (untracked = newest).

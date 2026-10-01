@@ -1,7 +1,7 @@
 """tests/conftest.py — pytest plugin: RAM watchdog + DLL path bootstrap.
 
 Monitors system RAM during every test. If usage exceeds
-RAM_WARN_PCT (70%), the running test is interrupted with a clear
+RAM_WARN_PCT (85%), the running test is interrupted with a clear
 error. If usage exceeds RAM_KILL_PCT (90%), the process is
 hard-killed to protect the machine.
 """
@@ -22,7 +22,7 @@ _pyside6_dir = os.path.join(
 if os.path.isdir(_pyside6_dir) and hasattr(os, "add_dll_directory"):
     os.add_dll_directory(_pyside6_dir)
 
-RAM_WARN_PCT = 70.0
+RAM_WARN_PCT = 85.0
 RAM_KILL_PCT = 90.0
 POLL_INTERVAL = 0.5
 
