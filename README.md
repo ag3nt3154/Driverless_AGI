@@ -267,6 +267,7 @@ Vditor 3.11.3 is vendored (trimmed to ~9.4 MB: core, lute, KaTeX woff2 fonts, en
   - Layout: a centred 760px reading column (14px / 1.6); user messages are right-aligned bubbles and assistant text sits on the background with no card.
   - Tool calls are one quiet line: an icon, a label derived by `pyside_gui/tool_labels.py` ("Read agent/loop.py", "Ran pytest -q", `Searched "foo" in tools/`) and a ✓/✕ status. Click a line to expand its output and its arguments, shown as one labelled field per argument (strings keep their real line breaks, other values are pretty-printed JSON). `--verbose` expands them by default.
   - Reasoning streams as a live tail, then collapses to "Thought for Ns".
+  - User messages: a ```` ```pasted ```` fence renders as a collapsed **paste card** (icon, "Pasted text · N lines", the first line) that expands on click — also for restored sessions, since detection is from the text. Bubbles taller than ~320px are capped with a fade and a **Show more** toggle; opening a paste card lifts the cap.
   - The empty chat shows the pet's idle emote, the model and the project path until the first message.
   - Clicked links open in the system browser.
   - Calls made before the page finishes loading are queued and replayed.
@@ -276,6 +277,7 @@ Vditor 3.11.3 is vendored (trimmed to ~9.4 MB: core, lute, KaTeX woff2 fonts, en
   - a `+` button that opens a file dialog for PNG/JPEG;
   - a model pill that lists the catalog and switches through `/model`;
   - a context ring (`context_meter.py`) beside it that fills with context-window use — the same total as the right sidebar's CONTEXT bar (system prompt + history + reserve), so 100% is where the loop compacts. Neutral below 70%, `warn` from 70%, `danger` from 90%; the tooltip shows exact tokens; hidden until the first model call or when the window is unknown; clicking does nothing;
+  - **long-paste tokens** (`paste_cards.py`): pasting 15+ lines or 1,500+ characters inserts an inline, link-coloured token like `[Pasted text #1 · 412 lines]` at the cursor instead of the text, so your own words stay readable around it. Click the token to expand it back into text; Backspace after / Delete before it removes it whole; `Ctrl+Shift+V` always pastes inline. On send each token becomes its text inside a ```` ```pasted ```` fence on its own lines (the fence is longer than any backtick run in the paste), so the model sees exactly where the paste starts and ends;
   - a white round send button that turns into ■ Stop (same as `Esc`) while the agent runs with the input locked.
 - **Chrome:**
   - A slim header over the conversation has buttons to hide or show the whole left and right sidebars (`pyside_gui/header.py`).

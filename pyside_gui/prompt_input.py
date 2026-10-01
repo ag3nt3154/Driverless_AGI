@@ -20,6 +20,7 @@ from agent.user_input import ImageAttachment, UserSubmission
 from pyside_gui.context_meter import ContextMeter
 from pyside_gui.icons import icon
 from pyside_gui.menu_style import MENU_STYLESHEET
+from pyside_gui import paste_cards
 from pyside_gui.slash_completer import SlashCompleterPopup
 from pyside_gui.theme import TOKENS, qss
 
@@ -204,6 +205,18 @@ class _Editor(QPlainTextEdit):
             event.accept()
             return
 
+        if key == Qt.Key.Key_V and mods == (
+            Qt.KeyboardModifier.ControlModifier | Qt.KeyboardModifier.ShiftModifier
+        ):
+            self._owner._paste_plain()
+            event.accept()
+            return
+
+        if key in (Qt.Key.Key_Backspace, Qt.Key.Key_Delete) and not mods:
+            if self._owner._delete_token(forward=key == Qt.Key.Key_Delete):
+                event.accept()
+                return
+
         if key in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
             if mods & (
                 Qt.KeyboardModifier.ShiftModifier
@@ -216,6 +229,11 @@ class _Editor(QPlainTextEdit):
             return
 
         super().keyPressEvent(event)
+
+    def mouseReleaseEvent(self, event) -> None:  # noqa: N802
+        super().mouseReleaseEvent(event)
+        if event.button() == Qt.MouseButton.LeftButton and not self.textCursor().hasSelection():
+            self._owner._expand_token_at(self.textCursor().position())
 
     def focusInEvent(self, event: QFocusEvent) -> None:  # noqa: N802
         self._owner._set_card_focused(True)
@@ -253,6 +271,7 @@ class PromptInput(QWidget):
     def __init__(self) -> None:
         super().__init__()
         self._attachments: list[ImageAttachment] = []
+        self._pastes: dict[int, str] = {}  # long-paste token number -> text
         self._draft_rejected: bool = False
         self._attachment_previews: list[QImage] = []
         self._running = False
@@ -280,6 +299,7 @@ class PromptInput(QWidget):
 
         self._editor = _Editor(self)
         self._editor.setObjectName("composer-editor")
+        self._token_highlighter = paste_cards.TokenHighlighter(self._editor.document())
         self._editor.setPlaceholderText(PLACEHOLDER)
         self._editor.setFrameShape(QFrame.Shape.NoFrame)
         self._editor.document().setDocumentMargin(2)
@@ -361,6 +381,7 @@ class PromptInput(QWidget):
     def clear(self) -> None:
         self._editor.clear()
         self._clear_attachments()
+        self._pastes.clear()
 
     def set_compose_mode(self, expanded: bool) -> None:
         self._compose = expanded
@@ -472,7 +493,7 @@ class PromptInput(QWidget):
     # ---- submission ----
 
     def _submit(self) -> None:
-        text = self._editor.toPlainText().strip()
+        text = paste_cards.expand(self._editor.toPlainText(), self._pastes).strip()
         if not text and not self._attachments:
             return
         submission = UserSubmission(text=text, images=tuple(self._attachments))
@@ -481,6 +502,7 @@ class PromptInput(QWidget):
         if not self._draft_rejected:
             self._editor.clear()
             self._clear_attachments()
+            self._pastes.clear()
 
     def restore_draft(self, submission: UserSubmission) -> None:
         """Put a rejected submission's content back into the editor.
@@ -532,7 +554,54 @@ class PromptInput(QWidget):
         if source.hasUrls():
             self._paste_urls(source)
             return
-        self._editor.insertPlainText(source.text())
+        self._insert_pasted_text(source.text())
+
+    # ---- long-paste tokens ----
+
+    def _insert_pasted_text(self, text: str) -> None:
+        """Insert a paste; a long one becomes a ``[Pasted text #N …]`` token."""
+        if not paste_cards.is_long(text):
+            self._editor.insertPlainText(text)
+            return
+        number = max(self._pastes, default=0) + 1
+        self._pastes[number] = text
+        self._editor.insertPlainText(paste_cards.make_token(number, text))
+
+    def _paste_plain(self) -> None:
+        """Ctrl+Shift+V: paste clipboard text inline, never as a token."""
+        from PySide6.QtGui import QGuiApplication
+
+        self._editor.insertPlainText(QGuiApplication.clipboard().text())
+
+    def _token_cursor(self, start: int, end: int):
+        cursor = self._editor.textCursor()
+        cursor.setPosition(start)
+        cursor.setPosition(end, cursor.MoveMode.KeepAnchor)
+        return cursor
+
+    def _delete_token(self, forward: bool) -> bool:
+        """Backspace after / Delete before a token removes it whole."""
+        cursor = self._editor.textCursor()
+        if cursor.hasSelection():
+            return False
+        span = paste_cards.token_span(
+            self._editor.toPlainText(), cursor.position(), inclusive_end=not forward
+        )
+        if span is None:
+            return False
+        start, end, number = span
+        self._token_cursor(start, end).removeSelectedText()
+        self._pastes.pop(number, None)
+        return True
+
+    def _expand_token_at(self, position: int) -> None:
+        """Clicking a token puts its full text back into the editor."""
+        for match in paste_cards.TOKEN_RE.finditer(self._editor.toPlainText()):
+            start, end = match.span()
+            number = int(match.group(1))
+            if start <= position <= end and number in self._pastes:
+                self._token_cursor(start, end).insertText(self._pastes.pop(number))
+                return
 
     def _paste_image(self, source: QMimeData) -> None:
         image = QImage(source.imageData())

@@ -23,6 +23,7 @@ const ICONS = {
     globe: '<circle cx="12" cy="12" r="8.5"/><path d="M3.5 12h17M12 3.5c2.5 2.5 2.5 14.5 0 17M12 3.5c-2.5 2.5-2.5 14.5 0 17"/>',
     tool: '<path d="M12 3l2 5 5 2-5 2-2 5-2-5-5-2 5-2z"/>',
     chevron: '<path d="M9 6l6 6-6 6"/>',
+    paste: '<rect x="6" y="4" width="12" height="17" rx="2"/><path d="M9 4h6v3H9zM9 12h6M9 16h4"/>',
 };
 
 let _autoScroll = true;
@@ -453,10 +454,65 @@ function showWelcome(title, subtitle, imageUrl) {
 
 // ---- messages --------------------------------------------------------------
 
+// ---- user messages: long-paste cards and tall-bubble cap -------------------
+
+// A long paste reaches the model as a ```pasted fence (see paste_cards.py);
+// in the bubble it becomes a collapsed card that expands on click.
+const PASTE_RE = /^(`{3,})pasted\n([\s\S]*?)\n\1$/gm;
+const USER_MAX_HEIGHT = 320;
+
+function _pasteCard(content) {
+    const lines = content.split('\n');
+    const first = lines.find((l) => l.trim()) || '';
+    const card = _el('details', 'paste-card');
+    card.innerHTML =
+        `<summary>${_icon('paste')}<span class="paste-title">Pasted text · ` +
+        `${lines.length.toLocaleString('en-US')} line${lines.length === 1 ? '' : 's'}</span>` +
+        `<span class="paste-first"></span></summary><pre class="paste-body"></pre>`;
+    card.querySelector('.paste-first').textContent = first.trim();
+    card.querySelector('.paste-body').textContent = content;
+    return card;
+}
+
+function _userBody(text) {
+    const body = _el('div', 'message-body');
+    let last = 0;
+    for (const match of text.matchAll(PASTE_RE)) {
+        const before = text.slice(last, match.index).replace(/\n$/, '');
+        if (before) body.appendChild(document.createTextNode(before));
+        body.appendChild(_pasteCard(match[2]));
+        last = match.index + match[0].length;
+        if (text[last] === '\n') last += 1;
+    }
+    const rest = text.slice(last);
+    if (rest) body.appendChild(document.createTextNode(rest));
+    return body;
+}
+
+// Tall bubbles are capped with a fade and a "Show more" toggle; opening a
+// paste card lifts the cap.
+function _capUserBubble(div) {
+    const body = div.querySelector('.message-body');
+    if (!body) return;
+    div.addEventListener('toggle', () => div.classList.add('expanded'), true);
+    if (body.scrollHeight <= USER_MAX_HEIGHT + 40) return;
+    div.classList.add('capped');
+    const more = _el('button', 'show-more');
+    more.type = 'button';
+    more.textContent = 'Show more';
+    more.addEventListener('click', () => {
+        const open = div.classList.toggle('expanded');
+        more.textContent = open ? 'Show less' : 'Show more';
+    });
+    div.appendChild(more);
+}
+
 function appendMessage(role, text) {
     if (role !== 'user') return appendMarkdown(text);
-    _insert(_el('div', 'message user-message',
-        `<div class="message-body">${_escapeHtml(text)}</div>`));
+    const div = _el('div', 'message user-message');
+    div.appendChild(_userBody(text));
+    _insert(div);
+    _capUserBubble(div);
 }
 
 function appendUserMessageWithImages(text, imagePaths) {
@@ -469,9 +525,10 @@ function appendUserMessageWithImages(text, imagePaths) {
         }
         html += '</div>';
     }
-    if (text) html += `<div class="message-body">${_escapeHtml(text)}</div>`;
     div.innerHTML = html;
+    if (text) div.appendChild(_userBody(text));
     _insert(div);
+    _capUserBubble(div);
 }
 
 function appendMarkdown(md) {

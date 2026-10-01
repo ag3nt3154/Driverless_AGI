@@ -100,6 +100,65 @@ body {
     white-space: pre-wrap;
 }
 
+/* Tall user bubbles: capped with a fade until "Show more". */
+.user-message.capped:not(.expanded) .message-body {
+    max-height: 320px;
+    overflow: hidden;
+    -webkit-mask-image: linear-gradient(to bottom, #000 75%, transparent);
+            mask-image: linear-gradient(to bottom, #000 75%, transparent);
+}
+.show-more {
+    display: block;
+    margin: 4px 0 0 auto;
+    font: 12px var(--font-ui);
+    color: var(--fg-secondary);
+    background: none;
+    border: none;
+    padding: 2px 0;
+    cursor: pointer;
+}
+.show-more:hover { color: var(--fg); }
+
+/* Long-paste card inside a user bubble. */
+.paste-card {
+    white-space: normal;
+    margin: 4px 0;
+    background: var(--well-bg);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+}
+.paste-card > summary {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 7px 10px;
+    cursor: pointer;
+    list-style: none;
+    font-size: 12.5px;
+    color: var(--fg-secondary);
+}
+.paste-card > summary::-webkit-details-marker { display: none; }
+.paste-card > summary .icon { width: 15px; height: 15px; flex: none; }
+.paste-title { flex: none; color: var(--fg); }
+.paste-first {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font: 12px var(--font-mono);
+    color: var(--fg-tertiary);
+}
+.paste-body {
+    margin: 0;
+    padding: 8px 12px 10px;
+    max-height: 420px;
+    overflow: auto;
+    border-top: 1px solid var(--border);
+    font: 12px/1.5 var(--font-mono);
+    color: var(--fg);
+    white-space: pre;
+}
+
 .image-gallery { display: flex; flex-wrap: wrap; gap: 8px; margin: 2px 0 6px; justify-content: flex-end; }
 
 .sent-image-thumb {
