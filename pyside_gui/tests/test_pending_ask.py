@@ -94,7 +94,8 @@ def test_live_pending_ask_answers_the_question() -> None:
     assert evt.is_set()
     assert app.dispatched == []
     assert app.running_shown == 1
-    assert app._prompt.disabled is True
+    # The composer stays live while the agent works (type-while-running).
+    assert getattr(app._prompt, "disabled", False) is False
 
 
 class _StubLoop:

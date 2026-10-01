@@ -3,8 +3,9 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from PySide6.QtCore import QUrl
+from PySide6.QtCore import QObject, QUrl, Signal, Slot
 from PySide6.QtGui import QDesktopServices
+from PySide6.QtWebChannel import QWebChannel
 from PySide6.QtWebEngineCore import QWebEnginePage
 from PySide6.QtWebEngineWidgets import QWebEngineView
 
@@ -35,6 +36,16 @@ class _ConversationPage(QWebEnginePage):
         return super().acceptNavigationRequest(url, nav_type, is_main_frame)
 
 
+class _PageBridge(QObject):
+    """Calls from the page to Python, over QWebChannel (``window._dagi``)."""
+
+    cancel_queued = Signal(str)
+
+    @Slot(str)
+    def cancelQueued(self, queue_id: str) -> None:  # noqa: N802 - called from JS
+        self.cancel_queued.emit(queue_id)
+
+
 class ConversationView(QWebEngineView):
     """QWebEngineView wrapper that loads the conversation template and
     exposes Python methods mapped to JS DOM-manipulation functions.
@@ -44,6 +55,8 @@ class ConversationView(QWebEngineView):
     before the page finishes loading are queued and replayed.
     """
 
+    queued_cancel_requested = Signal(str)  # ✕ on a queued message
+
     def __init__(self, verbose: bool = False) -> None:
         super().__init__()
         self._verbose = verbose
@@ -52,6 +65,11 @@ class ConversationView(QWebEngineView):
         self._stream_reasoning = ""
         self._reasoning_dirty = False
         self.setPage(_ConversationPage(self))
+        self._page_bridge = _PageBridge(self)
+        self._page_bridge.cancel_queued.connect(self.queued_cancel_requested)
+        self._channel = QWebChannel(self)
+        self._channel.registerObject("dagi", self._page_bridge)
+        self.page().setWebChannel(self._channel)
         self.loadFinished.connect(self._on_load_finished)
         html = (_RESOURCES / "conversation.html").read_text(encoding="utf-8")
         self.setHtml(with_theme(html), QUrl.fromLocalFile(str(_RESOURCES) + "/"))
@@ -151,6 +169,18 @@ class ConversationView(QWebEngineView):
     def stream_end(self, markdown: str) -> None:
         self._finish_reasoning()
         self._run_js(f"finalizeStream({self._js_str(markdown)})")
+
+    def append_queued_message(self, queue_id: str, text: str) -> None:
+        """A message typed while the agent runs: a dim bubble pinned below the
+        live turn, with a ✕ that emits ``queued_cancel_requested``."""
+        self._run_js(f"appendQueuedMessage({self._js_str(queue_id)}, {self._js_str(text)})")
+
+    def mark_queued_delivered(self, queue_id: str) -> None:
+        """The model has the message: it joins the timeline as a normal bubble."""
+        self._run_js(f"markQueuedDelivered({self._js_str(queue_id)})")
+
+    def remove_queued_message(self, queue_id: str) -> None:
+        self._run_js(f"removeQueuedMessage({self._js_str(queue_id)})")
 
     def interrupt_stream(self) -> None:
         """Freeze the streaming bubble (and its thinking block) as it stands."""

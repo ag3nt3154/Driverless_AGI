@@ -19,6 +19,7 @@ from agent.loop import AgentLoop
 from agent.user_input import UserSubmission
 
 from pyside_gui.bridge import worker_log
+from pyside_gui.steer_queue import SteerQueue
 
 
 def _as_submission(task: str | UserSubmission) -> UserSubmission:
@@ -85,7 +86,6 @@ def on_input_submitted(win, submission: str | UserSubmission) -> None:
             win._pending_ask = None
             win._pending_ask_container = None
             win._conversation.append_user_message(text)
-            win._prompt.setDisabled(True)
             win._show_running()
             return
         # Nobody is left to read the answer: the ask_user call timed out
@@ -100,10 +100,19 @@ def on_input_submitted(win, submission: str | UserSubmission) -> None:
     ):
         loop = win._current_loop_ref[0]
         _append_user_with_images(win, submission)
-        win._prompt.setDisabled(True)
         win._show_running()
         win._right_sidebar.set_status("running")
         loop.inject_and_resume(submission)
+        return
+    # Typed while the agent runs: queue it for the next step of this turn.
+    if win._worker and win._worker.is_alive():
+        if text.startswith("/"):
+            win._conversation.append_info(
+                "Slash commands can't run while the agent is working — wait, or press Esc first."
+            )
+            win._prompt.restore_draft(submission)
+            return
+        SteerQueue.for_window(win).submit(submission)
         return
     if text.startswith("/"):
         if has_images:
@@ -134,15 +143,15 @@ def handle_special_command(win, result: str) -> None:
         win._copy_picker.show_messages(msgs)
 
 
-def dispatch_agent(win, task: str | UserSubmission) -> None:
+def dispatch_agent(win, task: str | UserSubmission, show: bool = True) -> None:
     if win._worker and win._worker.is_alive():
         win._conversation.append_info("Agent is already running — please wait.")
         if hasattr(win, "_prompt"):
             win._prompt.restore_draft(task if isinstance(task, UserSubmission) else _as_submission(task))
         return
     win._submission_seq = getattr(win, "_submission_seq", 0) + 1
-    _append_user_with_images(win, _as_submission(task))
-    win._prompt.setDisabled(True)
+    if show:
+        _append_user_with_images(win, _as_submission(task))
     win._show_running()
     win._current_loop_ref = []
     callbacks = win._bridge.build_callbacks(win._current_loop_ref)
@@ -193,3 +202,6 @@ def agent_work(win, task: str | UserSubmission, callbacks: object, loop_ref: lis
         win._invoke_on_main("_clear_pending_ask_slot")
         log("finally: idle"); win._invoke_on_main("_set_status_slot", "idle")
         win._invoke_on_main("_enable_input_slot")
+        queue = getattr(win, "_steer_queue", None)
+        if queue is not None:
+            queue.turn_finished.emit()  # leftover queued messages → next turn

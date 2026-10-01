@@ -434,7 +434,12 @@ class PromptInput(QWidget):
         self._card.style().polish(self._card)
 
     def _stop_mode(self) -> bool:
-        return self._running and not self._editor.isEnabled()
+        """While the agent runs the button stops it, unless there is something
+        to send: a message typed mid-run is queued for the next step."""
+        if not self._running:
+            return False
+        empty = not self._editor.toPlainText().strip() and not self._attachments
+        return empty or not self._editor.isEnabled()
 
     def _refresh_send_button(self) -> None:
         on_accent = TOKENS["on_accent"]
@@ -464,6 +469,7 @@ class PromptInput(QWidget):
         return text
 
     def _on_text_changed(self) -> None:
+        self._refresh_send_button()
         prefix = self._current_slash_prefix()
         if prefix is None:
             self._completer.hide()
@@ -523,18 +529,21 @@ class PromptInput(QWidget):
             self._attachments.append(attachment)
             self._attachment_previews.append(preview)
         self._strip.set_images(self._attachment_previews)
+        self._refresh_send_button()
         self._editor.setFocus()
 
     def _clear_attachments(self) -> None:
         self._attachments.clear()
         self._attachment_previews.clear()
         self._strip.set_images([])
+        self._refresh_send_button()
 
     def _remove_attachment(self, index: int) -> None:
         if 0 <= index < len(self._attachments):
             del self._attachments[index]
             del self._attachment_previews[index]
             self._strip.set_images(self._attachment_previews)
+        self._refresh_send_button()
 
     # ---- paste / attach handling ----
     # TODO: for large batches/files, move decode+PNG-encode off the UI
@@ -667,6 +676,7 @@ class PromptInput(QWidget):
         self._attachments.append(attachment)
         self._attachment_previews.append(image)
         self._strip.set_images(self._attachment_previews)
+        self._refresh_send_button()
         self._editor.setFocus()
         return True
 

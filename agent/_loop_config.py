@@ -204,6 +204,9 @@ class AgentCallbacks:
     on_show_file: Callable[[str, int | None], None] = field(
         default=lambda path, line: None
     )
+    # A user message queued mid-turn (AgentLoop.steer / inject_and_resume) has
+    # just been logged, i.e. the model will see it on its next request.
+    on_user_injected: Callable[[object], None] = field(default=lambda submission: None)
     # Pet notepad: persist unsaved editor text before read_notepad reads the file.
     # Returns True once flushed. None when no notepad editor exists (TUI, Telegram).
     on_flush_notepad: Callable[[], bool] | None = None

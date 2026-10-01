@@ -4,7 +4,8 @@
 
 - **OpenGhost-inspired GUI refresh — next passes** —
   UI pass 1, mermaid, the visualize prompt line, global instant Esc and the context
-  meter and long-paste cards are done (see Completed). Remaining: typing while the agent runs.
+  meter, long-paste cards and typing while the agent runs are done (see Completed). The
+  OpenGhost review list is finished.
   Decided against (2026-10-01): the `files` block, "talk while you work" / tool
   `description`, selection menu + mini chat, and permission modes / approval cards —
   DAGI stays yolo-only (no approval gate).
@@ -36,6 +37,13 @@
   the bottom, so the agent sees it first.
 
 ## Completed
+
+- **Typing while the agent runs (2026-10-01, branch `feat/type-while-running`)** — the GUI
+  composer stays live during a run; Send queues the message (`pyside_gui/steer_queue.py`)
+  and `AgentLoop.steer()` logs it at the next checkpoint without pausing, confirmed by the
+  new `on_user_injected` callback. Queued bubbles pin below the live turn with a ✕ (first
+  JS→Python bridge in the conversation pane, QWebChannel); unconfirmed leftovers become the
+  next turn. Send/Stop follows whether the field has content. TUI unchanged.
 
 - **Long-paste cards (2026-10-01, branch `feat/paste-cards`)** — big pastes become an inline
   `[Pasted text #N · L lines]` token in the composer (`pyside_gui/paste_cards.py`), expanded on

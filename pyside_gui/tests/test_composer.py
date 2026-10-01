@@ -47,11 +47,20 @@ def test_send_turns_into_stop_while_running_and_locked(prompt, qtbot):
     assert prompt._send_btn.toolTip().startswith("Stop")
     with qtbot.waitSignal(prompt.stop_requested):
         prompt._send_btn.click()
-    # An ask_user question unlocks the editor mid-run: the button sends again.
+    prompt.set_running(False)
     prompt.setDisabled(False)
     assert prompt._send_btn.toolTip().startswith("Send")
-    prompt.set_running(False)
+
+
+def test_while_running_the_button_sends_when_there_is_text(prompt, qtbot):
+    prompt.set_running(True)
+    assert prompt._send_btn.toolTip().startswith("Stop")  # empty: stop
+    prompt._editor.setPlainText("also update the tests")
     assert prompt._send_btn.toolTip().startswith("Send")
+    with qtbot.waitSignal(prompt.submitted) as blocker:
+        prompt._send_btn.click()
+    assert blocker.args[0].text == "also update the tests"
+    assert prompt._send_btn.toolTip().startswith("Stop")  # cleared again
 
 
 def test_model_pill_lists_models_and_emits_selection(prompt, qtbot):

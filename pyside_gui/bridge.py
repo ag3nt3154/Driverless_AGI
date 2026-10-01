@@ -48,6 +48,7 @@ class AgentBridge(QObject):
     agent_paused = Signal()
     ask_user_requested = Signal(str, object, object)  # q, opts, timeout
     ask_user_expired = Signal()                        # question timed out
+    user_injected = Signal(object)                     # queued UserSubmission reached the model
     process_state_changed = Signal(object)
     continue_injected = Signal(int, int)   # cur, max
     subagent_event = Signal(str, str)      # type, json line
@@ -235,4 +236,5 @@ class AgentBridge(QObject):
             on_message_board_post=on_message_board_post,
             on_show_file=on_show_file,
             on_flush_notepad=self._flush_notepad,
+            on_user_injected=self.user_injected.emit,
         )

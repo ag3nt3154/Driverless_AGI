@@ -221,6 +221,7 @@ class AgentLoop:
         self._inject_lock = threading.RLock()
         self._injected: list[UserSubmission] = []
         self._mid_step = False
+        self._in_run = False
         self._expression_timer: threading.Timer | None = None
         self._expression_controller = self.tracker.expression_controller
 
@@ -262,8 +263,37 @@ class AgentLoop:
                 self._log_injected(submission)
         self._lifecycle.resume_thinking()
 
+    def steer(self, message: str | UserSubmission) -> bool:
+        """Add a message to the running turn without pausing it.
+
+        It is logged at the loop's next checkpoint (after the current tool
+        calls, before the next model call). Returns False when no turn is
+        running; the caller should send it as a new turn instead. A message
+        still queued when the turn ends is dropped here — the caller keeps
+        its own copy and resends anything ``on_user_injected`` never confirmed.
+        """
+        submission = message if isinstance(message, UserSubmission) else UserSubmission(text=message)
+        with self._inject_lock:
+            if not self._in_run:
+                return False
+            if self._mid_step:
+                self._injected.append(submission)
+            else:
+                self._log_injected(submission)
+        return True
+
+    def cancel_steer(self, submission: UserSubmission) -> bool:
+        """Withdraw a steered message that has not been logged yet."""
+        with self._inject_lock:
+            for i, queued in enumerate(self._injected):
+                if queued is submission:
+                    del self._injected[i]
+                    return True
+        return False
+
     def _log_injected(self, submission: UserSubmission) -> None:
         self._log_user_message("user", self._submission_content(submission), "inject")
+        self.callbacks.on_user_injected(submission)
 
     def _set_mid_step(self, busy: bool) -> None:
         """Flip the mid-step flag; on reaching a checkpoint, log queued injections."""
@@ -613,6 +643,8 @@ class AgentLoop:
 
         _turn = self.log.next_turn()
         self.log.append(sev.TURN_START, {"turn": _turn})
+        with self._inject_lock:
+            self._in_run = True
         self._set_mid_step(True)
 
         try:
@@ -937,6 +969,7 @@ class AgentLoop:
             raise
         finally:
             with self._inject_lock:
+                self._in_run = False
                 self._mid_step = False
                 self._injected.clear()
             self._stop_expression_timer()

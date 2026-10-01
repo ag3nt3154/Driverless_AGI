@@ -39,6 +39,9 @@ const _observer = new IntersectionObserver(
 document.addEventListener('DOMContentLoaded', () => {
     const sentinel = document.getElementById('scroll-sentinel');
     if (sentinel) _observer.observe(sentinel);
+    if (typeof QWebChannel !== 'undefined' && typeof qt !== 'undefined') {
+        new QWebChannel(qt.webChannelTransport, (channel) => { window._dagi = channel.objects.dagi; });
+    }
 });
 
 // ---- helpers ---------------------------------------------------------------
@@ -65,13 +68,14 @@ function _escapeHtml(text) {
     return div.innerHTML;
 }
 
-// Every new block goes in before the sentinel; the welcome screen leaves as
-// soon as anything is added.
+// Every new block goes in before the queued-message area (or the sentinel),
+// so messages typed mid-run stay pinned below the live turn. The welcome
+// screen leaves as soon as anything is added.
 function _insert(el) {
     const empty = document.getElementById('empty-state');
     if (empty) empty.remove();
-    const sentinel = document.getElementById('scroll-sentinel');
-    sentinel.parentNode.insertBefore(el, sentinel);
+    const anchor = document.getElementById('queued-area') || document.getElementById('scroll-sentinel');
+    anchor.parentNode.insertBefore(el, anchor);
     _scrollToBottom();
     return el;
 }
@@ -505,6 +509,66 @@ function _capUserBubble(div) {
         more.textContent = open ? 'Show less' : 'Show more';
     });
     div.appendChild(more);
+}
+
+// ---- messages typed while the agent runs ----------------------------------
+
+function _queuedArea() {
+    let area = document.getElementById('queued-area');
+    if (!area) {
+        area = _el('div', 'queued-area');
+        area.id = 'queued-area';
+        const sentinel = document.getElementById('scroll-sentinel');
+        sentinel.parentNode.insertBefore(area, sentinel);
+    }
+    return area;
+}
+
+function appendQueuedMessage(id, text) {
+    const empty = document.getElementById('empty-state');
+    if (empty) empty.remove();
+    const div = _el('div', 'message user-message queued');
+    div.dataset.queueId = id;
+    div.appendChild(_userBody(text));
+    const foot = _el('div', 'queued-foot', '<span>Queued — sent at the next step</span>');
+    const cancel = _el('button', 'queued-cancel');
+    cancel.type = 'button';
+    cancel.title = 'Cancel';
+    cancel.textContent = '✕';
+    cancel.addEventListener('click', () => {
+        if (window._dagi) window._dagi.cancelQueued(id);
+    });
+    foot.appendChild(cancel);
+    div.appendChild(foot);
+    _queuedArea().appendChild(div);
+    _capUserBubble(div);
+    _scrollToBottom();
+}
+
+function _queued(id) {
+    return document.querySelector(`.user-message.queued[data-queue-id="${CSS.escape(id)}"]`);
+}
+
+// Delivered: it entered the conversation here, after whatever ran meanwhile.
+function markQueuedDelivered(id) {
+    const div = _queued(id);
+    if (!div) return;
+    div.classList.remove('queued');
+    const foot = div.querySelector('.queued-foot');
+    if (foot) foot.remove();
+    _insert(div);
+    _tidyQueuedArea();
+}
+
+function removeQueuedMessage(id) {
+    const div = _queued(id);
+    if (div) div.remove();
+    _tidyQueuedArea();
+}
+
+function _tidyQueuedArea() {
+    const area = document.getElementById('queued-area');
+    if (area && !area.children.length) area.remove();
 }
 
 function appendMessage(role, text) {
