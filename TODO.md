@@ -96,6 +96,15 @@
   Follow-ups: optional `append_notepad` write tool; opacity / fade-when-unfocused;
   pasted images; Vditor 4.x bump once it matures.
 
+- **Flaky notepad GUI test fixed (2026-10-01)** — `test_edits_are_flushed_on_hide`
+  ("editor did not load") failed under machine load only when the whole module ran.
+  Cause: tests `deleteLater()` widgets but never run a top-level event loop, and
+  `processEvents()` skips DeferredDelete at loop level 0, so every earlier pet window
+  stayed alive and its notepad web view kept loading Vditor alongside the new one
+  (5 concurrent loads, ~4 s each idle; >15 s under CPU stress). New autouse fixture in
+  `pyside_gui/tests/conftest.py` flushes deferred deletes before/after each test.
+  Under 16 busy processes: `main` failed 2/3 runs, fixed 3/3 pass; GUI suite 217 passed.
+
 - **PySide GUI test suite green (2026-09-30)** — `pyside_gui/tests` went from 7 failed /
   32 errors to 135 passed. `qtbot` errors: pytest-qt stays disabled globally in
   `pyproject.toml` (Windows QtCore DLL crash, added in 3815cb7) and is now re-registered
