@@ -130,7 +130,7 @@ class TestReadLargeFileTool:
         (tmp_path / "pic.png").write_bytes(b"\x89PNG")
         with patch("tools.subagent_api.run_subagent") as mock_run:
             result = _make_tool(tmp_path).run(path="pic.png")
-        assert result.startswith("Error:")
+        assert result.startswith("Error (DAGI_CANNOT_PROCESS):")
         mock_run.assert_not_called()
 
     def test_reads_saved_tool_output(self, tmp_path):

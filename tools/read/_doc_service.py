@@ -1,32 +1,23 @@
-"""HTTP client for the document converter service.
+"""HTTP client for the custom PDF conversion API.
 
-Anti-corruption layer: all HTTP details (endpoint, auth, headers, error
-mapping) are encapsulated here. When the service API evolves, only this
-file changes.
+Anti-corruption layer: all HTTP details (endpoint, error mapping) live here.
+The contract is a single ``POST {service_url}/convert`` with the file as a
+multipart upload; a 200 response body is the converted markdown, anything
+else is a JSON ``{"error", "code"}`` body. ``services.doc_converter`` is the
+reference implementation, but any server honouring that contract works.
+
+Caching is the caller's job (tools/read/_convert.py) — this module always
+performs the request.
 """
 from __future__ import annotations
 
-import hashlib
-from pathlib import Path
-
 import httpx
 
-_DOC_CACHE_SUBDIR = "doc_convert"
 _TIMEOUT = 300.0  # 5 minutes — large PDFs with OCR can be slow
 
 
-def _cache_path_from_hash(content_hash: str, project_path: Path) -> Path:
-    return project_path / ".dagi" / "hash_cache" / _DOC_CACHE_SUBDIR / f"{content_hash}.md"
-
-
-def cache_path_for(path: Path, project_path: Path) -> Path:
-    """Path of the converted-markdown cache entry for a source document."""
-    content_hash = hashlib.sha256(path.read_bytes()).hexdigest()
-    return _cache_path_from_hash(content_hash, project_path)
-
-
 class DocServiceError(Exception):
-    """Raised when the document converter service returns an error."""
+    """Raised when the conversion API is unreachable or returns an error."""
 
     def __init__(self, code: str, message: str) -> None:
         self.code = code
@@ -34,63 +25,32 @@ class DocServiceError(Exception):
         super().__init__(f"{code}: {message}")
 
 
-def convert_document(
-    path: Path,
-    service_url: str,
-    project_path: Path,
-) -> str:
-    """Convert a document file to markdown via the converter service.
-
-    Checks the local hash cache first. On miss, uploads to the service
-    and caches the result locally.
-
-    Args:
-        path: Absolute path to the document file.
-        service_url: Base URL of the converter service (e.g. http://localhost:8100).
-        project_path: Project root — local cache lives under .dagi/hash_cache/.
-
-    Returns:
-        Markdown text of the converted document.
+def post_for_conversion(file_bytes: bytes, filename: str, service_url: str) -> str:
+    """POST ``file_bytes`` to the conversion API and return its markdown.
 
     Raises:
-        DocServiceError: on service errors (with code and message).
+        DocServiceError: connection failure, timeout, or a non-200 response.
     """
-    file_bytes = path.read_bytes()
-    content_hash = hashlib.sha256(file_bytes).hexdigest()
-    cache_file = _cache_path_from_hash(content_hash, project_path)
-    cache_dir = cache_file.parent
-    if cache_file.exists():
-        return cache_file.read_text(encoding="utf-8")
-
-    # Cache miss — call service
     url = f"{service_url.rstrip('/')}/convert"
     try:
         with httpx.Client(timeout=_TIMEOUT) as client:
-            response = client.post(
-                url,
-                files={"file": (path.name, file_bytes)},
-            )
+            response = client.post(url, files={"file": (filename, file_bytes)})
     except httpx.ConnectError:
         raise DocServiceError(
             "CONNECTION_FAILED",
-            f"Document conversion service is not running at {service_url}. "
-            f"Start it with: python -m services.doc_converter",
+            f"PDF conversion service is not running at {service_url}.",
         )
     except httpx.TimeoutException:
         raise DocServiceError(
             "TIMEOUT",
-            f"Document conversion service timed out after {_TIMEOUT}s. "
-            f"The document may be too large or the service may be overloaded.",
+            f"PDF conversion service timed out after {_TIMEOUT}s.",
         )
+    except httpx.HTTPError as exc:
+        raise DocServiceError("HTTP_ERROR", str(exc))
 
     if response.status_code == 200:
-        markdown = response.text
-        # Store in local cache
-        cache_dir.mkdir(parents=True, exist_ok=True)
-        cache_file.write_text(markdown, encoding="utf-8", newline="\n")
-        return markdown
+        return response.text
 
-    # Error response — parse JSON error detail
     try:
         error_body = response.json()
         code = error_body.get("code", "UNKNOWN")

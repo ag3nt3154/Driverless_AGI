@@ -150,6 +150,8 @@ def create_tool_registry(
         service_url=_services.get("doc_converter"),
         reserve_tokens=config.reserve_tokens if config else 0,
         edge_chars=config.truncate_edge_chars if config else DEFAULT_EDGE_CHARS,
+        max_image_bytes=config.image_input_max_image_bytes if config else None,
+        max_image_pixels=config.image_input_max_pixels if config else None,
     ))
     reg.register(GrepTool(cwd=cwd, allowed_roots=effective_roots))
     reg.register(FindTool(cwd=cwd, allowed_roots=effective_roots))

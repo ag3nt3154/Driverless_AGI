@@ -42,6 +42,19 @@
 
 ## Completed
 
+- **read: Office, PDF fallback and images (2026-10-01)** — `.docx`/`.xlsx`/`.xls`/`.pptx`
+  convert in-process with markitdown (`tools/read/_convert.py`); PDFs try the conversion
+  API (`services.doc_converter`, now just `POST /convert` in `_doc_service.py`) and fall
+  back to markitdown, with form-feed page breaks turned into `<!-- Page N -->` markers.
+  Results are hash-cached (`doc_convert/`, fallbacks in `doc_convert_markitdown/`). Images
+  (`tools/read/_image.py`) return `SideEffect.ATTACH_IMAGE`; `_tool_dispatch.py` stores the
+  image and logs it in a user message after the step's tool results, only when the active
+  tier has `supports_images: true` (`current_supports_images()` in `_model_switch.py`).
+  Every unconvertible case returns a `DAGI_CANNOT_PROCESS` tool result. New `read` extra
+  (markitdown extras + Pillow). Tests: `test_doc_convert.py`, `test_read_image_dispatch.py`,
+  updated `test_read_tool.py` / `test_doc_service.py`. Not yet run against a live
+  multimodal endpoint.
+
 - **grep/find on the shared truncation filter (2026-10-01)** — the 200-line (`grep`) and
   500-path (`find`) caps are gone; results go through `filter_tool_output`, so large ones
   show the first and last matches with the full list saved. A 100,000-line `_SAFETY_LIMIT`

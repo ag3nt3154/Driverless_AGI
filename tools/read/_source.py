@@ -1,7 +1,8 @@
 """tools/read/_source.py — Load a file as lines for read and read_large_file.
 
-Plain text is decoded as UTF-8; .pdf/.docx/.xlsx/.pptx go through the document
-converter service and come back as markdown. Both tools share this loader so
+Plain text is decoded as UTF-8; .pdf/.docx/.xlsx/.xls/.pptx are converted to
+markdown (tools/read/_convert.py). Images are not text: the read tool attaches
+them for the model instead (tools/read/_image.py). Both tools share this loader so
 line numbers in a truncated read match the ones read_large_file reports.
 """
 from __future__ import annotations
@@ -10,11 +11,8 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
-from tools.read._doc_service import cache_path_for, convert_document, DocServiceError
-
-_IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
-BLOCKED_EXTS = _IMAGE_EXTS.copy()
-DOC_EXTS = {".pdf", ".docx", ".xlsx", ".pptx"}
+from tools.read._convert import CANNOT_PROCESS, DOC_EXTS, ConversionError, convert_document
+from tools.read._image import IMAGE_EXTS
 _PAGE_MARKER_RE = re.compile(r"<!-- Page (\d+) -->")
 
 
@@ -80,10 +78,10 @@ def load_source(
     if pages is not None and ext != ".pdf":
         raise SourceError("Error: 'pages' parameter is only supported for PDF files.")
 
-    if ext in BLOCKED_EXTS:
+    if ext in IMAGE_EXTS:
         raise SourceError(
-            f"Error: Cannot read file type '{ext}'. This file type is not "
-            f"currently supported by the read tool."
+            f"Error ({CANNOT_PROCESS}): '{p.name}' is an image, not text. "
+            f"Use the read tool to view it with a multimodal model."
         )
 
     if ext not in DOC_EXTS:
@@ -96,34 +94,38 @@ def load_source(
             )
         return LoadedSource(path=p, lines=lines, header=None, editable_path=None, is_pdf=False)
 
-    if not service_url or not project_path:
-        raise SourceError(
-            "Error: Document reading requires the converter service. "
-            "Ensure services.doc_converter is configured in .dagi/config.yaml."
-        )
     try:
-        md_text = convert_document(p, service_url, project_path)
-    except DocServiceError as exc:
-        raise SourceError(f"Error from document service ({exc.code}): {exc.message}")
+        conv = convert_document(p, service_url=service_url, project_path=project_path)
+    except ConversionError as exc:
+        raise SourceError(f"Error ({exc.code}): {exc.message}")
 
-    editable_path = cache_path_for(p, project_path)
-    try:
-        editable_str = str(editable_path.relative_to(project_path))
-    except ValueError:
-        editable_str = str(editable_path)
-
+    md_text = conv.markdown
+    fields = [p.name]
     if ext == ".pdf":
         total_pages = md_text.count("<!-- Page ")
         if pages:
+            if not total_pages:
+                raise SourceError(
+                    f"Error: '{p.name}' was converted without page markers, so "
+                    f"'pages' cannot select from it. Use offset/limit instead."
+                )
             md_text = _select_pages(md_text, pages)
-        header = f"[PDF: {p.name} | {total_pages} pages"
+        fields = [f"PDF: {p.name}"]
+        if total_pages:
+            fields.append(f"{total_pages} pages")
         if pages:
-            header += f" | showing pages {pages}"
-        header += f" | editable: {editable_str}]"
-    else:
-        header = f"[{p.name} | editable: {editable_str}]"
+            fields.append(f"showing pages {pages}")
+        if conv.fallback_reason:
+            fields.append(f"converted by markitdown ({conv.fallback_reason})")
+    if conv.cache_file is not None:
+        try:
+            editable_str = str(conv.cache_file.relative_to(project_path))
+        except ValueError:
+            editable_str = str(conv.cache_file)
+        fields.append(f"editable: {editable_str}")
+    header = "[" + " | ".join(fields) + "]"
 
     return LoadedSource(
         path=p, lines=md_text.splitlines(), header=header,
-        editable_path=editable_path, is_pdf=ext == ".pdf",
+        editable_path=conv.cache_file, is_pdf=ext == ".pdf",
     )

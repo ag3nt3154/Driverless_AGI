@@ -21,6 +21,8 @@ from agent import session_events as sev
 from agent.protocol import LIST_ENCODING_PREFIX, SideEffect, ToolResult
 from agent.session import ToolCallRecord
 from agent._loop_helpers import _format_reload_notification
+from agent._model_switch import current_supports_images
+from agent.image_assets import ImageAssetStore
 from tools.output_filter import filter_tool_output
 
 if TYPE_CHECKING:
@@ -65,6 +67,7 @@ def dispatch_tool_calls(
     (e.g. DeepSeek) enforce.
     """
     deferred_system_msgs: list[str] = []
+    deferred_image_parts: list[dict] = []
     deferred_end_turn: tuple | None = None
 
     for tc in message.tool_calls:
@@ -130,6 +133,8 @@ def dispatch_tool_calls(
                 path = (result.side_effect_data or {}).get("path")
                 loop.config.active_plan_file = path
                 result = result.output
+            elif effect is SideEffect.ATTACH_IMAGE:
+                result = _attach_image(loop, result, deferred_image_parts)
 
         # Unwrap plain ToolResult to string for bookkeeping
         if isinstance(result, ToolResult):
@@ -140,6 +145,8 @@ def dispatch_tool_calls(
 
     for _sys_content in deferred_system_msgs:
         loop._log_user_message("user", _sys_content, "reload")
+    if deferred_image_parts:
+        loop._log_user_message("user", deferred_image_parts, "tool_image")
 
     if deferred_end_turn is not None:
         tc, result, description = deferred_end_turn
@@ -147,6 +154,30 @@ def dispatch_tool_calls(
             loop, tc, result, description, tool_records, (message, response)
         )
     return None
+
+
+def _attach_image(loop: AgentLoop, result: ToolResult, parts: list[dict]) -> str:
+    """Queue a tool-read image for the follow-up user message.
+
+    Chat Completions tool messages are text-only, so the image rides in a
+    user message logged after every tool result of the step. Only a model
+    explicitly configured with ``supports_images: true`` gets it: an
+    unknown model that rejects images would fail every later request,
+    since the image stays in history.
+    """
+    data = result.side_effect_data or {}
+    path = data.get("path", "")
+    if current_supports_images(loop) is not True:
+        name = loop.config.display_name or loop.config.model
+        return (
+            f"Error (DAGI_CANNOT_PROCESS): cannot view image '{path}' — the current "
+            f"model ({name}) is not configured as multimodal. If it accepts images, "
+            f"set `supports_images: true` in its model config."
+        )
+    ref = ImageAssetStore(loop.config.project_path).store(data["image"])
+    parts.append({"type": "text", "text": f"[Image from read: {path}]"})
+    parts.append(ref.to_content_part())
+    return result.output
 
 
 def bookkeep_tool_call(

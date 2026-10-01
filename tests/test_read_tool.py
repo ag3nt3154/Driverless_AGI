@@ -2,6 +2,8 @@ import pytest
 from unittest.mock import MagicMock, patch
 
 from tools.read import ReadTool
+from agent.protocol import SideEffect, ToolResult
+from tools.read._convert import CANNOT_PROCESS, ConversionError
 from tools.read._doc_service import DocServiceError
 
 
@@ -55,14 +57,14 @@ class TestTextFileReading:
 
         assert "binary" in result.lower() or "UTF-8" in result
 
-    def test_blocked_extension_returns_error(self, tmp_path):
+    def test_corrupt_image_returns_cannot_process(self, tmp_path):
         f = tmp_path / "photo.jpg"
         f.write_bytes(b"fake jpg")
         tool = _make_tool(tmp_path)
 
         result = tool.run(path="photo.jpg")
 
-        assert result.startswith("Error:")
+        assert result.startswith("Error (DAGI_CANNOT_PROCESS):")
 
     def test_pages_on_non_pdf_returns_error(self, tmp_path):
         f = tmp_path / "notes.txt"
@@ -75,10 +77,10 @@ class TestTextFileReading:
 
 
 class TestDocumentRouting:
-    """Document files are routed through the service client."""
+    """Office files go to markitdown; PDFs to the conversion service first."""
 
-    @patch("tools.read._source.convert_document")
-    def test_docx_routed_to_service(self, mock_convert, tmp_path):
+    @patch("tools.read._convert._markitdown")
+    def test_docx_routed_to_markitdown(self, mock_convert, tmp_path):
         mock_convert.return_value = "# Heading\n\nParagraph."
         f = tmp_path / "doc.docx"
         f.write_bytes(b"fake docx")
@@ -89,7 +91,7 @@ class TestDocumentRouting:
         mock_convert.assert_called_once()
         assert "# Heading" in result
 
-    @patch("tools.read._source.convert_document")
+    @patch("tools.read._convert.post_for_conversion")
     def test_pdf_routed_to_service_with_page_header(self, mock_convert, tmp_path):
         mock_convert.return_value = (
             "<!-- Page 1 -->\n# Title\n\n"
@@ -104,7 +106,7 @@ class TestDocumentRouting:
         assert result.startswith("[PDF: report.pdf |")
         assert "# Title" in result
 
-    @patch("tools.read._source.convert_document")
+    @patch("tools.read._convert.post_for_conversion")
     def test_pdf_pages_parameter_filters(self, mock_convert, tmp_path):
         mock_convert.return_value = (
             "<!-- Page 1 -->\n# Title\n\n"
@@ -120,9 +122,10 @@ class TestDocumentRouting:
         assert "## Chapter 1" in result
         assert "# Title" not in result
 
-    @patch("tools.read._source.convert_document")
-    def test_service_error_returned_to_llm(self, mock_convert, tmp_path):
-        mock_convert.side_effect = DocServiceError(
+    @patch("tools.read._convert._markitdown", return_value="<!-- Page 1 -->\nfallback text")
+    @patch("tools.read._convert.post_for_conversion")
+    def test_service_error_falls_back_and_is_disclosed(self, mock_post, _md, tmp_path):
+        mock_post.side_effect = DocServiceError(
             "CONVERSION_FAILED", "docling crashed on page 3"
         )
         f = tmp_path / "report.pdf"
@@ -131,20 +134,36 @@ class TestDocumentRouting:
 
         result = tool.run(path="report.pdf")
 
-        assert "CONVERSION_FAILED" in result
-        assert "docling crashed on page 3" in result
+        assert "fallback text" in result
+        assert "converted by markitdown" in result.splitlines()[0]
+        assert "CONVERSION_FAILED" in result.splitlines()[0]
 
-    def test_no_service_url_returns_config_error(self, tmp_path):
-        f = tmp_path / "doc.docx"
-        f.write_bytes(b"fake docx")
-        tool = ReadTool(
-            cwd=tmp_path, allowed_roots=[tmp_path],
-            service_url=None, project_path=tmp_path,
-        )
+    @patch("tools.read._convert._markitdown", side_effect=ConversionError(CANNOT_PROCESS, "markitdown broke"))
+    @patch("tools.read._convert.post_for_conversion", side_effect=DocServiceError("CONNECTION_FAILED", "down"))
+    def test_all_converters_failing_returns_cannot_process(self, _post, _md, tmp_path):
+        (tmp_path / "report.pdf").write_bytes(b"fake pdf")
 
-        result = tool.run(path="doc.docx")
+        result = _make_tool(tmp_path).run(path="report.pdf")
 
-        assert "converter service" in result.lower()
+        assert result.startswith("Error (DAGI_CANNOT_PROCESS):")
+        assert "markitdown broke" in result
+
+    @patch("tools.read._convert._markitdown", return_value="unmarked text")
+    def test_pages_without_markers_is_an_error(self, _md, tmp_path):
+        (tmp_path / "report.pdf").write_bytes(b"fake pdf")
+        tool = _make_tool(tmp_path, service_url=None)
+
+        result = tool.run(path="report.pdf", pages="2")
+
+        assert "without page markers" in result
+
+    @patch("tools.read._convert._markitdown", return_value="# Doc")
+    def test_no_service_url_still_reads_office(self, _md, tmp_path):
+        (tmp_path / "doc.docx").write_bytes(b"fake docx")
+
+        result = _make_tool(tmp_path, service_url=None).run(path="doc.docx")
+
+        assert "# Doc" in result
 
 
 class TestDocumentCacheDisclosure:
@@ -154,7 +173,7 @@ class TestDocumentCacheDisclosure:
         tool = _make_tool(tmp_path)
 
         with patch(
-            "tools.read._source.convert_document",
+            "tools.read._convert.post_for_conversion",
             return_value="<!-- Page 1 -->\nhello",
         ):
             result = tool.run(path="report.pdf")
@@ -168,7 +187,7 @@ class TestDocumentCacheDisclosure:
         f.write_bytes(b"PK fake docx")
         tool = _make_tool(tmp_path)
 
-        with patch("tools.read._source.convert_document", return_value="hello"):
+        with patch("tools.read._convert._markitdown", return_value="hello"):
             result = tool.run(path="notes.docx")
 
         assert result.startswith("[notes.docx | editable: ")
@@ -243,8 +262,56 @@ class TestLargeResultTruncation:
         f = tmp_path / "report.pdf"
         f.write_bytes(b"%PDF-1.4 fake")
         md = "\n".join(f"<!-- Page {i} -->\n" + "text " * 40 for i in range(1, 200))
-        with patch("tools.read._source.convert_document", return_value=md):
+        with patch("tools.read._convert.post_for_conversion", return_value=md):
             result = _truncating_tool(tmp_path).run(path="report.pdf")
         assert result.startswith("[PDF: report.pdf | 199 pages")
         assert "omitted" in result
         assert "`pages`" in result
+
+
+def _write_image(path, size=(4, 3), fmt=None):
+    from PIL import Image
+    Image.new("RGB", size, "red").save(path, format=fmt)
+    return path
+
+
+class TestImageReading:
+    """Images come back as an ATTACH_IMAGE side effect for the loop."""
+
+    def test_png_passes_through(self, tmp_path):
+        pytest.importorskip("PIL")
+        f = _write_image(tmp_path / "shot.png")
+
+        result = _make_tool(tmp_path).run(path="shot.png")
+
+        assert isinstance(result, ToolResult)
+        assert result.side_effect is SideEffect.ATTACH_IMAGE
+        image = result.side_effect_data["image"]
+        assert image.data == f.read_bytes()
+        assert (image.mime_type, image.width, image.height) == ("image/png", 4, 3)
+        assert "[Image: shot.png | 4x3 | image/png]" in result.output
+
+    def test_webp_reencoded_to_png(self, tmp_path):
+        pytest.importorskip("PIL")
+        _write_image(tmp_path / "a.webp", fmt="WEBP")
+
+        image = _make_tool(tmp_path).run(path="a.webp").side_effect_data["image"]
+
+        assert image.mime_type == "image/png"
+        assert image.data.startswith(b"\x89PNG")
+
+    def test_oversized_image_downscaled(self, tmp_path):
+        pytest.importorskip("PIL")
+        _write_image(tmp_path / "big.png", size=(400, 300))
+        tool = ReadTool(cwd=tmp_path, allowed_roots=[tmp_path], max_image_pixels=1200)
+
+        image = tool.run(path="big.png").side_effect_data["image"]
+
+        assert image.width * image.height <= 1200
+        assert image.width == 40
+
+    def test_pages_on_image_is_an_error(self, tmp_path):
+        pytest.importorskip("PIL")
+        _write_image(tmp_path / "shot.png")
+
+        assert "only supported for PDF" in _make_tool(tmp_path).run(path="shot.png", pages="1")

@@ -160,6 +160,17 @@ def _history_has_images(loop: AgentLoop) -> bool:
     return False
 
 
+def current_supports_images(loop: AgentLoop) -> bool | None:
+    """``supports_images`` of the tier the loop is running on right now."""
+    tier_cfg = {
+        "plan": loop.config.advanced_config,
+        "worker": loop.config.worker_config,
+    }.get(loop._current_tier)
+    if tier_cfg is not None:
+        return tier_cfg.supports_images
+    return loop.config.supports_images
+
+
 def handle_switch_model(loop: AgentLoop, target: str, args: dict) -> str:
     """Switch the active LLM tier in-place without changing the tool registry."""
     reason = args.get("reason", "")

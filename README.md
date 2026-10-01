@@ -52,6 +52,14 @@ image_input:
   detail: auto  # "low", "high", or "auto"
 ```
 
+The `read` tool can also open image files (`.png`, `.jpg`, `.jpeg`, `.gif`, `.webp`, `.bmp`):
+the tool result is a short `[Image: name | WxH | mime]` line and the image itself follows in a
+user message after the step's tool results (Chat Completions tool messages are text-only).
+Formats other than PNG/JPEG, and images over `max_image_bytes` / `max_pixels`, are re-encoded
+with Pillow first. This only happens when the active model tier has `supports_images: true` —
+an unset or `false` value returns a `DAGI_CANNOT_PROCESS` error instead, because an image left
+in history would break every later request to a text-only model.
+
 See the "Image attachments" note under **PySide6 Desktop GUI** below for composer usage
 details. Implementation plan and design rationale: `docs/image-input-implementation-plan.md`. Live
 endpoint smoke testing against a real vision-capable model has not yet been performed —
@@ -128,7 +136,7 @@ setup. Telegram and benchmark extras remain available too. The `chunking` extra
 (`pip install -e ".[chunking]"`, also in `requirements-tools.txt`) installs `chonkie` for
 semantic chunking in the read tool; without it the stdlib chunker is used.
 
-PDF/DOCX/XLSX/PPTX reading no longer requires any dagi-side extras — it's handled entirely by the standalone doc-converter service, set up separately. See [Document Conversion Service](#document-conversion-service).
+The `read` extra (`pip install -e ".[read]"`, also in `requirements-tools.txt`) installs `markitdown` (with its docx/pdf/pptx/xlsx/xls extras) and Pillow, which the read tool uses for Office files, the PDF fallback and images. Without it those reads return a `DAGI_CANNOT_PROCESS` error. High-quality PDF conversion comes from the separate conversion service — see [Document Conversion](#document-conversion-service).
 
 ---
 
@@ -651,7 +659,7 @@ max_continuations: 10                # max "continue" injections before giving u
 api_error_retries: 3                 # retries for transient API errors (429/5xx/connection)
 
 services:
-  doc_converter: "http://localhost:8100"   # required for reading .pdf/.docx/.xlsx/.pptx — see below
+  doc_converter: "http://localhost:8100"   # optional PDF conversion API; markitdown is the fallback — see below
 ```
 
 ### Model Catalog
@@ -770,7 +778,23 @@ While a response is actively streaming, the live preview automatically expands t
 
 ### Document Conversion Service
 
-Reading `.pdf`, `.docx`, `.xlsx`, or `.pptx` files requires the standalone **doc-converter** microservice at `services/doc_converter/`. Plain text files need no extra setup — only document conversion depends on this service.
+The `read` tool converts documents to markdown:
+
+| File | Conversion |
+| --- | --- |
+| `.docx`, `.xlsx`, `.xls`, `.pptx` | `markitdown`, in-process |
+| `.pdf` | 1. the PDF conversion API (`services.doc_converter`), if configured · 2. `markitdown` |
+
+When no converter can handle a file, `read` returns `Error (DAGI_CANNOT_PROCESS): …` as an
+ordinary tool result — the agent loop keeps going. A PDF that fell back to markitdown says so
+in its header (`converted by markitdown (conversion service CONNECTION_FAILED: …)`).
+markitdown's page breaks become `<!-- Page N -->` markers so `pages` still works; for the
+rare PDF it extracts without page breaks, `pages` returns an error and offset/limit work.
+
+The conversion API contract is one `POST {url}/convert` with the file as a multipart `file`
+upload; a 200 body is the markdown, anything else is a JSON `{"error", "code"}` body. Any
+server that honours it can stand in. The reference implementation is the **doc-converter**
+microservice at `services/doc_converter/` (docling + OCR):
 
 **One-time setup:**
 
@@ -791,11 +815,11 @@ services:
   doc_converter: "http://localhost:8100"
 ```
 
-If the service isn't reachable, the `read` tool returns a clear error asking you to start it — there is no inline/fallback conversion path.
+If the service isn't reachable or fails on a file, the `read` tool falls back to markitdown.
 
 **Conversion details:** PDFs use `docling` (digital-native) or `ocrmypdf`+`docling` (scanned, OCR'd first); `.docx`/`.xlsx`/`.pptx` use `markitdown`. PDFs longer than 8 pages are converted in parallel (map-reduce: split into chunks, one docling model load per worker process, then merged and renumbered) — worker count is estimated automatically from CPU count, page count, and free RAM.
 
-**Two-layer caching:** the service maintains a server-side content-addressed cache (`services/doc_converter/.cache/<sha256>.md`, keyed by SHA-256 of the uploaded file's bytes) so repeated conversions of the same file across any client are free. dagi additionally keeps a client-side cache under `.dagi/hash_cache/doc_convert/`, keyed by the same hash, so unchanged files aren't even re-uploaded.
+**Caching:** dagi caches converted markdown in the hash cache, keyed by the SHA-256 of the file's bytes: `.dagi/hash_cache/doc_convert/` holds conversion-API results and Office conversions, `.dagi/hash_cache/doc_convert_markitdown/` holds PDF fallbacks — kept apart so a fallback never shadows the API's result once the service is back. The read header's `editable:` path points at the cache file. The service also keeps its own server-side cache (`services/doc_converter/.cache/<sha256>.md`).
 
 ---
 
@@ -852,11 +876,13 @@ Driverless_AGI/
 ├── tools/                  # Every tool is a subfolder: tools/<name>/__init__.py re-exports
 │   │                       #   from tools/<name>/_<name>.py (the underscore-prefixed module is
 │   │                       #   the private implementation). Follow this pattern for new tools.
-│   ├── read/               # read.py's replacement — text inline; .pdf/.docx/.xlsx/.pptx via
-│   │   │                   #   the doc-converter service (see services/doc_converter/ below)
-│   │   ├── _read.py        #   ReadTool (head + marker + tail when too large)
+│   ├── read/               # read.py's replacement — text inline; documents as markdown;
+│   │   │                   #   images attached for multimodal models
+│   │   ├── _read.py        #   ReadTool (head + marker + tail when too large; images → ATTACH_IMAGE)
 │   │   ├── _source.py      #   file/document loader shared with read_large_file
-│   │   ├── _doc_service.py #   HTTP client (anti-corruption layer) to the doc-converter service
+│   │   ├── _convert.py     #   Office → markitdown; PDF → conversion API, then markitdown; hash-cached
+│   │   ├── _doc_service.py #   HTTP client (anti-corruption layer) to the PDF conversion API
+│   │   ├── _image.py       #   image → ImageAttachment (Pillow; re-encode/downscale to limits)
 │   │   ├── _selection.py   #   frozen selection snapshot (text + line spans) sent to the reader
 │   │   ├── _chunking.py    #   Chonkie / stdlib chunking with line references
 │   │   ├── _budgets.py     #   reader budget arithmetic (per-call fit, chunk size, parent fit)
@@ -945,7 +971,7 @@ Driverless_AGI/
 
 | Tool | What it does |
 |------|-------------|
-| `read` | Read a text file (paginated) inline. `.pdf`/`.docx`/`.xlsx`/`.pptx` are delegated to the standalone **doc-converter service** over HTTP (see [Document Conversion Service](#document-conversion-service) below) — the service must be running or `read` returns a clear error telling you to start it, no inline fallback. PDF output includes a `[PDF: name \| N pages]` header; `pages` (PDF only, e.g. `'1-5'`) filters by `<!-- Page N -->` markers. Reads the whole file unless `offset`/`limit` are given; results over `reserve_tokens` come back as head + marker + tail (see [Managing Context in Long Sessions](#managing-context-in-long-sessions)). Pass `path`, optional `offset`/`limit`, optional `pages` |
+| `read` | Read a text file (paginated) inline. Office files (`.docx`/`.xlsx`/`.xls`/`.pptx`) convert to markdown via markitdown; `.pdf` goes to the PDF conversion API when configured, else markitdown (see [Document Conversion Service](#document-conversion-service) below). Images are shown to the model when the active tier has `supports_images: true`. Unconvertible files return a `DAGI_CANNOT_PROCESS` error result. PDF output includes a `[PDF: name \| N pages]` header; `pages` (PDF only, e.g. `'1-5'`) filters by `<!-- Page N -->` markers. Reads the whole file unless `offset`/`limit` are given; results over `reserve_tokens` come back as head + marker + tail (see [Managing Context in Long Sessions](#managing-context-in-long-sessions)). Pass `path`, optional `offset`/`limit`, optional `pages` |
 | `read_large_file` | Indexed digest of a file too large for context (`.dagi/subagents/read-large-file/`): overview, section table with line ranges, key points and verbatim excerpts. Reads chunk by chunk with a running summary, so any length works; results cached. Pass `path`, optional `query`, `offset`/`limit`, `pages` |
 | `write` | Overwrite a file. Creates parent dirs. Takes `path` + `content` |
 | `edit` | Edit a file by replacing exact text (`oldText` → `newText`). The match must be unique; CRLF-safe |

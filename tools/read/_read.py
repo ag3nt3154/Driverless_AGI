@@ -1,4 +1,4 @@
-"""Read tool — text files inline, documents via converter service.
+"""Read tool — text files inline, documents as markdown, images for the model.
 
 Results too large for context are cut to head + marker + tail; the marker
 points the agent at read(offset/limit), grep, or read_large_file.
@@ -8,10 +8,16 @@ from __future__ import annotations
 from pathlib import Path
 
 from agent.base_tool import BaseTool
+from agent.protocol import SideEffect, ToolResult
 from tools._path_guard import validate_path
 from tools._truncate import DEFAULT_EDGE_CHARS, effective_edge_chars, truncate_middle
 from tools.output_filter import estimate_tool_output
+from tools.read._image import IMAGE_EXTS, ImageLoadError, load_image
 from tools.read._source import SourceError, load_source
+
+# Match AgentConfig's image_input_* defaults.
+_DEFAULT_MAX_IMAGE_BYTES = 8 * 1024 * 1024
+_DEFAULT_MAX_IMAGE_PIXELS = 24_000_000
 
 
 def _render_numbered(selected: list[str], start_idx: int, header: str | None) -> str:
@@ -27,9 +33,13 @@ class ReadTool(BaseTool):
     description = (
         "Read the contents of a file. Supports all text files (any extension) — "
         "attempts UTF-8 decoding. Reads the whole file unless offset/limit are given. "
-        ".docx, .xlsx, .pptx, and .pdf files are converted to markdown via the "
-        "document converter service (must be running). "
-        "Use the optional `pages` parameter to select specific PDF pages. "
+        ".docx, .xlsx, .xls and .pptx files are converted to markdown; .pdf files "
+        "go through the PDF conversion service when configured, else markdown "
+        "extraction. Use the optional `pages` parameter to select specific PDF pages. "
+        "Image files (.png, .jpg, .jpeg, .gif, .webp, .bmp) are shown to you as "
+        "an image when the current model is multimodal. "
+        "Errors marked DAGI_CANNOT_PROCESS mean no available converter could "
+        "handle the file — don't retry the same read. "
         "Accepts both relative paths (resolved from the project root) and absolute paths. "
         "Output uses `cat -n` style: each line is prefixed with its 1-indexed "
         "line number followed by a tab — the number is not part of the file content. "
@@ -74,6 +84,8 @@ class ReadTool(BaseTool):
         service_url: str | None = None,
         reserve_tokens: int = 0,
         edge_chars: int = DEFAULT_EDGE_CHARS,
+        max_image_bytes: int | None = None,
+        max_image_pixels: int | None = None,
     ):
         self.cwd = cwd
         self.allowed_roots = allowed_roots
@@ -81,6 +93,8 @@ class ReadTool(BaseTool):
         self._service_url = service_url
         self._reserve_tokens = reserve_tokens
         self._edge_chars = edge_chars
+        self._max_image_bytes = max_image_bytes or _DEFAULT_MAX_IMAGE_BYTES
+        self._max_image_pixels = max_image_pixels or _DEFAULT_MAX_IMAGE_PIXELS
 
     def run(
         self,
@@ -88,11 +102,14 @@ class ReadTool(BaseTool):
         offset: int = 1,
         limit: int | None = None,
         pages: str | None = None,
-    ) -> str | list:
+    ) -> str | list | ToolResult:
         p = Path(path)
         if not p.is_absolute():
             p = self.cwd / p
         p = validate_path(p, self.allowed_roots)
+
+        if p.suffix.lower() in IMAGE_EXTS:
+            return self._read_image(p, pages)
 
         try:
             src = load_source(
@@ -121,4 +138,29 @@ class ReadTool(BaseTool):
             numbered=True,
             header=src.header,
             hint=hint,
+        )
+
+    def _read_image(self, p: Path, pages: str | None) -> str | ToolResult:
+        """Load ``p`` and ask the loop to attach it for the model.
+
+        The loop owns the multimodal check (it knows the active model) and
+        swaps the result for a DAGI_CANNOT_PROCESS error when it fails.
+        """
+        if pages is not None:
+            return "Error: 'pages' parameter is only supported for PDF files."
+        try:
+            image = load_image(
+                p, max_bytes=self._max_image_bytes, max_pixels=self._max_image_pixels,
+            )
+        except ImageLoadError as exc:
+            return str(exc)
+        except OSError as exc:
+            return f"Error: Cannot read '{p.name}': {exc}"
+        return ToolResult(
+            output=(
+                f"[Image: {p.name} | {image.width}x{image.height} | {image.mime_type}] "
+                f"The image is attached in the next message."
+            ),
+            side_effect=SideEffect.ATTACH_IMAGE,
+            side_effect_data={"image": image, "path": str(p)},
         )

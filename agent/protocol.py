@@ -17,6 +17,7 @@ class SideEffect(Enum):
     RELOAD_SKILLS = auto()
     SWITCH_MODEL = auto()
     SET_ACTIVE_PLAN = auto()
+    ATTACH_IMAGE = auto()
 
 
 @dataclass(frozen=True, slots=True)
