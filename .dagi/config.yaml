@@ -43,7 +43,7 @@ tools:                      # Restrict the main agent to a specific subset of to
   - review_work             # Spawn a general-purpose reviewer
   - web_research            # Spawn a web-research subagent
   - explore_files           # Spawn a file-exploration subagent
-  - read_large_text         # Spawn a long-file summariser subagent
+  - read_large_file         # Indexed digest of a file too large for context
   - extend_subagent_timeout # Extend timeout for an in-flight subagent
   # ── Model tools ──────────────────────────────────────────────────────────────
   - switch_model            # Switch between default / worker / advanced models

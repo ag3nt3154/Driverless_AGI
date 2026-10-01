@@ -2,6 +2,11 @@
 
 ## In progress
 
+- **Shared truncation for remaining self-capping tools** — `grep`/`find` (`_MAX_RESULTS`),
+  `web_fetch` (`_MAX_CHARS`, rest lost) and `read_notepad` (`MAX_CHARS`) still cut their own
+  output; move them onto the shared head + marker + tail filter so the full output is saved
+  and reachable with `read_large_file`. Also decide on pruning `.dagi/hash_cache/tool_output/`.
+
 - **OpenGhost-inspired GUI refresh — next passes** —
   UI pass 1, mermaid, the visualize prompt line, global instant Esc and the context
   meter, long-paste cards and typing while the agent runs are done (see Completed). The
@@ -32,11 +37,27 @@
   `.bin`, `.whl`, `.egg`) from both the ripgrep and Python-fallback code paths.
   Tool description updated to mandate a specific subdirectory path (not `.` or
   project root), mention ripgrep explicitly, and forbid bash `findstr`/`grep`
-  workarounds. Output-filter truncation message reordered: the "refine your
-  search" instruction now appears at the top of truncated results instead of
-  the bottom, so the agent sees it first.
+  workarounds. (The output-filter "refine your search" message was later replaced by
+  the head + marker + tail format — see the large-file reading entry in Completed.)
 
 ## Completed
+
+- **RAM watchdog threshold raised to 85% (2026-10-01)** — `tests/conftest.py`
+  (`RAM_WARN_PCT`) and `scripts/monitor_tests.py` (`RAM_THRESHOLD_PCT`) went from 70% to
+  85%; idle RAM on the dev machine was already above 70%, so every test failed in setup.
+  The 90% hard-kill threshold is unchanged.
+
+- **Large file reading redesign (2026-10-01, branch `feat/large-file-reading`)** — plan in
+  `docs/large-file-reading-plan.md`. `read` no longer delegates or stops at 2000 lines: an
+  oversized result is head + marker + tail (4000 chars each end, whole lines, real line
+  numbers; `tools/_truncate.py`, `truncate_edge_chars`). `filter_tool_output` (bash and every
+  other tool) uses the same format and keeps the tail; the marker points at the saved output.
+  New `read_large_file(path, query?, offset/limit, pages)` replaces `read_large_text`: a fixed
+  loop where each call holds only a capped running summary + one numbered chunk, append-only
+  per-chunk notes merged (batched if needed) into an index with verbatim excerpts; unverified
+  excerpts flagged; cached by content + query + model. Also fixed: section line ranges, the
+  bytes-vs-tokens request estimate, and the reader running on the main model with the file's
+  folder as project. `use_legacy_reader` removed.
 
 - **Typing while the agent runs (2026-10-01, branch `feat/type-while-running`)** — the GUI
   composer stays live during a run; Send queues the message (`pyside_gui/steer_queue.py`)

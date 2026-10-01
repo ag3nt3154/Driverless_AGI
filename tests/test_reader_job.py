@@ -222,7 +222,7 @@ class TestRunSubagentReaderJob:
         with patch("tools._subagent_runner.run_subagent", side_effect=fake_run):
             result = run_subagent(
                 task="test task",
-                preset="read-large-text",
+                preset="read-large-file",
                 project_path=tmp_path,
                 handoff_dir=tmp_path / "handoffs",
                 reader_job_spec=spec,
@@ -247,7 +247,7 @@ class TestRunSubagentReaderJob:
         sel = _make_selection()
         spec = ReaderJobSpec(selection=sel, query="q", parent_reserve=100)
 
-        with pytest.raises(ValueError, match="read-large-text"):
+        with pytest.raises(ValueError, match="read-large-file"):
             run_subagent(
                 task="t",
                 preset="explore",
@@ -270,7 +270,7 @@ class TestRunSubagentReaderJob:
                        return_value=("p", ["read"], "worker", "", "custom")):
                 run_subagent(
                     task="t",
-                    preset="read-large-text",
+                    preset="read-large-file",
                     project_path=tmp_path,
                     handoff_dir=tmp_path / "handoffs",
                 )

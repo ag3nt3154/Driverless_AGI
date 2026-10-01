@@ -28,6 +28,7 @@ from tools.edit import EditTool
 from tools.find import FindTool
 from tools.grep import GrepTool
 from tools.read import ReadTool
+from tools._truncate import DEFAULT_EDGE_CHARS
 from tools.skill import SkillTool
 from tools.copy import CopyTool
 from tools.write import WriteTool
@@ -147,9 +148,8 @@ def create_tool_registry(
         allowed_roots=effective_roots,
         project_path=_proj,
         service_url=_services.get("doc_converter"),
-        callbacks=callbacks,
-        config=config,
-        parent_context=parent_context,
+        reserve_tokens=config.reserve_tokens if config else 0,
+        edge_chars=config.truncate_edge_chars if config else DEFAULT_EDGE_CHARS,
     ))
     reg.register(GrepTool(cwd=cwd, allowed_roots=effective_roots))
     reg.register(FindTool(cwd=cwd, allowed_roots=effective_roots))

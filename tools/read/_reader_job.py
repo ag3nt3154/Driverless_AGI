@@ -8,8 +8,8 @@ File transport (write_reader_job / load_reader_job) serializes the selection
 snapshot to a versioned JSON temp file. The subprocess validates schema,
 offsets and source digest on load to detect stale or tampered manifests.
 
-delegate_selection is the single public run_subagent call site for the
-new reader path, used by ReadTool._delegate_to_read_large_text.
+run_reader is the single run_subagent call site for the reader, used by the
+read_large_file tool.
 """
 from __future__ import annotations
 
@@ -60,11 +60,21 @@ class ReaderJobSpec:
 
 @dataclass
 class ReaderLaunchContext:
-    """Grouped dependencies for delegate_selection."""
+    """Grouped dependencies for run_reader."""
     project_path: Path
     parent_reserve: int
     on_event: Callable[[str], None] | None = None
-    parent_context: Any = None
+
+
+@dataclass(frozen=True)
+class ReaderOutcome:
+    """Result of one reader run.
+
+    ok       True when the reader wrote a complete digest.
+    content  The digest (ok) or an agent-facing failure message (not ok).
+    """
+    ok: bool
+    content: str
 
 
 # ---------------------------------------------------------------------------
@@ -206,17 +216,16 @@ def load_reader_job(path: Path) -> ReaderJob:
 # Delegation
 # ---------------------------------------------------------------------------
 
-def delegate_selection(
+def run_reader(
     selection: "ReadSelection",
     *,
     query: str,
     context: ReaderLaunchContext,
-) -> str:
-    """Build a ReaderJobSpec, spawn the reader subprocess, format the return.
+) -> ReaderOutcome:
+    """Spawn the reader subprocess for ``selection`` and return its digest.
 
-    The single run_subagent call site for the new reader controller path.
-    Uses the 'read-large-text' preset for subprocess configuration and
-    injects the reader_job_spec so subagent_main routes to the controller.
+    Uses the 'read-large-file' preset for subprocess configuration and passes
+    the reader_job_spec so subagent_main routes to the controller.
     """
     import tools.subagent_api as _subagent_api
     from tools._handoff_format import dispatch_status_result
@@ -229,27 +238,23 @@ def delegate_selection(
 
     result = _subagent_api.run_subagent(
         task=f"Read the file at: {selection.path}\n{selection.scope}",
-        preset="read-large-text",
+        preset="read-large-file",
         project_path=context.project_path,
         on_event=context.on_event,
-        parent_context=context.parent_context,
         reader_job_spec=spec,
     )
 
-    trailer = "Summary below." if result.is_ok else "Delegation result below."
-    signpost = (
-        f"[{selection.scope} too large for inline display. "
-        f"Delegated to reader. {trailer}]"
-    )
-
     if result.is_ok:
-        from tools._handoff_format import format_handoff_content
-        unverified = result.status == "ok_unverified"
-        body = format_handoff_content(
-            result.handoff_text,
-            str(result.handoff_path),
-            unverified=unverified,
-        )
-        return f"{signpost}\n\n{body}"
+        return ReaderOutcome(ok=True, content=result.handoff_text)
 
-    return f"{signpost}\n\n{dispatch_status_result({'status': result.status, 'pid': result.pid, 'message': result.message}, 'reader')}"
+    message = dispatch_status_result(
+        {
+            "status": result.status,
+            "pid": result.pid,
+            "message": result.message,
+            "exit_code": result.exit_code,
+            "output_tail": result.output_tail,
+        },
+        "read_large_file",
+    )
+    return ReaderOutcome(ok=False, content=message)

@@ -115,10 +115,9 @@ class AgentConfig:
     # Loaded from YAML `max_output_tokens` at entry or top level. An explicit value only
     # tightens the output reservation — it never widens beyond reserve_tokens.
     max_output_tokens: int | None = None
-    # Reader: when True, use the legacy line-count delegation trigger and old
-    # read-large-text preset. Set use_legacy_reader: true in .dagi/config.yaml to revert.
-    # Remove after one release cycle.
-    use_legacy_reader: bool = False
+    # Oversized tool output / read results keep this many chars at each end
+    # (head + marker + tail). Clamped so head + tail stay under reserve_tokens / 2.
+    truncate_edge_chars: int = 4000
     # Image input configuration (Section 8 of image-input-implementation-plan.md)
     supports_images: bool | None = None  # None=unknown (permit attempt), True=permit, False=block
     image_input_max_images_per_message: int = 4

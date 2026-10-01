@@ -164,7 +164,8 @@ def bookkeep_tool_call(
     """
     # ── Output filter ────────────────────────────────────────
     context_result, full_str = filter_tool_output(
-        result, loop.config.reserve_tokens, Path(loop.config.project_path)
+        result, loop.config.reserve_tokens, Path(loop.config.project_path),
+        edge_chars=loop.config.truncate_edge_chars,
     )
     if context_result is not result:
         # Filtering fired — warn the user via the assistant text stream

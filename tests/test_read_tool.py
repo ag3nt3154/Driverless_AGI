@@ -77,7 +77,7 @@ class TestTextFileReading:
 class TestDocumentRouting:
     """Document files are routed through the service client."""
 
-    @patch("tools.read._read.convert_document")
+    @patch("tools.read._source.convert_document")
     def test_docx_routed_to_service(self, mock_convert, tmp_path):
         mock_convert.return_value = "# Heading\n\nParagraph."
         f = tmp_path / "doc.docx"
@@ -89,7 +89,7 @@ class TestDocumentRouting:
         mock_convert.assert_called_once()
         assert "# Heading" in result
 
-    @patch("tools.read._read.convert_document")
+    @patch("tools.read._source.convert_document")
     def test_pdf_routed_to_service_with_page_header(self, mock_convert, tmp_path):
         mock_convert.return_value = (
             "<!-- Page 1 -->\n# Title\n\n"
@@ -104,7 +104,7 @@ class TestDocumentRouting:
         assert result.startswith("[PDF: report.pdf |")
         assert "# Title" in result
 
-    @patch("tools.read._read.convert_document")
+    @patch("tools.read._source.convert_document")
     def test_pdf_pages_parameter_filters(self, mock_convert, tmp_path):
         mock_convert.return_value = (
             "<!-- Page 1 -->\n# Title\n\n"
@@ -120,7 +120,7 @@ class TestDocumentRouting:
         assert "## Chapter 1" in result
         assert "# Title" not in result
 
-    @patch("tools.read._read.convert_document")
+    @patch("tools.read._source.convert_document")
     def test_service_error_returned_to_llm(self, mock_convert, tmp_path):
         mock_convert.side_effect = DocServiceError(
             "CONVERSION_FAILED", "docling crashed on page 3"
@@ -154,7 +154,7 @@ class TestDocumentCacheDisclosure:
         tool = _make_tool(tmp_path)
 
         with patch(
-            "tools.read._read.convert_document",
+            "tools.read._source.convert_document",
             return_value="<!-- Page 1 -->\nhello",
         ):
             result = tool.run(path="report.pdf")
@@ -168,18 +168,10 @@ class TestDocumentCacheDisclosure:
         f.write_bytes(b"PK fake docx")
         tool = _make_tool(tmp_path)
 
-        with patch("tools.read._read.convert_document", return_value="hello"):
+        with patch("tools.read._source.convert_document", return_value="hello"):
             result = tool.run(path="notes.docx")
 
         assert result.startswith("[notes.docx | editable: ")
-
-
-def _make_config(project_path, reserve_tokens=1000, use_legacy_reader=False):
-    config = MagicMock()
-    config.project_path = project_path
-    config.reserve_tokens = reserve_tokens
-    config.use_legacy_reader = use_legacy_reader
-    return config
 
 
 def _make_large_file(tmp_path, num_lines=2500):
@@ -189,382 +181,70 @@ def _make_large_file(tmp_path, num_lines=2500):
     return f, all_lines
 
 
-def _make_ok_result(handoff_path):
-    result = MagicMock()
-    result.is_ok = True
-    result.status = "ok"
-    result.handoff_path = handoff_path
-    return result
+def _truncating_tool(tmp_path, reserve_tokens=1000, edge_chars=4000):
+    return ReadTool(
+        cwd=tmp_path, allowed_roots=[tmp_path], project_path=tmp_path,
+        service_url="http://localhost:8100",
+        reserve_tokens=reserve_tokens, edge_chars=edge_chars,
+    )
 
 
-class TestLargeFileDelegation:
-    """ReadTool delegates when rendered result exceeds parent reserve threshold."""
+class TestLargeResultTruncation:
+    """Oversized results come back as head + marker + tail; never delegated."""
 
-    def test_large_file_delegates_to_read_large_text(self, tmp_path):
-        _make_large_file(tmp_path)
-        handoff = tmp_path / "handoff.md"
-        handoff.write_text("## Summary\nBig file summary.", encoding="utf-8")
-        config = _make_config(tmp_path)
-        tool = ReadTool(
-            cwd=tmp_path,
-            allowed_roots=[tmp_path],
-            service_url="http://localhost:8100",
-            project_path=tmp_path,
-            callbacks=None,
-            config=config,
+    def test_no_default_line_limit(self, tmp_path):
+        _, all_lines = _make_large_file(tmp_path, num_lines=2500)
+        tool = _truncating_tool(tmp_path, reserve_tokens=0)  # truncation off
+        result = tool.run(path="big.txt")
+        assert result == _numbered(all_lines)
+
+    def test_small_result_inline(self, tmp_path):
+        _, all_lines = _make_large_file(tmp_path, num_lines=50)
+        result = _truncating_tool(tmp_path).run(path="big.txt")
+        assert result == _numbered(all_lines)
+
+    def test_large_result_truncated_with_line_numbers(self, tmp_path):
+        f, _ = _make_large_file(tmp_path, num_lines=2500)
+        result = _truncating_tool(tmp_path, reserve_tokens=1000, edge_chars=4000).run(
+            path="big.txt"
         )
+        # edge clamped to reserve (1000 chars per end)
+        assert len(result) < 3000
+        assert result.startswith("     1\tline1\n")
+        assert result.endswith("  2500\tline2500")
+        assert "of 2,500 omitted" in result
+        assert f"Full text: {f}" in result
+        assert "read_large_file" in result
 
-        with patch(
-            "tools.subagent_api.run_subagent",
-            return_value=_make_ok_result(handoff),
-        ) as mock_run:
-            result = tool.run(path="big.txt")
-
-        mock_run.assert_called_once()
-        assert mock_run.call_args.kwargs["preset"] == "read-large-text"
-        assert "Delegated to reader" in result
-
-    def test_large_file_delegation_forwards_the_exact_parent_context(self, tmp_path):
-        """Large-file delegation must inherit the same parent request context."""
-        _make_large_file(tmp_path)
-        handoff = tmp_path / "handoff.md"
-        handoff.write_text("summary", encoding="utf-8")
-        provider = object()
-        tool = ReadTool(
-            cwd=tmp_path,
-            allowed_roots=[tmp_path],
-            service_url="http://localhost:8100",
-            project_path=tmp_path,
-            callbacks=None,
-            config=_make_config(tmp_path),
-            parent_context=provider,
-        )
-
-        with patch(
-            "tools.subagent_api.run_subagent",
-            return_value=_make_ok_result(handoff),
-        ) as mock_run:
-            tool.run(path="big.txt")
-
-        assert mock_run.call_args.kwargs["parent_context"] is provider
-
-    def test_small_result_explicit_limit_skips_delegation(self, tmp_path):
-        """Small limit produces a small result — no delegation regardless of file size."""
-        _make_large_file(tmp_path)
-        config = _make_config(tmp_path)
-        tool = ReadTool(
-            cwd=tmp_path,
-            allowed_roots=[tmp_path],
-            service_url="http://localhost:8100",
-            project_path=tmp_path,
-            callbacks=None,
-            config=config,
-        )
-
-        with patch("tools.subagent_api.run_subagent") as mock_run:
-            result = tool.run(path="big.txt", limit=5)
-
-        mock_run.assert_not_called()
-        assert "Delegated to reader" not in result
-        assert f"{1:6d}\tline1" in result
-
-    def test_explicit_limit_skips_delegation(self, tmp_path):
-        f, _ = _make_large_file(tmp_path)
-        config = _make_config(tmp_path)
-        tool = ReadTool(
-            cwd=tmp_path,
-            allowed_roots=[tmp_path],
-            service_url="http://localhost:8100",
-            project_path=tmp_path,
-            callbacks=None,
-            config=config,
-        )
-
-        with patch("tools.subagent_api.run_subagent") as mock_run:
-            result = tool.run(path="big.txt", limit=10)
-
-        mock_run.assert_not_called()
-        assert "Delegated to reader" not in result
-        assert f"{1:6d}\tline1" in result
-        assert "line11" not in result
-
-    def test_small_file_no_delegation(self, tmp_path):
-        f = tmp_path / "small.txt"
-        f.write_text("\n".join(f"line{i}" for i in range(1, 11)), encoding="utf-8")
-        config = _make_config(tmp_path)
-        tool = ReadTool(
-            cwd=tmp_path,
-            allowed_roots=[tmp_path],
-            service_url="http://localhost:8100",
-            project_path=tmp_path,
-            callbacks=None,
-            config=config,
-        )
-
-        with patch("tools.subagent_api.run_subagent") as mock_run:
-            result = tool.run(path="small.txt")
-
-        mock_run.assert_not_called()
-        assert "Delegated to reader" not in result
-
-    def test_no_config_no_delegation(self, tmp_path):
-        _make_large_file(tmp_path)
-        tool = ReadTool(
-            cwd=tmp_path,
-            allowed_roots=[tmp_path],
-            service_url="http://localhost:8100",
-            project_path=tmp_path,
-            callbacks=None,
-            config=None,
-        )
-
-        with patch("tools.subagent_api.run_subagent") as mock_run:
-            result = tool.run(path="big.txt")
-
-        mock_run.assert_not_called()
-        assert "Delegated to reader" not in result
-
-    def test_large_converted_doc_delegates(self, tmp_path):
-        """A3: converted docs whose rendered output exceeds P now delegate."""
-        md_text = "\n".join(f"line{i}" for i in range(1, 2501))
-        f = tmp_path / "big.docx"
-        f.write_bytes(b"fake docx")
-        handoff = tmp_path / "handoff.md"
-        handoff.write_text("Doc summary.", encoding="utf-8")
-        # reserve_tokens=1000: rendered 2000 lines ≈ 5000 tokens → triggers
-        config = _make_config(tmp_path, reserve_tokens=1000)
-        tool = ReadTool(
-            cwd=tmp_path,
-            allowed_roots=[tmp_path],
-            service_url="http://localhost:8100",
-            project_path=tmp_path,
-            callbacks=None,
-            config=config,
-        )
-
-        with patch("tools.read._read.convert_document", return_value=md_text):
-            with patch(
-                "tools.subagent_api.run_subagent",
-                return_value=_make_ok_result(handoff),
-            ) as mock_run:
-                result = tool.run(path="big.docx")
-
-        mock_run.assert_called_once()
-        assert "Delegated to reader" in result
-
-    def test_small_converted_doc_stays_inline(self, tmp_path):
-        """Converted doc with small rendered output stays inline regardless of size."""
-        md_text = "# Hello\n\nSmall document."
-        f = tmp_path / "small.docx"
-        f.write_bytes(b"fake docx")
-        config = _make_config(tmp_path, reserve_tokens=1000)
-        tool = ReadTool(
-            cwd=tmp_path,
-            allowed_roots=[tmp_path],
-            service_url="http://localhost:8100",
-            project_path=tmp_path,
-            callbacks=None,
-            config=config,
-        )
-
-        with patch("tools.read._read.convert_document", return_value=md_text):
-            with patch("tools.subagent_api.run_subagent") as mock_run:
-                result = tool.run(path="small.docx")
-
-        mock_run.assert_not_called()
-        assert result.startswith("[small.docx | editable: ")
-        assert "# Hello" in result
-
-    def test_legacy_reader_uses_line_count_trigger(self, tmp_path):
-        """use_legacy_reader=True restores the old line-count trigger."""
-        _make_large_file(tmp_path)
-        handoff = tmp_path / "handoff.md"
-        handoff.write_text("Legacy summary.", encoding="utf-8")
-        config = _make_config(tmp_path, use_legacy_reader=True)
-        tool = ReadTool(
-            cwd=tmp_path,
-            allowed_roots=[tmp_path],
-            service_url="http://localhost:8100",
-            project_path=tmp_path,
-            callbacks=None,
-            config=config,
-        )
-
-        with patch(
-            "tools.subagent_api.run_subagent",
-            return_value=_make_ok_result(handoff),
-        ) as mock_run:
-            result = tool.run(path="big.txt")
-
-        mock_run.assert_called_once()
-        # Legacy signpost uses line count
-        assert "lines" in result.lower()
-        assert "Legacy summary." in result
-
-    def test_legacy_reader_excludes_converted_docs(self, tmp_path):
-        """use_legacy_reader=True never delegates converted doc files."""
-        md_text = "\n".join(f"line{i}" for i in range(1, 2501))
-        f = tmp_path / "big.docx"
-        f.write_bytes(b"fake docx")
-        config = _make_config(tmp_path, use_legacy_reader=True)
-        tool = ReadTool(
-            cwd=tmp_path,
-            allowed_roots=[tmp_path],
-            service_url="http://localhost:8100",
-            project_path=tmp_path,
-            callbacks=None,
-            config=config,
-        )
-
-        with patch("tools.read._read.convert_document", return_value=md_text):
-            with patch("tools.subagent_api.run_subagent") as mock_run:
-                result = tool.run(path="big.docx")
-
-        mock_run.assert_not_called()
-        assert result.startswith("[big.docx | editable: ")
-
-    def test_on_event_factory_called_with_preset_name(self, tmp_path):
-        _make_large_file(tmp_path)
-        handoff = tmp_path / "handoff.md"
-        handoff.write_text("summary", encoding="utf-8")
-        config = _make_config(tmp_path)
-        callbacks = MagicMock()
-        factory = MagicMock(return_value="on_event_sentinel")
-        callbacks.on_subagent_event_factory = factory
-        tool = ReadTool(
-            cwd=tmp_path,
-            allowed_roots=[tmp_path],
-            service_url="http://localhost:8100",
-            project_path=tmp_path,
-            callbacks=callbacks,
-            config=config,
-        )
-
-        with patch(
-            "tools.subagent_api.run_subagent",
-            return_value=_make_ok_result(handoff),
-        ) as mock_run:
-            tool.run(path="big.txt")
-
-        factory.assert_called_once_with("read-large-text")
-        assert mock_run.call_args.kwargs["on_event"] == "on_event_sentinel"
-
-    def test_ok_unverified_banner_via_delegation(self, tmp_path):
-        _make_large_file(tmp_path)
-        handoff = tmp_path / "handoff.md"
-        handoff.write_text("## Summary\nUnverified summary.", encoding="utf-8")
-        config = _make_config(tmp_path)
-        result_mock = MagicMock()
-        result_mock.is_ok = True
-        result_mock.status = "ok_unverified"
-        result_mock.handoff_path = handoff
-        tool = ReadTool(
-            cwd=tmp_path,
-            allowed_roots=[tmp_path],
-            service_url="http://localhost:8100",
-            project_path=tmp_path,
-            callbacks=None,
-            config=config,
-        )
-
-        with patch(
-            "tools.subagent_api.run_subagent", return_value=result_mock
-        ):
-            result = tool.run(path="big.txt")
-
-        assert "UNVERIFIED" in result
-        assert "Summary below." in result
-
-    def test_failure_dispatch_via_delegation(self, tmp_path):
-        _make_large_file(tmp_path)
-        config = _make_config(tmp_path)
-        result_mock = MagicMock()
-        result_mock.is_ok = False
-        result_mock.status = "timeout"
-        result_mock.pid = 4321
-        tool = ReadTool(
-            cwd=tmp_path,
-            allowed_roots=[tmp_path],
-            service_url="http://localhost:8100",
-            project_path=tmp_path,
-            callbacks=None,
-            config=config,
-        )
-
-        with patch(
-            "tools.subagent_api.run_subagent", return_value=result_mock
-        ):
-            result = tool.run(path="big.txt")
-
-        assert "timeout" in result
-        assert "4321" in result
-        assert "Delegation result below." in result
-        assert "Summary below." not in result
-
-    def test_size_trigger_fires_on_large_default_window(self, tmp_path):
-        """2500-line file, default read → result is large → delegates."""
+    def test_marker_offset_points_at_first_omitted_line(self, tmp_path):
         _make_large_file(tmp_path, num_lines=2500)
-        handoff = tmp_path / "handoff.md"
-        handoff.write_text("summary", encoding="utf-8")
-        # Each line is ~9 chars; 2000 lines → ~18000 chars → 4500 tokens > 1000
-        config = _make_config(tmp_path, reserve_tokens=1000)
-        tool = ReadTool(
-            cwd=tmp_path,
-            allowed_roots=[tmp_path],
-            service_url="http://localhost:8100",
-            project_path=tmp_path,
-            callbacks=None,
-            config=config,
-        )
+        result = _truncating_tool(tmp_path).run(path="big.txt")
+        head = result.split("\n[", 1)[0].split("\n")
+        last_shown = int(head[-1].split("\t")[0])
+        assert f"offset={last_shown + 1}" in result
+        assert f"lines {last_shown + 1:,}–" in result
 
-        with patch(
-            "tools.subagent_api.run_subagent",
-            return_value=_make_ok_result(handoff),
-        ) as mock_run:
-            result = tool.run(path="big.txt")
-
-        mock_run.assert_called_once()
-        assert "Delegated to reader" in result
-
-    def test_size_trigger_does_not_fire_below_threshold(self, tmp_path):
-        """2500-line file, but reserve is very large → stays inline."""
+    def test_offset_limit_also_truncated(self, tmp_path):
         _make_large_file(tmp_path, num_lines=2500)
-        # reserve_tokens=1_000_000 → result never reaches threshold
-        config = _make_config(tmp_path, reserve_tokens=1_000_000)
-        tool = ReadTool(
-            cwd=tmp_path,
-            allowed_roots=[tmp_path],
-            service_url="http://localhost:8100",
-            project_path=tmp_path,
-            callbacks=None,
-            config=config,
-        )
+        result = _truncating_tool(tmp_path).run(path="big.txt", offset=1001, limit=1000)
+        assert result.startswith("  1001\tline1001")
+        assert result.endswith("  2000\tline2000")
+        assert "of 2,500 omitted" in result
 
-        with patch("tools.subagent_api.run_subagent") as mock_run:
-            result = tool.run(path="big.txt")
+    def test_exact_threshold_boundary(self, tmp_path):
+        # Below reserve_tokens → inline; at/above → truncated.
+        f = tmp_path / "edge.txt"
+        f.write_text("x" * 3990, encoding="utf-8")  # rendered ~3997 chars → 999 tokens
+        assert "omitted" not in _truncating_tool(tmp_path).run(path="edge.txt")
+        f.write_text("x" * 4100, encoding="utf-8")
+        assert "omitted" in _truncating_tool(tmp_path).run(path="edge.txt")
 
-        mock_run.assert_not_called()
-        assert "Delegated to reader" not in result
-
-    def test_query_passed_via_reader_job_spec(self, tmp_path):
-        _make_large_file(tmp_path)
-        handoff = tmp_path / "handoff.md"
-        handoff.write_text("summary", encoding="utf-8")
-        config = _make_config(tmp_path)
-        tool = ReadTool(
-            cwd=tmp_path,
-            allowed_roots=[tmp_path],
-            service_url="http://localhost:8100",
-            project_path=tmp_path,
-            callbacks=None,
-            config=config,
-        )
-
-        with patch(
-            "tools.subagent_api.run_subagent",
-            return_value=_make_ok_result(handoff),
-        ) as mock_run:
-            tool.run(path="big.txt", query="find X")
-
-        spec = mock_run.call_args.kwargs["reader_job_spec"]
-        assert spec.query == "find X"
+    def test_large_pdf_keeps_header_and_hint(self, tmp_path):
+        f = tmp_path / "report.pdf"
+        f.write_bytes(b"%PDF-1.4 fake")
+        md = "\n".join(f"<!-- Page {i} -->\n" + "text " * 40 for i in range(1, 200))
+        with patch("tools.read._source.convert_document", return_value=md):
+            result = _truncating_tool(tmp_path).run(path="report.pdf")
+        assert result.startswith("[PDF: report.pdf | 199 pages")
+        assert "omitted" in result
+        assert "`pages`" in result

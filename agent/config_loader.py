@@ -298,7 +298,7 @@ def _build_config_from_entry(
     raw_memory_root = raw.get("memory_root")
     memory_root = Path(raw_memory_root).expanduser() if raw_memory_root else None
 
-    use_legacy_reader = bool(raw.get("use_legacy_reader", False))
+    truncate_edge_chars = int(raw.get("truncate_edge_chars", 4000))
     bash_backend = str(raw.get("bash_backend", "subprocess"))
     tools: list[str] | None = raw.get("tools") or None
     disabled_tools: list[str] | None = raw.get("disabled_tools") or None
@@ -342,7 +342,7 @@ def _build_config_from_entry(
         reserve_tokens=int(reserve_tokens),
         keep_recent_tokens=int(keep_recent_tokens),
         max_output_tokens=max_output_tokens,
-        use_legacy_reader=use_legacy_reader,
+        truncate_edge_chars=truncate_edge_chars,
         null_response_retries=null_response_retries,
         max_continuations=max_continuations,
         api_error_retries=api_error_retries,

@@ -12,6 +12,11 @@ from tools.output_filter import filter_tool_output
 _RESERVE = 100   # 100 tokens → threshold chars = 400
 
 
+def _numbered_output(n: int) -> str:
+    """n lines of "line NNNN", 10 chars each with the newline."""
+    return "".join(f"line {i:04d}\n" for i in range(n))
+
+
 class TestPassThrough:
     """Results below the token threshold pass through unchanged."""
 
@@ -43,7 +48,7 @@ class TestPassThrough:
         result = "x" * (_RESERVE * 4)
         ctx, _ = filter_tool_output(result, _RESERVE, tmp_path)
         assert isinstance(ctx, str)
-        assert "TRUNCATED PREVIEW" in ctx
+        assert "Tool output too large" in ctx
 
 
 class TestFiltering:
@@ -62,15 +67,31 @@ class TestFiltering:
         ctx, _ = filter_tool_output(self._large(), _RESERVE, tmp_path)
         assert isinstance(ctx, str)
 
-    def test_context_result_contains_preview(self, tmp_path):
-        large = self._large()
+    def test_context_result_contains_head_and_tail(self, tmp_path):
+        large = _numbered_output(200)
         ctx, _ = filter_tool_output(large, _RESERVE, tmp_path)
-        preview_chars = (_RESERVE // 2) * 4
-        assert large[:preview_chars] in ctx
+        assert "line 0000" in ctx
+        assert "line 0199" in ctx           # tail kept (bash summaries come last)
+        assert "line 0100" not in ctx
+
+    def test_marker_gives_omitted_line_range(self, tmp_path):
+        large = _numbered_output(200)
+        ctx, _ = filter_tool_output(large, _RESERVE, tmp_path)
+        # edge = min(4000, reserve) = 100 chars → 10 lines of "line NNNN" each end
+        assert "lines 11–190 of 200 omitted" in ctx
+        assert "offset=11" in ctx
+        assert "read_large_file" in ctx
+
+    def test_saved_file_line_numbers_match_marker(self, tmp_path):
+        large = _numbered_output(200)
+        filter_tool_output(large, _RESERVE, tmp_path)
+        saved = next((tmp_path / ".dagi" / "hash_cache" / "tool_output").iterdir())
+        lines = saved.read_text(encoding="utf-8").splitlines()
+        assert lines[10] == "line 0010"  # line 11 is the first omitted one
 
     def test_context_result_contains_truncation_marker(self, tmp_path):
         ctx, _ = filter_tool_output(self._large(), _RESERVE, tmp_path)
-        assert "TRUNCATED PREVIEW" in ctx
+        assert "Tool output too large" in ctx
 
     def test_context_result_contains_file_path(self, tmp_path):
         ctx, _ = filter_tool_output(self._large(), _RESERVE, tmp_path)
@@ -102,12 +123,23 @@ class TestFiltering:
         assert len(files) == 1  # second call reused the first's cache file
 
     def test_large_list_is_filtered(self, tmp_path):
-        # Build a list whose serialised form exceeds the threshold
-        large_list = [{"type": "text", "text": "z" * (_RESERVE * 4 + 100)}]
+        image = {"type": "image_url", "image_url": {"url": "data:image/png;base64,AAAA"}}
+        large_list = [
+            {"type": "text", "text": "z" * (_RESERVE * 4 + 100)},
+            image,
+        ]
         ctx, full = filter_tool_output(large_list, _RESERVE, tmp_path)
-        assert isinstance(ctx, str)
-        assert "TRUNCATED PREVIEW" in ctx
+        assert isinstance(ctx, list)
+        assert ctx[1] == image                       # images pass through
+        assert "Tool output too large" in ctx[0]["text"]
         assert full == "__list__:" + json.dumps(large_list)
+
+    def test_list_judged_on_text_only(self, tmp_path):
+        """A big image payload alone does not trigger text truncation."""
+        big_image = {"type": "image_url", "image_url": {"url": "data:," + "A" * 5000}}
+        result = [{"type": "text", "text": "small"}, big_image]
+        ctx, _ = filter_tool_output(result, _RESERVE, tmp_path)
+        assert ctx is result
 
     def test_context_result_mentions_read_tool(self, tmp_path):
         ctx, _ = filter_tool_output(self._large(), _RESERVE, tmp_path)
@@ -124,7 +156,8 @@ class TestErrorHandling:
             ctx, full = filter_tool_output(large, _RESERVE, bad_dir)
         assert ctx != large
         assert "cache write failed" in ctx
-        assert "TRUNCATED PREVIEW" in ctx
+        assert "NOT saved" in ctx
+        assert "Tool output too large" in ctx
         assert full == large
 
     def test_write_failure_returns_bounded(self, tmp_path):
@@ -227,7 +260,7 @@ class TestLoopIntegration:
         assert len(tool_messages) == 1
         content = tool_messages[0]["content"]
         assert isinstance(content, str)
-        assert "TRUNCATED PREVIEW" in content
+        assert "Tool output too large" in content
         assert large_output not in content  # not the full 500-char string
 
         # Tracker must have received the FULL string for the large-output tool call

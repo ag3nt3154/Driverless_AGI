@@ -10,15 +10,19 @@ C  — child's context_window.
 R  — child's reserve_tokens.
 O  — tightest output cap: min(R, max_output_tokens if set, client-script cap).
 M  — estimator margin: ceil(R / 8).
-E  — byte-count estimator for a JSON request dict (conservative, no tokenizer download).
+E  — token estimator for a JSON request dict (//4 rule over the serialised request).
 F  — shared output-filter estimator from output_filter.estimate_tool_output (//4 rule).
+S  — running-summary cap (chars) carried from chunk to chunk.
+
+Each reader call holds only base prompt + running summary + one chunk, so the
+per-call fit check is the only context bound; file length is unlimited.
 """
 from __future__ import annotations
 
 import json
 import math
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from agent._loop_config import AgentConfig
@@ -138,15 +142,12 @@ def resolve_reader_limits(
 # ---------------------------------------------------------------------------
 
 def estimate_reader_request(request: dict) -> int:
-    """Conservative E: UTF-8 byte count of canonical JSON (ensure_ascii=False).
+    """E: token estimate for a request — //4 over its canonical JSON.
 
-    This is an explicit estimator, not a mathematically universal tokenizer
-    bound. It over-estimates for ASCII-heavy content and under-estimates for
-    some dense CJK payloads after tokenization. The margin M absorbs the gap
-    for typical provider tokenizers; an unknown tokenizer yields explicit
-    unsupported-context failure, never silent truncation.
+    Same units as every other budget number (C, O, M), matching the parent's
+    F estimator. The margin M absorbs tokenizer variance.
     """
-    return len(json.dumps(request, ensure_ascii=False).encode("utf-8"))
+    return len(json.dumps(request, ensure_ascii=False)) // 4
 
 
 def estimate_reader_text(text: str) -> int:
@@ -179,164 +180,32 @@ def require_context_fit(request: dict, limits: ReaderLimits) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Section allocation
+# Chunk sizing
 # ---------------------------------------------------------------------------
 
-@dataclass(frozen=True)
-class SummaryAllocation:
-    """Result of a successful preflight: per-chunk char budgets."""
-    section_chars: tuple[int, ...]  # one entry per chunk
-    skeleton_chars: int             # chars reserved for refs/header skeleton
+# Upper bound on one chunk: bigger chunks make for thinner notes per line.
+MAX_CHUNK_TOKENS = 32_000
 
 
-def allocate_sections(
-    chunks: tuple[Any, ...],
-    *,
-    available_chars: int,
-    minimum_refs: tuple[str, ...],
-) -> tuple[int, ...]:
-    """Proportional per-chunk char allocation.
+def chunk_token_budget(limits: ReaderLimits, *, fixed_tokens: int) -> int:
+    """K: source tokens per chunk so one call fits C.
 
-    Reserves ``minimum_refs`` from available_chars first, then distributes
-    the remainder proportionally by each chunk's estimated_tokens. Unused
-    capacity from earlier chunks carries to later ones (deterministic
-    remainder goes to the last chunk).
-
-    Parameters
-    ----------
-    chunks
-        Ordered ReaderChunk objects (any object with an ``estimated_tokens``
-        int attribute). Empty tuple returns empty tuple.
-    available_chars
-        Total character budget for prose summaries.
-    minimum_refs
-        Reference strings that must fit; subtracted from available_chars first.
+    fixed_tokens is everything in the request except the chunk itself
+    (system prompt, instructions, running summary at its cap). The result is
+    scaled by 0.8 because chunks are sent with line-number prefixes.
     """
-    if not chunks:
-        return ()
-
-    ref_chars = sum(len(r) for r in minimum_refs)
-    prose_chars = max(0, available_chars - ref_chars)
-
-    total_est = sum(max(1, getattr(c, "estimated_tokens", 1)) for c in chunks)
-
-    allocs: list[int] = []
-    remaining = prose_chars
-    for i, chunk in enumerate(chunks):
-        if i == len(chunks) - 1:
-            allocs.append(max(0, remaining))
-        else:
-            chunk_est = max(1, getattr(chunk, "estimated_tokens", 1))
-            share = math.floor(prose_chars * chunk_est / total_est)
-            share = max(0, min(share, remaining))
-            allocs.append(share)
-            remaining -= share
-
-    return tuple(allocs)
-
-
-# ---------------------------------------------------------------------------
-# Preflight: full-history upper bound before any provider calls
-# ---------------------------------------------------------------------------
-
-def _chunk_ref_line(chunk: Any) -> str:
-    """One-line reference marker for a chunk in the minimum skeleton."""
-    refs = getattr(chunk, "references", ())
-    if refs:
-        line_start = getattr(refs[0], "line_start", "?")
-        line_end   = getattr(refs[-1], "line_start", "?")
-        return f"§{chunk.index + 1} lines {line_start}–{line_end}"
-    return f"§{chunk.index + 1}"
-
-
-def _build_skeleton(return_format: Any, chunks: tuple[Any, ...]) -> str:
-    """Minimum digest skeleton: signpost + header + one ref line per chunk.
-
-    Used to compute skeleton_chars for preflight and section allocation.
-    The signpost comes from return_format.signpost; chunks supply their
-    own reference lines. This is a lower-bound estimate of the final digest
-    structure.
-    """
-    parts = [return_format.signpost, ""]
-    for chunk in chunks:
-        parts.append(_chunk_ref_line(chunk))
-    return "\n".join(parts)
-
-
-def preflight_reader(
-    base_request: dict,
-    chunks: tuple[Any, ...],
-    *,
-    limits: ReaderLimits,
-    return_format: Any,
-) -> SummaryAllocation:
-    """Check that the full reader plan fits before making any API calls.
-
-    Raises ReaderCapacityError with a canonical recommendation on any of:
-    - skeleton cannot fit in parent output space (P)
-    - skeleton cannot fit in reader output space (O)
-    - accumulated history upper bound exceeds context window (C)
-
-    On success returns SummaryAllocation with per-chunk char budgets.
-
-    Parameters
-    ----------
-    base_request
-        The base API request dict (system prompt + inherited prefix + tools),
-        WITHOUT any source chunks appended yet.
-    chunks
-        Ordered ReaderChunk objects from chunk_selection.
-    limits
-        Resolved ReaderLimits from resolve_reader_limits.
-    return_format
-        ReaderReturnFormat with .signpost (used in skeleton estimate).
-    """
-    skeleton = _build_skeleton(return_format, chunks)
-    skeleton_tokens = len(skeleton) // 4
-
-    if skeleton_tokens >= limits.parent_reserve:
+    room = (
+        limits.context_window - fixed_tokens
+        - limits.output_reserve - limits.estimator_margin
+    )
+    K = min(int(room * 0.8), MAX_CHUNK_TOKENS)
+    if K <= 0:
         raise ReaderCapacityError(
-            required_tokens=skeleton_tokens + 1,
-            available_tokens=limits.parent_reserve,
-            recommendation=ReaderCapacityError.NARROW_RANGE,
-        )
-
-    if skeleton_tokens >= limits.output_reserve:
-        raise ReaderCapacityError(
-            required_tokens=skeleton_tokens + 1,
-            available_tokens=limits.output_reserve,
+            required_tokens=fixed_tokens + limits.output_reserve + limits.estimator_margin + 1,
+            available_tokens=limits.context_window,
             recommendation=ReaderCapacityError.LARGER_MODEL,
         )
-
-    e_base = estimate_reader_request(base_request)
-    e_chunks_sum = sum(estimate_reader_text(getattr(c, "text", "")) for c in chunks)
-    n = len(chunks)
-    O = limits.output_reserve
-    M = limits.estimator_margin
-    C = limits.context_window
-    max_rep = limits.max_repairs
-
-    # Upper bound: base + all source chunks + one summary per chunk + condensation
-    # repairs + final handoff + O+M headroom
-    total_upper = e_base + e_chunks_sum + (n + max_rep + 2) * O + M
-    if total_upper > C:
-        raise ReaderCapacityError(
-            required_tokens=total_upper,
-            available_tokens=C,
-            recommendation=ReaderCapacityError.NARROW_RANGE,
-        )
-
-    available_chars = limits.parent_reserve * 4 - len(skeleton)
-    allocs = allocate_sections(
-        chunks,
-        available_chars=max(0, available_chars),
-        minimum_refs=(),
-    )
-
-    return SummaryAllocation(
-        section_chars=allocs,
-        skeleton_chars=len(skeleton),
-    )
+    return K
 
 
 # ---------------------------------------------------------------------------

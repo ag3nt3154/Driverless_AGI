@@ -351,7 +351,7 @@ Electron main (main.ts)
 The legacy CLI REPL has been **archived** in favour of the TUI (`python tui.py`).
 It remains available at `archives/cli.py` for reference only — nothing in the live
 codebase imports or executes it. The piped subagent binary (used by
-`tools/_subagent_runner.py` for explore_files, web_research, read-large-text, etc.) is
+`tools/_subagent_runner.py` for explore_files, web_research, read-large-file, etc.) is
 `tools/subagent_main.py`, extracted from the old CLI's pipe-mode path and run as
 `python -m tools.subagent_main` (so the project root, not `tools/`, is on `sys.path[0]` —
 running it by file path instead would let `tools/copy.py` shadow the stdlib `copy` module).
@@ -615,6 +615,10 @@ Dagi uses **context compaction** to handle tasks that exceed the model's context
 /compact
 ```
 
+**Large files and tool outputs** never flood the context. When a `read` result or any tool's output (bash stdout, grep, …) reaches `reserve_tokens`, the agent sees only the first and last 4000 characters (whole lines; `truncate_edge_chars` in `config.yaml`) with a marker in between giving the omitted line range, a token estimate and where the full text is: the file itself for `read`, or the saved copy under `.dagi/hash_cache/tool_output/` for other tools. From there the agent can `read` a range with `offset`/`limit`, `grep` it, or call `read_large_file(path, query?)` for an indexed digest of the whole thing.
+
+`read_large_file` reads the file in order, one chunk per call, carrying a running summary from chunk to chunk and keeping each chunk's notes untouched; the notes are then merged into an index (overview, section table with line ranges, key points and verbatim excerpts). Each call holds only the summary and one chunk, so there is no limit on file length. Excerpts not found verbatim in the file are flagged, and results are cached by file content, query and model under `.dagi/hash_cache/read_large_file/`.
+
 **Switching models mid-session** is supported. A lighter model can handle exploratory steps; switch to a more capable one for complex implementation:
 
 ```
@@ -850,9 +854,17 @@ Driverless_AGI/
 │   │                       #   the private implementation). Follow this pattern for new tools.
 │   ├── read/               # read.py's replacement — text inline; .pdf/.docx/.xlsx/.pptx via
 │   │   │                   #   the doc-converter service (see services/doc_converter/ below)
-│   │   ├── _read.py        #   ReadTool
+│   │   ├── _read.py        #   ReadTool (head + marker + tail when too large)
+│   │   ├── _source.py      #   file/document loader shared with read_large_file
 │   │   ├── _doc_service.py #   HTTP client (anti-corruption layer) to the doc-converter service
-│   │   └── _document_reader.py # long-document summarizer orchestration
+│   │   ├── _selection.py   #   frozen selection snapshot (text + line spans) sent to the reader
+│   │   ├── _chunking.py    #   Chonkie / stdlib chunking with line references
+│   │   ├── _budgets.py     #   reader budget arithmetic (per-call fit, chunk size, parent fit)
+│   │   ├── _reader_job.py  #   reader job manifest + run_reader() (spawns the reader subprocess)
+│   │   ├── _reader_provider.py # API calls, retries, progress events for the reader
+│   │   └── _reader_controller.py # read_large_file loop: chunk notes + running summary → merged index
+│   ├── _truncate.py        # truncate_middle(): head + marker + tail, shared by read and output_filter.py
+│   ├── output_filter.py    # oversized tool results → saved to hash cache + truncate_middle()
 │   ├── write/               # Overwrite a file
 │   ├── edit/                 # Exact-text replacement
 │   ├── bash/                # Run shell commands
@@ -905,7 +917,7 @@ Driverless_AGI/
 │   ├── subagents/         # Per-subagent type: <name>/main.py (BaseTool subclass) + subagent_config.yaml
 │   │   │                  #   Discovered by import via _discover_subagent_tools() in agent/subagent_tools.py
 │   │   ├── compact/         #   context compaction summarizer (internal-only, no main.py — not model-callable)
-│   ├── read-large-text/ # large-text-file summarizer, directly LLM-callable as `read_large_text` (tools: read, grep, write)
+│   │   ├── read-large-file/ # `read_large_file` tool + reader prompt (fixed reader loop, no tools)
 │   │   ├── explore_files/ #   exploration agent (tools: read, grep, find)
 │   │   ├── web_research/  #   web research agent (tools: web_search, web_fetch)
 │   │   ├── worker/        #   full-tool worker agent (plan_utils.py helper)
@@ -933,8 +945,8 @@ Driverless_AGI/
 
 | Tool | What it does |
 |------|-------------|
-| `read` | Read a text file (paginated) inline. `.pdf`/`.docx`/`.xlsx`/`.pptx` are delegated to the standalone **doc-converter service** over HTTP (see [Document Conversion Service](#document-conversion-service) below) — the service must be running or `read` returns a clear error telling you to start it, no inline fallback. PDF output includes a `[PDF: name \| N pages]` header; `pages` (PDF only, e.g. `'1-5'`) filters by `<!-- Page N -->` markers. Pass `path`, optional `offset`/`limit`, optional `pages` |
-| `read_large_text` | Directly LLM-callable tool (`.dagi/subagents/read-large-text/`) that reads and digests a large text file, returning a sectioned summary with key excerpts, line ranges, and token estimates. Use when a file is too long to fit in context or requires structured summarization. Pass `task` (file path + what to extract), optional `custom_instructions` |
+| `read` | Read a text file (paginated) inline. `.pdf`/`.docx`/`.xlsx`/`.pptx` are delegated to the standalone **doc-converter service** over HTTP (see [Document Conversion Service](#document-conversion-service) below) — the service must be running or `read` returns a clear error telling you to start it, no inline fallback. PDF output includes a `[PDF: name \| N pages]` header; `pages` (PDF only, e.g. `'1-5'`) filters by `<!-- Page N -->` markers. Reads the whole file unless `offset`/`limit` are given; results over `reserve_tokens` come back as head + marker + tail (see [Managing Context in Long Sessions](#managing-context-in-long-sessions)). Pass `path`, optional `offset`/`limit`, optional `pages` |
+| `read_large_file` | Indexed digest of a file too large for context (`.dagi/subagents/read-large-file/`): overview, section table with line ranges, key points and verbatim excerpts. Reads chunk by chunk with a running summary, so any length works; results cached. Pass `path`, optional `query`, `offset`/`limit`, `pages` |
 | `write` | Overwrite a file. Creates parent dirs. Takes `path` + `content` |
 | `edit` | Edit a file by replacing exact text (`oldText` → `newText`). The match must be unique; CRLF-safe |
 | `bash` | Run a shell command. Returns stdout + stderr + exit code. Pass `command` + optional `timeout` |
@@ -957,7 +969,7 @@ Driverless_AGI/
 
 File tools (`read`, `write`, `edit`, `grep`, `find`) are sandboxed to allowed roots via `tools/_path_guard.py`. `bash` is intentionally unsandboxed.
 
-Every subagent spawn tool (worker, review, explore_files, web_research, or any type discovered from `.dagi/subagents/`) reads the subagent's handoff file and inlines its full content directly into the tool's own result on success (via `tools/_handoff_format.py::format_handoff_result()`) — the main agent never has to make a separate `read` call to see what a subagent produced. `extend_subagent_timeout`'s resume path does the same. Large handoffs are still subject to the normal output-filter truncation like any other tool result.
+Every subagent spawn tool (worker, review, explore_files, web_research, or any type discovered from `.dagi/subagents/`) reads the subagent's handoff file and inlines its full content directly into the tool's own result on success (via `tools/_handoff_format.py::format_handoff_result()`) — the main agent never has to make a separate `read` call to see what a subagent produced. `extend_subagent_timeout`'s resume path does the same. Large handoffs are still subject to the normal output-filter truncation (head + marker + tail) like any other tool result.
 
 **Enforced handoff + unverified fallback:** if a subagent's turn ends without ever calling `write_handoff` — e.g. `explore_files`/`web_research`, which have no general `write` tool and previously could not comply structurally — `tools/subagent_main.py::_ensure_handoff()` gives it one corrective retry naming the tool explicitly, then, if still missing, scrapes the last assistant message into the handoff file and drops a `<stem>_unverified.flag` sidecar. `tools/_subagent_runner.py` turns that flag into result status `"ok_unverified"`, and every spawn tool renders it as a `⚠️ UNVERIFIED HANDOFF` warning banner above the (possibly informal) content, so the parent never mistakes a scrape for a deliberate report.
 

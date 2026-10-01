@@ -1,14 +1,15 @@
 """
 tools/output_filter.py — Filter large tool outputs before they enter LLM context.
 
-If a tool result exceeds the token threshold, the full output is saved to the shared
-hash cache and a truncated preview + pointer is placed in context instead. This prevents
-context-window overflow caused by unexpectedly large tool outputs (grep on a huge
-codebase, bash with verbose output, read on a multi-MB file, etc.).
+If a tool result exceeds the token threshold, the full text is saved to the shared
+hash cache and the context gets head + marker + tail (tools/_truncate.py) instead.
+The marker points at the saved file, so the agent can page through it with
+read(offset/limit), grep it, or digest it with read_large_file. Keeping the tail
+matters for bash: test summaries and tracebacks come last.
 
 Public API
 ----------
-filter_tool_output(result, reserve_tokens, project_root) -> (context_result, full_str)
+filter_tool_output(result, reserve_tokens, project_root, edge_chars) -> (context_result, full_str)
 """
 from __future__ import annotations
 
@@ -16,16 +17,31 @@ import json
 from pathlib import Path
 
 from tools._hash_cache import get_or_compute
+from tools._truncate import DEFAULT_EDGE_CHARS, effective_edge_chars, truncate_middle
 
 # Same heuristic used by compact.py — avoids adding a tokeniser dependency.
 _CHARS_PER_TOKEN = 4
 
 
 def _serialise(result: str | list) -> str:
-    """Convert a raw dispatch result to a flat string for size estimation."""
+    """Convert a raw dispatch result to a flat string for the JSONL tracker."""
     if isinstance(result, str):
         return result
     return "__list__:" + json.dumps(result)
+
+
+def _text_of(result: str | list) -> str:
+    """The text an oversized result is judged and truncated on.
+
+    For multimodal lists only text parts count — images are passed through and
+    budgeted separately.
+    """
+    if isinstance(result, str):
+        return result
+    return "\n".join(
+        part.get("text", "") for part in result
+        if isinstance(part, dict) and part.get("type") == "text"
+    )
 
 
 def estimate_tool_output(result: str | list) -> int:
@@ -41,6 +57,7 @@ def filter_tool_output(
     result: str | list,
     reserve_tokens: int,
     project_root: Path,
+    edge_chars: int = DEFAULT_EDGE_CHARS,
 ) -> tuple[str | list, str]:
     """
     Filter a tool result before it enters LLM context.
@@ -49,15 +66,18 @@ def filter_tool_output(
     ----------
     result        : Raw value returned by registry.dispatch() after sentinel handling.
     reserve_tokens: Token budget threshold from AgentConfig (same field used for
-                    compaction). Results >= this many estimated tokens are filtered.
+                    compaction). Results whose text is >= this many estimated
+                    tokens are truncated.
     project_root  : Project root directory. The shared hash cache lives at
                     `<project_root>/.dagi/hash_cache/tool_output/`, created automatically.
+    edge_chars    : Characters kept at each end (clamped by reserve_tokens).
 
     Returns
     -------
     (context_result, full_str)
         context_result — filtered value for _messages and TUI callback.
-                         Same type as `result` when not filtered; always str when filtered.
+                         Same type as `result`; for lists, the text parts are
+                         replaced by one truncated text part and images kept.
         full_str       — full serialised result for JSONL tracker (never truncated).
     """
     full_str = _serialise(result)
@@ -66,36 +86,41 @@ def filter_tool_output(
     if reserve_tokens <= 0:
         return result, full_str
 
-    estimated_tokens = estimate_tool_output(result)
-    if estimated_tokens < reserve_tokens:
+    text = _text_of(result)
+    if len(text) // _CHARS_PER_TOKEN < reserve_tokens:
         return result, full_str  # pass-through — small enough to enter context raw
 
-    # ── Result is large: cache it, build truncated context message ──
-    preview_chars = (reserve_tokens // 2) * _CHARS_PER_TOKEN
-    preview = full_str[:preview_chars]
-
+    # ── Result is large: save the raw text, build head + marker + tail ──
+    edge = effective_edge_chars(edge_chars, reserve_tokens)
+    source: str | None
+    unsaved = ""
     try:
-        _, tmp_path = get_or_compute(
-            full_str.encode("utf-8"), "tool_output", "txt", project_root, lambda: full_str
+        _, saved_path = get_or_compute(
+            text.encode("utf-8"), "tool_output", "txt", project_root, lambda: text
         )
+        source = str(saved_path)
     except OSError as exc:
-        context_result = (
-            f"⚠ TOOL OUTPUT TOO LARGE (~{estimated_tokens:,} tokens estimated) — "
-            f"cache write failed ({exc}). Full output was NOT saved.\n"
-            f"REFINE YOUR SEARCH: narrow the path to a specific subdirectory, "
-            f"add a glob filter (e.g. glob='*.py'), or use a more specific pattern.\n"
-            f"--- TRUNCATED PREVIEW ---\n"
-            f"{preview}"
-        )
-        return context_result, full_str
+        source = None
+        unsaved = f"cache write failed: {exc}"
 
-    context_result = (
-        f"⚠ TOOL OUTPUT TOO LARGE (~{estimated_tokens:,} tokens estimated) — "
-        f"DO NOT read the full output from the cache file. "
-        f"Instead, REFINE YOUR SEARCH: narrow the path to a specific subdirectory, "
-        f"add a glob filter (e.g. glob='*.py'), or use a more specific pattern.\n"
-        f"Full output saved to: {tmp_path}\n"
-        f"--- TRUNCATED PREVIEW ---\n"
-        f"{preview}"
+    truncated = truncate_middle(
+        text.splitlines(),  # same line splitting as read, so offsets match
+        source=source,
+        edge_chars=edge,
+        unsaved_reason=unsaved,
     )
-    return context_result, full_str
+    context_text = f"[Tool output too large — showing start and end only.]\n{truncated}"
+
+    if isinstance(result, str):
+        return context_text, full_str
+
+    filtered: list = []
+    text_placed = False
+    for part in result:
+        if isinstance(part, dict) and part.get("type") == "text":
+            if not text_placed:
+                filtered.append({"type": "text", "text": context_text})
+                text_placed = True
+            continue
+        filtered.append(part)
+    return filtered, full_str

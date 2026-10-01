@@ -1,6 +1,6 @@
 """tests/test_reader_budgets.py — Budget arithmetic for the large-file reader.
 
-Tests resolve_reader_limits, allocate_sections, estimate_*, require_* and
+Tests resolve_reader_limits, chunk_token_budget, estimate_*, require_* and
 ReaderCapacityError. No provider calls; no filesystem writes beyond tmp_path.
 """
 from __future__ import annotations
@@ -16,8 +16,8 @@ from tools.output_filter import estimate_tool_output
 from tools.read._budgets import (
     ReaderCapacityError,
     ReaderLimits,
-    SummaryAllocation,
-    allocate_sections,
+    MAX_CHUNK_TOKENS,
+    chunk_token_budget,
     estimate_reader_request,
     estimate_reader_text,
     require_context_fit,
@@ -187,17 +187,17 @@ class TestResolveReaderLimits:
 # ---------------------------------------------------------------------------
 
 class TestEstimateReaderRequest:
-    def test_returns_byte_count_of_json(self):
+    def test_returns_json_chars_div_4(self):
         import json
         req = {"model": "test", "messages": [{"role": "user", "content": "hello"}]}
-        expected = len(json.dumps(req, ensure_ascii=False).encode("utf-8"))
+        expected = len(json.dumps(req, ensure_ascii=False)) // 4
         assert estimate_reader_request(req) == expected
 
-    def test_unicode_counted_by_bytes(self):
-        req = {"content": "你好"}
-        import json
-        expected = len(json.dumps(req, ensure_ascii=False).encode("utf-8"))
-        assert estimate_reader_request(req) == expected
+    def test_same_units_as_text_estimate(self):
+        """Token units, not bytes: a long payload ≈ estimate_reader_text of it."""
+        text = "x" * 40_000
+        req = {"content": text}
+        assert abs(estimate_reader_request(req) - estimate_reader_text(text)) < 10
 
     def test_larger_request_gives_larger_estimate(self):
         small = {"messages": [{"role": "user", "content": "hi"}]}
@@ -254,46 +254,28 @@ class TestRequireContextFit:
 
 
 # ---------------------------------------------------------------------------
-# allocate_sections
+# chunk_token_budget
 # ---------------------------------------------------------------------------
 
-class TestAllocateSections:
-    def test_empty_chunks_returns_empty(self):
-        result = allocate_sections((), available_chars=1000, minimum_refs=())
-        assert result == ()
+class TestChunkTokenBudget:
+    def _limits(self, C=100_000, O=4_000, M=500):
+        return ReaderLimits(
+            parent_reserve=8_000, context_window=C, output_reserve=O,
+            estimator_margin=M, max_repairs=3,
+        )
 
-    def test_single_chunk_gets_all_prose(self):
-        chunks = (_chunk(100),)
-        allocs = allocate_sections(chunks, available_chars=500, minimum_refs=())
-        assert len(allocs) == 1
-        assert allocs[0] == 500
+    def test_room_scaled_for_line_numbers(self):
+        K = chunk_token_budget(self._limits(C=20_000), fixed_tokens=3_000)
+        assert K == int((20_000 - 3_000 - 4_000 - 500) * 0.8)
 
-    def test_proportional_split(self):
-        # chunks 100 and 300 tokens → should get 1/4 and 3/4 of prose
-        chunks = (_chunk(100), _chunk(300))
-        allocs = allocate_sections(chunks, available_chars=400, minimum_refs=())
-        assert len(allocs) == 2
-        assert allocs[0] + allocs[1] == 400
-        # First chunk should be smaller
-        assert allocs[0] < allocs[1]
+    def test_capped(self):
+        K = chunk_token_budget(self._limits(C=1_000_000), fixed_tokens=1_000)
+        assert K == MAX_CHUNK_TOKENS
 
-    def test_minimum_refs_subtracted_first(self):
-        refs = ("ref_chunk_0", "ref_chunk_1")
-        ref_chars = sum(len(r) for r in refs)
-        chunks = (_chunk(100), _chunk(100))
-        allocs = allocate_sections(chunks, available_chars=400, minimum_refs=refs)
-        assert sum(allocs) == 400 - ref_chars
-
-    def test_remainder_goes_to_last_chunk(self):
-        # Three equal chunks with available_chars=10 (not divisible by 3)
-        chunks = (_chunk(1), _chunk(1), _chunk(1))
-        allocs = allocate_sections(chunks, available_chars=10, minimum_refs=())
-        assert sum(allocs) == 10
-
-    def test_zero_available_gives_zeros(self):
-        chunks = (_chunk(100), _chunk(100))
-        allocs = allocate_sections(chunks, available_chars=0, minimum_refs=())
-        assert all(a == 0 for a in allocs)
+    def test_no_room_raises(self):
+        with pytest.raises(ReaderCapacityError) as exc_info:
+            chunk_token_budget(self._limits(C=5_000), fixed_tokens=2_000)
+        assert exc_info.value.recommendation == ReaderCapacityError.LARGER_MODEL
 
 
 # ---------------------------------------------------------------------------
@@ -362,7 +344,7 @@ class TestReaderCapacityError:
 
 class TestConfigLoaderNewFields:
     """Verify that config_loader correctly loads max_output_tokens and
-    use_legacy_reader, and that the truthiness bug fix works for token fields."""
+    truncate_edge_chars, and that the truthiness bug fix works for token fields."""
 
     def _resolve(self, tmp_path, yaml_text: str, model_id: str = "m1"):
         import yaml as _yaml
@@ -414,19 +396,19 @@ models:
         cfg = self._resolve(tmp_path, yaml_text)
         assert cfg.max_output_tokens is None
 
-    def test_use_legacy_reader_loaded(self, tmp_path):
+    def test_truncate_edge_chars_loaded(self, tmp_path):
         yaml_text = """
 default_model: m1
-use_legacy_reader: true
+truncate_edge_chars: 1234
 models:
   m1:
     model: test/model
     api_key_env: TEST_KEY
 """
         cfg = self._resolve(tmp_path, yaml_text)
-        assert cfg.use_legacy_reader is True
+        assert cfg.truncate_edge_chars == 1234
 
-    def test_use_legacy_reader_defaults_false(self, tmp_path):
+    def test_truncate_edge_chars_defaults_4000(self, tmp_path):
         yaml_text = """
 default_model: m1
 models:
@@ -435,7 +417,7 @@ models:
     api_key_env: TEST_KEY
 """
         cfg = self._resolve(tmp_path, yaml_text)
-        assert cfg.use_legacy_reader is False
+        assert cfg.truncate_edge_chars == 4000
 
     def test_explicit_zero_context_window_not_overridden_by_raw(self, tmp_path):
         """Truthiness fix: entry context_window: 0 must not fall back to raw default."""

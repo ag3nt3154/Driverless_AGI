@@ -32,7 +32,7 @@ tools:
   - skill
   - run_skill_script
   - switch_model
-  - read_large_text
+  - read_large_file
   - explore_files
   - review_work
   - web_research

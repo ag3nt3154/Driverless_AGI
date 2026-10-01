@@ -48,6 +48,8 @@ def _run_with_minimal_arguments(tool, type_name: str) -> None:
         tool.run()
     elif type_name == "worker":
         tool.run(subtask_name="Implement it")
+    elif type_name == "read-large-file":
+        tool.run(path="README.md")
     elif type_name == "review":
         tool.run(
             material="/tmp/worker.md",
@@ -64,10 +66,10 @@ class TestGenericSubagentTool:
     # tools now use a plain, task-descriptive name — the
     # `spawn_{type}_subagent` fallback naming convention was retired
     # project-wide so the LLM never sees "this is implemented via a spawned
-    # subagent" in the tool name (mirroring `read_large_text`, which set the
+    # subagent" in the tool name (mirroring `read_large_text`, now `read_large_file`, which set the
     # precedent). This dict is the sole source of truth for expected names.
     _EXPECTED_TOOL_NAMES = {
-        "read-large-text": "read_large_text",
+        "read-large-file": "read_large_file",
         "explore_files": "explore_files",
         "web_research": "web_research",
         "memory-refresh": "memory_refresh",
@@ -372,7 +374,12 @@ class TestSessionLogThreading:
         for tool in tools:
             assert tool._parent_context is provider
 
-    @pytest.mark.parametrize("type_name", sorted(TestGenericSubagentTool._EXPECTED_TOOL_NAMES))
+    # read-large-file runs a fixed reader loop that never sees the parent's
+    # conversation, so it deliberately does not forward parent_context.
+    @pytest.mark.parametrize(
+        "type_name",
+        sorted(set(TestGenericSubagentTool._EXPECTED_TOOL_NAMES) - {"read-large-file"}),
+    )
     def test_typed_tools_forward_the_exact_parent_context(self, type_name):
         """Dropping or replacing the provider would lose inherited parent state."""
         cls = _load_tool_class(type_name)

@@ -25,6 +25,7 @@ from tools.edit import EditTool
 from tools.find import FindTool
 from tools.grep import GrepTool
 from tools.read import ReadTool
+from tools._truncate import DEFAULT_EDGE_CHARS
 from tools.copy import CopyTool
 from tools.write import WriteTool
 
@@ -55,14 +56,23 @@ def _tools_from_list(
     cwd: Path,
     allowed_roots: list[Path] | None,
     handoff_path: Path | None = None,
+    reserve_tokens: int = 0,
+    edge_chars: int = DEFAULT_EDGE_CHARS,
 ) -> list[BaseTool]:
-    """Instantiate tools by name for a subagent registry."""
+    """Instantiate tools by name for a subagent registry.
+
+    reserve_tokens/edge_chars let the subagent's read truncate oversized
+    results the same way the main agent's does.
+    """
     from tools.web_fetch import WebFetchTool
     from tools.web_search import WebSearchTool
     from tools.write_handoff import WriteHandoffTool
 
     registry_map: dict[str, BaseTool] = {
-        "read":       ReadTool(cwd=cwd, allowed_roots=allowed_roots),
+        "read":       ReadTool(
+            cwd=cwd, allowed_roots=allowed_roots,
+            reserve_tokens=reserve_tokens, edge_chars=edge_chars,
+        ),
         "grep":       GrepTool(cwd=cwd, allowed_roots=allowed_roots),
         "find":       FindTool(cwd=cwd, allowed_roots=allowed_roots),
         "write":      WriteTool(cwd=cwd, allowed_roots=allowed_roots),
@@ -206,7 +216,9 @@ def build_subagent_registry(
         else cfg.get("tools", ["read", "grep", "find"])
     )
     for tool in _tools_from_list(
-        tool_names, cwd_for_tools, effective_roots, handoff_path=handoff_path
+        tool_names, cwd_for_tools, effective_roots, handoff_path=handoff_path,
+        reserve_tokens=config.reserve_tokens,
+        edge_chars=config.truncate_edge_chars,
     ):
         reg.register(tool)
     return reg

@@ -19,7 +19,7 @@ PATH_LIKE_PARAM_NAMES = {"handoff_file", "handoff_path", "output_file", "output_
 TYPED_SUBAGENT_NAMES = {
     "explore_files",
     "memory-refresh",
-    "read-large-text",
+    "read-large-file",
     "review",
     "web_research",
     "worker",

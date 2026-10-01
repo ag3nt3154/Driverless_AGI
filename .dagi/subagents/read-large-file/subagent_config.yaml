@@ -1,0 +1,8 @@
+model_tier: worker
+# The reader runs a fixed loop (tools/read/_reader_controller.py) with no tool
+# calls; this list only satisfies the preset loader.
+tools: []
+default_handoff_spec: >-
+  An index of the file: overview, a section table with line ranges, and per-section
+  key points with verbatim excerpts.
+agents_md: []

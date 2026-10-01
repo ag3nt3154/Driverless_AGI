@@ -1,60 +1,17 @@
-"""Read tool — text files inline, documents via converter service."""
+"""Read tool — text files inline, documents via converter service.
+
+Results too large for context are cut to head + marker + tail; the marker
+points the agent at read(offset/limit), grep, or read_large_file.
+"""
 from __future__ import annotations
 
-import re
 from pathlib import Path
-from typing import TYPE_CHECKING
 
 from agent.base_tool import BaseTool
 from tools._path_guard import validate_path
+from tools._truncate import DEFAULT_EDGE_CHARS, effective_edge_chars, truncate_middle
 from tools.output_filter import estimate_tool_output
-from tools.read._doc_service import cache_path_for, convert_document, DocServiceError
-from tools.read._selection import ReadSelection, make_selection
-
-if TYPE_CHECKING:
-    from agent.loop import AgentCallbacks, AgentConfig
-    from agent.parent_context import ParentContextProvider
-
-_IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
-_BLOCKED_EXTS = _IMAGE_EXTS.copy()
-_DOC_EXTS = {".pdf", ".docx", ".xlsx", ".pptx"}
-_PAGE_MARKER_RE = re.compile(r"<!-- Page (\d+) -->")
-_DEFAULT_LIMIT = 2000
-
-
-def _parse_page_spec(spec: str) -> set[int]:
-    """Parse a page spec like '1-3,5,8-10' into a set of page numbers."""
-    pages: set[int] = set()
-    for part in spec.split(","):
-        part = part.strip()
-        if "-" in part:
-            bounds = part.split("-", 1)
-            try:
-                start, end = int(bounds[0].strip()), int(bounds[1].strip())
-            except ValueError:
-                raise ValueError(f"Invalid page spec: {spec!r}")
-            pages.update(range(start, end + 1))
-        else:
-            try:
-                pages.add(int(part))
-            except ValueError:
-                raise ValueError(f"Invalid page spec: {spec!r}")
-    return pages
-
-
-def _select_pages(md_text: str, page_spec: str) -> str:
-    """Filter markdown to only include the specified pages."""
-    wanted = _parse_page_spec(page_spec)
-    sections = _PAGE_MARKER_RE.split(md_text)
-    result_parts: list[str] = []
-    i = 1
-    while i < len(sections):
-        page_num = int(sections[i])
-        content = sections[i + 1] if i + 1 < len(sections) else ""
-        if page_num in wanted:
-            result_parts.append(f"<!-- Page {page_num} -->{content}")
-        i += 2
-    return "".join(result_parts)
+from tools.read._source import SourceError, load_source
 
 
 def _render_numbered(selected: list[str], start_idx: int, header: str | None) -> str:
@@ -69,17 +26,17 @@ class ReadTool(BaseTool):
     name = "read"
     description = (
         "Read the contents of a file. Supports all text files (any extension) — "
-        "attempts UTF-8 decoding. Defaults to first 2000 lines. "
+        "attempts UTF-8 decoding. Reads the whole file unless offset/limit are given. "
         ".docx, .xlsx, .pptx, and .pdf files are converted to markdown via the "
         "document converter service (must be running). "
         "Use the optional `pages` parameter to select specific PDF pages. "
-        "Use offset/limit for large files. Accepts both relative paths "
-        "(resolved from the project root) and absolute paths. "
+        "Accepts both relative paths (resolved from the project root) and absolute paths. "
         "Output uses `cat -n` style: each line is prefixed with its 1-indexed "
         "line number followed by a tab — the number is not part of the file content. "
-        "When the rendered result is too large for inline display, the read is "
-        "automatically delegated to read_large_text for chunked summarization. "
-        "Use the optional query parameter to focus the summary on specific content. "
+        "If the result is too large for context, only the start and end are shown "
+        "with a marker giving the omitted line range; then read a range with "
+        "offset/limit, grep for what you need, or call read_large_file for an "
+        "indexed digest of the whole file. "
         "For large-scale codebase exploration, prefer `explore_files`."
     )
     _parameters = {
@@ -95,7 +52,7 @@ class ReadTool(BaseTool):
             },
             "limit": {
                 "type": "integer",
-                "description": "Maximum number of lines to read",
+                "description": "Maximum number of lines to read (default: to end of file)",
             },
             "pages": {
                 "type": "string",
@@ -103,14 +60,6 @@ class ReadTool(BaseTool):
                     "Page range for PDF files (e.g. '1-5', '3', '10-12,15'). "
                     "Only applicable to PDFs. Selects which pages of the converted "
                     "markdown to return. Omit to return all pages."
-                ),
-            },
-            "query": {
-                "type": "string",
-                "description": (
-                    "Optional focus area for large-file summarization. "
-                    "When the rendered result is too large, this is passed to "
-                    "read_large_text as guidance. Ignored for small results."
                 ),
             },
         },
@@ -123,160 +72,53 @@ class ReadTool(BaseTool):
         allowed_roots: list[Path] | None = None,
         project_path: Path | None = None,
         service_url: str | None = None,
-        callbacks: "AgentCallbacks | None" = None,
-        config: "AgentConfig | None" = None,
-        parent_context: "ParentContextProvider | None" = None,
+        reserve_tokens: int = 0,
+        edge_chars: int = DEFAULT_EDGE_CHARS,
     ):
         self.cwd = cwd
         self.allowed_roots = allowed_roots
         self._project_path = project_path
         self._service_url = service_url
-        self._callbacks = callbacks
-        self._config = config
-        self._parent_context = parent_context
+        self._reserve_tokens = reserve_tokens
+        self._edge_chars = edge_chars
 
     def run(
         self,
         path: str,
         offset: int = 1,
-        limit: int = _DEFAULT_LIMIT,
+        limit: int | None = None,
         pages: str | None = None,
-        query: str | None = None,
     ) -> str | list:
         p = Path(path)
         if not p.is_absolute():
             p = self.cwd / p
         p = validate_path(p, self.allowed_roots)
 
-        ext = p.suffix.lower()
-
-        if pages is not None and ext != ".pdf":
-            return "Error: 'pages' parameter is only supported for PDF files."
-
-        if ext in _BLOCKED_EXTS:
-            return (
-                f"Error: Cannot read file type '{ext}'. This file type is not "
-                f"currently supported by the read tool."
+        try:
+            src = load_source(
+                p, pages=pages, service_url=self._service_url,
+                project_path=self._project_path,
             )
-
-        header: str | None = None
-        editable_path: Path | None = None
-
-        if ext in _DOC_EXTS:
-            if not self._service_url or not self._project_path:
-                return (
-                    "Error: Document reading requires the converter service. "
-                    "Ensure services.doc_converter is configured in .dagi/config.yaml."
-                )
-            try:
-                md_text = convert_document(p, self._service_url, self._project_path)
-            except DocServiceError as exc:
-                return f"Error from document service ({exc.code}): {exc.message}"
-
-            editable_path = cache_path_for(p, self._project_path)
-            try:
-                editable_str = str(editable_path.relative_to(self._project_path))
-            except ValueError:
-                editable_str = str(editable_path)
-
-            if ext == ".pdf":
-                total_pages = md_text.count("<!-- Page ")
-                if pages:
-                    md_text = _select_pages(md_text, pages)
-                header = f"[PDF: {p.name} | {total_pages} pages"
-                if pages:
-                    header += f" | showing pages {pages}"
-                header += f" | editable: {editable_str}]"
-            else:
-                header = f"[{p.name} | editable: {editable_str}]"
-
-            lines = md_text.splitlines()
-
-        else:
-            try:
-                lines = p.read_text(encoding="utf-8").splitlines()
-            except UnicodeDecodeError:
-                return (
-                    f"Error: Cannot read '{p.name}' as text. The file appears "
-                    f"to be binary or uses an encoding other than UTF-8."
-                )
+        except (SourceError, ValueError) as exc:
+            return str(exc)
 
         start = max(0, offset - 1)
-        selected = lines[start : start + limit]
-        raw_result = _render_numbered(selected, start, header)
+        end = len(src.lines) if limit is None else start + max(0, limit)
+        selected = src.lines[start:end]
+        raw_result = _render_numbered(selected, start, src.header)
 
-        if self._config is not None:
-            if getattr(self._config, "use_legacy_reader", False):
-                # Legacy line-count trigger: only fires on default offset/limit,
-                # excludes converted documents, does not check result size.
-                if (offset == 1 and limit == _DEFAULT_LIMIT
-                        and len(lines) > limit and ext not in _DOC_EXTS):
-                    return self._delegate_legacy(p, len(lines), query)
-            else:
-                P = getattr(self._config, "reserve_tokens", 0)
-                if P > 0 and estimate_tool_output(raw_result) >= P:
-                    selection = make_selection(
-                        p, lines, offset=offset, limit=limit,
-                        header=header, editable_path=editable_path,
-                    )
-                    return self._delegate_to_read_large_text(selection, query)
+        P = self._reserve_tokens
+        if P <= 0 or estimate_tool_output(raw_result) < P:
+            return raw_result
 
-        return raw_result
-
-    def _delegate_to_read_large_text(
-        self, selection: ReadSelection, query: str | None
-    ) -> str:
-        from tools.read._reader_job import ReaderLaunchContext, delegate_selection
-
-        on_event = None
-        if self._callbacks and self._callbacks.on_subagent_event_factory:
-            on_event = self._callbacks.on_subagent_event_factory("read-large-text")
-
-        ctx = ReaderLaunchContext(
-            project_path=self._config.project_path,
-            parent_reserve=getattr(self._config, "reserve_tokens", 0),
-            on_event=on_event,
-            parent_context=self._parent_context,
+        hint = "For PDFs, `pages` narrows the selection." if src.is_pdf else ""
+        return truncate_middle(
+            selected,
+            source=str(p),
+            edge_chars=effective_edge_chars(self._edge_chars, P),
+            line_offset=start + 1,
+            total_lines=len(src.lines),
+            numbered=True,
+            header=src.header,
+            hint=hint,
         )
-        return delegate_selection(selection, query=query or "", context=ctx)
-
-    def _delegate_legacy(
-        self, path: Path, total_lines: int, query: str | None
-    ) -> str:
-        """Legacy line-count delegation path. Active only when use_legacy_reader=True."""
-        import tools.subagent_api as _subagent_api
-        from tools._handoff_format import format_handoff_result, dispatch_status_result
-
-        task = f"Read the file at: {path}\nTotal lines: {total_lines}"
-
-        on_event = None
-        if self._callbacks and self._callbacks.on_subagent_event_factory:
-            on_event = self._callbacks.on_subagent_event_factory("read-large-text")
-
-        result = _subagent_api.run_subagent(
-            task=task,
-            preset="read-large-text",
-            custom_instructions=query or "",
-            project_path=self._config.project_path,
-            on_event=on_event,
-            parent_context=self._parent_context,
-        )
-
-        trailer = "Summary below." if result.is_ok else "Delegation result below."
-        signpost = (
-            f"[File too large for inline display ({total_lines} lines). "
-            f"Delegated to read_large_text. {trailer}]"
-        )
-
-        if result.is_ok:
-            unverified = result.status == "ok_unverified"
-            body = format_handoff_result(
-                str(result.handoff_path), unverified=unverified
-            )
-            return f"{signpost}\n\n{body}"
-
-        error = dispatch_status_result(
-            {"status": result.status, "pid": result.pid, "message": ""},
-            "read-large-text",
-        )
-        return f"{signpost}\n\n{error}"

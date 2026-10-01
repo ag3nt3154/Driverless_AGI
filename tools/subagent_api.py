@@ -267,11 +267,7 @@ def _write_reader_job_file(
     """
     from tools.read._reader_job import ReaderJob, ReaderReturnFormat, write_reader_job
 
-    scope = spec.selection.scope
-    signpost = (
-        f"[{scope} too large for inline display. "
-        "Delegated to reader. Summary below.]"
-    )
+    signpost = f"[read_large_file: indexed digest of {spec.selection.scope}]"
     fmt = ReaderReturnFormat(signpost=signpost, handoff_path=handoff_path)
     job = ReaderJob(
         version=1,
@@ -310,13 +306,13 @@ def run_subagent(
     controller path. When set, a ReaderJob manifest is written to a temp
     file and --reader-job <path> is injected into the subprocess argv so
     subagent_main routes to run_reader_job_mode. Only valid with
-    preset='read-large-text'.
+    preset='read-large-file'.
     """
     if preset is None and prompt is None:
         raise ValueError("Either preset or prompt must be provided.")
-    if reader_job_spec is not None and preset != "read-large-text":
+    if reader_job_spec is not None and preset != "read-large-file":
         raise ValueError(
-            f"reader_job_spec is only valid with preset='read-large-text', "
+            f"reader_job_spec is only valid with preset='read-large-file', "
             f"got preset={preset!r}"
         )
     extra_fork_context = _extra_fork_context_path(extra_argv)

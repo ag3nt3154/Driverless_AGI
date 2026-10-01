@@ -1,9 +1,0 @@
-model_tier: worker
-tools:
-  - read
-  - grep
-  - find
-default_handoff_spec: >-
-  A sectioned digest with line ranges, token estimates, and key excerpts per
-  section.
-agents_md: []
