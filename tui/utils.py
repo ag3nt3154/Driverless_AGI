@@ -73,17 +73,26 @@ def _breakdown(messages: list) -> dict[str, int]:
 
 
 def _system_breakdown(dagi_root: Path, project_path: Path) -> dict[str, int]:
-    """Estimate token counts for the three system message components from source files."""
+    """Estimate token counts for the three system message components from source files.
+
+    AGENTS.md is charged once. When dagi runs inside its own repo the two roots are the
+    same directory, so counting both rows billed one file twice — into the sidebar Total
+    and the context bar. The project row reports 0 in that case.
+    """
     def _toks(path: Path) -> int:
         return max(1, len(path.read_text(encoding="utf-8")) // 4) if path.exists() else 0
+
+    dagi_agents = dagi_root / "AGENTS.md"
+    project_agents = project_path / "AGENTS.md"
+    same_file = dagi_agents.resolve() == project_agents.resolve()
 
     return {
         "sys-prompt": (
             _toks(dagi_root / ".dagi" / "prompts" / "main" / "main_system.md")
             + _toks(dagi_root / "soul.md")
         ),
-        "dagi/ag": _toks(dagi_root / "AGENTS.md"),
-        "proj/ag": _toks(project_path / "AGENTS.md"),
+        "dagi/ag": _toks(dagi_agents),
+        "proj/ag": 0 if same_file else _toks(project_agents),
     }
 
 

@@ -76,24 +76,38 @@ def _format_tools_and_skills(registry: ToolRegistry, skills: list[Skill]) -> str
     return "\n".join(lines)
 
 
-def build_preamble(config: AgentConfig, dagi_root: Path) -> str:
-    """Benchmark/sandbox preamble + soul + AGENTS.md stack (moved verbatim
-    from AgentLoop._build_preamble; `self.config` became `config`)."""
-    parts: list[str] = []
+def prompt_sections(config: AgentConfig, dagi_root: Path) -> list[tuple[str, str]]:
+    """Ordered (label, text) sections making up the persona/context layer.
+
+    Single source of truth: `assemble_system_string` derives both the model-facing
+    string and the `system_parts` metadata from this list, so the two cannot disagree.
+
+    A source file is emitted at most once, compared by resolved path. `dagi_root` and
+    `config.project_path` are the same directory when dagi runs inside its own repo,
+    which used to inject AGENTS.md twice into every prompt and every request header.
+    """
+    sections: list[tuple[str, str]] = []
     if config.system_prompt_preamble:
-        parts.append(config.system_prompt_preamble.strip())
+        sections.append(("Preamble", config.system_prompt_preamble.strip()))
     soul_text = load_soul(dagi_root, config.project_path)
     if soul_text:
-        parts.append(soul_text.strip())
-    for agents_path in [
-        dagi_root / "AGENTS.md",
-        config.project_path / "AGENTS.md",
-    ]:
-        if agents_path.exists():
-            text = agents_path.read_text(encoding="utf-8").strip()
-            if text:
-                parts.append(text)
-    return "\n\n---\n\n".join(parts)
+        sections.append(("SOUL.md", soul_text.strip()))
+
+    seen: set[Path] = set()
+    for label, path in (
+        ("AGENTS.md (dagi)", dagi_root / "AGENTS.md"),
+        ("AGENTS.md (project)", config.project_path / "AGENTS.md"),
+    ):
+        if not path.exists():
+            continue
+        resolved = path.resolve()
+        if resolved in seen:
+            continue
+        text = path.read_text(encoding="utf-8").strip()
+        if text:
+            seen.add(resolved)
+            sections.append((label, text))
+    return sections
 
 
 def assemble_system_string(
@@ -126,27 +140,16 @@ def assemble_system_string(
         dagi_root=str(dagi_root.resolve()),
     ))
 
-    soul_text = load_soul(dagi_root, config.project_path)
-    dagi_agents = dagi_root / "AGENTS.md"
-    project_agents = config.project_path / "AGENTS.md"
-    system_parts: list[dict] = []
-    if soul_text:
-        system_parts.append({"label": "SOUL.md", "content": soul_text.strip()})
-    if dagi_agents.exists():
-        system_parts.append({
-            "label": "AGENTS.md (dagi)",
-            "content": dagi_agents.read_text(encoding="utf-8").strip(),
-        })
-    if project_agents.exists():
-        system_parts.append({
-            "label": "AGENTS.md (project)",
-            "content": project_agents.read_text(encoding="utf-8").strip(),
-        })
+    sections = prompt_sections(config, dagi_root)
+    system_parts: list[dict] = [
+        {"label": label, "content": text} for label, text in sections
+    ]
     system_parts.append({"label": "System Prompt", "content": prompt})
 
-    preamble = build_preamble(config, dagi_root)
-    sections = [s for s in [preamble, prompt] if s]
-    system = "\n\n---\n\n".join(sections)
+    texts = [text for _, text in sections]
+    if prompt:
+        texts.append(prompt)
+    system = "\n\n---\n\n".join(texts)
     system += f"\n\n---\n\nProject root: {config.project_path}"
 
     if system_prompt_override is not None:
