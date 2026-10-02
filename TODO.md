@@ -2,6 +2,26 @@
 
 ## In progress
 
+- **2026-10-02 automation review follow-ups.** The review covered `task/iteration-engine`
+  at `6917b131`. Its report files, `_CODEX_CODE_REVIEW_2026-10-02.md` and
+  `_CODEX_SUGGESTIONS_2026-10-02.md`, are in the repo root. None of the fixes are
+  implemented yet.
+  - **P1 R1 (campaign):** tampering during the *holdout* pass is swallowed by
+    `_holdout_if_better` (`campaign/engine.py`), so the trial can still be accepted.
+    Fix: propagate `evaluator_modified` and fail the trial, as `_rescore_holdout` already
+    does. Add a regression test where holdout inference alters the labels.
+  - **P1 R2 (agent):** two END_TURN results in one tool batch record only the last
+    result (`agent/_tool_dispatch.py`), leaving unmatched tool calls. `finalize_trial`
+    makes this more reachable.
+  - **P1 R3/R4 (scheduler):** `scheduler/runner.py` passes an unsupported `tracker=` to
+    AgentLoop, and its timeout does not stop the worker. Both are known from the
+    2026-09-06 review; consider reusing `campaign/process.py`.
+  - **P2 R5 (campaign):** an engine killed during the agent stage neither archives the
+    workspace nor counts the attempt. This is the documented §9 trade-off; revisit it
+    with a started-attempt record.
+  - **P2 R6/R7:** the garbled-response revision is not persisted, and core orchestration
+    is too large.
+
 - **Shared truncation for remaining self-capping tools** — `web_fetch` (`_MAX_CHARS`, rest
   lost) and `read_notepad` (`MAX_CHARS`) still cut their own output; move them onto the
   shared head + marker + tail filter so the full output is saved and reachable with
