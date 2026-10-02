@@ -42,6 +42,13 @@
 
 ## Completed
 
+- **Session log review (2026-10-02)** — findings, causes, scriptable tool sequences and
+  instruction inconsistencies are in
+  [_CODEX_SESSION_LOG_REVIEW_2026-10-02.md](_CODEX_SESSION_LOG_REVIEW_2026-10-02.md).
+  Recommendations remain proposals; no runtime fixes were implemented.
+  Marked the 32 reviewed families (55 files including companions) with
+  `__reviewed_2026-10-02`; verified contents unchanged and updated evidence links.
+
 - **read: Office, PDF fallback and images (2026-10-01)** — `.docx`/`.xlsx`/`.xls`/`.pptx`
   convert in-process with markitdown (`tools/read/_convert.py`); PDFs try the conversion
   API (`services.doc_converter`, now just `POST /convert` in `_doc_service.py`) and fall

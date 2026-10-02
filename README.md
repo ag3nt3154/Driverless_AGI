@@ -644,6 +644,12 @@ The context carries over — no need to restart.
 - **Build the memory wiki over time.** The more decisions, fixes and knowledge filed under `projects/<slug>/` and `knowledge/` in the central memory wiki, the less you need to re-explain project context each session — and fixes found in one project help the others.
 - **Pause instead of cancelling.** `Esc` in the TUI preserves the agent's full context; you can inject corrections and resume rather than restarting from scratch.
 - **Review sessions with `/hist`.** Session summaries in `.dagi/logs/` capture token counts, cost, and what the agent did. The `review-session` skill accepts a free-text description of which sessions to look at and accumulates findings from all of them into one report, so patterns that recur across sessions surface as a single insight.
+
+  Cross-session findings and proposed tool-chain/prompt improvements are recorded in
+  [_CODEX_SESSION_LOG_REVIEW_2026-10-02.md](_CODEX_SESSION_LOG_REVIEW_2026-10-02.md).
+  Reviewed logs carry `__reviewed_2026-10-02` in their filenames, with session-history
+  discovery patterns and event companion pairing preserved.
+
 - **Fill in `AGENTS.md`'s Behavioral Guidelines section for your project.** This whole file is injected into every session for that project. Use the Behavioral Guidelines section for coding standards, architecture invariants, and anything you would otherwise repeat in every task prompt.
 
 ---
