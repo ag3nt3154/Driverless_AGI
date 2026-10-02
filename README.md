@@ -277,6 +277,9 @@ Vditor 3.11.3 is vendored (trimmed to ~9.4 MB: core, lute, KaTeX woff2 fonts, en
   - Reasoning streams as a live tail, then collapses to "Thought for Ns".
   - User messages: a ```` ```pasted ```` fence renders as a collapsed **paste card** (icon, "Pasted text · N lines", the first line) that expands on click — also for restored sessions, since detection is from the text. Bubbles taller than ~320px are capped with a fade and a **Show more** toggle; opening a paste card lifts the cap.
   - The empty chat shows the pet's idle emote, the model and the project path until the first message.
+  - Auto-scroll: the pane follows new content while you are within 48px of the bottom. Only a
+    real scroll turns following off, so the composer growing does not. Sending a message
+    always jumps to the bottom; the right sidebar's **Scroll to bottom** button does the same.
   - Clicked links open in the system browser.
   - Calls made before the page finishes loading are queued and replayed.
 - **Composer** (`prompt_input.py`): a rounded card holding:

@@ -62,6 +62,11 @@
 
 ## Completed
 
+- **GUI auto-scroll after sending (2026-10-03)** — the chat pane no longer gets stuck above
+  the newest message after a send. Follow mode changes only on real scroll events (within
+  48px of the bottom); the composer resizing the view re-pins; sending always pins; Show
+  more and sent-image loads re-scroll. Tests in `pyside_gui/tests/test_scroll_to_bottom.py`.
+
 - **Session log review (2026-10-02)** — findings, causes, scriptable tool sequences and
   instruction inconsistencies are in
   [_CODEX_SESSION_LOG_REVIEW_2026-10-02.md](_CODEX_SESSION_LOG_REVIEW_2026-10-02.md).
