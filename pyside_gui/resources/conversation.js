@@ -31,14 +31,21 @@ let _lute = null;
 const _toolCallStack = [];
 let _reasoningStart = 0;
 
-const _observer = new IntersectionObserver(
-    (entries) => { _autoScroll = entries[0].isIntersecting; },
-    { threshold: 0.1 }
-);
+// Pixels from the bottom that still count as "following the conversation".
+const PIN_THRESHOLD = 48;
+
+// Only a real scroll decides whether we follow new content. Content growing,
+// late image loads and the composer shrinking the view move the bottom without
+// a scroll event, so they leave the pin alone.
+function _onScroll() {
+    const page = document.scrollingElement;
+    _autoScroll = page.scrollHeight - page.scrollTop - page.clientHeight < PIN_THRESHOLD;
+}
+
+window.addEventListener('scroll', _onScroll, { passive: true });
+window.addEventListener('resize', () => _scrollToBottom());
 
 document.addEventListener('DOMContentLoaded', () => {
-    const sentinel = document.getElementById('scroll-sentinel');
-    if (sentinel) _observer.observe(sentinel);
     if (typeof QWebChannel !== 'undefined' && typeof qt !== 'undefined') {
         new QWebChannel(qt.webChannelTransport, (channel) => { window._dagi = channel.objects.dagi; });
     }
@@ -509,6 +516,7 @@ function _capUserBubble(div) {
         more.textContent = open ? 'Show less' : 'Show more';
     });
     div.appendChild(more);
+    _scrollToBottom();
 }
 
 // ---- messages typed while the agent runs ----------------------------------
@@ -542,7 +550,7 @@ function appendQueuedMessage(id, text) {
     div.appendChild(foot);
     _queuedArea().appendChild(div);
     _capUserBubble(div);
-    _scrollToBottom();
+    scrollToBottom();
 }
 
 function _queued(id) {
@@ -575,6 +583,13 @@ function appendMessage(role, text) {
     if (role !== 'user') return appendMarkdown(text);
     const div = _el('div', 'message user-message');
     div.appendChild(_userBody(text));
+    _insertUserMessage(div);
+}
+
+// Sending is a deliberate act: follow the conversation from here on, even if
+// the user had scrolled up into the history.
+function _insertUserMessage(div) {
+    _autoScroll = true;
     _insert(div);
     _capUserBubble(div);
 }
@@ -591,8 +606,8 @@ function appendUserMessageWithImages(text, imagePaths) {
     }
     div.innerHTML = html;
     if (text) div.appendChild(_userBody(text));
-    _insert(div);
-    _capUserBubble(div);
+    div.querySelectorAll('img').forEach((img) => img.addEventListener('load', _scrollToBottom));
+    _insertUserMessage(div);
 }
 
 function appendMarkdown(md) {
