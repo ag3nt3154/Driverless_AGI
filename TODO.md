@@ -7,11 +7,12 @@
   ordering case. Manual restore probe passed in the
   [fix/session review](_CODEX_FIX_SESSION_REVIEW_2026-10-03.md); tests are not added yet.
 
-- **Session tool-chain improvements** — preserve pytest exit status through output
-  formatting, validate tool args against advertised schemas, and batch independent
-  known reads/edits. See the fix/session review for evidence and boundaries.
-  Done 2026-10-03: `bash` description names the real OS/shell (prompt OS-detection
-  step removed). Known gap: Windows Server is labelled by build (10/11); Python 3.11
+- **Session tool-chain improvements** — validate tool args against advertised schemas,
+  and batch independent known reads/edits. See the fix/session review for evidence and
+  boundaries. Done 2026-10-03: `bash` description names the real OS/shell (prompt
+  OS-detection step removed); piped commands get a note that the exit status is the last
+  command's, and the description says output is already head/tail-trimmed. Pipe detection
+  is a regex (misses e.g. `^^|`, heredoc bodies false-positive). Known gap: Windows Server is labelled by build (10/11); Python 3.11
   `platform.release()` can't tell 10 from 11, so `release()` waits for a >=3.12 floor.
 
 - **2026-10-03 review refresh on main.** See

@@ -1,5 +1,6 @@
 import os
 import platform
+import re
 import subprocess
 import sys
 import threading
@@ -7,6 +8,33 @@ from pathlib import Path
 
 from agent.base_tool import BaseTool
 from agent._process_kill import kill_process_tree
+
+# cmd.exe quotes only with "; an apostrophe there is literal and must not hide a pipe.
+_QUOTED = re.compile(r"\"[^\"]*\"" if sys.platform == "win32" else r"\"[^\"]*\"|'[^']*'")
+# A lone |: not part of ||, and not escaped as \| (sh) or ^| (cmd).
+_PIPE = re.compile(r"(?<![|^\\])\|(?!\|)")
+PIPE_STATUS_NOTE = "[note: piped command, exit status is from the last command only]"
+
+
+def _has_pipe(command: str) -> bool:
+    """True when *command* pipes output, ignoring quoted text, || and escaped pipes."""
+    return bool(_PIPE.search(_QUOTED.sub("", command)))
+
+
+def _process_group_kwargs() -> dict:
+    """Start the shell in its own process group so a kill takes the whole tree."""
+    if sys.platform == "win32":
+        return {"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP}
+    return {"start_new_session": True}
+
+
+def _format_result(output: str, returncode: int, command: str) -> str:
+    """Append the exit-code marker and, for pipes, which command that status belongs to."""
+    if returncode != 0:
+        output += f"\n[exit code {returncode}]"
+    if _has_pipe(command):
+        output += f"\n{PIPE_STATUS_NOTE}"
+    return output or "[no output]"
 
 
 def _describe_platform() -> str:
@@ -35,7 +63,9 @@ class BashTool(BaseTool):
     description = (
         "Execute a shell command within the project directory. "
         "Returns stdout and stderr. Optionally provide a timeout in seconds "
-        "(defaults to 120s if omitted)."
+        "(defaults to 120s if omitted). Long output is already cut to its first and last "
+        "lines, so do not pipe it through more/findstr/head/tail to shorten it: with a pipe "
+        "the exit code is only the last command's, which can hide a failure."
     )
     _parameters = {
         "type": "object",
@@ -60,12 +90,6 @@ class BashTool(BaseTool):
     def run(self, command: str, timeout: int | None = None) -> str:
         effective_timeout = timeout if timeout is not None else self.default_timeout
 
-        popen_kwargs: dict = {}
-        if sys.platform == "win32":
-            popen_kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
-        else:
-            popen_kwargs["start_new_session"] = True
-
         proc = subprocess.Popen(
             command,
             shell=True,
@@ -73,7 +97,7 @@ class BashTool(BaseTool):
             stderr=subprocess.PIPE,
             text=True,
             cwd=str(self.cwd),
-            **popen_kwargs,
+            **_process_group_kwargs(),
         )
         with self._lock:
             self._proc = proc
@@ -101,9 +125,7 @@ class BashTool(BaseTool):
         output = (stdout or "") + (stderr or "")
         if self._killed_by_user:
             return f"{output}\n[killed by user]" if output else "[killed by user]"
-        if proc.returncode != 0:
-            output += f"\n[exit code {proc.returncode}]"
-        return output or "[no output]"
+        return _format_result(output, proc.returncode, command)
 
     def force_kill(self) -> bool:
         """Force-kill the currently running command, if any. Returns whether

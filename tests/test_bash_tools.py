@@ -125,3 +125,48 @@ class TestBashPlatformDescription:
         tool = BashTool()
         shell = tool.run(command=cmd).strip()
         assert shell and shell in tool.schema()["function"]["description"]
+
+
+class TestBashPipeStatus:
+    """A pipe reports only the last command's exit status, so `pytest | findstr` hid a real
+    test failure. The tool must say so up front and flag it on every piped result."""
+
+    def test_description_discourages_pipe_filters(self):
+        desc = BashTool().schema()["function"]["description"]
+        assert "already cut to its first and last" in desc
+        assert "last command" in desc
+
+    def test_piped_command_result_carries_status_note(self):
+        out = BashTool().run(command="echo hi | sort")
+        assert "hi" in out
+        assert "exit status is from the last command" in out
+
+    def test_failing_silent_pipe_still_carries_note(self):
+        """The first stage fails but sort exits 0: the note is the only warning left."""
+        out = BashTool().run(command="exit 3 | sort")
+        assert "exit status is from the last command" in out
+        assert out != "[no output]"
+
+    @pytest.mark.parametrize("command", [
+        "echo hi",
+        "echo a || echo b",
+        'echo "a|b"',
+        "echo a ^| b" if sys.platform == "win32" else r"echo a \| b",
+    ])
+    def test_non_pipes_get_no_note(self, command):
+        assert "exit status is from the last command" not in BashTool().run(command=command)
+
+    @pytest.mark.parametrize("command, piped", [
+        ("pytest -q | findstr FAILED", True),
+        ("a|b", True),
+        ("a || b", False),
+        ('findstr "x|y" f.txt', False),
+        # cmd.exe has no single-quote quoting, so this really pipes there.
+        ("grep 'x|y' f.txt", sys.platform == "win32"),
+        ("echo don't | sort", True),
+        ("echo a ^| b", False),
+        (r"echo a \| b", False),
+    ])
+    def test_has_pipe_detection(self, command, piped):
+        from tools.bash._bash import _has_pipe
+        assert _has_pipe(command) is piped
