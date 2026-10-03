@@ -1,3 +1,5 @@
+import os
+import platform
 import subprocess
 import sys
 import threading
@@ -7,17 +9,38 @@ from agent.base_tool import BaseTool
 from agent._process_kill import kill_process_tree
 
 
+def _describe_platform() -> str:
+    """Name the OS and the shell Popen(shell=True) really launches.
+
+    Windows runs %COMSPEC% (cmd.exe), POSIX always runs /bin/sh — never bash as such.
+    """
+    if sys.platform != "win32":
+        release = platform.release()
+        return f"Platform: {sys.platform} ({release}); shell: /bin/sh (POSIX sh syntax)."
+    version = platform.version()
+    build = version.rsplit(".", 1)[-1]
+    if build.isdigit() and int(build) >= 22000:
+        name = "Windows 11"  # still reports major version 10
+    else:
+        name = "Windows 10" if version.startswith("10.") else "Windows"
+    shell = os.environ.get("COMSPEC", "cmd.exe")
+    return (
+        f"Platform: {name} ({version}); shell: {shell}; cmd syntax, not bash "
+        "(dir, type, where, %VAR%, backslash paths)."
+    )
+
+
 class BashTool(BaseTool):
     name = "bash"
     description = (
-        "Execute a bash command within the project directory. "
+        "Execute a shell command within the project directory. "
         "Returns stdout and stderr. Optionally provide a timeout in seconds "
         "(defaults to 120s if omitted)."
     )
     _parameters = {
         "type": "object",
         "properties": {
-            "command": {"type": "string", "description": "Bash command to execute"},
+            "command": {"type": "string", "description": "Shell command to execute"},
             "timeout": {"type": "integer", "description": "Timeout in seconds (optional)"},
         },
         "required": ["command"],
@@ -28,6 +51,7 @@ class BashTool(BaseTool):
 
     def __init__(self, cwd: Path = Path("."), default_timeout: float = DEFAULT_TIMEOUT):
         self.cwd = cwd
+        self.description = f"{type(self).description} {_describe_platform()}"
         self.default_timeout = default_timeout
         self._lock = threading.Lock()
         self._proc: subprocess.Popen | None = None

@@ -8,8 +8,11 @@
   [fix/session review](_CODEX_FIX_SESSION_REVIEW_2026-10-03.md); tests are not added yet.
 
 - **Session tool-chain improvements** — preserve pytest exit status through output
-  formatting, use Windows paths from the start, narrow memory searches, and batch
-  independent known reads/edits. See the fix/session review for evidence and boundaries.
+  formatting, validate tool args against advertised schemas, and batch independent
+  known reads/edits. See the fix/session review for evidence and boundaries.
+  Done 2026-10-03: `bash` description names the real OS/shell (prompt OS-detection
+  step removed). Known gap: Windows Server is labelled by build (10/11); Python 3.11
+  `platform.release()` can't tell 10 from 11, so `release()` waits for a >=3.12 floor.
 
 - **2026-10-03 review refresh on main.** See
   [_CODEX_CODE_REVIEW_2026-10-03.md](_CODEX_CODE_REVIEW_2026-10-03.md) and

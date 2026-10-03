@@ -82,3 +82,46 @@ class TestForceKill:
     def test_force_kill_returns_false_when_nothing_running(self):
         tool = BashTool(cwd=Path("."))
         assert tool.force_kill() is False
+
+
+class TestBashPlatformDescription:
+    """The schema must name the OS and the shell Popen(shell=True) really launches;
+    a description that says 'bash' on Windows sent the model down Unix paths."""
+
+    def _describe(self, monkeypatch, plat, version, comspec=None):
+        from tools.bash import _bash
+        monkeypatch.setattr(_bash.sys, "platform", plat)
+        monkeypatch.setattr(_bash.platform, "version", lambda: version)
+        if comspec is None:
+            monkeypatch.delenv("COMSPEC", raising=False)
+        else:
+            monkeypatch.setenv("COMSPEC", comspec)
+        return BashTool().schema()["function"]["description"]
+
+    def test_windows_11_names_cmd_from_comspec(self, monkeypatch):
+        desc = self._describe(
+            monkeypatch, "win32", "10.0.26200", r"C:\WINDOWS\system32\cmd.exe")
+        assert "Windows 11" in desc
+        assert "10.0.26200" in desc
+        assert r"C:\WINDOWS\system32\cmd.exe" in desc
+        assert "not bash" in desc
+
+    def test_windows_10_build_is_not_reported_as_11(self, monkeypatch):
+        desc = self._describe(monkeypatch, "win32", "10.0.19045", "cmd.exe")
+        assert "Windows 10" in desc
+        assert "Windows 11" not in desc
+
+    def test_posix_names_bin_sh(self, monkeypatch):
+        desc = self._describe(monkeypatch, "linux", "#1 SMP")
+        assert "/bin/sh" in desc
+
+    def test_description_does_not_leak_into_class(self, monkeypatch):
+        self._describe(monkeypatch, "linux", "#1 SMP")
+        assert "/bin/sh" not in BashTool.description
+
+    def test_described_shell_is_the_shell_that_runs(self):
+        """Ask the real shell for its own path; the description must name it."""
+        cmd = "echo %COMSPEC%" if sys.platform == "win32" else "echo $0"
+        tool = BashTool()
+        shell = tool.run(command=cmd).strip()
+        assert shell and shell in tool.schema()["function"]["description"]
