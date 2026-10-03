@@ -55,6 +55,22 @@
   - **P2 R6/R7:** the garbled-response revision is not persisted, and core orchestration
     is too large.
 
+- **Persist history revisions through one save path** — `SessionLog.revise_last_step()`
+  never reaches `on_append`, so garbled recovery leaves the removed steps in
+  `*.events.jsonl`, while `/revise-history` in both frontends rewrites the file itself with a
+  non-atomic `write_session` (a crash mid-rewrite loses the log). Fix: one save hook on
+  `SessionLog`, installed by `AgentLoop`, that writes a temp file and `os.replace`s it; drop
+  the frontend rewrites. A replayable revision event (format v4) was considered and
+  deferred: nothing reads the events file back yet, and the tracker log already keeps the
+  raw responses. Revisit only together with "Events-log restore" above.
+
+- **Stale "compacting" status after a no-op recovery compaction** (cosmetic) — garbled
+  recovery fires `on_compaction_started` before `compact(summarize_all=True)`; when that
+  compaction is a no-op (turn 1, or a second recovery in a turn with no new completed step)
+  `on_compaction` never fires, so the PySide sidebar shows "compacting" until the worker's
+  `finally` resets it to idle. Fire a matching end callback, or skip the start when no
+  selection exists.
+
 - **`dispatch_tool_calls` is over the size cap** — `agent/_tool_dispatch.py`'s per-call
   orchestrator is 116 lines / ~17 decision points (standards: ≤ 100 lines / ≤ 8). It was
   already 104 lines / ~16 before `0f93469c` added 12; the cap was waived for that bounded
@@ -104,6 +120,16 @@
   the head + marker + tail format — see the large-file reading entry in Completed.)
 
 ## Completed
+
+- **Garbled recovery fixed 2026-10-03** — it deleted the human prompt when the empty steps
+  were the turn's first (whole turn wrapper revised away), crashed with
+  `InvariantError: turn N is already open` when a completed step preceded the streak, and
+  counted empty replies across tool steps (so "revise the last 3" hit a real tool step).
+  Now: `revise_last_step(keep_turn=True)`, no new turn, no `iteration` reset, tool steps
+  reset `_empty_content_streak`; `_selected_source_nodes` limits `summarize_all` to nodes
+  up to the worker's cut (`takewhile seq <= step_end_seq`), so a later turn's prompt is no
+  longer replaced unsummarised. Still open: subagent events interleaved in a removed step
+  are deleted with it (`revise-history-open-questions` in the wiki).
 
 - **Batched END_TURN results paired (2026-10-03)** — `0f93469c`. A response asking for
   `write_handoff` twice kept only the last call in a single deferred slot, so the first
@@ -301,7 +327,8 @@
   module-level `_EMPTY_CONTENT_THRESHOLD = 3` and instance variable
   `_empty_content_streak` track consecutive empty-content responses; on
   reaching the threshold, empty steps are revised out via
-  `revise_last_step()`, a new turn is opened, and
+  `revise_last_step()`, a new turn is opened (superseded 2026-10-03: recovery now
+  stays in the open turn — see "Garbled recovery fixed" above), and
   `compact(summarize_all=True)` runs for full context recovery. Task 7 and
   Task 8 (final wiring/verification and documentation) done: full test suite
   passing (`tests/test_continuation.py`, 25 passed, covering

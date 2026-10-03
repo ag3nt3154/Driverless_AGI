@@ -880,15 +880,14 @@ class AgentLoop:
                         if self._empty_content_streak >= _EMPTY_CONTENT_THRESHOLD:
                             # Close the current (open) step first so it can be revised
                             self._continuing_step_finished(_turn, iteration)
+                            # keep_turn: drop only the empty steps — the turn and its
+                            # prompt stay open, and `iteration` keeps counting so no
+                            # (turn, step) coordinate is ever reused.
                             for _ in range(self._empty_content_streak):
                                 try:
-                                    self.log.revise_last_step()
+                                    self.log.revise_last_step(keep_turn=True)
                                 except ValueError:
                                     break
-                            # Re-open a turn+step so the loop can continue normally
-                            _turn = self.log.next_turn()
-                            self.log.append(sev.TURN_START, {"turn": _turn})
-                            iteration = 0
                             self._sync_messages()
                             self._empty_content_streak = 0
                             self._continuation_count = 0
@@ -914,6 +913,9 @@ class AgentLoop:
                     self._continuing_step_finished(_turn, iteration)
                     continue  # next while True iteration
 
+                # A tool-call step breaks an empty-reply streak: "in a row" means
+                # adjacent steps, so recovery's "revise the last N" hits only those.
+                self._empty_content_streak = 0
                 if message.content:
                     self.callbacks.on_assistant_text(message.content)
 

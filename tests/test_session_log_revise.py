@@ -167,6 +167,56 @@ class TestReviseLastStep:
         assert len(calls) == 0
 
 
+def _open_turn_with_one_step() -> SessionLog:
+    """Turn 1 is still open: wiki + human messages, then one completed step."""
+    def user(step: int, content: str) -> None:
+        data = {"turn": 1, "step": step, "role": "user", "content": content}
+        log.append(ev.USER_MESSAGE, data, surface_op="append")
+
+    log = SessionLog()
+    log.append(ev.TURN_START, {"turn": 1})
+    user(0, "wiki")
+    user(0, "task")
+    log.append(ev.STEP_START, {"turn": 1, "step": 1})
+    empty = {"turn": 1, "step": 1, "message": {"role": "assistant", "content": ""}}
+    log.append(ev.ASSISTANT_MESSAGE, empty, surface_op="append")
+    user(1, "continue")
+    log.append(ev.STEP_END, {"turn": 1, "step": 1})
+    return log
+
+
+class TestReviseKeepTurn:
+    """keep_turn=True removes only the step, never the turn wrapper (garbled recovery)."""
+
+    def test_only_step_of_open_turn_keeps_turn_and_prompt(self):
+        log = _open_turn_with_one_step()
+        seq_before = log.seq
+        removed = log.revise_last_step(keep_turn=True)
+
+        assert [e.type for e in removed] == [
+            ev.STEP_START, ev.ASSISTANT_MESSAGE, ev.USER_MESSAGE, ev.STEP_END,
+        ]
+        assert [m["content"] for m in log.derive_messages()] == ["wiki", "task"]
+        assert log.open_turn == 1
+        assert log.open_step is None
+        assert log.seq == seq_before
+        # The turn is still open, so the loop can open the next step in it.
+        log.append(ev.STEP_START, {"turn": 1, "step": 2})
+
+    def test_closed_turn_keeps_turn_end(self):
+        log = _build_log_with_steps(1, 1)
+        log.revise_last_step(keep_turn=True)
+
+        types = [e.type for e in log.events]
+        assert types == [ev.TURN_START, ev.USER_MESSAGE, ev.TURN_END]
+        assert log.open_turn is None
+
+    def test_default_still_removes_turn_wrapper(self):
+        log = _open_turn_with_one_step()
+        log.revise_last_step()
+        assert log.events == ()
+
+
 class TestReviseWithPersistence:
     def test_rewrite_after_revise_produces_loadable_log(self, tmp_path: Path):
         log = _build_log_with_steps(2, 2)

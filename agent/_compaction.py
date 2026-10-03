@@ -8,6 +8,7 @@ from __future__ import annotations
 import json
 import os
 import tempfile
+from itertools import takewhile
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -164,7 +165,7 @@ def _select_compaction(
             return None
 
     step_end_seq = _completed_step_end(loop.log, boundary.middle_steps[-1])
-    source_nodes = _selected_source_nodes(loop.log, boundary)
+    source_nodes = _selected_source_nodes(loop.log, boundary, step_end_seq)
     if step_end_seq is None or not source_nodes:
         return None
     return boundary, step_end_seq, source_nodes
@@ -179,10 +180,19 @@ def _completed_step_end(log: SessionLog, step: tuple[int, int]) -> int | None:
     return None
 
 
-def _selected_source_nodes(log: SessionLog, boundary: TailBoundary) -> tuple[int, ...]:
-    """Freeze the exact prefix before the retained tail (or all nodes for recovery)."""
+def _selected_source_nodes(
+    log: SessionLog, boundary: TailBoundary, step_end_seq: int | None,
+) -> tuple[int, ...]:
+    """Freeze the exact prefix before the retained tail.
+
+    With no tail (recovery's summarize_all), stop at the worker's cut: nodes
+    after ``step_end_seq`` — the open turn's prompt — were never summarised,
+    so they must stay verbatim rather than be replaced.
+    """
     if not boundary.tail_steps:
-        return tuple(log.surface.nodes)
+        if step_end_seq is None:
+            return ()
+        return tuple(takewhile(lambda seq: seq <= step_end_seq, log.surface.nodes))
     try:
         tail_idx = find_surface_index_for_step(log, boundary.tail_steps[0])
     except ValueError:

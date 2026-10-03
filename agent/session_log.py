@@ -270,12 +270,14 @@ class SessionLog:
             event_range=(self._events[step_start_idx].seq, end_evt.seq),
         )
 
-    def revise_last_step(self) -> list[SessionEvent]:
+    def revise_last_step(self, *, keep_turn: bool = False) -> list[SessionEvent]:
         """Remove the last completed step from the log. Returns removed events.
 
         If this was the last step in its turn, the turn wrapper (turn/start,
-        user/message, turn/end) is also removed. Raises ValueError if no
-        completed step exists.
+        user/message, turn/end) is also removed — unless ``keep_turn`` is set,
+        in which case only the step itself goes and the turn is left as it was
+        (garbled-response recovery continues in the same turn). Raises
+        ValueError if no completed step exists.
         """
         info = self.peek_last_step()
         if info is None:
@@ -291,39 +293,10 @@ class SessionLog:
                 f"revise_last_step: could not locate step event range {info.event_range} in log"
             )
 
-        # Also remove a turn/end that immediately follows the step/end (closed turn)
-        turn_end_idx = None
-        if end_idx + 1 < len(self._events) and self._events[end_idx + 1].type == ev.TURN_END:
-            turn_end_idx = end_idx + 1
-
-        # Check if this is the last step in the turn — look for other step/start
-        # events in this turn between turn/start and our step/start
-        target_turn = info.turn
-        has_earlier_step = False
-        for i in range(start_idx):
-            evt = self._events[i]
-            if (evt.type == ev.STEP_START and evt.branch == "main"
-                    and evt.data.get("turn") == target_turn):
-                has_earlier_step = True
-                break
-
-        # Determine the full removal range
-        if has_earlier_step:
-            # Remove just the step; keep turn_end so the turn stays closed
-            remove_start = start_idx
-            remove_end = end_idx
+        if keep_turn:
+            remove_start, remove_end = start_idx, end_idx
         else:
-            # Last step in turn — also remove turn/start, user/message, turn/end
-            # Find the turn/start for this turn
-            turn_start_idx = None
-            for i in range(start_idx - 1, -1, -1):
-                evt = self._events[i]
-                if (evt.type == ev.TURN_START and evt.branch == "main"
-                        and evt.data.get("turn") == target_turn):
-                    turn_start_idx = i
-                    break
-            remove_start = turn_start_idx if turn_start_idx is not None else start_idx
-            remove_end = turn_end_idx if turn_end_idx is not None else end_idx
+            remove_start, remove_end = self._removal_range(info.turn, start_idx, end_idx)
 
         removed = self._events[remove_start:remove_end + 1]
         del self._events[remove_start:remove_end + 1]
@@ -332,6 +305,39 @@ class SessionLog:
         self._rebuild_state()
 
         return removed
+
+    def _removal_range(self, target_turn: int, start_idx: int, end_idx: int) -> tuple[int, int]:
+        """Widen a step's index range to its turn wrapper if it is the turn's only step."""
+        # Also remove a turn/end that immediately follows the step/end (closed turn)
+        turn_end_idx = None
+        if end_idx + 1 < len(self._events) and self._events[end_idx + 1].type == ev.TURN_END:
+            turn_end_idx = end_idx + 1
+
+        # Check if this is the last step in the turn — look for other step/start
+        # events in this turn between turn/start and our step/start
+        has_earlier_step = False
+        for i in range(start_idx):
+            evt = self._events[i]
+            if (evt.type == ev.STEP_START and evt.branch == "main"
+                    and evt.data.get("turn") == target_turn):
+                has_earlier_step = True
+                break
+
+        if has_earlier_step:
+            # Remove just the step; keep turn_end so the turn stays closed
+            return start_idx, end_idx
+
+        # Last step in turn — also remove turn/start, user/message, turn/end
+        turn_start_idx = None
+        for i in range(start_idx - 1, -1, -1):
+            evt = self._events[i]
+            if (evt.type == ev.TURN_START and evt.branch == "main"
+                    and evt.data.get("turn") == target_turn):
+                turn_start_idx = i
+                break
+        remove_start = turn_start_idx if turn_start_idx is not None else start_idx
+        remove_end = turn_end_idx if turn_end_idx is not None else end_idx
+        return remove_start, remove_end
 
     def _rebuild_state(self) -> None:
         """Recompute all derived state from the event list."""

@@ -15,6 +15,7 @@ import pytest
 from agent.loop import AgentConfig, AgentCallbacks, AgentLoop
 from agent.protocol import SideEffect, ToolResult
 from agent._loop_config import CompactionResult
+from agent._loop_helpers import CONTINUE_PROMPT
 
 
 # ---------------------------------------------------------------------------
@@ -529,6 +530,86 @@ class TestGarbledLoopRecovery:
 
         mock_compact.assert_called_once_with(summarize_all=True)
         assert compaction_started, "on_compaction_started should have fired"
+
+    @staticmethod
+    def _run_with_mocked_compact(loop, responses):
+        loop.client = MagicMock()
+        loop.client.chat.completions.create.side_effect = responses
+        with patch.object(loop, "compact") as mock_compact:
+            mock_compact.return_value = CompactionResult(
+                did_compact=True, generation=1,
+                summary_content="[CONTEXT SUMMARY]\nsummary", removed_count=3,
+            )
+            loop.run("do something")
+        return mock_compact
+
+    @staticmethod
+    def _tool_step(call_id: str):
+        tc = SimpleNamespace(id=call_id, function=SimpleNamespace(name="read", arguments="{}"))
+        return _make_response("", tool_calls=[tc])
+
+    def test_recovery_keeps_the_human_prompt(self):
+        """Removing empty steps must not take the turn's prompt with them."""
+        loop = _make_loop(max_continuations=10)
+        self._run_with_mocked_compact(
+            loop, [_make_response("")] * 3 + [_exit_response("Recovered.")],
+        )
+        user_texts = [m.get("content") for m in loop._messages if m.get("role") == "user"]
+        assert "do something" in user_texts
+        assert CONTINUE_PROMPT not in user_texts
+
+    def test_recovery_after_a_tool_step_stays_in_the_open_turn(self):
+        """A completed step before the streak must not leave a second turn/start."""
+        loop = _make_loop(max_continuations=10)
+        mock_compact = self._run_with_mocked_compact(
+            loop,
+            [self._tool_step("tc_read")] + [_make_response("")] * 3
+            + [_exit_response("Recovered.")],
+        )
+        mock_compact.assert_called_once_with(summarize_all=True)
+        turn_starts = [e for e in loop.log.events if e.type == "turn/start"]
+        assert len(turn_starts) == 1
+        tool_ids = [m.get("tool_call_id") for m in loop._messages if m.get("role") == "tool"]
+        assert "tc_read" in tool_ids
+        steps = [(e.data["turn"], e.data["step"])
+                 for e in loop.log.events if e.type == "step/start"]
+        assert len(steps) == len(set(steps)), f"reused step coordinates: {steps}"
+
+    def test_real_recovery_compaction_keeps_a_later_turns_prompt(self):
+        """summarize_all must not replace surface nodes the summariser never saw.
+
+        Turn 2's prompt sits after turn 1's last completed step — past the
+        worker's cut — so it must survive verbatim after the summary.
+        """
+        loop = _make_loop(max_continuations=10)
+        loop.client = MagicMock()
+        loop.client.chat.completions.create.side_effect = (
+            [self._tool_step("tc_read"), _exit_response("ok1")]
+            + [_make_response("")] * 3 + [_exit_response("ok2")]
+        )
+        worker = SimpleNamespace(
+            is_ok=True, handoff_text="SUMMARY", handoff_path="h.md",
+            message="", status="ok", output_log_path=None,
+        )
+        with patch("agent._compaction._run_compact_worker", return_value=worker) as run_worker:
+            loop.run("first task")
+            loop.run("SECOND TASK")
+
+        run_worker.assert_called_once()
+        contents = [str(m.get("content")) for m in loop._messages]
+        summary_idx = next(i for i, c in enumerate(contents) if "SUMMARY" in c)
+        assert "SECOND TASK" in contents[summary_idx + 1:]
+        assert "first task" not in contents
+
+    def test_tool_step_resets_garbled_counter(self):
+        """Empty replies split by a tool step are not 'in a row'."""
+        loop = _make_loop(max_continuations=10)
+        mock_compact = self._run_with_mocked_compact(
+            loop,
+            [_make_response(""), self._tool_step("tc_read"), _make_response(""),
+             _make_response(""), _exit_response("Done.")],
+        )
+        mock_compact.assert_not_called()
 
     def test_non_empty_response_resets_garbled_counter(self):
         """A response with content must reset the empty-content counter."""
