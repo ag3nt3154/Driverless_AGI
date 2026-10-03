@@ -5,7 +5,8 @@
 - **2026-10-03 review refresh on main.** See
   [_CODEX_CODE_REVIEW_2026-10-03.md](_CODEX_CODE_REVIEW_2026-10-03.md) and
   [_CODEX_SUGGESTIONS_2026-10-03.md](_CODEX_SUGGESTIONS_2026-10-03.md).
-  R2/R3/R4/R6 below remain reproduced; R7 persists. New R8: timeout/resume bypasses
+  R3/R4/R6 below remain reproduced; R2 fixed 2026-10-03 (see the 2026-10-02 entry); R7
+  persists. New R8: timeout/resume bypasses
   inherited-subagent generation validation. R9: September 15 R16's callback/write fix
   still leaves log-open and decode failures able to stop stdout draining. Proposed fixes
   remain unimplemented. Campaign R1/R5 apply to `task/iteration-engine`, absent from this
@@ -14,15 +15,16 @@
 
 - **2026-10-02 automation review follow-ups.** The review covered `task/iteration-engine`
   at `6917b131`. Its report files, `_CODEX_CODE_REVIEW_2026-10-02.md` and
-  `_CODEX_SUGGESTIONS_2026-10-02.md`, are in the repo root. None of the fixes are
-  implemented yet.
+  `_CODEX_SUGGESTIONS_2026-10-02.md`, are in the repo root. Only R2 is implemented
+  (2026-10-03); the other fixes are not implemented yet.
   - **P1 R1 (campaign):** tampering during the *holdout* pass is swallowed by
     `_holdout_if_better` (`campaign/engine.py`), so the trial can still be accepted.
     Fix: propagate `evaluator_modified` and fail the trial, as `_rescore_holdout` already
     does. Add a regression test where holdout inference alters the labels.
   - **P1 R2 (agent):** two END_TURN results in one tool batch record only the last
     result (`agent/_tool_dispatch.py`), leaving unmatched tool calls. `finalize_trial`
-    makes this more reachable.
+    makes this more reachable. **Fixed 2026-10-03 in `0f93469c`:** every call of the batch
+    is bookkept in the model's call order and only termination is deferred.
   - **P1 R3/R4 (scheduler):** `scheduler/runner.py` passes an unsupported `tracker=` to
     AgentLoop, and its timeout does not stop the worker. Both are known from the
     2026-09-06 review; consider reusing `campaign/process.py`.
@@ -31,6 +33,16 @@
     with a started-attempt record.
   - **P2 R6/R7:** the garbled-response revision is not persisted, and core orchestration
     is too large.
+
+- **`dispatch_tool_calls` is over the size cap** — `agent/_tool_dispatch.py`'s per-call
+  orchestrator is 116 lines / ~17 decision points (standards: ≤ 100 lines / ≤ 8). It was
+  already 104 lines / ~16 before `0f93469c` added 12; the cap was waived for that bounded
+  fix so it stayed surgical. Needs its own refactor task: extract the per-call body into
+  `_dispatch_one_call(loop, tc, tool_records, deferred)` with a `_DeferredStep` accumulator
+  (system notices, image parts, end-turn output), then split the side-effect routing further
+  to meet the complexity cap. That task must unit-test the guards covered only by
+  `tests/test_agent_loop.py` today: the pause-cancel path, the malformed-JSON repair path,
+  and `ATTACH_IMAGE`.
 
 - **Shared truncation for remaining self-capping tools** — `web_fetch` (`_MAX_CHARS`, rest
   lost) and `read_notepad` (`MAX_CHARS`) still cut their own output; move them onto the
@@ -71,6 +83,19 @@
   the head + marker + tail format — see the large-file reading entry in Completed.)
 
 ## Completed
+
+- **Batched END_TURN results paired (2026-10-03)** — `0f93469c`. A response asking for
+  `write_handoff` twice kept only the last call in a single deferred slot, so the first
+  call's result was never recorded and the transcript shipped an unanswered tool call
+  (rejectable by a strict provider, and read as unfinished work on replay). `dispatch_tool_calls`
+  now bookkeeps every call of the batch in the model's call order and defers only the turn's
+  termination; that also fixed results being filed out of order and the reload/image notice
+  landing between the assistant `tool_calls` message and a tool result. Closes review item
+  R2. Tests in `tests/test_agent_loop.py`: `TestBatchedHandoffPairing`, plus a
+  `TestDispatchToolCallsExtraction` case asserting a deferred reload notice never
+  separates a call from its result.
+  Verification: 1457 passed / 2 skipped in `tests/`, 255 passed in `pyside_gui/tests`; the one
+  failure is the known markitdown `[docx]` optional-dependency one.
 
 - **GUI auto-scroll after sending (2026-10-03)** — the chat pane no longer gets stuck above
   the newest message after a send. Follow mode changes only on real scroll events (within
