@@ -1,6 +1,7 @@
 # AGENTS.md
 
-> Last updated: 2026-10-03 | [README](README.md) | [Task specs & plans](wiki/tasks/)
+> Last updated: 2026-10-03 (R2 fix/session review) | [README](README.md)
+> [Task specs & plans](wiki/tasks/)
 
 ## Overview
 

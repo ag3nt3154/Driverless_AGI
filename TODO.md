@@ -2,6 +2,15 @@
 
 ## In progress
 
+- **R2 restore regression coverage** — the next-turn test uses the same live loop.
+  Add disk save/reload into a fresh loop before the next request, and an image/handoff
+  ordering case. Manual restore probe passed in the
+  [fix/session review](_CODEX_FIX_SESSION_REVIEW_2026-10-03.md); tests are not added yet.
+
+- **Session tool-chain improvements** — preserve pytest exit status through output
+  formatting, use Windows paths from the start, narrow memory searches, and batch
+  independent known reads/edits. See the fix/session review for evidence and boundaries.
+
 - **2026-10-03 review refresh on main.** See
   [_CODEX_CODE_REVIEW_2026-10-03.md](_CODEX_CODE_REVIEW_2026-10-03.md) and
   [_CODEX_SUGGESTIONS_2026-10-03.md](_CODEX_SUGGESTIONS_2026-10-03.md).

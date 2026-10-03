@@ -5,6 +5,10 @@ Latest architecture/reliability review:
 [iterative-work and self-improvement roadmap](_CODEX_SUGGESTIONS_2026-10-03.md).
 These reports contain proposed improvements, not implemented fixes.
 
+[R2 fix and implementation-session review](_CODEX_FIX_SESSION_REVIEW_2026-10-03.md):
+the pairing fix passes focused tests and a disk-restore probe; automated restore
+coverage and tool-chain workflow improvements remain proposed.
+
 A minimal, self-hosted coding agent. Give it a task — it plans, calls tools, reads results, and iterates until done. Ships with a Rich interactive CLI. Supports any OpenAI-compatible API, automatic context compaction for long sessions, extended reasoning, skills-based guidance, and full session logging with auto-named session files and history restore via `/hist`.
 
 ---
