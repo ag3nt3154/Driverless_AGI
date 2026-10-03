@@ -8,8 +8,9 @@
   [fix/session review](_CODEX_FIX_SESSION_REVIEW_2026-10-03.md); tests are not added yet.
 
 - **Session tool-chain improvements** (from the
-  [fix/session review](_CODEX_FIX_SESSION_REVIEW_2026-10-03.md)) — remaining: multi-edit
-  `edit` (in progress). Dropped: schema-arg validation (a clearer error still costs the retry).
+  [fix/session review](_CODEX_FIX_SESSION_REVIEW_2026-10-03.md)) — remaining: the `ask_user`
+  batch risk below. Dropped: schema-arg validation (a clearer error still costs the retry);
+  multi-step tool chains (needs a stop-rule language the review itself warns about).
   Done 2026-10-03:
   - `bash` description names the real OS/version/shell; prompt OS-detection step removed.
     Gap: Windows Server labelled by build (10/11); switch to `platform.release()` once the
@@ -18,6 +19,7 @@
     head/tail-trimmed. Gap: regex misses `^^|`/`\|`; heredoc/comment `|` false-positives.
   - `parallel_tool_calls` configurable, default true (was hard-coded False). Risk:
     `ask_user` in a batch does not cancel sibling calls chosen before the answer.
+  - `edit` takes an `edits` list for one file: in order, all-or-nothing, placeholder-tolerant.
 
 - **2026-10-03 review refresh on main.** See
   [_CODEX_CODE_REVIEW_2026-10-03.md](_CODEX_CODE_REVIEW_2026-10-03.md) and
