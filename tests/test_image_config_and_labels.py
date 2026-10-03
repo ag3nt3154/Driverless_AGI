@@ -309,6 +309,7 @@ class _FakeLoop:
             "provider_order": config.provider_order,
             "client_script": config.client_script,
             "request_kwargs": dict(config.request_kwargs),
+            "parallel_tool_calls": config.parallel_tool_calls,
         }
 
 

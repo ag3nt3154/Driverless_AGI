@@ -224,6 +224,7 @@ def handle_switch_model(loop: AgentLoop, target: str, args: dict) -> str:
         loop.config.provider_order = snap["provider_order"]
         loop.config.client_script  = snap["client_script"]
         loop.config.request_kwargs = snap["request_kwargs"]
+        loop.config.parallel_tool_calls = snap["parallel_tool_calls"]
 
     if tier_cfg is not None:
         loop.config.model          = tier_cfg.model
@@ -234,6 +235,7 @@ def handle_switch_model(loop: AgentLoop, target: str, args: dict) -> str:
         loop.config.provider_order = tier_cfg.provider_order
         loop.config.client_script  = tier_cfg.client_script
         loop.config.request_kwargs = tier_cfg.request_kwargs
+        loop.config.parallel_tool_calls = tier_cfg.parallel_tool_calls
 
     loop.client, script_rk = build_openai_client(loop.config)
     if script_rk:
@@ -242,6 +244,7 @@ def handle_switch_model(loop: AgentLoop, target: str, args: dict) -> str:
     loop._extra_body = build_extra_body(
         loop.config.thinking, loop.config.cache_prompt, loop.config.provider_order,
     )
+    loop._parallel_tool_calls = loop.config.parallel_tool_calls
 
     loop._current_tier = target
     to_name = loop.config.display_name or loop.config.model

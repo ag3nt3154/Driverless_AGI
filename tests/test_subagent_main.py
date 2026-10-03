@@ -407,6 +407,59 @@ class TestForkedCompactMode:
         assert handoff_path.exists()
         assert handoff_path.read_text(encoding="utf-8") == "This is the summary."
 
+    @pytest.mark.parametrize("flag", [True, False])
+    def test_run_forked_compact_mode_mirrors_parent_parallel_flag(self, tmp_path, flag):
+        """Compaction reuses the parent's cached prefix; some providers fold the parallel
+        flag into that cache key, so it must match the parent request, not hard-code False."""
+        import json
+        from types import SimpleNamespace
+        from unittest.mock import MagicMock, patch
+        from tools.subagent_main import run_forked_compact_mode
+
+        preset_dir = tmp_path / ".dagi" / "subagents" / "compact"
+        preset_dir.mkdir(parents=True)
+        (preset_dir / "prompt.md").write_text("You are a summariser.", encoding="utf-8")
+        (preset_dir / "subagent_config.yaml").write_text(
+            "model_tier: inherit\ntools: []\n"
+            "default_handoff_spec: summary\nagents_md: []\n",
+            encoding="utf-8",
+        )
+        tool = {"type": "function", "function": {"name": "read", "parameters": {}}}
+        fc = {
+            "version": 1,
+            "branch": {"id": "compact_t1", "parent_cut_seq": 5, "parent_surface_generation": 0},
+            "request": {
+                "model": "test/model",
+                "messages": [{"role": "system", "content": "sys"}],
+                "tools": [tool],
+                "parallel_tool_calls": flag,
+                "extra_body": {},
+                "base_url": "https://api.test.com/v1",
+            },
+        }
+        fc_path = tmp_path / "fork_ctx.json"
+        fc_path.write_text(json.dumps(fc), encoding="utf-8")
+
+        fake_msg = SimpleNamespace(content="Summary.", tool_calls=None)
+        mock_client = MagicMock()
+        mock_client.chat.completions.create.return_value = SimpleNamespace(
+            choices=[SimpleNamespace(message=fake_msg, finish_reason="stop")], usage=None,
+        )
+        with patch("tools.subagent_main.resolve_model_config") as mock_config:
+            mock_config.return_value = AgentConfig(
+                model="test/model", api_key="sk-test", base_url="https://api.test.com/v1"
+            )
+            with patch("openai.OpenAI", return_value=mock_client):
+                run_forked_compact_mode(
+                    fork_context_path=str(fc_path),
+                    handoff_path=str(tmp_path / "handoff.md"),
+                    subagent_type="compact",
+                    project_path=str(tmp_path),
+                )
+
+        kwargs = mock_client.chat.completions.create.call_args.kwargs
+        assert kwargs["parallel_tool_calls"] is flag
+
     def test_run_forked_compact_mode_rejects_tool_call(self, tmp_path):
         """run_forked_compact_mode does not write handoff on tool-call response."""
         import json

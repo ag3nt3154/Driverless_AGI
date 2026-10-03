@@ -175,3 +175,22 @@ class TestStreamResolution:
         from agent.loop import AgentConfig
         assert AgentConfig().stream is False
 
+
+
+class TestParallelToolCallsResolution:
+    """Batching independent calls saves whole round trips; it is on unless a provider
+    that rejects it is switched off globally or per model."""
+
+    _ENTRY = {"model": "m", "api_url": "https://example.com/v1", "api_key": "k"}
+
+    def test_defaults_true(self):
+        assert _build_config_from_entry(dict(self._ENTRY), {}).parallel_tool_calls is True
+
+    def test_global_false(self):
+        cfg = _build_config_from_entry(dict(self._ENTRY), {"parallel_tool_calls": False})
+        assert cfg.parallel_tool_calls is False
+
+    def test_per_model_overrides_global(self):
+        entry = {**self._ENTRY, "parallel_tool_calls": False}
+        cfg = _build_config_from_entry(entry, {"parallel_tool_calls": True})
+        assert cfg.parallel_tool_calls is False

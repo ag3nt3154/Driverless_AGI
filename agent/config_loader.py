@@ -262,6 +262,11 @@ def _resolve_script_entry(entry: dict, model_id: str) -> dict:
     return resolved
 
 
+def _flag(entry: dict, raw: dict, key: str, default: bool = True) -> bool:
+    """A boolean setting: the model entry wins, then the top-level config, then default."""
+    return bool(entry.get(key, raw.get(key, default)))
+
+
 def _build_config_from_entry(
     entry: dict, raw: dict, model_id: str = "", python_env: str = ""
 ) -> AgentConfig:
@@ -292,8 +297,6 @@ def _build_config_from_entry(
     max_continuations = int(raw.get("max_continuations", 10))
     api_error_retries = int(raw.get("api_error_retries", 3))
     thinking = entry.get("thinking") or raw.get("thinking", "none") or "none"
-    cache_prompt = bool(entry.get("cache_prompt", raw.get("cache_prompt", True)))
-    stream = bool(entry.get("stream", raw.get("stream", True)))
 
     raw_memory_root = raw.get("memory_root")
     memory_root = Path(raw_memory_root).expanduser() if raw_memory_root else None
@@ -347,8 +350,9 @@ def _build_config_from_entry(
         max_continuations=max_continuations,
         api_error_retries=api_error_retries,
         memory_root=memory_root,
-        cache_prompt=cache_prompt,
-        stream=stream,
+        cache_prompt=_flag(entry, raw, "cache_prompt"),
+        parallel_tool_calls=_flag(entry, raw, "parallel_tool_calls"),
+        stream=_flag(entry, raw, "stream"),
         bash_backend=bash_backend,
         tools=tools,
         disabled_tools=disabled_tools,

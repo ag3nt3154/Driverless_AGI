@@ -80,6 +80,11 @@ default_model: gpt-4o-openai        # Primary model used for all regular tasks.
 # Can also be set per-model inside a models: entry to override the global value.
 stream: true
 
+# Parallel tool calls: let the model return several tool calls in one response
+# (independent reads/edits in one round trip). true (default). Set false globally
+# or per-model for providers that reject the parallel_tool_calls request field.
+parallel_tool_calls: true
+
 thinking: none    # Extended reasoning effort for models that support it (e.g. DeepSeek,
                   # Claude 3+ Opus via OpenRouter's `reasoning` extension).
                   # Values: none | low | medium | high

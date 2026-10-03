@@ -173,7 +173,7 @@ class AgentLoop:
         self.client, script_rk = build_openai_client(config)
         if script_rk:
             config.request_kwargs = script_rk
-        self._parallel_tool_calls = False
+        self._parallel_tool_calls = config.parallel_tool_calls
 
         self._extra_body: dict = build_extra_body(
             config.thinking, config.cache_prompt, config.provider_order,
@@ -191,6 +191,7 @@ class AgentLoop:
             "provider_order": config.provider_order,
             "client_script":  config.client_script,
             "request_kwargs": dict(config.request_kwargs),
+            "parallel_tool_calls": config.parallel_tool_calls,
         }
         self._current_tier: str = "default"
 
@@ -399,7 +400,7 @@ class AgentLoop:
                 "model": self.config.model,
                 "messages": self._build_request_messages(),
                 "tools": self.registry.get_openai_tools_list(),
-                "parallel_tool_calls": False,
+                "parallel_tool_calls": self._parallel_tool_calls,
             }
             if self._extra_body:
                 create_kwargs["extra_body"] = self._extra_body

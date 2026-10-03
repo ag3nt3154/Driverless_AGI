@@ -72,6 +72,9 @@ class AgentConfig:
     api_error_retries: int = 3
     # Send cache_prompt: true in extra_body — enables prompt caching on OpenRouter.
     cache_prompt: bool = True
+    # Let the model return several tool calls per response (saves round trips).
+    # Turn off globally or per model for providers that reject the flag.
+    parallel_tool_calls: bool = True
     # Streaming: consume the API response as a chunk stream, firing per-delta
     # callbacks. Dataclass default is False so direct AgentConfig() construction
     # (tests, benchmarks) keeps the blocking path; config_loader defaults the

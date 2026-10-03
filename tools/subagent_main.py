@@ -567,7 +567,7 @@ def run_forked_compact_mode(
         model=base_config.model,
         messages=messages,
         stream=False,
-        parallel_tool_calls=False,
+        parallel_tool_calls=bool(req.get("parallel_tool_calls", False)),
     )
     if tools_list:
         create_kwargs["tools"] = tools_list

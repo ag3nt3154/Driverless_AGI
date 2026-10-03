@@ -790,6 +790,14 @@ Or per-model (overrides the global setting) — useful as an escape hatch for a 
 stream: false   # this model waits for the full response, like before streaming existed
 ```
 
+### Parallel tool calls
+
+`parallel_tool_calls` (default `true`) lets the model return several tool calls in one response, so independent reads and edits share a round trip. Calls in a batch still run one at a time, in the model's order. The value follows model switches and is mirrored into inherited subagents and compaction requests, so they keep the parent's prompt-cache prefix. Turn it off globally or per model for a provider that rejects the request field:
+
+```yaml
+parallel_tool_calls: false   # global, or inside one model's entry
+```
+
 Token/cost usage is requested via `stream_options: {"include_usage": true}` on every streaming call; if a provider never sends the trailing usage chunk, that turn's usage is simply unavailable (the same degraded state that already exists today for providers that omit `usage.cost`) rather than an error. `main.py`, `telegram_bot.py`, and the scheduler are unaffected by this setting — streaming only changes how the TUI renders a turn in progress, not the final result.
 
 While a response is actively streaming, the live preview automatically expands to fill the full window (down to the running-indicator/prompt), so long in-progress replies aren't capped at a few lines — it collapses back to normal once the turn finishes and the final message lands in the conversation pane.

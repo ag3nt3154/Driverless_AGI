@@ -1326,3 +1326,43 @@ class TestParentForkCapture:
             {"role": "user", "content": "pause after this"},
         ]
         assert fork.parent_cut_seq == loop.log.surface.nodes[-1]
+
+
+class TestParallelToolCallsRequest:
+    """The provider request (and a stable subagent fork of it) must carry the configured
+    flag; a hard-coded False forced one tool call per round trip on obeying providers."""
+
+    def _run(self, **config):
+        loop = _make_loop(**config)
+        loop.client = MagicMock()
+        loop.client.chat.completions.create.return_value = _exit_response("Done.")
+        loop.run("go")
+        return loop
+
+    def test_request_allows_parallel_calls_by_default(self):
+        loop = self._run()
+        kwargs = loop.client.chat.completions.create.call_args.kwargs
+        assert kwargs["parallel_tool_calls"] is True
+
+    def test_request_honours_config_off_switch(self):
+        loop = self._run(parallel_tool_calls=False)
+        kwargs = loop.client.chat.completions.create.call_args.kwargs
+        assert kwargs["parallel_tool_calls"] is False
+
+    @pytest.mark.parametrize("flag", [True, False])
+    def test_stable_fork_matches_parent_flag(self, flag):
+        loop = self._run(parallel_tool_calls=flag)
+        fork = loop.capture_parent_fork(f"worker_{flag}", "stable")
+        assert fork.request["parallel_tool_calls"] is flag
+
+    def test_tier_switch_follows_target_models_flag(self, monkeypatch):
+        """A per-model off switch must apply when /model or switch_model moves to it."""
+        from agent import _model_switch
+        monkeypatch.setattr(_model_switch, "build_openai_client", lambda cfg: (MagicMock(), {}))
+        worker = AgentConfig(model="worker-model", parallel_tool_calls=False)
+        loop = _make_loop(worker_config=worker)
+
+        _model_switch.handle_switch_model(loop, "worker", {})
+        assert loop._parallel_tool_calls is False
+        _model_switch.handle_switch_model(loop, "default", {})
+        assert loop._parallel_tool_calls is True

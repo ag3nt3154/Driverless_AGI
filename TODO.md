@@ -7,13 +7,17 @@
   ordering case. Manual restore probe passed in the
   [fix/session review](_CODEX_FIX_SESSION_REVIEW_2026-10-03.md); tests are not added yet.
 
-- **Session tool-chain improvements** — validate tool args against advertised schemas,
-  and batch independent known reads/edits. See the fix/session review for evidence and
-  boundaries. Done 2026-10-03: `bash` description names the real OS/shell (prompt
-  OS-detection step removed); piped commands get a note that the exit status is the last
-  command's, and the description says output is already head/tail-trimmed. Pipe detection
-  is a regex (misses e.g. `^^|`, heredoc bodies false-positive). Known gap: Windows Server is labelled by build (10/11); Python 3.11
-  `platform.release()` can't tell 10 from 11, so `release()` waits for a >=3.12 floor.
+- **Session tool-chain improvements** (from the
+  [fix/session review](_CODEX_FIX_SESSION_REVIEW_2026-10-03.md)) — remaining: multi-edit
+  `edit` (in progress). Dropped: schema-arg validation (a clearer error still costs the retry).
+  Done 2026-10-03:
+  - `bash` description names the real OS/version/shell; prompt OS-detection step removed.
+    Gap: Windows Server labelled by build (10/11); switch to `platform.release()` once the
+    Python floor is >=3.12 (3.11 reports 10 on Windows 11).
+  - Piped commands get an exit-status note; description says output is already
+    head/tail-trimmed. Gap: regex misses `^^|`/`\|`; heredoc/comment `|` false-positives.
+  - `parallel_tool_calls` configurable, default true (was hard-coded False). Risk:
+    `ask_user` in a batch does not cancel sibling calls chosen before the answer.
 
 - **2026-10-03 review refresh on main.** See
   [_CODEX_CODE_REVIEW_2026-10-03.md](_CODEX_CODE_REVIEW_2026-10-03.md) and
