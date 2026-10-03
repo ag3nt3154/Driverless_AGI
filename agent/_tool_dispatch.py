@@ -58,9 +58,13 @@ def dispatch_tool_calls(
 ) -> str | None:
     """Dispatch every tool call in `message`, appending results to _messages.
 
-    Returns a non-None string only when a tool returned SideEffect.END_TURN
-    (write_handoff), in which case `run()` must return that value immediately
-    without a further API turn.
+    Every call in the batch is dispatched and bookkept in the model's call
+    order, so the transcript always pairs a call with its result. Returns a
+    non-None string only when a tool returned SideEffect.END_TURN
+    (write_handoff): the handoff's result is already recorded by then, and the
+    remaining calls of the batch have been served; `run()` must return the
+    returned value immediately without a further API turn. The last END_TURN
+    output wins, so the streamed user answer stays deterministic.
 
     Deferred system messages are appended AFTER all tool results so they
     don't break the assistant→tool pairing that strict providers
@@ -68,7 +72,7 @@ def dispatch_tool_calls(
     """
     deferred_system_msgs: list[str] = []
     deferred_image_parts: list[dict] = []
-    deferred_end_turn: tuple | None = None
+    end_turn_output: str | None = None
 
     for tc in message.tool_calls:
         tool_obj = loop.registry._tools.get(tc.function.name)
@@ -116,7 +120,18 @@ def dispatch_tool_calls(
             effect = result.side_effect
 
             if effect is SideEffect.END_TURN:
-                deferred_end_turn = (tc, result, description)
+                # Record this call's result where it was asked for, then keep
+                # serving the batch: a second handoff (or a plain tool call
+                # alongside it) must not overwrite or orphan this result.
+                # on_handoff() has to precede the bookkeeping so the UIs can
+                # suppress the handoff's own tool-end render in favour of the
+                # single on_done carrying the winner.
+                if end_turn_output is None:
+                    loop.callbacks.on_handoff()
+                end_turn_output = bookkeep_tool_call(
+                    loop, tc, result.output, description, tool_records
+                )
+                loop._lifecycle.tool_bookkeeping_finished()
                 continue
             elif effect is SideEffect.ALL_TASKS_RESOLVED:
                 result = loop._handle_all_tasks_resolved()
@@ -148,11 +163,8 @@ def dispatch_tool_calls(
     if deferred_image_parts:
         loop._log_user_message("user", deferred_image_parts, "tool_image")
 
-    if deferred_end_turn is not None:
-        tc, result, description = deferred_end_turn
-        return handle_end_turn(
-            loop, tc, result, description, tool_records, (message, response)
-        )
+    if end_turn_output is not None:
+        return handle_end_turn(loop, end_turn_output, tool_records, (message, response))
     return None
 
 
@@ -188,10 +200,10 @@ def bookkeep_tool_call(
     tool_records: list[ToolCallRecord],
 ) -> str:
     """Filter, log, and record a single tool call's result, appending its
-    tool message to self._messages. Shared by the normal per-tool-call
-    dispatch loop and the `handle_end_turn` short-circuit path so
-    the two can't drift (e.g. the list-safety conversion below must
-    apply to both). Returns the full (unfiltered) result string.
+    tool message to self._messages. Called for every call of a batch —
+    ordinary tools and END_TURN handoffs alike — so a call can never reach
+    the transcript without its result (the list-safety conversion below
+    applies to all of them). Returns the full (unfiltered) result string.
     """
     # ── Output filter ────────────────────────────────────────
     context_result, full_str = filter_tool_output(
@@ -263,25 +275,23 @@ def finalize_turn(loop: AgentLoop, message, response, tool_records: list[ToolCal
 
 def handle_end_turn(
     loop: AgentLoop,
-    tc: ChatCompletionMessageFunctionToolCall,
-    result: ToolResult,
-    description: str,
+    output: str,
     tool_records: list[ToolCallRecord],
     message_response: tuple,
 ) -> str:
     """Terminate the agent's turn on SideEffect.END_TURN.
 
-    Works for both main agent and subagent — the tool itself decides
-    whether to write a file or just return content.
+    The winning handoff's result was already bookkept in call order by
+    `dispatch_tool_calls`, together with every other call of the batch; this
+    only closes the turn — token accounting, idle state, and the one `on_done`
+    that surfaces `output` (the last handoff requested). Works for both main
+    agent and subagent — the tool itself decides whether to write a file or
+    just return content.
     """
     message, response = message_response
-    output = result.output
 
-    loop.callbacks.on_handoff()
-    full_str = bookkeep_tool_call(loop, tc, output, description, tool_records)
-    loop._lifecycle.tool_bookkeeping_finished()
     finalize_turn(loop, message, response, tool_records)
 
     loop._process.idle()
-    loop.callbacks.on_done(full_str)
-    return full_str
+    loop.callbacks.on_done(output)
+    return output

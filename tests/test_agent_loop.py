@@ -469,6 +469,119 @@ class TestWriteHandoffExit:
         assert result == "Done."
 
 
+class TestBatchedHandoffPairing:
+    """Every tool call of a batch gets its result — redundant handoffs included.
+
+    A second END_TURN tool in one response used to overwrite the pending one, so
+    the first call reached the transcript with no tool result at all. The next
+    request then breaks the provider's required call/result pairing, and a
+    replayed session reads the earlier call as unfinished work.
+    """
+
+    def test_duplicate_write_handoff_answers_every_call(self):
+        loop = _make_loop()
+        loop.client = MagicMock()
+        loop.client.chat.completions.create.side_effect = [
+            _make_response(None, tool_calls=[
+                _make_tool_call("tc1", "write_handoff", json.dumps({"content": "first"})),
+                _make_tool_call("tc2", "write_handoff", json.dumps({"content": "second"})),
+            ]),
+        ]
+
+        result = loop.run("do something")
+
+        tool_msgs = [m for m in loop._messages if m.get("role") == "tool"]
+        assert [(m["tool_call_id"], m["content"]) for m in tool_msgs] == [
+            ("tc1", "first"),
+            ("tc2", "second"),
+        ]
+        assert result == "second"
+        assert loop.client.chat.completions.create.call_count == 1
+
+    def test_duplicate_write_handoff_keeps_the_log_call_result_pairs(self):
+        loop = _make_loop()
+        loop.client = MagicMock()
+        loop.client.chat.completions.create.side_effect = [
+            _make_response(None, tool_calls=[
+                _make_tool_call("tc1", "write_handoff", json.dumps({"content": "first"})),
+                _make_tool_call("tc2", "write_handoff", json.dumps({"content": "second"})),
+            ]),
+        ]
+
+        loop.run("do something")
+
+        logged_calls = [e.data["call_id"] for e in loop.log.events if e.type == sev.TOOL_CALL]
+        logged_results = [e.data["call_id"] for e in loop.log.events if e.type == sev.TOOL_RESULT]
+        assert logged_calls == ["tc1", "tc2"]
+        assert logged_results == ["tc1", "tc2"]
+
+    def test_duplicate_write_handoff_emits_one_handoff_and_one_done_callback(self):
+        handoff_calls: list[bool] = []
+        done_calls: list[str] = []
+        loop = _make_loop()
+        loop.callbacks = AgentCallbacks(
+            on_handoff=lambda: handoff_calls.append(True),
+            on_done=lambda result: done_calls.append(result),
+        )
+        loop.client = MagicMock()
+        loop.client.chat.completions.create.side_effect = [
+            _make_response(None, tool_calls=[
+                _make_tool_call("tc1", "write_handoff", json.dumps({"content": "first"})),
+                _make_tool_call("tc2", "write_handoff", json.dumps({"content": "second"})),
+            ]),
+        ]
+
+        loop.run("do something")
+
+        assert handoff_calls == [True]
+        assert done_calls == ["second"]
+
+    @pytest.mark.parametrize("handoff_first", [True, False])
+    def test_mixed_batch_records_results_in_call_order(self, handoff_first):
+        tool = FakeTool(name="echo", result="tool ran")
+        registry = ToolRegistry()
+        registry.register(tool)
+        loop = _make_loop(registry=registry)
+        loop.client = MagicMock()
+        handoff_tc = _make_tool_call("tc_h", "write_handoff", json.dumps({"content": "done"}))
+        echo_tc = _make_tool_call("tc_e", "echo", "{}")
+        batch = [handoff_tc, echo_tc] if handoff_first else [echo_tc, handoff_tc]
+        loop.client.chat.completions.create.side_effect = [
+            _make_response(None, tool_calls=batch),
+        ]
+
+        result = loop.run("do something")
+
+        # Values track dict insertion order, so the expected order is read off
+        # the batch actually requested.
+        expected = [tc.id for tc in batch]
+        assert [m["tool_call_id"] for m in loop._messages if m.get("role") == "tool"] == expected
+        assert len(tool.calls) == 1, "the sibling call must still run"
+        assert result == "done"
+
+    def test_next_turn_request_carries_every_call_result_pair(self):
+        """Replay/persistence view: what a later request — or a restored
+        session — sends back must pair every call with its result."""
+        loop = _make_loop()
+        loop.client = MagicMock()
+        loop.client.chat.completions.create.side_effect = [
+            _make_response(None, tool_calls=[
+                _make_tool_call("tc1", "write_handoff", json.dumps({"content": "first"})),
+                _make_tool_call("tc2", "write_handoff", json.dumps({"content": "second"})),
+            ]),
+            _exit_response("after"),
+        ]
+
+        loop.run("first question")
+        loop.run("second question")
+
+        sent = loop.client.chat.completions.create.call_args_list[1].kwargs["messages"]
+        sent_calls = [tc["id"] for m in sent if m.get("tool_calls") for tc in m["tool_calls"]]
+        sent_results = [m["tool_call_id"] for m in sent if m.get("role") == "tool"]
+        assert sent_calls == ["tc1", "tc2"]
+        assert sent_results == ["tc1", "tc2"]
+
+
 class TestCompactionTrigger:
     """The token-budget compaction check only runs after a tool-calling turn
     (see agent/loop.py's run loop — a no-tool-call turn that hits an exit
@@ -686,6 +799,33 @@ class TestDispatchToolCallsExtraction:
         # Both tool results precede the deferred reload notification.
         assert roles.index("user", 1) > roles.index("tool")
         assert roles[-1] == "user"
+
+    def test_deferred_user_notice_never_separates_a_call_from_its_result(self):
+        """Dispatch injects the reload notice after the step's tool results, but
+        the handoff's own result must stay in the tool-result run: a user
+        message wedged between the assistant tool_calls and a tool result
+        breaks the protocol strict providers enforce."""
+        loop = _make_loop()
+        self._open_turn(loop)
+        loop._messages = [{"role": "system", "content": "sys"}]
+        tc_reload = _make_tool_call("call_r", "reload_skills", "{}")
+        tc_end = _make_tool_call("call_h", "write_handoff", json.dumps({"content": "handoff body"}))
+        message = SimpleNamespace(tool_calls=[tc_reload, tc_end], content=None)
+        response = _make_response(None, tool_calls=[tc_reload, tc_end])
+        loop.registry._tools = {}
+        loop.registry.dispatch = MagicMock(side_effect=[
+            ToolResult(output="", side_effect=SideEffect.RELOAD_SKILLS),
+            ToolResult(output="handoff body", side_effect=SideEffect.END_TURN),
+        ])
+        loop._rebuild_for_reload = MagicMock(return_value=(set(), set(), []))
+
+        result = loop._dispatch_tool_calls(message, response, [])
+
+        assert result == "handoff body"
+        assert [m["role"] for m in loop._messages[1:]] == ["tool", "tool", "user"]
+        assert [
+            m["tool_call_id"] for m in loop._messages if m.get("role") == "tool"
+        ] == ["call_r", "call_h"]
 
     def test_write_handoff_tool_call_ends_dispatch(self):
         loop = _make_loop()
