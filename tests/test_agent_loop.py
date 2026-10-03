@@ -1416,3 +1416,104 @@ class TestAskUserMustBeAlone:
         loop._pause_event.clear()
         assert _skip_result(loop, "ask_user", "ask_user").startswith("[paused]")
         assert _skip_result(loop, "delete", "ask_user").startswith("[paused]")
+
+
+class TestRestoredContinuation:
+    """R2 pairing must survive the disk: a session saved after a batched handoff and
+    restored into a fresh loop via /hist (raw_messages) has to send every call/result pair
+    back, or strict providers reject the next request. No shipped path restores from the
+    events log yet; its test is a durability check that the on-disk events stay complete."""
+
+    _PNG = bytes.fromhex(
+        "89504e470d0a1a0a0000000d4948445200000001000000010806000000"
+        "1f15c4890000000d49444154789c6360000002000154a24f5d0000000049454e44ae426082"
+    )
+
+    def _loop(self, tmp_path, tracker, *, session_log=None, initial=None, tools=()):
+        registry = ToolRegistry()
+        registry.register(WriteHandoffTool(handoff_path=None))
+        for tool in tools:
+            registry.register(tool)
+        config = AgentConfig(
+            model="test-model", api_key="k", system_prompt="You are a test agent.",
+            project_path=tmp_path, supports_images=True,
+        )
+        loop = AgentLoop(
+            config=config, _registry=registry, _tracker=tracker,
+            _session_log=session_log, initial_messages=initial,
+        )
+        loop._skip_slug_generation = True
+        loop.client = MagicMock()
+        return loop
+
+    def _first_session(self, tmp_path, batch, tools=()):
+        from agent.session import SessionTracker
+        tracker = SessionTracker(model="test-model", logs_dir=tmp_path / "logs")
+        loop = self._loop(tmp_path, tracker, tools=tools)
+        loop.client.chat.completions.create.side_effect = [_make_response(None, tool_calls=batch)]
+        loop.run("first question")
+        loop.finish()
+        return tracker._path
+
+    def _second_request(self, loop):
+        loop.client.chat.completions.create.side_effect = [_exit_response("after")]
+        loop.run("second question")
+        return loop.client.chat.completions.create.call_args.kwargs["messages"]
+
+    @staticmethod
+    def _handoffs():
+        return [
+            _make_tool_call("tc1", "write_handoff", json.dumps({"content": "first"})),
+            _make_tool_call("tc2", "write_handoff", json.dumps({"content": "second"})),
+        ]
+
+    def _assert_pairs(self, sent):
+        calls = [tc["id"] for m in sent if m.get("tool_calls") for tc in m["tool_calls"]]
+        results = [m["tool_call_id"] for m in sent if m.get("role") == "tool"]
+        assert calls == ["tc1", "tc2"]
+        assert results == ["tc1", "tc2"]
+
+    def test_hist_restore_sends_every_pair(self, tmp_path):
+        from agent.history import load_raw_messages
+        path = self._first_session(tmp_path, self._handoffs())
+        raw = load_raw_messages(path)
+        assert raw, "the saved session must carry raw_messages for /hist"
+
+        fresh = self._loop(tmp_path, MagicMock(expression_controller=None), initial=raw)
+        self._assert_pairs(self._second_request(fresh))
+
+    def test_events_log_restore_sends_every_pair(self, tmp_path):
+        from agent.session_log import SessionLog
+        from agent.session_store import read_session
+        path = self._first_session(tmp_path, self._handoffs())
+        events = read_session(path.with_suffix(".events.jsonl"))
+
+        fresh = self._loop(
+            tmp_path, MagicMock(expression_controller=None), session_log=SessionLog(seed=events)
+        )
+        self._assert_pairs(self._second_request(fresh))
+
+    def test_hist_restore_keeps_image_after_all_tool_results(self, tmp_path):
+        from agent.history import load_raw_messages
+        from agent.user_input import ImageAttachment
+        image = ImageAttachment(data=self._PNG, mime_type="image/png", width=1, height=1,
+                                name="dot.png")
+        viewer = FakeTool(name="view", result=ToolResult(
+            output="[Image: dot.png]", side_effect=SideEffect.ATTACH_IMAGE,
+            side_effect_data={"image": image, "path": "dot.png"},
+        ))
+        batch = [
+            _make_tool_call("tc1", "view"),
+            _make_tool_call("tc2", "write_handoff", json.dumps({"content": "seen"})),
+        ]
+        path = self._first_session(tmp_path, batch, tools=[viewer])
+
+        fresh = self._loop(tmp_path, MagicMock(expression_controller=None),
+                           initial=load_raw_messages(path), tools=[viewer])
+        sent = self._second_request(fresh)
+        start = next(i for i, m in enumerate(sent) if m.get("tool_calls"))
+        roles = [m["role"] for m in sent[start:start + 4]]
+        assert roles == ["assistant", "tool", "tool", "user"]
+        assert [m["tool_call_id"] for m in sent[start + 1:start + 3]] == ["tc1", "tc2"]
+        image_parts = [p for p in sent[start + 3]["content"] if p.get("type") == "image_url"]
+        assert len(image_parts) == 1, "the restored image follows the tool results"

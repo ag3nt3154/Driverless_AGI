@@ -2,10 +2,10 @@
 
 ## In progress
 
-- **R2 restore regression coverage** — the next-turn test uses the same live loop.
-  Add disk save/reload into a fresh loop before the next request, and an image/handoff
-  ordering case. Manual restore probe passed in the
-  [fix/session review](_CODEX_FIX_SESSION_REVIEW_2026-10-03.md); tests are not added yet.
+- **Events-log restore (if ever wired up)** — no shipped path restores a loop from
+  `*.events.jsonl` (`/hist` uses tracker `raw_messages`). `SessionLog(seed=...)` does not
+  enforce call/result pairing, so a truncated events file would send an unpaired call.
+  Add a pairing check on seed before building any events-log restore.
 
 - **Session tool-chain improvements** (from the
   [fix/session review](_CODEX_FIX_SESSION_REVIEW_2026-10-03.md)) — all items handled.
