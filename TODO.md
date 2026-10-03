@@ -2,6 +2,16 @@
 
 ## In progress
 
+- **2026-10-03 review refresh on main.** See
+  [_CODEX_CODE_REVIEW_2026-10-03.md](_CODEX_CODE_REVIEW_2026-10-03.md) and
+  [_CODEX_SUGGESTIONS_2026-10-03.md](_CODEX_SUGGESTIONS_2026-10-03.md).
+  R2/R3/R4/R6 below remain reproduced; R7 persists. New R8: timeout/resume bypasses
+  inherited-subagent generation validation. R9: September 15 R16's callback/write fix
+  still leaves log-open and decode failures able to stop stdout draining. Proposed fixes
+  remain unimplemented. Campaign R1/R5 apply to `task/iteration-engine`, absent from this
+  checkout; do not treat that absence as resolution. Today's suite: 189 passed, one DOCX
+  optional-dependency failure, one skipped PDF integration test.
+
 - **2026-10-02 automation review follow-ups.** The review covered `task/iteration-engine`
   at `6917b131`. Its report files, `_CODEX_CODE_REVIEW_2026-10-02.md` and
   `_CODEX_SUGGESTIONS_2026-10-02.md`, are in the repo root. None of the fixes are
