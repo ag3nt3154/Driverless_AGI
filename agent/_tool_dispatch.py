@@ -50,6 +50,32 @@ def _patch_logged_tool_args(loop: AgentLoop, call_id: str, safe_args: str) -> No
     loop._sync_messages()
 
 
+# Tools whose result must be seen before any other action is chosen. Batched siblings
+# were decided before the user's answer, so a mixed batch runs nothing at all.
+SOLO_TOOLS = frozenset({"ask_user"})
+
+
+def _solo_violation(tool_calls) -> str | None:
+    """Name of a solo tool batched with other calls, or None if the batch is fine."""
+    if len(tool_calls) < 2:
+        return None
+    return next((tc.function.name for tc in tool_calls if tc.function.name in SOLO_TOOLS), None)
+
+
+def _skip_result(loop: AgentLoop, name: str, solo: str | None) -> str | None:
+    """Result for a call that must not run (user pause, or a solo-tool batch), else None."""
+    if not loop._pause_event.is_set() or loop._abort_request.is_set():
+        return "[paused] Tool execution cancelled by user pause."
+    if solo is None:
+        return None
+    if name == solo:
+        return (
+            f"Error: {solo} must be the only tool call in its response; nothing in this "
+            "batch ran. Call it again on its own, then act on the answer."
+        )
+    return f"[not run: this batch contained {solo}, which must be called alone]"
+
+
 def dispatch_tool_calls(
     loop: AgentLoop,
     message,
@@ -58,8 +84,9 @@ def dispatch_tool_calls(
 ) -> str | None:
     """Dispatch every tool call in `message`, appending results to _messages.
 
-    Every call in the batch is dispatched and bookkept in the model's call
-    order, so the transcript always pairs a call with its result. Returns a
+    Every call in the batch is bookkept in the model's call order, so the
+    transcript always pairs a call with its result; calls skipped for a user
+    pause or a mixed SOLO_TOOLS batch get an explanatory result instead of running. Returns a
     non-None string only when a tool returned SideEffect.END_TURN
     (write_handoff): the handoff's result is already recorded by then, and the
     remaining calls of the batch have been served; `run()` must return the
@@ -73,6 +100,7 @@ def dispatch_tool_calls(
     deferred_system_msgs: list[str] = []
     deferred_image_parts: list[dict] = []
     end_turn_output: str | None = None
+    solo = _solo_violation(message.tool_calls)
 
     for tc in message.tool_calls:
         tool_obj = loop.registry._tools.get(tc.function.name)
@@ -93,9 +121,9 @@ def dispatch_tool_calls(
                 "arguments": tc.function.arguments,  # raw, unparsed
             },
         )
-        if not loop._pause_event.is_set() or loop._abort_request.is_set():
-            result = "[paused] Tool execution cancelled by user pause."
-            bookkeep_tool_call(loop, tc, result, description, tool_records)
+        skip = _skip_result(loop, tc.function.name, solo)
+        if skip is not None:
+            bookkeep_tool_call(loop, tc, skip, description, tool_records)
             loop._lifecycle.tool_bookkeeping_finished()
             continue
 

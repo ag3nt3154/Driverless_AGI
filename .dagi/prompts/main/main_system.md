@@ -15,6 +15,7 @@ File I/O tools (`read`, `write`, `edit`, `find`, `glob`, `grep`) resolve relativ
 
 Guidelines:
 - **Tool priority:** grep/find over bash for search; read before editing; edit for changes, write only for new files or full rewrites.
+- **ask_user:** call it as the only tool call in a response, never batched with other tools — a mixed batch is refused and nothing in it runs.
 - Project and personal knowledge live in the central memory wiki; use the memory-query / memory-add skills (main agent, inline — no subagent).
 - Be concise. Output plain text directly — do not use bash to echo summaries.
 - **Visualize:** when structure, flow, sequence, timeline or numbers explain it better than prose, draw a ` ```mermaid ` diagram (flowchart, sequence, state, class, ER, gantt, timeline, pie, xychart-beta) — keep it under ~15 nodes, use short quoted labels, and don't set colours, `%%{init}` or `click`.

@@ -1366,3 +1366,53 @@ class TestParallelToolCallsRequest:
         assert loop._parallel_tool_calls is False
         _model_switch.handle_switch_model(loop, "default", {})
         assert loop._parallel_tool_calls is True
+
+
+class TestAskUserMustBeAlone:
+    """Batched calls are chosen before the user answers, so an action batched with the
+    question about it would run whatever the answer. A batch holding ask_user plus anything
+    else must run nothing — checked up front, because calls run in order."""
+
+    def _run_batch(self, names):
+        tools = {n: FakeTool(name=n, result=f"{n} ran") for n in set(names)}
+        registry = ToolRegistry()
+        for tool in tools.values():
+            registry.register(tool)
+        loop = _make_loop(registry=registry)
+        loop.client = MagicMock()
+        calls = [_make_tool_call(f"tc{i}", n) for i, n in enumerate(names)]
+        loop.client.chat.completions.create.side_effect = [
+            _make_response(None, tool_calls=calls), _exit_response("Done."),
+        ]
+        loop.run("go")
+        second = loop.client.chat.completions.create.call_args_list[1].kwargs["messages"]
+        results = {m["tool_call_id"]: m["content"] for m in second if m.get("role") == "tool"}
+        return tools, results
+
+    @pytest.mark.parametrize("names", [["ask_user", "delete"], ["delete", "ask_user"]])
+    def test_mixed_batch_runs_nothing(self, names):
+        tools, results = self._run_batch(names)
+        assert tools["ask_user"].calls == [] and tools["delete"].calls == []
+        assert len(results) == 2
+        ask_id = f"tc{names.index('ask_user')}"
+        assert "only tool call" in results[ask_id]
+        other_id = f"tc{names.index('delete')}"
+        assert results[other_id].startswith("[not run")
+
+    def test_lone_ask_user_runs(self):
+        tools, results = self._run_batch(["ask_user"])
+        assert tools["ask_user"].calls == [{}]
+        assert results["tc0"] == "ask_user ran"
+
+    def test_batches_without_ask_user_unaffected(self):
+        tools, results = self._run_batch(["read", "grep"])
+        assert tools["read"].calls == [{}] and tools["grep"].calls == [{}]
+        assert results == {"tc0": "read ran", "tc1": "grep ran"}
+
+    def test_user_pause_takes_precedence_over_solo_refusal(self):
+        """A paused loop reports [paused] for every call, whatever the batch shape."""
+        from agent._tool_dispatch import _skip_result
+        loop = _make_loop()
+        loop._pause_event.clear()
+        assert _skip_result(loop, "ask_user", "ask_user").startswith("[paused]")
+        assert _skip_result(loop, "delete", "ask_user").startswith("[paused]")

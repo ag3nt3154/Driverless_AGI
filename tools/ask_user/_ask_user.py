@@ -14,7 +14,8 @@ class AskUserTool(BaseTool):
         "or collect feedback. Optionally provide 2-4 hint options (label+description+recommended); "
         "user always answers in free text. Set no_timeout=true to wait indefinitely; default "
         "auto-proceeds after session timeout using the recommended option. "
-        "Returns {question, options, answer} as JSON."
+        "Returns {question, options, answer} as JSON. Must be the only tool call in its "
+        "response: a batch mixing ask_user with other tools is refused and nothing runs."
     )
     _parameters = {
         "type": "object",
