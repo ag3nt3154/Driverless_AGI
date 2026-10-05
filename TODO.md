@@ -5,7 +5,7 @@
 - **2026-10-02 automation review follow-ups.** The review covered `task/iteration-engine`
   at `6917b131`. Its report files, `_CODEX_CODE_REVIEW_2026-10-02.md` and
   `_CODEX_SUGGESTIONS_2026-10-02.md`, are in the repo root. R2 is fixed (2026-10-05);
-  the rest are still open.
+  R7 is in progress; the rest are still open.
   - **P1 R1 (campaign):** tampering during the *holdout* pass is swallowed by
     `_holdout_if_better` (`campaign/engine.py`), so the trial can still be accepted.
     Fix: propagate `evaluator_modified` and fail the trial, as `_rescore_holdout` already
@@ -19,8 +19,14 @@
   - **P2 R5 (campaign):** an engine killed during the agent stage neither archives the
     workspace nor counts the attempt. This is the documented §9 trade-off; revisit it
     with a started-attempt record.
-  - **P2 R6/R7:** the garbled-response revision is not persisted, and core orchestration
-    is too large.
+  - **P2 R6:** the garbled-response revision is not persisted.
+  - **P2 R7 (agent):** core orchestration is too large. Step 1 done 2026-10-05: the request
+    retry loop moved out of `AgentLoop.run` into `agent/_request_executor.py`
+    (`RequestExecutor` returns RESPONSE / ABORTED / PAUSED / NULL_EXHAUSTED); `run()` is
+    351 → 239 lines. Tests: `tests/test_request_executor.py`. Next: public accessors so the
+    GUI stops reading `_messages` / passing `_tracker` / `_session_log`; extract
+    garbled-response recovery; a turn coordinator only after contract tests cover
+    pause/abort/garbled paths. No repository-wide cosmetic split.
 
 - **Windows shell contract and quoting (investigated 2026-10-02; awaiting approval)** —
   preserve the `bash` name; resolve and advertise its actual shell, CWD and Python executable

@@ -6,21 +6,19 @@ import json
 import os
 import tempfile
 import threading
-import time
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, Callable, Mapping, Sequence
 
-import httpx
-import openai
 from openai.types.chat.chat_completion_message_function_tool_call import (
     ChatCompletionMessageFunctionToolCall,
 )
 
 from agent import DAGI_ROOT
 from agent._git_branch import create_task_branch, get_current_branch
+from agent._request_executor import RequestExecutor, RequestOutcome
 from agent.lifecycle import LifecyclePublisher
 from agent.lifecycle import ensure_expression_controller, load_process_library
 from agent.process_state import ProcessSnapshot, ProcessStateController
@@ -448,6 +446,54 @@ class AgentLoop:
 
         return run_wtf(self, description)
 
+    def _send_request(self):
+        """One chat-completions attempt; RequestExecutor owns retries.
+
+        Compacts first when the request would exceed the context budget.
+        A streamed reply is accumulated into the blocking-response shape.
+        """
+        request = self._build_request_messages()
+        if self.config.context_window > 0:
+            est = sum(estimate_tokens(m) for m in request)
+            budget = self.config.context_window - self.config.reserve_tokens
+            if est > budget:
+                self.callbacks.on_assistant_text(
+                    f"[Context budget exceeded (~{est:,} tokens, "
+                    f"budget {budget:,}). Compacting...]"
+                )
+                self._last_prompt_tokens = est
+                self._compact_context()
+                request = self._build_request_messages()
+
+        self.callbacks.on_api_call(list(request))
+        create_kwargs = dict(self.config.request_kwargs)
+        create_kwargs.update(
+            model=self.config.model,
+            messages=request,
+            tools=self.registry.get_openai_tools_list(),
+            parallel_tool_calls=self._parallel_tool_calls,
+        )
+        if self._extra_body:
+            create_kwargs.setdefault("extra_body", {})
+            create_kwargs["extra_body"].update(self._extra_body)
+        self._last_request_snapshot = self._freeze_request_snapshot(create_kwargs)
+        if not self.config.stream:
+            return self.client.chat.completions.create(**create_kwargs)
+
+        stream = self.client.chat.completions.create(
+            stream=True,
+            stream_options={"include_usage": True},
+            **create_kwargs,
+        )
+        self._active_stream = stream
+        if self._abort_request.is_set():
+            self._close_active_stream()
+        try:
+            msg, usage = self._consume_stream(stream)
+        finally:
+            self._active_stream = None
+        return SimpleNamespace(choices=[SimpleNamespace(message=msg)], usage=usage)
+
     def _consume_stream(self, stream) -> "tuple[SimpleNamespace, object | None]":
         """Delegate to agent/_streaming.consume_stream (moved verbatim)."""
         from agent._streaming import consume_stream
@@ -685,149 +731,37 @@ class AgentLoop:
                     self._set_mid_step(True)
                 self._abort_request.clear()
 
-                # ── API call with retry ────────────────────────────────────
-                # Retries on two classes of failure:
-                # 1. Transient API errors (429, 500, 502, 503, connection,
-                #    timeout) — exponential backoff, separate counter.
-                # 2. Ghost responses (HTTP 200, content=None, usage=None) —
-                #    instant retry, separate counter.
-                _TRANSIENT_CODES = (429, 500, 502, 503)
-                _null_retries = 0
-                _error_retries = 0
-                _paused_on_error = False
-                response = None
-                while True:
-                    if self._abort_request.is_set():
-                        break  # interrupted (e.g. during a retry back-off)
-                    self._lifecycle.api_attempt_started()
-                    _request = self._build_request_messages()
+                # ── API call with retry (policy in agent/_request_executor) ──
+                _result = RequestExecutor(
+                    send=self._send_request,
+                    abort=self._abort_request,
+                    callbacks=self.callbacks,
+                    pause=self.pause,
+                    api_error_retries=self.config.api_error_retries,
+                    null_response_retries=self.config.null_response_retries,
+                    on_attempt=self._lifecycle.api_attempt_started,
+                ).execute()
+                response = _result.response
 
-                    # ── Pre-request budget guard ─────────────────────────
-                    if self.config.context_window > 0:
-                        _est = sum(
-                            estimate_tokens(m) for m in _request
-                        )
-                        _budget = (
-                            self.config.context_window
-                            - self.config.reserve_tokens
-                        )
-                        if _est > _budget:
-                            self.callbacks.on_assistant_text(
-                                f"[Context budget exceeded "
-                                f"(~{_est:,} tokens, "
-                                f"budget {_budget:,}). "
-                                f"Compacting...]"
-                            )
-                            self._last_prompt_tokens = _est
-                            self._compact_context()
-                            _request = self._build_request_messages()
-                    # ────────────────────────────────────────────────────
-
-                    self.callbacks.on_api_call(list(_request))
-                    try:
-                        _create_kwargs = dict(self.config.request_kwargs)
-                        _create_kwargs.update(
-                            model=self.config.model,
-                            messages=_request,
-                            tools=self.registry.get_openai_tools_list(),
-                            parallel_tool_calls=self._parallel_tool_calls,
-                        )
-                        if self._extra_body:
-                            _create_kwargs.setdefault("extra_body", {})
-                            _create_kwargs["extra_body"].update(self._extra_body)
-                        self._last_request_snapshot = self._freeze_request_snapshot(_create_kwargs)
-                        if self.config.stream:
-                            _stream = self.client.chat.completions.create(
-                                stream=True,
-                                stream_options={"include_usage": True},
-                                **_create_kwargs,
-                            )
-                            self._active_stream = _stream
-                            if self._abort_request.is_set():
-                                self._close_active_stream()
-                            try:
-                                _msg, _usage = self._consume_stream(_stream)
-                            finally:
-                                self._active_stream = None
-                            response = SimpleNamespace(
-                                choices=[SimpleNamespace(message=_msg)], usage=_usage
-                            )
-                        else:
-                            response = self.client.chat.completions.create(**_create_kwargs)
-                    except (openai.APIConnectionError, openai.APITimeoutError, httpx.HTTPError):
-                        _error_retries += 1
-                        if _error_retries >= self.config.api_error_retries:
-                            if self.callbacks.supports_pause:
-                                self.callbacks.on_assistant_text(
-                                    f"[Connection error — all {_error_retries} retries failed. "
-                                    "Session paused. Send a message to retry.]"
-                                )
-                                self.pause()
-                                self.callbacks.on_pause()
-                                _paused_on_error = True
-                                break
-                            raise
-                        delay = min(2 ** _error_retries, 60)
-                        self.callbacks.on_assistant_text(
-                            f"[Connection error. Retrying in {delay}s "
-                            f"({_error_retries}/{self.config.api_error_retries})...]"
-                        )
-                        time.sleep(delay)
-                        continue
-                    except openai.APIStatusError as exc:
-                        if exc.status_code not in _TRANSIENT_CODES:
-                            raise
-                        _error_retries += 1
-                        if _error_retries >= self.config.api_error_retries:
-                            if self.callbacks.supports_pause:
-                                self.callbacks.on_assistant_text(
-                                    f"[Server error {exc.status_code} — all {_error_retries} retries failed. "
-                                    "Session paused. Send a message to retry.]"
-                                )
-                                self.pause()
-                                self.callbacks.on_pause()
-                                _paused_on_error = True
-                                break
-                            raise
-                        delay = min(2 ** _error_retries, 60)
-                        self.callbacks.on_assistant_text(
-                            f"[Server error {exc.status_code}. Retrying in {delay}s "
-                            f"({_error_retries}/{self.config.api_error_retries})...]"
-                        )
-                        time.sleep(delay)
-                        continue
-
-                    if self._abort_request.is_set():
-                        break  # interrupted: skip the ghost check, keep partial text
-                    message = response.choices[0].message
-                    _prompt_tok = getattr(response.usage, "prompt_tokens", 0) or 0
-                    _is_ghost = (
-                        not message.tool_calls
-                        and not (message.content or "").strip()
-                        and _prompt_tok == 0
-                    )
-                    if not _is_ghost:
-                        break  # valid response — proceed
-                    _null_retries += 1
-                    if _null_retries >= self.config.null_response_retries:
-                        error_msg = (
-                            f"Error: model returned a null response "
-                            f"{_null_retries} time(s) in a row. "
-                            "Check your model endpoint and retry your task."
-                        )
-                        self._process.error()
-                        self.callbacks.on_error(Exception(error_msg))
-                        self._close_turn(_turn, sev.reason_error(error_msg))
-                        return error_msg
-                    # else: discard ghost, retry with identical context
-                # ─────────────────────────────────────────────────────────────
-
-                if _paused_on_error:
+                if _result.outcome is RequestOutcome.PAUSED:
                     continue  # restart outer loop → _pause_event.wait() will block
-                if self._abort_request.is_set():
+                if _result.outcome is RequestOutcome.ABORTED:
                     self._keep_interrupted_text(response, _turn, iteration)
                     self._continuing_step_finished(_turn, iteration)
                     continue  # → checkpoint; waits for the user's next message
+                if _result.outcome is RequestOutcome.NULL_EXHAUSTED:
+                    error_msg = (
+                        f"Error: model returned a null response "
+                        f"{_result.null_retries} time(s) in a row. "
+                        "Check your model endpoint and retry your task."
+                    )
+                    self._process.error()
+                    self.callbacks.on_error(Exception(error_msg))
+                    self._close_turn(_turn, sev.reason_error(error_msg))
+                    return error_msg
+
+                message = response.choices[0].message
+                _prompt_tok = getattr(response.usage, "prompt_tokens", 0) or 0
 
                 _reasoning = _extract_reasoning(message)
                 if _reasoning:

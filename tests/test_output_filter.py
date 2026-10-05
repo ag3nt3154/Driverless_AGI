@@ -192,7 +192,7 @@ class TestLoopIntegration:
             model="gpt-4o", base_url="http://localhost",
             api_key="test", reserve_tokens=100, project_path=tmp_path,
         )
-        with patch("agent.loop.openai.OpenAI"):
+        with patch("openai.OpenAI"):
             loop = AgentLoop(cfg)
         loop._skip_slug_generation = True
 

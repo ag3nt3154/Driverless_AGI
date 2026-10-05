@@ -287,7 +287,7 @@ class TestStreamingRun:
             _dying,
             _wh_chunks("complete"),
         )
-        with patch("agent.loop.time.sleep"):  # skip the backoff delay
+        with patch("agent._request_executor.time.sleep"):  # skip the backoff delay
             result = loop.run("task")
         assert result == "complete"
         assert calls["n"] == 2
@@ -320,7 +320,7 @@ class TestStreamingRun:
             _dying,
             _wh_chunks("complete"),
         )
-        with patch("agent.loop.time.sleep"):
+        with patch("agent._request_executor.time.sleep"):
             result = loop.run("task")
         assert result == "complete"
         assert calls["n"] == 2
@@ -335,7 +335,7 @@ class TestStreamingRun:
 
         loop = _make_loop(stream=True, api_error_retries=2)
         loop.client, calls = _stream_client(_always_dying, _always_dying, _always_dying)
-        with patch("agent.loop.time.sleep"):
+        with patch("agent._request_executor.time.sleep"):
             with pytest.raises(httpx.ReadError):
                 loop.run("task")
         assert calls["n"] == 2
