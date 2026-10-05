@@ -860,7 +860,7 @@ Driverless_AGI/
 │   ├── _streaming.py      # Streaming chat-completions consumer
 │   ├── _compaction.py     # Context compaction via forked compact subagent; materializes dagi_image parts in the
 │   │                       #   reconstructed fork prefix before building the fork snapshot (image input, stage 3)
-│   ├── _tool_dispatch.py  # Tool-call dispatch, bookkeeping, write_handoff deferral (runs last in batch), pause gating, malformed-args sanitisation + surface cache reproject
+│   ├── _tool_dispatch.py  # Tool-call dispatch, bookkeeping, first END_TURN wins (later calls in the batch get a `[skipped]` result; on_done fires after all bookkeeping), pause gating, malformed-args sanitisation + surface cache reproject
 │   ├── config_loader.py   # Resolves model config from YAML; reads supports_images + per-model image_input: block (image input, stage 3)
 │   ├── session.py         # SessionTracker — JSONL logs
 │   ├── session_events.py  # Event vocabulary + SESSION_FORMAT_VERSION (3 — bumped for dagi_image content parts, image input stage 2)

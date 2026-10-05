@@ -60,15 +60,21 @@ def dispatch_tool_calls(
 
     Returns a non-None string only when a tool returned SideEffect.END_TURN
     (write_handoff), in which case `run()` must return that value immediately
-    without a further API turn.
+    without another API call.
 
     Deferred system messages are appended AFTER all tool results so they
     don't break the assistant→tool pairing that strict providers
     (e.g. DeepSeek) enforce.
+
+    The first END_TURN call in a batch wins and is bookkept in place. Every
+    later call in the batch (a redundant handoff or an ordinary tool) is not
+    executed but still gets an explicit result, so each logged tool/call
+    has its tool/result.
     """
     deferred_system_msgs: list[str] = []
     deferred_image_parts: list[dict] = []
-    deferred_end_turn: tuple | None = None
+    end_turn_result: str | None = None
+    end_turn_call_id: str | None = None
 
     for tc in message.tool_calls:
         tool_obj = loop.registry._tools.get(tc.function.name)
@@ -89,6 +95,14 @@ def dispatch_tool_calls(
                 "arguments": tc.function.arguments,  # raw, unparsed
             },
         )
+        if end_turn_call_id is not None:
+            result = (
+                f"[skipped] Not executed: the turn already ended via call "
+                f"{end_turn_call_id} earlier in this batch."
+            )
+            bookkeep_tool_call(loop, tc, result, description, tool_records)
+            loop._lifecycle.tool_bookkeeping_finished()
+            continue
         if not loop._pause_event.is_set() or loop._abort_request.is_set():
             result = "[paused] Tool execution cancelled by user pause."
             bookkeep_tool_call(loop, tc, result, description, tool_records)
@@ -116,7 +130,14 @@ def dispatch_tool_calls(
             effect = result.side_effect
 
             if effect is SideEffect.END_TURN:
-                deferred_end_turn = (tc, result, description)
+                # on_handoff must precede on_tool_end so UIs suppress the
+                # handoff's tool card and render it as the final answer.
+                loop.callbacks.on_handoff()
+                end_turn_result = bookkeep_tool_call(
+                    loop, tc, result.output, description, tool_records
+                )
+                end_turn_call_id = tc.id
+                loop._lifecycle.tool_bookkeeping_finished()
                 continue
             elif effect is SideEffect.ALL_TASKS_RESOLVED:
                 result = loop._handle_all_tasks_resolved()
@@ -148,11 +169,8 @@ def dispatch_tool_calls(
     if deferred_image_parts:
         loop._log_user_message("user", deferred_image_parts, "tool_image")
 
-    if deferred_end_turn is not None:
-        tc, result, description = deferred_end_turn
-        return handle_end_turn(
-            loop, tc, result, description, tool_records, (message, response)
-        )
+    if end_turn_result is not None:
+        return handle_end_turn(loop, end_turn_result, tool_records, (message, response))
     return None
 
 
@@ -263,23 +281,18 @@ def finalize_turn(loop: AgentLoop, message, response, tool_records: list[ToolCal
 
 def handle_end_turn(
     loop: AgentLoop,
-    tc: ChatCompletionMessageFunctionToolCall,
-    result: ToolResult,
-    description: str,
+    full_str: str,
     tool_records: list[ToolCallRecord],
     message_response: tuple,
 ) -> str:
     """Terminate the agent's turn on SideEffect.END_TURN.
 
-    Works for both main agent and subagent — the tool itself decides
-    whether to write a file or just return content.
+    Called after every call in the batch has been bookkept, so the final
+    callback fires only once the conversation is fully paired. Works for
+    both main agent and subagent — the tool itself decides whether to
+    write a file or just return content.
     """
     message, response = message_response
-    output = result.output
-
-    loop.callbacks.on_handoff()
-    full_str = bookkeep_tool_call(loop, tc, output, description, tool_records)
-    loop._lifecycle.tool_bookkeeping_finished()
     finalize_turn(loop, message, response, tool_records)
 
     loop._process.idle()

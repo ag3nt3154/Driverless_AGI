@@ -4,15 +4,15 @@
 
 - **2026-10-02 automation review follow-ups.** The review covered `task/iteration-engine`
   at `6917b131`. Its report files, `_CODEX_CODE_REVIEW_2026-10-02.md` and
-  `_CODEX_SUGGESTIONS_2026-10-02.md`, are in the repo root. None of the fixes are
-  implemented yet.
+  `_CODEX_SUGGESTIONS_2026-10-02.md`, are in the repo root. R2 is fixed (2026-10-05);
+  the rest are still open.
   - **P1 R1 (campaign):** tampering during the *holdout* pass is swallowed by
     `_holdout_if_better` (`campaign/engine.py`), so the trial can still be accepted.
     Fix: propagate `evaluator_modified` and fail the trial, as `_rescore_holdout` already
     does. Add a regression test where holdout inference alters the labels.
-  - **P1 R2 (agent):** two END_TURN results in one tool batch record only the last
-    result (`agent/_tool_dispatch.py`), leaving unmatched tool calls. `finalize_trial`
-    makes this more reachable.
+  - ~~**P1 R2 (agent):** multiple END_TURN results in one tool batch~~ — fixed 2026-10-05.
+    The first END_TURN call wins. Every later call in the batch is skipped without running,
+    but still gets a `[skipped]` result. Tests: `tests/test_end_turn_batch.py`.
   - **P1 R3/R4 (scheduler):** `scheduler/runner.py` passes an unsupported `tracker=` to
     AgentLoop, and its timeout does not stop the worker. Both are known from the
     2026-09-06 review; consider reusing `campaign/process.py`.
