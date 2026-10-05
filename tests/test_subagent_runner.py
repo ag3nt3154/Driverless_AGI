@@ -368,3 +368,71 @@ class TestOutputCapture:
 
         assert result["status"] == "ok"
         assert result["exit_code"] == 0
+
+
+class TestStdoutDrainingSurvivesLoggingFailures:
+    """R9: child stdout must keep draining when the optional log or decoding fails.
+
+    A reader that stops leaves the child blocked on a full pipe until timeout,
+    and the parent loses the output tail it needs to diagnose the failure.
+    These drive the real run_subagent Popen settings against a tiny child.
+    """
+
+    @staticmethod
+    def _run_child(tmp_path, monkeypatch, child_src: str, block_log: bool, timeout=20.0):
+        import subprocess
+        import sys
+
+        real_popen = subprocess.Popen
+
+        def fake_popen(_argv, **kwargs):
+            kwargs.pop("cwd", None)
+            return real_popen([sys.executable, "-c", child_src], **kwargs)
+
+        monkeypatch.setattr(_subagent_runner.subprocess, "Popen", fake_popen)
+        monkeypatch.setattr(_subagent_runner, "_POLL_INTERVAL", 0.05)
+        handoff_path = tmp_path / "worker_r9.md"
+        if block_log:
+            # A directory where the log file should go makes open() fail.
+            handoff_path.with_suffix(".output.log").mkdir()
+        result = _subagent_runner.run_subagent(
+            "worker", "task", tmp_path, handoff_path, timeout=timeout,
+        )
+        if result["status"] == "timeout":
+            _subagent_runner.force_kill_active_subagents()
+        return result
+
+    def test_unopenable_log_still_drains_and_reports_why(self, tmp_path, monkeypatch):
+        child = "print('first'); print('second'); raise SystemExit(1)"
+        result = self._run_child(tmp_path, monkeypatch, child, block_log=True)
+
+        assert result["status"] == "error"
+        assert "first" in result["output_tail"]
+        assert "second" in result["output_tail"]
+        assert "output log unavailable" in result["output_tail"]
+        assert result["output_log_path"] is None
+
+    def test_invalid_utf8_byte_does_not_stop_draining(self, tmp_path, monkeypatch):
+        child = (
+            r"import sys; sys.stdout.buffer.write(b'ok1\n\xff\xfe bad\nok2\n'); "
+            r"sys.stdout.flush(); raise SystemExit(1)"
+        )
+        result = self._run_child(tmp_path, monkeypatch, child, block_log=False)
+
+        assert result["status"] == "error"
+        assert "ok1" in result["output_tail"]
+        assert "ok2" in result["output_tail"]
+
+    def test_output_beyond_pipe_capacity_without_log_does_not_block_child(
+        self, tmp_path, monkeypatch,
+    ):
+        # ~1.6 MB: far beyond any OS pipe buffer, so an idle reader blocks the child.
+        child = (
+            "import sys\n"
+            "for i in range(20000): print('x' * 79)\n"
+            "print('done'); raise SystemExit(1)"
+        )
+        result = self._run_child(tmp_path, monkeypatch, child, block_log=True, timeout=15.0)
+
+        assert result["status"] == "error", "child blocked on a full pipe"
+        assert "done" in result["output_tail"]

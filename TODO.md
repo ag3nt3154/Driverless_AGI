@@ -32,7 +32,11 @@
   New R10: scheduler records ghost-response exhaustion as success despite the loop's
   terminal error. Historical September Telegram defects revalidated as R11/R12:
   final handoffs are dropped and answers cannot dispatch while a task is waiting.
-  New R13: typing-send failure leaves the chat busy. Proposed repairs remain unimplemented.
+  New R13: typing-send failure leaves the chat busy. Proposed repairs remain unimplemented,
+  except R9 (fixed 2026-10-05: tolerant decode, log-independent drain, failure notes in
+  the output tail; real-process tests showed the old reader left chatty children blocked
+  on a full pipe until timeout). Next per Admiral: R8, then R7; scheduler/Telegram/TUI
+  items deferred.
   Campaign R1/R5 remain outside this checkout, not resolved. Selected tests: 179 core
   passed; 263 broader checks passed; two WebEngine setup errors passed on unsandboxed
   rerun (444 selected tests ultimately passed). Offline probes made no network calls.

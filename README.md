@@ -939,7 +939,7 @@ Driverless_AGI/
 │   ├── web_research/        # Multi-page web research (spawns pipe subagent)
 │   ├── explore_files/       # Large-scale codebase scanning (spawns pipe subagent)
 │   ├── subagent_api.py    # Public API — run_subagent() / SubagentResult / resume_subagent_by_pid()
-│   ├── _subagent_runner.py # Private runner — Popen(stdout=PIPE), JSON event relay, PID polling, fault-isolated stdout drain; only called by subagent_api.py
+│   ├── _subagent_runner.py # Private runner — Popen(stdout=PIPE), JSON event relay, PID polling, fault-isolated stdout drain (survives log-open/write and decode failures, noting them in output_tail); only called by subagent_api.py
 │   ├── subagent_main.py   # Piped subagent entry point (spawned via `python -m tools.subagent_main`)
 │   ├── extend_timeout/      # ExtendSubagentTimeoutTool — resume in-flight subagent deadline
 │   ├── compact/             # Trigger context compaction

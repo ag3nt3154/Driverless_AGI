@@ -13,6 +13,7 @@ before _poll_until builds its result, guaranteed by joining the reader thread.
 from __future__ import annotations
 
 import collections
+import contextlib
 import json
 import os
 import subprocess
@@ -21,7 +22,7 @@ import tempfile
 import threading
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Callable
+from typing import IO, Callable
 
 from agent import DAGI_ROOT as _DAGI_ROOT
 from agent._process_kill import kill_process_tree
@@ -58,6 +59,41 @@ def owns_fork_context_path(path: Path) -> bool:
         return any(state.fork_context_path == path for state in _active.values())
 
 
+def _failure_note(what: str, exc: BaseException) -> str:
+    return f"[dagi] {what}: {type(exc).__name__}: {exc}"
+
+
+def _open_output_log(log_path: Path, notes: list[str]) -> IO[str] | None:
+    """Open the full-output log, or record why it is unavailable and return None."""
+    try:
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        return open(log_path, "w", encoding="utf-8", errors="replace")
+    except OSError as exc:
+        notes.append(_failure_note("output log unavailable", exc))
+        return None
+
+
+def _write_output_log(lf: IO[str], raw: str, notes: list[str]) -> IO[str] | None:
+    """Append one line to the log; on failure record it and stop logging."""
+    try:
+        lf.write(raw if raw.endswith("\n") else raw + "\n")
+        return lf
+    except (OSError, ValueError) as exc:
+        notes.append(_failure_note("output log incomplete", exc))
+        with contextlib.suppress(OSError, ValueError):  # failure already noted
+            lf.close()
+        return None
+
+
+def _relay_event(on_event: Callable[[str], None] | None, line: str) -> None:
+    """Forward a non-empty line to the parent; a relay failure never stops draining."""
+    if line and on_event:
+        try:
+            on_event(line)
+        except Exception:
+            pass
+
+
 def _tee_stdout(
     proc: subprocess.Popen,
     on_event: Callable[[str], None] | None,
@@ -67,27 +103,29 @@ def _tee_stdout(
 ) -> None:
     """Read stdout, relay to on_event, accumulate tail buffer, write full log.
 
-    Runs in a daemon thread. The log file is opened synchronously and closed
-    on EOF — callers that join this thread are guaranteed the log is complete.
+    Runs in a daemon thread. Draining never depends on the log: a child whose
+    pipe goes unread blocks once the OS buffer fills. Logging/reader failures
+    are appended to the tail last, so the ring buffer cannot evict them.
+    Callers that join this thread are guaranteed the log is closed.
     """
+    notes: list[str] = []
+    lf = _open_output_log(log_path, notes)
     try:
-        log_path.parent.mkdir(parents=True, exist_ok=True)
-        with open(log_path, "w", encoding="utf-8", errors="replace") as lf:
-            for raw in proc.stdout:  # type: ignore[union-attr]
-                line = raw.rstrip("\n")
-                if line and on_event:
-                    try:
-                        on_event(line)
-                    except Exception:
-                        pass
-                buf.append(line)
-                total_ref[0] += 1
-                try:
-                    lf.write(raw if raw.endswith("\n") else raw + "\n")
-                except Exception:
-                    pass
-    except Exception:
-        pass
+        for raw in proc.stdout:  # type: ignore[union-attr]
+            line = raw.rstrip("\n")
+            _relay_event(on_event, line)
+            buf.append(line)
+            total_ref[0] += 1
+            if lf is not None:
+                lf = _write_output_log(lf, raw, notes)
+    except Exception as exc:  # noqa: BLE001 — recorded in the tail below
+        notes.append(_failure_note("output reader stopped", exc))
+    finally:
+        if lf is not None:
+            lf.close()
+        for note in notes:
+            buf.append(note)
+            total_ref[0] += 1
 
 
 def _check_unverified(handoff_path: Path) -> bool:
@@ -252,6 +290,7 @@ def run_subagent(
         stderr=subprocess.STDOUT,
         text=True,
         encoding="utf-8",
+        errors="replace",  # one bad byte must not kill the stdout reader
         bufsize=1,
         **popen_kwargs,
     )
