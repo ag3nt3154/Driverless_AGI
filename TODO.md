@@ -39,8 +39,12 @@
   identity by PID; immediate and resumed results share `_finalize`, so resumed inherited
   results are rejected as `stale` with a reason). R8 residual: entries for children never
   resumed or force-killed linger until PID reuse/process exit; fold into the R7/S1 owned
-  run handle. Next per Admiral: R7 (note `subagent_api.run_subagent` is CC 25);
-  scheduler/Telegram/TUI items deferred.
+  run handle. R7 is being taken one function at a time: `subagent_api.run_subagent`
+  done 2026-10-05 (CC 25 -> 7; argv contract pinned by `TestChildArgvContract`).
+  Remaining: `AgentLoop.__init__` (168 lines), `dispatch_tool_calls` (126),
+  `create_tool_registry` (158). Scheduler/Telegram/TUI items deferred.
+  Note: the intentional `.dagi/skills/` removal breaks 3 tests in
+  `tests/test_workflow_plan_template.py` (they read `write-plan/references/plan-template.md`).
   Campaign R1/R5 remain outside this checkout, not resolved. Selected tests: 179 core
   passed; 263 broader checks passed; two WebEngine setup errors passed on unsandboxed
   rerun (444 selected tests ultimately passed). Offline probes made no network calls.

@@ -915,3 +915,82 @@ class TestInheritedResumeKeepsContextIdentity:
 
         assert "parent context changed" in text
         assert "obsolete answer" not in text
+
+
+class TestChildArgvContract:
+    """Characterization of the argv run_subagent hands the child (R7 refactor guard).
+
+    subagent_main parses these flags, so their presence, order and de-duplication
+    are observable behaviour that a restructuring of run_subagent must preserve.
+    """
+
+    @staticmethod
+    def _argv_for(**kwargs) -> list[str]:
+        captured: list[list[str]] = []
+
+        def runner(*_args, **runner_kwargs):
+            captured.append(list(runner_kwargs["extra_argv"]))
+            return {"status": "error", "message": "expected test result"}
+
+        with patch("tools.subagent_api._runner.run_subagent", side_effect=runner):
+            run_subagent(**kwargs)
+        argv = captured[0]
+        # _invoke_runner always appends the prompt file last; it is not under test here.
+        assert argv[-2] == "--system-prompt-file"
+        return argv[:-2]
+
+    def test_custom_prompt_argv_order(self, tmp_path):
+        fork_path = tmp_path / "fork.json"
+
+        argv = self._argv_for(
+            task="t", prompt="p", tools=["read", "grep"], model_tier="worker",
+            project_path=tmp_path, extra_argv=["--foo", "bar"],
+            fork_context_path=fork_path,
+        )
+
+        assert argv == [
+            "--tools", "read,grep",
+            "--model-tier", "worker",
+            "--foo", "bar",
+            "--fork-context", str(fork_path),
+        ]
+
+    def test_preset_reader_job_argv_order(self, tmp_path):
+        fork_path = tmp_path / "fork.json"
+        job_path = tmp_path / "job.json"
+        preset = ("prompt", ["read"], "default", "", [])
+
+        with patch("tools.subagent_api._load_preset", return_value=preset), \
+             patch("tools.subagent_api._write_reader_job_file", return_value=job_path):
+            argv = self._argv_for(
+                task="t", preset="read-large-file", project_path=tmp_path,
+                extra_argv=["--foo", "bar"], fork_context_path=fork_path,
+                reader_job_spec=object(),
+            )
+
+        assert argv == [
+            "--foo", "bar",
+            "--fork-context", str(fork_path),
+            "--reader-job", str(job_path),
+        ]
+
+    def test_matching_fork_paths_are_not_duplicated(self, tmp_path):
+        fork_path = tmp_path / "fork.json"
+
+        argv = self._argv_for(
+            task="t", prompt="p", project_path=tmp_path,
+            extra_argv=["--fork-context", str(fork_path)],
+            fork_context_path=fork_path,
+        )
+
+        assert argv.count("--fork-context") == 1
+
+    def test_conflicting_fork_paths_are_rejected_before_spawn(self, tmp_path):
+        with patch("tools.subagent_api._runner.run_subagent") as runner:
+            with pytest.raises(ValueError, match="Conflicting fork_context_path"):
+                run_subagent(
+                    task="t", prompt="p", project_path=tmp_path,
+                    extra_argv=["--fork-context", str(tmp_path / "a.json")],
+                    fork_context_path=tmp_path / "b.json",
+                )
+        runner.assert_not_called()

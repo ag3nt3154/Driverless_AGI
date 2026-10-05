@@ -63,6 +63,13 @@ _pending_children: dict[int, _PendingChild] = {}
 _pending_lock = threading.Lock()
 
 
+def _remember_if_timed_out(result: SubagentResult, child: _PendingChild) -> None:
+    """Keep a timed-out child's identity so a PID resume can finalize it."""
+    if result.status == "timeout" and result.pid is not None:
+        with _pending_lock:
+            _pending_children[result.pid] = child
+
+
 def _finalize(result: SubagentResult, child: _PendingChild) -> SubagentResult:
     """Attach child identity; reject a result built on an outdated parent context.
 
@@ -322,6 +329,64 @@ def _write_reader_job_file(
     return write_reader_job(job, jobs_dir)
 
 
+def _validate_mode(preset: str | None, prompt: str | None, reader_job_spec: Any) -> None:
+    """Reject a run_subagent call with no prompt source or a misplaced reader job."""
+    if preset is None and prompt is None:
+        raise ValueError("Either preset or prompt must be provided.")
+    if reader_job_spec is not None and preset != "read-large-file":
+        raise ValueError(
+            f"reader_job_spec is only valid with preset='read-large-file', "
+            f"got preset={preset!r}"
+        )
+
+
+def _validate_fork_sources(
+    parent_context: ParentContextProvider | None,
+    fork_context_path: Path | str | None,
+    extra_fork_context: str | None,
+) -> None:
+    """Allow at most one source of fork context, before anything is spawned."""
+    has_explicit_fork = fork_context_path is not None or extra_fork_context is not None
+    if parent_context is not None and has_explicit_fork:
+        raise ValueError(
+            "parent_context cannot be combined with fork_context_path or --fork-context"
+        )
+    if (
+        fork_context_path is not None
+        and extra_fork_context is not None
+        and str(fork_context_path) != extra_fork_context
+    ):
+        raise ValueError("Conflicting fork_context_path and --fork-context values")
+
+
+def _build_child_argv(
+    *,
+    explicit_tools: bool,
+    eff_tools: list[str],
+    eff_tier: str,
+    caller_argv: list[str] | None,
+    fork_context: Path | str | None,
+    caller_has_fork_context: bool,
+    reader_job_path: Path | None,
+) -> list[str]:
+    """Merge internally-built child flags with the caller's argv, in a fixed order.
+
+    A caller-supplied --fork-context wins; the selected path is not injected twice.
+    """
+    argv: list[str] = []
+    if explicit_tools:
+        argv.extend(["--tools", ",".join(eff_tools)])
+    if eff_tier != "default":
+        argv.extend(["--model-tier", eff_tier])
+    if caller_argv:
+        argv.extend(caller_argv)
+    if fork_context is not None and not caller_has_fork_context:
+        argv.extend(["--fork-context", str(fork_context)])
+    if reader_job_path is not None:
+        argv.extend(["--reader-job", str(reader_job_path)])
+    return argv
+
+
 def run_subagent(
     task: str,
     preset: str | None = None,
@@ -350,23 +415,9 @@ def run_subagent(
     subagent_main routes to run_reader_job_mode. Only valid with
     preset='read-large-file'.
     """
-    if preset is None and prompt is None:
-        raise ValueError("Either preset or prompt must be provided.")
-    if reader_job_spec is not None and preset != "read-large-file":
-        raise ValueError(
-            f"reader_job_spec is only valid with preset='read-large-file', "
-            f"got preset={preset!r}"
-        )
+    _validate_mode(preset, prompt, reader_job_spec)
     extra_fork_context = _extra_fork_context_path(extra_argv)
-    if parent_context is not None and (
-        fork_context_path is not None or extra_fork_context is not None
-    ):
-        raise ValueError(
-            "parent_context cannot be combined with fork_context_path or --fork-context"
-        )
-    if fork_context_path is not None and extra_fork_context is not None:
-        if str(fork_context_path) != extra_fork_context:
-            raise ValueError("Conflicting fork_context_path and --fork-context values")
+    _validate_fork_sources(parent_context, fork_context_path, extra_fork_context)
 
     proj = (project_path or Path.cwd()).resolve()
 
@@ -400,19 +451,15 @@ def run_subagent(
             reader_job_spec, handoff_path, proj
         )
 
-    # Build extra argv (merge caller-supplied args with internally-built ones)
-    _extra_argv: list[str] = []
-    if tools is not None or preset is None:
-        _extra_argv.extend(["--tools", ",".join(eff_tools)])
-    if eff_tier != "default":
-        _extra_argv.extend(["--model-tier", eff_tier])
-    if extra_argv:
-        _extra_argv.extend(extra_argv)
-    selected_fork_context = inherited_context_path or fork_context_path
-    if selected_fork_context is not None and extra_fork_context is None:
-        _extra_argv.extend(["--fork-context", str(selected_fork_context)])
-    if _reader_job_path is not None:
-        _extra_argv.extend(["--reader-job", str(_reader_job_path)])
+    _extra_argv = _build_child_argv(
+        explicit_tools=tools is not None or preset is None,
+        eff_tools=eff_tools,
+        eff_tier=eff_tier,
+        caller_argv=extra_argv,
+        fork_context=inherited_context_path or fork_context_path,
+        caller_has_fork_context=extra_fork_context is not None,
+        reader_job_path=_reader_job_path,
+    )
 
     raw = _invoke_runner(
         subagent_type, enveloped, proj, handoff_path, timeout, on_event,
@@ -421,9 +468,7 @@ def run_subagent(
 
     child = _PendingChild(handoff_path, branch_id, fork, parent_context)
     result = _finalize(_build_result(raw, handoff_path), child)
-    if result.status == "timeout" and result.pid is not None:
-        with _pending_lock:
-            _pending_children[result.pid] = child
+    _remember_if_timed_out(result, child)
     return result
 
 
