@@ -103,9 +103,12 @@ class AgentLoop:
             self.log = session_log
         else:
             self.log = SessionLog()
+        # Fixed here: the tracker may rename its own file later (slug), but
+        # appends and whole-log rewrites must keep targeting the same file.
+        self._events_path: Path | None = None
         _tracker_path = getattr(self.tracker, "_path", None)
         if isinstance(_tracker_path, Path):
-            _events_path = _tracker_path.with_suffix(".events.jsonl")
+            _events_path = self._events_path = _tracker_path.with_suffix(".events.jsonl")
             self.log.on_append = lambda event: append_event(_events_path, event)
 
         if _registry is not None:
@@ -239,20 +242,23 @@ class AgentLoop:
         """True while ``run()`` is executing a turn."""
         return self._in_run
 
-    def revise_last_steps(self, n: int) -> None:
-        """Remove the last ``n`` steps from the log and refresh ``messages``.
+    def revise_last_steps(self, n: int) -> int:
+        """Remove up to ``n`` steps from the log and refresh ``messages``.
 
-        The revision always applies in memory; the rewritten log is then
-        saved, and a failure to save is raised to the caller.
+        Stops early when no completed step is left; returns how many were
+        removed. The revision always applies in memory; the rewritten log is
+        then saved, and a failure to save is raised to the caller.
         """
         from agent.session_store import write_session
 
-        for _ in range(n):
+        removed = 0
+        while removed < n and self.log.peek_last_step() is not None:
             self.log.revise_last_step()
+            removed += 1
         self._sync_messages()
-        tracker_path = getattr(self.tracker, "_path", None)
-        if isinstance(tracker_path, Path):
-            write_session(tracker_path.with_suffix(".events.jsonl"), self.log.events)
+        if removed and self._events_path is not None:
+            write_session(self._events_path, self.log.events)
+        return removed
 
     def pause(self) -> None:
         self._lifecycle.pause()
@@ -838,33 +844,10 @@ class AgentLoop:
 
                     # No tool calls — inject "continue" to prompt model to call write_handoff
                     self.callbacks.on_assistant_text(result)
-                    # ── Garbled-loop detection ───────────────────────────
-                    if not result.strip():
-                        self._empty_content_streak += 1
-                        if self._empty_content_streak >= _EMPTY_CONTENT_THRESHOLD:
-                            # Close the current (open) step first so it can be revised
-                            self._continuing_step_finished(_turn, iteration)
-                            for _ in range(self._empty_content_streak):
-                                try:
-                                    self.log.revise_last_step()
-                                except ValueError:
-                                    break
-                            # Re-open a turn+step so the loop can continue normally
-                            _turn = self.log.next_turn()
-                            self.log.append(sev.TURN_START, {"turn": _turn})
-                            iteration = 0
-                            self._sync_messages()
-                            self._empty_content_streak = 0
-                            self._continuation_count = 0
-                            self.callbacks.on_assistant_text(
-                                "[Garbled response loop detected — compacting context for recovery.]"
-                            )
-                            self.callbacks.on_compaction_started()
-                            self.compact(summarize_all=True)
-                            continue
-                    else:
-                        self._empty_content_streak = 0
-                    # ─────────────────────────────────────────────────────
+                    if self._garbled_streak_reached(result):
+                        _turn = self._recover_from_garbled_loop(_turn, iteration)
+                        iteration = 0
+                        continue
                     if self._continuation_count >= self.config.max_continuations:
                         self._process.idle()
                         self.callbacks.on_done(result)
@@ -941,6 +924,39 @@ class AgentLoop:
             # Defensive: any exit path added later without an explicit close
             # still leaves the log well-formed rather than half-open.
             self._close_turn(_turn, sev.reason_error("turn closed without a reason"))
+
+    def _garbled_streak_reached(self, reply_text: str) -> bool:
+        """Count consecutive empty replies; True once they form a garbled loop."""
+        if reply_text.strip():
+            self._empty_content_streak = 0
+            return False
+        self._empty_content_streak += 1
+        return self._empty_content_streak >= _EMPTY_CONTENT_THRESHOLD
+
+    def _recover_from_garbled_loop(self, turn: int, step: int) -> int:
+        """Drop the empty steps, open a fresh turn and compact everything.
+
+        The revision is saved to the events file like a user-driven one.
+        Returns the new turn number; the caller restarts its step count.
+        """
+        self._continuing_step_finished(turn, step)  # close it so it can be revised
+        try:
+            self.revise_last_steps(self._empty_content_streak)
+        except OSError as exc:
+            self.callbacks.on_assistant_text(
+                f"[Warning: could not save the revised session log — {exc}.]"
+            )
+        new_turn = self.log.next_turn()
+        self.log.append(sev.TURN_START, {"turn": new_turn})
+        self._sync_messages()
+        self._empty_content_streak = 0
+        self._continuation_count = 0
+        self.callbacks.on_assistant_text(
+            "[Garbled response loop detected — compacting context for recovery.]"
+        )
+        self.callbacks.on_compaction_started()
+        self.compact(summarize_all=True)
+        return new_turn
 
     def _keep_interrupted_text(self, response, turn: int, step: int) -> None:
         """Log what an interrupted *stream* had said, so "continue" makes sense.

@@ -12,7 +12,10 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from agent.loop import AgentLoop
-from tests.test_session_log_shadow import _make_loop, _wh_response
+from agent.session_log import SessionLog
+from agent.session_store import append_event, read_session, write_session
+from agent._loop_config import CompactionResult
+from tests.test_session_log_shadow import _make_loop, _text_response, _wh_response
 
 
 def _loop_after_one_turn(tmp_path: Path) -> AgentLoop:
@@ -59,7 +62,7 @@ def test_is_running_only_during_run(tmp_path: Path) -> None:
 
 def test_revise_last_steps_refreshes_messages_and_persists(tmp_path: Path) -> None:
     loop = _loop_after_one_turn(tmp_path)
-    loop.tracker._path = tmp_path / "session.jsonl"
+    loop._events_path = tmp_path / "session.events.jsonl"
     before = len(loop.messages)
     with patch("agent.session_store.write_session") as write:
         loop.revise_last_steps(1)
@@ -70,9 +73,56 @@ def test_revise_last_steps_refreshes_messages_and_persists(tmp_path: Path) -> No
 
 def test_revise_last_steps_refreshes_messages_even_if_save_fails(tmp_path: Path) -> None:
     loop = _loop_after_one_turn(tmp_path)
-    loop.tracker._path = tmp_path / "session.jsonl"
+    loop._events_path = tmp_path / "session.events.jsonl"
     before = len(loop.messages)
     with patch("agent.session_store.write_session", side_effect=OSError("disk full")):
         with pytest.raises(OSError):
             loop.revise_last_steps(1)
     assert len(loop.messages) < before
+
+
+def test_revise_last_steps_stops_when_no_steps_left(tmp_path: Path) -> None:
+    loop = _loop_after_one_turn(tmp_path)
+    with patch("agent.session_store.write_session"):
+        assert loop.revise_last_steps(5) == 1
+        assert loop.revise_last_steps(1) == 0
+
+
+def test_revise_last_steps_writes_the_file_appends_go_to(tmp_path: Path) -> None:
+    # The tracker renames its own file when it gets a slug; the events file must not move.
+    loop = _loop_after_one_turn(tmp_path)
+    loop._events_path = tmp_path / "session.events.jsonl"
+    loop.tracker._path = tmp_path / "renamed_logs.jsonl"
+    with patch("agent.session_store.write_session") as write:
+        loop.revise_last_steps(1)
+    assert write.call_args.args[0] == tmp_path / "session.events.jsonl"
+
+
+def _wire_events_file(loop: AgentLoop, path: Path) -> None:
+    write_session(path, loop.log.events)
+    loop._events_path = path
+    loop.log.on_append = lambda event: append_event(path, event)
+
+
+def test_garbled_recovery_is_saved_to_the_events_file(tmp_path: Path) -> None:
+    """R6: the file must replay to the same log the live loop holds."""
+    loop = _make_loop(tmp_path, max_continuations=10)
+    events_path = tmp_path / "session.events.jsonl"
+    _wire_events_file(loop, events_path)
+    loop.client = MagicMock()
+    loop.client.chat.completions.create.side_effect = [
+        _text_response(""), _text_response(""), _text_response(""),  # garbled
+        _wh_response("recovered"),
+    ]
+    with patch.object(loop, "compact", return_value=CompactionResult(did_compact=False)) as compact:
+        loop.run("do something")
+    compact.assert_called_once_with(summarize_all=True)
+
+    on_disk = read_session(events_path)
+    assert [e.seq for e in on_disk] == [e.seq for e in loop.log.events]
+    assert SessionLog(seed=on_disk).derive_messages() == loop.log.derive_messages()
+    assert not [
+        m for m in loop.messages
+        if m.get("role") == "assistant" and not (m.get("content") or "").strip()
+        and not m.get("tool_calls")
+    ]

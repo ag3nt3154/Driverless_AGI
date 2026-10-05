@@ -4,7 +4,7 @@
 
 - **2026-10-02 automation review follow-ups.** The review covered `task/iteration-engine`
   at `6917b131`. Its report files, `_CODEX_CODE_REVIEW_2026-10-02.md` and
-  `_CODEX_SUGGESTIONS_2026-10-02.md`, are in the repo root. R2 is fixed (2026-10-05);
+  `_CODEX_SUGGESTIONS_2026-10-02.md`, are in the repo root. R2 and R6 are fixed (2026-10-05);
   R7 is in progress; the rest are still open.
   - **P1 R1 (campaign):** tampering during the *holdout* pass is swallowed by
     `_holdout_if_better` (`campaign/engine.py`), so the trial can still be accepted.
@@ -20,7 +20,13 @@
   - **P2 R5 (campaign):** an engine killed during the agent stage neither archives the
     workspace nor counts the attempt. This is the documented §9 trade-off; revisit it
     with a started-attempt record.
-  - **P2 R6:** the garbled-response revision is not persisted.
+  - ~~**P2 R6:** the garbled-response revision is not persisted~~ — fixed 2026-10-05 by R7
+    step 3. Recovery now goes through `AgentLoop.revise_last_steps`, which rewrites the
+    events file (`write_session` is now atomic: temp file + replace). The events path is
+    fixed at construction, so appends and rewrites keep hitting one file after the tracker's
+    slug rename (previously a revise after the rename wrote to a different file).
+    Test: `test_garbled_recovery_is_saved_to_the_events_file` reloads the file and compares.
+    Still open: a durable revision *event* instead of a whole-file rewrite.
   - **P2 R7 (agent):** core orchestration is too large. Step 1 done 2026-10-05: the request
     retry loop moved out of `AgentLoop.run` into `agent/_request_executor.py`
     (`RequestExecutor` returns RESPONSE / ABORTED / PAUSED / NULL_EXHAUSTED); `run()` is
@@ -30,7 +36,9 @@
     duplicated GUI/TUI revise+persist+sync code, and now refreshes messages even if the
     save fails), and `tracker=` / `session_log=` constructor arguments. Tests:
     `tests/test_loop_public_api.py`. Remaining private access: `subagent_main.py` sets
-    `_extra_body` / `_parallel_tool_calls`. Next: extract garbled-response recovery; a turn coordinator only after contract tests cover
+    `_extra_body` / `_parallel_tool_calls`. Step 3 done 2026-10-05: garbled-response
+    detection/recovery moved to `_garbled_streak_reached` / `_recover_from_garbled_loop`
+    (`run()` now 216 lines) and fixed R6. Next: a turn coordinator only after contract tests cover
     pause/abort/garbled paths. No repository-wide cosmetic split.
 
 - **Windows shell contract and quoting (investigated 2026-10-02; awaiting approval)** —
