@@ -22,6 +22,15 @@
   - **P2 R6/R7:** the garbled-response revision is not persisted, and core orchestration
     is too large.
 
+- **Windows shell contract and quoting (investigated 2026-10-02; awaiting approval)** —
+  preserve the `bash` name; resolve and advertise its actual shell, CWD and Python executable
+  from runtime; add shell-free argv/stdin execution for Python scripts; replace Unix shell
+  examples in memory skills with native tools, resolving the Claude-copy parity requirement.
+  Include main/subagent registries, prompt overrides, tool filtering and `run_skill_script`.
+  Live probe: multiline `python -c` printed only its first line and returned success;
+  argv plus stdin printed both lines and preserved shell-sensitive arguments.
+  Verify Windows/POSIX execution, errors, timeout and force-kill behavior. No runtime changes.
+
 - **Shared truncation for remaining self-capping tools** — `web_fetch` (`_MAX_CHARS`, rest
   lost) and `read_notepad` (`MAX_CHARS`) still cut their own output; move them onto the
   shared head + marker + tail filter so the full output is saved and reachable with

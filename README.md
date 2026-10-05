@@ -984,7 +984,7 @@ Driverless_AGI/
 | `read_large_file` | Indexed digest of a file too large for context (`.dagi/subagents/read-large-file/`): overview, section table with line ranges, key points and verbatim excerpts. Reads chunk by chunk with a running summary, so any length works; results cached. Pass `path`, optional `query`, `offset`/`limit`, `pages` |
 | `write` | Overwrite a file. Creates parent dirs. Takes `path` + `content` |
 | `edit` | Edit a file by replacing exact text (`oldText` → `newText`). The match must be unique; CRLF-safe |
-| `bash` | Run a shell command. Returns stdout + stderr + exit code. Pass `command` + optional `timeout` |
+| `bash` | Run a command in the platform shell (currently cmd on Windows, `/bin/sh` on POSIX). Returns stdout + stderr; appends nonzero exit codes. Pass `command` + optional `timeout` |
 | `grep` | Regex search across files using ripgrep (rg). Returns `file:line:match` format. Automatically excludes binary files (`.pyc`, `.pyo`, `.bin`), `__pycache__`, `.git`, `.dagi`, and other non-source directories. `path` must be a specific subdirectory or file (not `.` / project root). No result cap: very large results go through the shared head + marker + tail filter, with the full list saved |
 | `find` | Find files by glob pattern (e.g. `**/*.py`). Searches all allowed roots when no path given. No result cap: very large results go through the shared head + marker + tail filter, with the full list saved |
 | `skill` | Load a `.dagi/skills/<name>/SKILL.md` guidance document and return it for execution |
@@ -1003,6 +1003,10 @@ Driverless_AGI/
 | `write_handoff` | Always visible to the main agent and auto-injected into every subagent with a `handoff_path`. It writes `content` verbatim to a baked-in path and its sentinel immediately ends the turn, so no `END_OF_RESPONSE` is needed. Main-agent calls save `.dagi/handoffs/main_<thread-hash12>.md` and render the full Markdown in the TUI; inherited children reuse the exact parent-visible schema but write to their assigned child path. The lifecycle name is reserved against project-tool collisions. |
 
 File tools (`read`, `write`, `edit`, `grep`, `find`) are sandboxed to allowed roots via `tools/_path_guard.py`. `bash` is intentionally unsandboxed.
+
+The 2026-10-02 Windows shell investigation reproduced missing Unix commands and partial
+multiline `python -c` execution with a successful exit. Runtime metadata, shell-free argv/stdin
+execution, and aligned skill examples are proposed in [TODO](TODO.md); no runtime fix is applied.
 
 Every subagent spawn tool (worker, review, explore_files, web_research, or any type discovered from `.dagi/subagents/`) reads the subagent's handoff file and inlines its full content directly into the tool's own result on success (via `tools/_handoff_format.py::format_handoff_result()`) — the main agent never has to make a separate `read` call to see what a subagent produced. `extend_subagent_timeout`'s resume path does the same. Large handoffs are still subject to the normal output-filter truncation (head + marker + tail) like any other tool result.
 
