@@ -38,8 +38,15 @@
     `tests/test_loop_public_api.py`. Remaining private access: `subagent_main.py` sets
     `_extra_body` / `_parallel_tool_calls`. Step 3 done 2026-10-05: garbled-response
     detection/recovery moved to `_garbled_streak_reached` / `_recover_from_garbled_loop`
-    (`run()` now 216 lines) and fixed R6. Next: a turn coordinator only after contract tests cover
-    pause/abort/garbled paths. No repository-wide cosmetic split.
+    (`run()` now 216 lines) and fixed R6. Step 4 done 2026-10-05: `tests/test_run_contract.py`
+    drives every `run()` exit path (handoff, tool step, max continuations, double END_TURN,
+    null exhausted, non-transient error, retries exhausted, retry success, garbled recovery,
+    /reload, consecutive runs, pause-on-error + resume, interrupt + resume) and checks the
+    log is well-formed (turn/step brackets, call/result pairing, turn-end reason) and that the
+    events file replays to the live log. It found and fixed one bug: pausing after exhausted
+    API retries left the step open, so the next step started inside it. Next: the turn
+    coordinator (turn/step bookkeeping out of `run()`), guarded by these tests.
+    No repository-wide cosmetic split.
 
 - **Windows shell contract and quoting (investigated 2026-10-02; awaiting approval)** —
   preserve the `bash` name; resolve and advertise its actual shell, CWD and Python executable

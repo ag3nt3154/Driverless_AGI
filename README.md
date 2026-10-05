@@ -860,7 +860,8 @@ Driverless_AGI/
 │   ├── _model_switch.py   # LLM tier switching + shared extra_body builder; preflight rejects a switch when
 │   │                       #   history has dagi_image parts and the target tier's supports_images is False (image input, stage 3)
 │   ├── _streaming.py      # Streaming chat-completions consumer
-│   ├── _request_executor.py # Retry policy for one model request (transient-error backoff, ghost retries, pause, abort); `run()` uses it
+│   ├── _request_executor.py # Retry policy for one model request (transient-error backoff, ghost retries, pause, abort); `run()` uses it.
+│   │                       #   Every `run()` exit path is covered by tests/test_run_contract.py (log well-formedness + replay)
 │   ├── _compaction.py     # Context compaction via forked compact subagent; materializes dagi_image parts in the
 │   │                       #   reconstructed fork prefix before building the fork snapshot (image input, stage 3)
 │   ├── _tool_dispatch.py  # Tool-call dispatch, bookkeeping, first END_TURN wins (later calls in the batch get a `[skipped]` result; on_done fires after all bookkeeping), pause gating, malformed-args sanitisation + surface cache reproject

@@ -781,6 +781,7 @@ class AgentLoop:
                 response = _result.response
 
                 if _result.outcome is RequestOutcome.PAUSED:
+                    self._continuing_step_finished(_turn, iteration)
                     continue  # restart outer loop → _pause_event.wait() will block
                 if _result.outcome is RequestOutcome.ABORTED:
                     self._keep_interrupted_text(response, _turn, iteration)
