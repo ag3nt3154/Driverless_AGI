@@ -43,8 +43,10 @@
   done 2026-10-05 (CC 25 -> 7; argv contract pinned by `TestChildArgvContract`);
   `agent/tools.py::create_tool_registry` done 2026-10-05 (158 lines/CC 36 -> CC 2;
   ordered tool-name contract in `tests/test_tool_registry_contract.py` — order is the
-  provider-visible schema order). Remaining: `AgentLoop.__init__` (168 lines),
-  `dispatch_tool_calls` (126). Small leftovers in `agent/tools.py`: `_load_project_tools`
+  provider-visible schema order); `AgentLoop.__init__` done 2026-10-05 (168 lines/CC 13
+  -> ordered `_init_*` phases, CC 2; attribute set and tracker/snapshot contract in
+  `tests/test_loop_construction.py`). Remaining: `dispatch_tool_calls` (126), and
+  `agent/loop.py` is ~1,080 lines vs the 500-line cap. Small leftovers in `agent/tools.py`: `_load_project_tools`
   CC 12, 106-char `_default_ask_user` line. Scheduler/Telegram/TUI items deferred.
   Note: the intentional `.dagi/skills/` removal breaks 3 tests in
   `tests/test_workflow_plan_template.py` (they read `write-plan/references/plan-template.md`).

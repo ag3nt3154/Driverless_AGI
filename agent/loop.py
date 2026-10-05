@@ -75,11 +75,10 @@ class AgentLoop:
         tracker: "SessionTracker | None" = None,
         session_log: "SessionLog | None" = None,
     ):
-        from agent.tools import create_tool_registry
-        from uuid import uuid4
-
+        # Phases run in a fixed order: each may read state an earlier one set
+        # (e.g. subagent tools receive the event log; the system prompt reads
+        # the registry and config). Pinned by tests/test_loop_construction.py.
         self.callbacks = callbacks or AgentCallbacks()
-        dagi_root = DAGI_ROOT
         self._system_prompt_override = _system_prompt_override
         self._preserve_request_prefix = _preserve_request_prefix
 
@@ -87,19 +86,38 @@ class AgentLoop:
         self._injected_bash_tool = _bash_tool
 
         # ── Create tracker first so sub-agent tools can reference it ─────────
-        if tracker is not None:
-            self.tracker = tracker
-        elif _parent_tracker is not None:
-            self.tracker = _parent_tracker.child_tracker(_subagent_id or uuid4().hex)
-        else:
-            self.tracker = SessionTracker(
-                model=config.model,
-                thread_id=config.thread_id,
-                logs_dir=config.project_path / ".dagi" / "logs",
-            )
-
+        self.tracker = self._init_tracker(config, tracker, _parent_tracker, _subagent_id)
         self._effective_memory_root = resolve_memory_root(config.memory_root)
+        self._init_event_log(session_log)
+        self._init_tools(config, _registry, initial_affect, _bash_tool)
+        self.config = config
+        system = self._init_conversation(initial_messages, session_log)
+        self._init_model_client(config)
+        self.tracker.record_system(system)
+        self._init_run_state()
 
+    def _init_tracker(
+        self,
+        config: AgentConfig,
+        tracker: "SessionTracker | None",
+        parent_tracker: "SessionTracker | None",
+        subagent_id: str | None,
+    ) -> SessionTracker:
+        """Use the caller's tracker, else a child of the parent's, else a fresh one."""
+        from uuid import uuid4
+
+        if tracker is not None:
+            return tracker
+        if parent_tracker is not None:
+            return parent_tracker.child_tracker(subagent_id or uuid4().hex)
+        return SessionTracker(
+            model=config.model,
+            thread_id=config.thread_id,
+            logs_dir=config.project_path / ".dagi" / "logs",
+        )
+
+    def _init_event_log(self, session_log: "SessionLog | None") -> None:
+        """Adopt or create the session log and bind its events file."""
         if session_log is not None:
             self.log = session_log
         else:
@@ -113,39 +131,55 @@ class AgentLoop:
             _events_path = self._events_path = _tracker_path.with_suffix(".events.jsonl")
             self.log.on_append = lambda event: append_event(_events_path, event)
 
-        if _registry is not None:
+    def _init_tools(
+        self,
+        config: AgentConfig,
+        registry: "ToolRegistry | None",
+        initial_affect,
+        bash_tool: "object | None",
+    ) -> None:
+        """Adopt a subagent's registry, or load skills and build the main registry."""
+        from agent.tools import create_tool_registry
+
+        dagi_root = DAGI_ROOT
+        if registry is not None:
             # Sub-agent path: use the provided registry, skip skill loading
-            self.registry = _registry
+            self.registry = registry
             self.skills = []
-            if self.tracker.expression_controller is not None:
-                self.tracker.expression_controller.set_listener(self.callbacks.on_expression_changed)
-        else:
-            ensure_expression_controller(
-                self.tracker, config, dagi_root, self.callbacks, initial_affect
-            )
-            # ── Load skills ───────────────────────────────────────────────────
-            skill_roots = [
-                dagi_root / ".dagi" / "skills",
-                config.project_path / ".dagi" / "skills",
-            ]
-            self.skills = SkillLoader().load_all(skill_roots, dagi_root=dagi_root)
+            controller = self.tracker.expression_controller
+            if controller is not None:
+                controller.set_listener(self.callbacks.on_expression_changed)
+            return
+        ensure_expression_controller(
+            self.tracker, config, dagi_root, self.callbacks, initial_affect
+        )
+        # ── Load skills ───────────────────────────────────────────────────
+        skill_roots = [
+            dagi_root / ".dagi" / "skills",
+            config.project_path / ".dagi" / "skills",
+        ]
+        self.skills = SkillLoader().load_all(skill_roots, dagi_root=dagi_root)
 
-            # ── Build registry bound to project path ──────────────────────────
-            self.registry = create_tool_registry(
-                cwd=config.project_path,
-                allowed_roots=[dagi_root, config.project_path, self._effective_memory_root],
-                skill_roots=skill_roots,
-                config=config,
-                callbacks=self.callbacks,
-                tracker=self.tracker,
-                memory_root=self._effective_memory_root,
-                bash_tool=_bash_tool,
-                session_log=self.log,
-                parent_context=self.parent_context_provider,
-                expression_controller=self.tracker.expression_controller,
-            )
+        # ── Build registry bound to project path ──────────────────────────
+        self.registry = create_tool_registry(
+            cwd=config.project_path,
+            allowed_roots=[dagi_root, config.project_path, self._effective_memory_root],
+            skill_roots=skill_roots,
+            config=config,
+            callbacks=self.callbacks,
+            tracker=self.tracker,
+            memory_root=self._effective_memory_root,
+            bash_tool=bash_tool,
+            session_log=self.log,
+            parent_context=self.parent_context_provider,
+            expression_controller=self.tracker.expression_controller,
+        )
 
-        self.config = config
+    def _init_conversation(
+        self, initial_messages: list | None, session_log: "SessionLog | None",
+    ) -> str:
+        """Build the system prompt and header, seed the message cache; return the prompt."""
+        dagi_root = DAGI_ROOT
         self._process = ProcessStateController(
             load_process_library(dagi_root),
             on_change=self.callbacks.on_process_state_changed,
@@ -170,7 +204,10 @@ class AgentLoop:
         if initial_messages and session_log is None:
             self._seed_from_messages(initial_messages)
         self._sync_messages()
+        return system
 
+    def _init_model_client(self, config: AgentConfig) -> None:
+        """Build the provider client and snapshot the default model tier."""
         from agent._model_switch import build_openai_client, build_extra_body
 
         self.client, script_rk = build_openai_client(config)
@@ -198,8 +235,8 @@ class AgentLoop:
         }
         self._current_tier: str = "default"
 
-        self.tracker.record_system(system)
-
+    def _init_run_state(self) -> None:
+        """Per-run counters, pause/abort signalling and mid-step injection state."""
         # Reset at the start of each run() call — counts "continue" injections for that task only
         self._continuation_count: int = 0
         self._empty_content_streak: int = 0
