@@ -94,7 +94,7 @@ def _make_loop(max_continuations: int = 3) -> AgentLoop:
         loop = AgentLoop(
             config=config,
             _registry=fake_registry,
-            _tracker=fake_tracker,
+            tracker=fake_tracker,
         )
 
     loop.tracker = fake_tracker

@@ -850,6 +850,8 @@ Driverless_AGI/
 │   ├── registry.py        # ToolRegistry singleton
 │   ├── tools.py           # Builds and returns the tool registry
 │   ├── loop.py            # AgentLoop orchestrator (run loop, __init__, pause/resume)
+│   │                       #   Frontends use only its public surface: messages (copy), is_paused, is_running,
+│   │                       #   revise_last_steps(n), and the tracker= / session_log= constructor arguments
 │   ├── _loop_config.py    # AgentConfig, AgentCallbacks, CompactionResult dataclasses
 │   ├── _loop_helpers.py   # Loop sentinels, CONTINUE_PROMPT, [MEMORY] pointer + reload helpers
 │   ├── _system_prompt.py  # System-prompt assembly (single source of truth)

@@ -68,11 +68,11 @@ class AgentLoop:
         _registry: "ToolRegistry | None" = None,
         _parent_tracker: "SessionTracker | None" = None,
         _subagent_id: str | None = None,
-        _tracker: "SessionTracker | None" = None,
         _bash_tool: "object | None" = None,
         _system_prompt_override: str | None = None,
         _preserve_request_prefix: bool = False,
-        _session_log: "SessionLog | None" = None,
+        tracker: "SessionTracker | None" = None,
+        session_log: "SessionLog | None" = None,
     ):
         from agent.tools import create_tool_registry
         from uuid import uuid4
@@ -86,8 +86,8 @@ class AgentLoop:
         self._injected_bash_tool = _bash_tool
 
         # ── Create tracker first so sub-agent tools can reference it ─────────
-        if _tracker is not None:
-            self.tracker = _tracker
+        if tracker is not None:
+            self.tracker = tracker
         elif _parent_tracker is not None:
             self.tracker = _parent_tracker.child_tracker(_subagent_id or uuid4().hex)
         else:
@@ -99,8 +99,8 @@ class AgentLoop:
 
         self._effective_memory_root = resolve_memory_root(config.memory_root)
 
-        if _session_log is not None:
-            self.log = _session_log
+        if session_log is not None:
+            self.log = session_log
         else:
             self.log = SessionLog()
         _tracker_path = getattr(self.tracker, "_path", None)
@@ -162,7 +162,7 @@ class AgentLoop:
         self._emit_header(system, "resume" if initial_messages else "initial")
         # A supplied log already owns the conversation. Replaying its derived
         # messages would duplicate the entire history on every GUI prompt.
-        if initial_messages and _session_log is None:
+        if initial_messages and session_log is None:
             self._seed_from_messages(initial_messages)
         self._sync_messages()
 
@@ -222,6 +222,37 @@ class AgentLoop:
         self._in_run = False
         self._expression_timer: threading.Timer | None = None
         self._expression_controller = self.tracker.expression_controller
+
+    # ── Public state for frontends ───────────────────────────────────────────
+
+    @property
+    def messages(self) -> list[dict]:
+        """A copy of the conversation as last sent to the model (header first)."""
+        return list(self._messages)
+
+    @property
+    def is_paused(self) -> bool:
+        return not self._pause_event.is_set()
+
+    @property
+    def is_running(self) -> bool:
+        """True while ``run()`` is executing a turn."""
+        return self._in_run
+
+    def revise_last_steps(self, n: int) -> None:
+        """Remove the last ``n`` steps from the log and refresh ``messages``.
+
+        The revision always applies in memory; the rewritten log is then
+        saved, and a failure to save is raised to the caller.
+        """
+        from agent.session_store import write_session
+
+        for _ in range(n):
+            self.log.revise_last_step()
+        self._sync_messages()
+        tracker_path = getattr(self.tracker, "_path", None)
+        if isinstance(tracker_path, Path):
+            write_session(tracker_path.with_suffix(".events.jsonl"), self.log.events)
 
     def pause(self) -> None:
         self._lifecycle.pause()

@@ -1,7 +1,6 @@
 """Typing while the agent runs: queued bubbles, delivery, cancel, leftovers."""
 from __future__ import annotations
 
-import threading
 from types import SimpleNamespace
 
 from PySide6.QtCore import QObject, Signal
@@ -31,6 +30,10 @@ class _Loop:
     def __init__(self, in_run=True) -> None:
         self._in_run = in_run
         self.steered: list = []
+
+    @property
+    def is_running(self) -> bool:
+        return self._in_run
 
     def steer(self, submission) -> bool:
         if self._in_run:
@@ -105,8 +108,7 @@ def test_running_submission_is_queued_and_slash_commands_are_refused(monkeypatch
     monkeypatch.setattr(SteerQueue, "for_window",
                         classmethod(lambda cls, win: SimpleNamespace(submit=queued.append)))
     restored = []
-    loop = SimpleNamespace(_pause_event=threading.Event())
-    loop._pause_event.set()  # running, not paused
+    loop = SimpleNamespace(is_paused=False)  # running, not paused
     win = SimpleNamespace(
         _compose_mode=False, _pending_ask=None, _pending_ask_container=None,
         _worker=SimpleNamespace(is_alive=lambda: True), _current_loop_ref=[loop],

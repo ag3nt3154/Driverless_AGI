@@ -185,7 +185,7 @@ class SlashCommandsMixin:
                 self.call_from_thread(
                     conv.append_info,
                     f"[yellow]⚡ Context compacted — removed {result.removed_count} messages, "
-                    f"kept {len(loop._messages)}[/yellow]",
+                    f"kept {len(loop.messages)}[/yellow]",
                 )
             else:
                 self.call_from_thread(conv.append_info, "[dim]Nothing to compact.[/dim]")
@@ -203,7 +203,7 @@ class SlashCommandsMixin:
             conv.append_info("[yellow]⚠ A /wtf diagnosis is already running.[/yellow]")
             return
         parent_is_running = bool(self._worker and self._worker.is_alive())
-        paused = parent_is_running and not loop._pause_event.is_set()
+        paused = parent_is_running and loop.is_paused
         if parent_is_running and not paused:
             conv.append_info("[yellow]⚠ Agent is running — press ESC to pause before /wtf.[/yellow]")
             return
@@ -253,7 +253,7 @@ class SlashCommandsMixin:
         if self._worker and self._worker.is_alive():
             conv.append_info("[yellow]⚠ Agent is running — press ESC to pause first[/yellow]")
             return
-        messages = self._active_loop._messages if self._active_loop else []
+        messages = self._active_loop.messages if self._active_loop else []
         self.push_screen(CopyScreen(messages))
 
     def _cmd_tools(self) -> None:
@@ -313,8 +313,6 @@ class SlashCommandsMixin:
 
     def _cmd_revise_history(self, arg: str | None) -> None:
         """Remove the last N steps from the session log."""
-        from pathlib import Path
-        from agent.session_store import write_session
         from tui.revise_history import ReviseConfirmScreen
 
         conv = self.query_one(ConversationPane)
@@ -368,16 +366,8 @@ class SlashCommandsMixin:
             if not confirmed:
                 conv.append_info("[dim]Revision cancelled.[/dim]")
                 return
-            for _ in range(n):
-                log.revise_last_step()
             try:
-                # Rewrite the JSONL file
-                tracker_path = getattr(self._active_loop.tracker, "_path", None)
-                if isinstance(tracker_path, Path):
-                    events_path = tracker_path.with_suffix(".events.jsonl")
-                    write_session(events_path, log.events)
-                # Sync the derived message cache
-                self._active_loop._sync_messages()
+                self._active_loop.revise_last_steps(n)
                 # Re-render
                 conv.clear()
                 self._render_messages_from_log(log)

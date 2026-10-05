@@ -73,6 +73,10 @@ class _Loop:
         self.waited_for: list[float] = []
         self.run_calls: list[str | None] = []
 
+    @property
+    def is_paused(self) -> bool:
+        return not self._pause_event.is_set()
+
     def wait_for_pause_checkpoint(self, timeout: float) -> bool:
         self.waited_for.append(timeout)
         return self.checkpoint
@@ -137,7 +141,7 @@ def test_slash_dispatches_wtf_with_and_without_a_description() -> None:
 
 def test_prompt_intercepts_paused_wtf_without_resuming_parent() -> None:
     """Routing a paused ``/wtf`` through injected input would resume the parent loop."""
-    loop = SimpleNamespace(_pause_event=threading.Event(), inject_and_resume=lambda _raw: None)
+    loop = SimpleNamespace(is_paused=True, inject_and_resume=lambda _raw: None)
     app = SimpleNamespace(
         _input_expanded=False,
         _pending_ask=None,

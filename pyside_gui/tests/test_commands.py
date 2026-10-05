@@ -123,6 +123,11 @@ class _FakeLoop:
     def _sync_messages(self) -> None:
         self.sync_calls += 1
 
+    # The real method, so these tests cover the revise -> sync -> persist order.
+    from agent.loop import AgentLoop as _AgentLoop
+    revise_last_steps = _AgentLoop.revise_last_steps
+    del _AgentLoop
+
 
 def _make_handler_with_loop(log: SessionLog, tmp_path: Path):
     w = _make_widgets()

@@ -13,9 +13,10 @@
   - ~~**P1 R2 (agent):** multiple END_TURN results in one tool batch~~ — fixed 2026-10-05.
     The first END_TURN call wins. Every later call in the batch is skipped without running,
     but still gets a `[skipped]` result. Tests: `tests/test_end_turn_batch.py`.
-  - **P1 R3/R4 (scheduler):** `scheduler/runner.py` passes an unsupported `tracker=` to
-    AgentLoop, and its timeout does not stop the worker. Both are known from the
-    2026-09-06 review; consider reusing `campaign/process.py`.
+  - **P1 R3/R4 (scheduler):** ~~`scheduler/runner.py` passes an unsupported `tracker=` to
+    AgentLoop~~ — fixed 2026-10-05 by R7 step 2 (`tracker=` is now the public argument).
+    Still open: its timeout does not stop the worker (known from the 2026-09-06 review;
+    consider reusing `campaign/process.py`).
   - **P2 R5 (campaign):** an engine killed during the agent stage neither archives the
     workspace nor counts the attempt. This is the documented §9 trade-off; revisit it
     with a started-attempt record.
@@ -23,9 +24,13 @@
   - **P2 R7 (agent):** core orchestration is too large. Step 1 done 2026-10-05: the request
     retry loop moved out of `AgentLoop.run` into `agent/_request_executor.py`
     (`RequestExecutor` returns RESPONSE / ABORTED / PAUSED / NULL_EXHAUSTED); `run()` is
-    351 → 239 lines. Tests: `tests/test_request_executor.py`. Next: public accessors so the
-    GUI stops reading `_messages` / passing `_tracker` / `_session_log`; extract
-    garbled-response recovery; a turn coordinator only after contract tests cover
+    351 → 239 lines. Tests: `tests/test_request_executor.py`. Step 2 done 2026-10-05:
+    frontends (GUI, TUI, Telegram, subagent runner, benchmarks) use a public surface —
+    `messages` (copy), `is_paused`, `is_running`, `revise_last_steps(n)` (replaces the
+    duplicated GUI/TUI revise+persist+sync code, and now refreshes messages even if the
+    save fails), and `tracker=` / `session_log=` constructor arguments. Tests:
+    `tests/test_loop_public_api.py`. Remaining private access: `subagent_main.py` sets
+    `_extra_body` / `_parallel_tool_calls`. Next: extract garbled-response recovery; a turn coordinator only after contract tests cover
     pause/abort/garbled paths. No repository-wide cosmetic split.
 
 - **Windows shell contract and quoting (investigated 2026-10-02; awaiting approval)** —

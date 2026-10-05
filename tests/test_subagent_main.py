@@ -52,7 +52,7 @@ class _FakeLoop:
         self.handoff_path = handoff_path
         self.write_on_call = write_on_call
         self.run_calls: list[str] = []
-        self._messages = messages if messages is not None else []
+        self.messages = messages if messages is not None else []
         self.finish_calls = 0
 
     def run(self, task: str) -> None:

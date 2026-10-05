@@ -124,7 +124,7 @@ def run_agent_on_task(workspace: Path, instruction: str, model_id: str | None,
     workspace/.dagi/logs — but the workspace is a %TEMP% dir that gets
     discarded, so we build the tracker ourselves pointed at
     sessions_dir/<task_name>/ (the caller's run_dir/sessions/, see
-    new_run_dir()) and hand it to AgentLoop via the private _tracker=
+    new_run_dir()) and hand it to AgentLoop via tracker=
     override, so transcripts persist alongside that sweep's result.jsonl.
     """
     from agent.config_loader import resolve_model_config
@@ -164,7 +164,7 @@ def run_agent_on_task(workspace: Path, instruction: str, model_id: str | None,
         on_ask_user=lambda question, options, timeout:
             "Proceed with your best judgment.",
     )
-    loop = AgentLoop(config, callbacks=callbacks, _tracker=tracker)
+    loop = AgentLoop(config, callbacks=callbacks, tracker=tracker)
     stats = {"timed_out": False, "error": None}
     t0 = time.monotonic()
     try:

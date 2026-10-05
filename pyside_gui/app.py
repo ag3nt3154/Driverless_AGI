@@ -423,7 +423,7 @@ class DagiMainWindow(QMainWindow):
             finally:
                 loop.log.append(sev.TURN_END, {"turn": turn, "reason": sev.reason_completed()})
             if r.did_compact:
-                self._bridge.compaction_done.emit(len(loop._messages), r.removed_count)
+                self._bridge.compaction_done.emit(len(loop.messages), r.removed_count)
         threading.Thread(target=_work, daemon=True).start()
 
     def _do_wtf(self, description: str | None) -> None:

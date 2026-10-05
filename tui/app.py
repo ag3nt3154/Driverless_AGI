@@ -133,7 +133,7 @@ class DagiApp(SlashCommandsMixin, App[None]):
         if (
             self._worker and self._worker.is_alive()
             and self._current_loop_ref
-            and not self._current_loop_ref[0]._pause_event.is_set()
+            and self._current_loop_ref[0].is_paused
         ):
             loop = self._current_loop_ref[0]
             conv = self.query_one(ConversationPane)
@@ -219,14 +219,14 @@ class DagiApp(SlashCommandsMixin, App[None]):
                 initial_affect = self._restore_initial_affect
                 self._restore_initial_affect = None
             else:
-                initial = self._active_loop._messages if self._active_loop else None
+                initial = self._active_loop.messages if self._active_loop else None
                 initial_affect = None
             loop = AgentLoop(
                 self._config,
                 callbacks,
                 initial_messages=initial,
                 initial_affect=initial_affect,
-                _tracker=tracker,
+                tracker=tracker,
             )
             loop_ref.append(loop)
             self._active_loop = loop  # save before run so context survives any exception

@@ -67,7 +67,7 @@ def _make_loop(registry=None, **config_overrides) -> AgentLoop:
         patch("openai.OpenAI"),
         patch.object(Path, "exists", return_value=False),
     ):
-        loop = AgentLoop(config=config, _registry=real_registry, _tracker=fake_tracker)
+        loop = AgentLoop(config=config, _registry=real_registry, tracker=fake_tracker)
 
     loop.tracker = fake_tracker
     loop.registry = real_registry
@@ -609,7 +609,7 @@ class TestSystemPromptRefresh:
             patch("openai.OpenAI"),
             patch.object(Path, "exists", return_value=False),
         ):
-            first_loop = AgentLoop(config=config, _tracker=fake_tracker)
+            first_loop = AgentLoop(config=config, tracker=fake_tracker)
 
         stale_system = first_loop._messages[0]
         old_messages = list(first_loop._messages)
@@ -627,7 +627,7 @@ class TestSystemPromptRefresh:
         ):
             second_loop = AgentLoop(
                 config=updated_config,
-                _tracker=fake_tracker,
+                tracker=fake_tracker,
                 initial_messages=old_messages,
             )
 

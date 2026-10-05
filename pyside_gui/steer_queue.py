@@ -73,7 +73,7 @@ class SteerQueue(QObject):
         if item is None:
             return
         loop = self._win._current_loop_ref[0] if self._win._current_loop_ref else None
-        if loop is not None and not loop.cancel_steer(item.submission) and loop._in_run:
+        if loop is not None and not loop.cancel_steer(item.submission) and loop.is_running:
             # Already logged: the model has it, so it can't be withdrawn.
             return
         self._items.remove(item)

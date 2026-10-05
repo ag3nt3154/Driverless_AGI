@@ -44,7 +44,7 @@ def _make_loop(callbacks=None, **config_kwargs) -> AgentLoop:
             config=config,
             callbacks=callbacks,
             _registry=fake_registry,
-            _tracker=fake_tracker,
+            tracker=fake_tracker,
         )
     loop.tracker = fake_tracker
     loop.registry = fake_registry

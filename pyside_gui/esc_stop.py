@@ -73,7 +73,7 @@ def install(win) -> EscapeStop:
         loop = win._current_loop_ref[0] if win._current_loop_ref else None
         return bool(
             win._worker and win._worker.is_alive() and loop is not None
-            and loop._pause_event.is_set() and win._pending_ask is None
+            and not loop.is_paused and win._pending_ask is None
         )
 
     esc = EscapeStop(windows, can_stop, win._action_pause)

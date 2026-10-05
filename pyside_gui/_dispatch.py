@@ -96,7 +96,7 @@ def on_input_submitted(win, submission: str | UserSubmission) -> None:
     if (
         win._worker and win._worker.is_alive()
         and win._current_loop_ref
-        and not win._current_loop_ref[0]._pause_event.is_set()
+        and win._current_loop_ref[0].is_paused
     ):
         loop = win._current_loop_ref[0]
         _append_user_with_images(win, submission)
@@ -139,7 +139,7 @@ def handle_special_command(win, result: str) -> None:
     elif result.startswith("__WTF__"):
         win._do_wtf(result[7:] or None)
     elif result == "__COPY__":
-        msgs = list(win._active_loop._messages) if win._active_loop else []
+        msgs = win._active_loop.messages if win._active_loop else []
         win._copy_picker.show_messages(msgs)
 
 
@@ -175,13 +175,13 @@ def agent_work(win, task: str | UserSubmission, callbacks: object, loop_ref: lis
             initial_affect, win._restore_initial_affect = win._restore_initial_affect, None
             prev_log = None
         else:
-            initial = win._active_loop._messages if win._active_loop else None
+            initial = win._active_loop.messages if win._active_loop else None
             initial_affect = None
         log(f"session captured (msgs={len(initial) if initial else 0})")
         loop = AgentLoop(
             win._config, callbacks, initial_messages=initial,
-            initial_affect=initial_affect, _tracker=tracker,
-            _session_log=prev_log,
+            initial_affect=initial_affect, tracker=tracker,
+            session_log=prev_log,
         )
         log("AgentLoop constructed"); loop_ref.append(loop)
         win._active_loop = loop; win._cmd_handler.set_active_loop(loop)
