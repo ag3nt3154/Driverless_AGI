@@ -178,8 +178,9 @@ def test_garbled_recovery_then_handoff(tmp_path):
     loop, path = _loop(tmp_path, [_text(""), _text(""), _text(""), _handoff()], max_continuations=10)
     with patch.object(loop, "compact", return_value=CompactionResult(did_compact=False)):
         loop.run("go")
-    # The garbled turn's steps are revised away; recovery opens a fresh turn.
     assert_contract(loop, path, "completed")
+    # The empty steps are gone, but the turn and the user's task stay.
+    assert {"role": "user", "content": "go"} in loop.messages
 
 
 def test_reload_command(tmp_path):
@@ -233,3 +234,15 @@ def test_interrupt_during_request_then_resume(tmp_path):
     thread.join(_WAIT)
     assert out.get("result") == "ok", out
     assert_contract(loop, path, "completed")
+
+
+def test_garbled_recovery_after_a_real_step(tmp_path):
+    loop, path = _loop(tmp_path, [
+        _response(_tool_call("tc_1", "bash", {"command": "ls"})),
+        _text(""), _text(""), _text(""),
+        _handoff(),
+    ], max_continuations=10)
+    with patch.object(loop, "compact", return_value=CompactionResult(did_compact=False)):
+        loop.run("go")
+    assert_contract(loop, path, "completed")
+    assert {"role": "user", "content": "go"} in loop.messages

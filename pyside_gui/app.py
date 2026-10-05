@@ -14,7 +14,6 @@ from PySide6.QtWidgets import (
 )
 
 from agent import DAGI_ROOT
-from agent import session_events as sev
 from agent.loop import AgentConfig, AgentLoop
 
 from pyside_gui import _dispatch, esc_stop, recent_folders
@@ -414,14 +413,11 @@ class DagiMainWindow(QMainWindow):
         loop = self._active_loop
 
         def _work() -> None:
-            turn = loop.log.next_turn()
-            loop.log.append(sev.TURN_START, {"turn": turn, "source": "gui_compact"})
-            try:
-                r = loop.compact(force=True)
-            except Exception as exc:
-                self._bridge.error_occurred.emit(f"Compact failed: {exc}"); return
-            finally:
-                loop.log.append(sev.TURN_END, {"turn": turn, "reason": sev.reason_completed()})
+            with loop.turns.side_turn(source="gui_compact"):
+                try:
+                    r = loop.compact(force=True)
+                except Exception as exc:
+                    self._bridge.error_occurred.emit(f"Compact failed: {exc}"); return
             if r.did_compact:
                 self._bridge.compaction_done.emit(len(loop.messages), r.removed_count)
         threading.Thread(target=_work, daemon=True).start()

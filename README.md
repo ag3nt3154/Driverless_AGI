@@ -19,7 +19,7 @@ When the conversation exceeds the model's context window, **context compaction**
 
 To end a turn the agent calls either **`write_handoff`** (final response) or **`ask_user`** (pause for user input). `write_handoff` takes the complete user-facing response as `content` and returns a typed `ToolResult(side_effect=SideEffect.END_TURN)` that the loop detects and uses to exit cleanly — no in-band string sentinels. `ask_user` pauses the turn and waits for the user's answer; after receiving it, the agent continues working or calls `write_handoff` to finish. If the agent produces a response with no tool calls and neither turn-ending tool, the harness treats it as accidentally truncated and injects a recovery prompt (`.dagi/prompts/main/continue.md`) to resume the loop. A safety valve (`max_continuations`, default 10, configurable in `config.yaml`) prevents runaway recovery loops. Additionally, **garbled loop recovery** detects when the model produces 3 consecutive empty-content responses (a common failure mode with smaller models), revises those empty steps out of the session log, and triggers a full context compaction to give the model a fresh start.
 
-**Garbled loop recovery:** When a model produces consecutive empty-content responses (common with smaller models), the harness automatically strips the degenerate turns, compacts the full context, and retries — rather than burning through all continuation attempts. The stripped turns are also removed from the session's `.events.jsonl` file (rewritten atomically), so replaying it matches the live session.
+**Garbled loop recovery:** When a model produces consecutive empty-content responses (common with smaller models), the harness automatically strips the empty steps (keeping the turn and the user's task), compacts the full context, and retries in the same turn — rather than burning through all continuation attempts. The stripped steps are also removed from the session's `.events.jsonl` file (rewritten atomically), so replaying it matches the live session.
 
 **Memory:** knowledge lives in one central, grep-first memory wiki shared with Claude Code and
 Codex (`memory_root`, default `G:\My Drive\black_grimoire`; entries under `wiki/projects/<p>/`,
@@ -860,6 +860,7 @@ Driverless_AGI/
 │   ├── _model_switch.py   # LLM tier switching + shared extra_body builder; preflight rejects a switch when
 │   │                       #   history has dagi_image parts and the target tier's supports_images is False (image input, stage 3)
 │   ├── _streaming.py      # Streaming chat-completions consumer
+│   ├── _turns.py          # TurnBoundaries: the one writer of turn/step start/end events (run(), /reload, /wtf, GUI compact)
 │   ├── _request_executor.py # Retry policy for one model request (transient-error backoff, ghost retries, pause, abort); `run()` uses it.
 │   │                       #   Every `run()` exit path is covered by tests/test_run_contract.py (log well-formedness + replay)
 │   ├── _compaction.py     # Context compaction via forked compact subagent; materializes dagi_image parts in the

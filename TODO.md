@@ -44,9 +44,18 @@
     /reload, consecutive runs, pause-on-error + resume, interrupt + resume) and checks the
     log is well-formed (turn/step brackets, call/result pairing, turn-end reason) and that the
     events file replays to the live log. It found and fixed one bug: pausing after exhausted
-    API retries left the step open, so the next step started inside it. Next: the turn
-    coordinator (turn/step bookkeeping out of `run()`), guarded by these tests.
-    No repository-wide cosmetic split.
+    API retries left the step open, so the next step started inside it. Step 5 done
+    2026-10-05: `agent/_turns.py` `TurnBoundaries` (`loop.turns`) is the one writer of
+    turn/step start/end events; `/reload`, `/wtf` and GUI compact use its `side_turn()`.
+    `run()` is now a ~40-line loop over `_run_step()`, which returns (result, turn-end
+    reason) or None; reply handling is in `_handle_text_reply` / `_handle_tool_reply`.
+    Fixed two garbled-recovery bugs found by a new contract test: recovery after any real
+    step in the same turn crashed with `InvariantError` (turn already open), and when every
+    step was garbled it deleted the user's task message. Recovery now removes only the empty
+    steps (`revise_last_step(keep_turn=True)`) and continues in the same turn.
+    Tests: `tests/test_turns.py`, `tests/test_run_contract.py`. Remaining R7 ideas: a
+    tool-batch finalizer for call/result pairing (R2 is already fixed in `_tool_dispatch`);
+    `__init__` is still 167 lines. No repository-wide cosmetic split.
 
 - **Windows shell contract and quoting (investigated 2026-10-02; awaiting approval)** —
   preserve the `bash` name; resolve and advertise its actual shell, CWD and Python executable

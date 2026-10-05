@@ -270,12 +270,13 @@ class SessionLog:
             event_range=(self._events[step_start_idx].seq, end_evt.seq),
         )
 
-    def revise_last_step(self) -> list[SessionEvent]:
+    def revise_last_step(self, *, keep_turn: bool = False) -> list[SessionEvent]:
         """Remove the last completed step from the log. Returns removed events.
 
         If this was the last step in its turn, the turn wrapper (turn/start,
-        user/message, turn/end) is also removed. Raises ValueError if no
-        completed step exists.
+        user/message, turn/end) is also removed, unless ``keep_turn`` is set:
+        then only the step goes, and the turn and its user message stay.
+        Raises ValueError if no completed step exists.
         """
         info = self.peek_last_step()
         if info is None:
@@ -308,7 +309,7 @@ class SessionLog:
                 break
 
         # Determine the full removal range
-        if has_earlier_step:
+        if has_earlier_step or keep_turn:
             # Remove just the step; keep turn_end so the turn stays closed
             remove_start = start_idx
             remove_end = end_idx

@@ -19,6 +19,7 @@ from openai.types.chat.chat_completion_message_function_tool_call import (
 from agent import DAGI_ROOT
 from agent._git_branch import create_task_branch, get_current_branch
 from agent._request_executor import RequestExecutor, RequestOutcome
+from agent._turns import TurnBoundaries
 from agent.lifecycle import LifecyclePublisher
 from agent.lifecycle import ensure_expression_controller, load_process_library
 from agent.process_state import ProcessSnapshot, ProcessStateController
@@ -103,6 +104,7 @@ class AgentLoop:
             self.log = session_log
         else:
             self.log = SessionLog()
+        self.turns = TurnBoundaries(self.log)
         # Fixed here: the tracker may rename its own file later (slug), but
         # appends and whole-log rewrites must keep targeting the same file.
         self._events_path: Path | None = None
@@ -242,18 +244,19 @@ class AgentLoop:
         """True while ``run()`` is executing a turn."""
         return self._in_run
 
-    def revise_last_steps(self, n: int) -> int:
+    def revise_last_steps(self, n: int, *, keep_turn: bool = False) -> int:
         """Remove up to ``n`` steps from the log and refresh ``messages``.
 
         Stops early when no completed step is left; returns how many were
-        removed. The revision always applies in memory; the rewritten log is
-        then saved, and a failure to save is raised to the caller.
+        removed. ``keep_turn`` keeps a turn (and its user message) whose last
+        step is removed. The revision always applies in memory; the rewritten
+        log is then saved, and a failure to save is raised to the caller.
         """
         from agent.session_store import write_session
 
         removed = 0
         while removed < n and self.log.peek_last_step() is not None:
-            self.log.revise_last_step()
+            self.log.revise_last_step(keep_turn=keep_turn)
             removed += 1
         self._sync_messages()
         if removed and self._events_path is not None:
@@ -369,9 +372,6 @@ class AgentLoop:
     def wait_for_pause_checkpoint(self, timeout: float) -> bool:
         """Wait until a paused run reaches its safe pre-request checkpoint."""
         return self._pause_checkpoint.wait(timeout)
-
-    def _continuing_step_finished(self, turn: int, step: int) -> None:
-        self.log.append(sev.STEP_END, {"turn": turn, "step": step})
 
     def _start_expression_timer(self) -> None:
         controller = self._expression_controller
@@ -558,18 +558,6 @@ class AgentLoop:
         except Exception:
             return None
 
-    def _close_turn(self, turn: int, reason: dict) -> None:
-        """Close the open turn, if one is open. Idempotent by design.
-
-        run() has several return paths; each closes its own turn explicitly,
-        and the finally-guard catches any path added later without one.
-        """
-        if self.log.open_turn is None:
-            return
-        if self.log.open_step is not None:
-            self.log.append(sev.STEP_END, {"turn": turn, "step": self.log.open_step})
-        self.log.append(sev.TURN_END, {"turn": turn, "reason": reason})
-
     def _log_user_message(self, role: str, content, source: str) -> None:
         """Append one user/message surface event.
 
@@ -710,209 +698,31 @@ class AgentLoop:
 
     def run(self, task: str | UserSubmission) -> str:
         submission = task if isinstance(task, UserSubmission) else UserSubmission(text=task)
-        task = submission.text
-        if task.strip().lower() == "/reload":
-            added, removed, errors = self._rebuild_for_reload()
-            notification = _format_reload_notification(len(self.skills), added, removed, errors)
-            # A surface event needs an enclosing turn, and /reload short-circuits
-            # before the normal one opens — so it gets its own.
-            _reload_turn = self.log.next_turn()
-            self.log.append(sev.TURN_START, {"turn": _reload_turn})
-            self._log_user_message("user", notification, "reload")
-            self._close_turn(_reload_turn, sev.reason_completed())
-            self._process.idle()
-            self.callbacks.on_assistant_text(notification)
-            return notification
+        if submission.text.strip().lower() == "/reload":
+            return self._run_reload()
 
-        _turn = self.log.next_turn()
-        self.log.append(sev.TURN_START, {"turn": _turn})
+        self.turns.open_turn()
         with self._inject_lock:
             self._in_run = True
         self._set_mid_step(True)
 
         try:
-            if not self._preserve_request_prefix:
-                wiki_ctx = _build_memory_context(
-                    self._effective_memory_root, self.config.project_path
-                )
-                if wiki_ctx:
-                    self._log_user_message("user", wiki_ctx, "wiki")
-            _content = self._submission_content(submission)
-            self._log_user_message("user", _content, "human")
-            self.tracker.record_user(_content)
-
-            # ── Auto-name session file from first user message ────────────────
-            if not self._skip_slug_generation:
-                slug_text = submission.text.strip() if submission.text.strip() else None
-                if slug_text:
-                    slug = self._generate_session_slug(slug_text)
-                else:
-                    slug = "image-conversation"
-                if slug:
-                    self.tracker.rename_with_slug(slug)
-
+            self._log_task(submission)
             self._continuation_count = 0
             self._empty_content_streak = 0
             self._start_expression_timer()
-            iteration = 0
             while True:
-                iteration += 1
-                self.log.append(sev.STEP_START, {"turn": _turn, "step": iteration})
-                self.callbacks.on_iteration(iteration)
-                self._set_mid_step(False)
-                self._pause_checkpoint.set()
-                try:
-                    self._pause_event.wait()  # blocks here when paused; instant no-op otherwise
-                finally:
-                    self._pause_checkpoint.clear()
-                    self._set_mid_step(True)
-                self._abort_request.clear()
-
-                # ── API call with retry (policy in agent/_request_executor) ──
-                _result = RequestExecutor(
-                    send=self._send_request,
-                    abort=self._abort_request,
-                    callbacks=self.callbacks,
-                    pause=self.pause,
-                    api_error_retries=self.config.api_error_retries,
-                    null_response_retries=self.config.null_response_retries,
-                    on_attempt=self._lifecycle.api_attempt_started,
-                ).execute()
-                response = _result.response
-
-                if _result.outcome is RequestOutcome.PAUSED:
-                    self._continuing_step_finished(_turn, iteration)
-                    continue  # restart outer loop → _pause_event.wait() will block
-                if _result.outcome is RequestOutcome.ABORTED:
-                    self._keep_interrupted_text(response, _turn, iteration)
-                    self._continuing_step_finished(_turn, iteration)
-                    continue  # → checkpoint; waits for the user's next message
-                if _result.outcome is RequestOutcome.NULL_EXHAUSTED:
-                    error_msg = (
-                        f"Error: model returned a null response "
-                        f"{_result.null_retries} time(s) in a row. "
-                        "Check your model endpoint and retry your task."
-                    )
-                    self._process.error()
-                    self.callbacks.on_error(Exception(error_msg))
-                    self._close_turn(_turn, sev.reason_error(error_msg))
-                    return error_msg
-
-                message = response.choices[0].message
-                _prompt_tok = getattr(response.usage, "prompt_tokens", 0) or 0
-
-                _reasoning = _extract_reasoning(message)
-                if _reasoning:
-                    self.callbacks.on_reasoning(_reasoning)
-
-                tool_records: list[ToolCallRecord] = []
-
-                if not message.tool_calls:
-                    result = message.content or ""
-
-                    # Store assistant turn. Use result (never None) so that _messages
-                    # stays well-formed for all subsequent API calls.
-                    # DeepSeek thinking mode requires reasoning_content to be echoed back.
-                    _asst_msg: dict = {"role": "assistant", "content": result}
-                    _rc = _extract_reasoning(message)
-                    if _rc:
-                        _asst_msg["reasoning_content"] = _rc
-                    self.log.append(
-                        sev.ASSISTANT_MESSAGE,
-                        {"turn": _turn, "step": iteration, "message": _asst_msg},
-                        surface_op="append",
-                    )
-                    self._sync_messages()
-                    _thinking_tok = (
-                        getattr(getattr(response.usage, "completion_tokens_details", None), "reasoning_tokens", None)
-                        or 0
-                    )
-                    _cached_tok = (
-                        getattr(getattr(response.usage, "prompt_tokens_details", None), "cached_tokens", None)
-                        or 0
-                    )
-                    self.callbacks.on_token_update(
-                        _prompt_tok,
-                        getattr(response.usage, "completion_tokens", 0) or 0,
-                        getattr(response.usage, "cost", None),
-                        _thinking_tok,
-                        _cached_tok,
-                    )
-                    self.tracker.record_assistant(
-                        message.content, response.usage, tool_records,
-                        cached_tokens=_cached_tok, thinking_tokens=_thinking_tok,
-                    )
-
-                    # No tool calls — inject "continue" to prompt model to call write_handoff
-                    self.callbacks.on_assistant_text(result)
-                    if self._garbled_streak_reached(result):
-                        _turn = self._recover_from_garbled_loop(_turn, iteration)
-                        iteration = 0
-                        continue
-                    if self._continuation_count >= self.config.max_continuations:
-                        self._process.idle()
-                        self.callbacks.on_done(result)
-                        self._close_turn(_turn, sev.reason_max_continuations())
-                        return result
-                    self._continuation_count += 1
-                    self._log_user_message("user", CONTINUE_PROMPT, "continue")
-                    self.callbacks.on_continue_injected(
-                        self._continuation_count, self.config.max_continuations
-                    )
-                    self._continuing_step_finished(_turn, iteration)
-                    continue  # next while True iteration
-
-                if message.content:
-                    self.callbacks.on_assistant_text(message.content)
-
-                # One assistant message with ALL tool_calls (standard OpenAI format).
-                # Splitting into per-tool-call assistant messages breaks providers that
-                # enforce protocol conformance (e.g. DeepSeek thinking mode).
-                _turn_reasoning = _extract_reasoning(message)
-                _asst_tc_msg: dict = {
-                    "role": "assistant",
-                    "content": message.content,
-                    "tool_calls": [
-                        {
-                            "id": tc.id,
-                            "type": "function",
-                            "function": {"name": tc.function.name, "arguments": tc.function.arguments},
-                        }
-                        for tc in message.tool_calls
-                    ],
-                }
-                if _turn_reasoning:
-                    _asst_tc_msg["reasoning_content"] = _turn_reasoning
-                self.log.append(
-                    sev.ASSISTANT_MESSAGE,
-                    {"turn": _turn, "step": iteration, "message": _asst_tc_msg},
-                    surface_op="append",
-                )
-                self._sync_messages()
-
-                _prompt_tok = getattr(response.usage, "prompt_tokens", 0) or 0
-                self._last_prompt_tokens = _prompt_tok
-
-                _short_circuit = self._dispatch_tool_calls(message, response, tool_records)
-                if _short_circuit is not None:
-                    self._close_turn(_turn, sev.reason_completed())
-                    return _short_circuit
-
-                self._finalize_turn(message, response, tool_records)
-
-                # ── Compaction trigger ────────────────────────────────────────
-                if (
-                    self.config.context_window > 0
-                    and _prompt_tok > 0
-                    and _prompt_tok > self.config.context_window - self.config.reserve_tokens
-                ):
-                    self._compact_context()
-                # ─────────────────────────────────────────────────────────────
-
-                self._continuing_step_finished(_turn, iteration)
-
+                step = self.turns.start_step()
+                self.callbacks.on_iteration(step)
+                self._wait_at_checkpoint()
+                finished = self._run_step()
+                if finished is not None:
+                    result, reason = finished
+                    self.turns.close_turn(reason)
+                    return result
+                self.turns.end_step()
         except Exception as e:
-            self._close_turn(_turn, sev.reason_error(str(e), type(e).__name__))
+            self.turns.close_turn(sev.reason_error(str(e), type(e).__name__))
             self._process.error()
             self.callbacks.on_error(e)
             raise
@@ -924,7 +734,189 @@ class AgentLoop:
             self._stop_expression_timer()
             # Defensive: any exit path added later without an explicit close
             # still leaves the log well-formed rather than half-open.
-            self._close_turn(_turn, sev.reason_error("turn closed without a reason"))
+            self.turns.close_turn(sev.reason_error("turn closed without a reason"))
+
+    def _run_reload(self) -> str:
+        added, removed, errors = self._rebuild_for_reload()
+        notification = _format_reload_notification(len(self.skills), added, removed, errors)
+        # A surface event needs an enclosing turn, and /reload short-circuits
+        # before the normal one opens — so it gets its own.
+        with self.turns.side_turn():
+            self._log_user_message("user", notification, "reload")
+        self._process.idle()
+        self.callbacks.on_assistant_text(notification)
+        return notification
+
+    def _log_task(self, submission: UserSubmission) -> None:
+        """Log the turn's opening user messages and name the session."""
+        if not self._preserve_request_prefix:
+            wiki_ctx = _build_memory_context(
+                self._effective_memory_root, self.config.project_path
+            )
+            if wiki_ctx:
+                self._log_user_message("user", wiki_ctx, "wiki")
+        content = self._submission_content(submission)
+        self._log_user_message("user", content, "human")
+        self.tracker.record_user(content)
+
+        # ── Auto-name session file from first user message ────────────────
+        if not self._skip_slug_generation:
+            slug_text = submission.text.strip()
+            slug = self._generate_session_slug(slug_text) if slug_text else "image-conversation"
+            if slug:
+                self.tracker.rename_with_slug(slug)
+
+    def _wait_at_checkpoint(self) -> None:
+        """Between steps: block here while paused; consume any old interrupt."""
+        self._set_mid_step(False)
+        self._pause_checkpoint.set()
+        try:
+            self._pause_event.wait()  # instant no-op when not paused
+        finally:
+            self._pause_checkpoint.clear()
+            self._set_mid_step(True)
+        self._abort_request.clear()
+
+    def _run_step(self) -> tuple[str, dict] | None:
+        """One model request and its handling.
+
+        Returns (result, turn-end reason) when the turn is over, or None to
+        go on to the next step. Never closes the step or turn itself.
+        """
+        outcome = RequestExecutor(
+            send=self._send_request,
+            abort=self._abort_request,
+            callbacks=self.callbacks,
+            pause=self.pause,
+            api_error_retries=self.config.api_error_retries,
+            null_response_retries=self.config.null_response_retries,
+            on_attempt=self._lifecycle.api_attempt_started,
+        ).execute()
+        response = outcome.response
+
+        if outcome.outcome is RequestOutcome.PAUSED:
+            return None  # next checkpoint blocks until the user resumes
+        if outcome.outcome is RequestOutcome.ABORTED:
+            self._keep_interrupted_text(response)
+            return None  # next checkpoint waits for the user's next message
+        if outcome.outcome is RequestOutcome.NULL_EXHAUSTED:
+            error_msg = (
+                f"Error: model returned a null response "
+                f"{outcome.null_retries} time(s) in a row. "
+                "Check your model endpoint and retry your task."
+            )
+            self._process.error()
+            self.callbacks.on_error(Exception(error_msg))
+            return error_msg, sev.reason_error(error_msg)
+
+        message = response.choices[0].message
+        reasoning = _extract_reasoning(message)
+        if reasoning:
+            self.callbacks.on_reasoning(reasoning)
+        if message.tool_calls:
+            return self._handle_tool_reply(message, response, reasoning)
+        return self._handle_text_reply(message, response, reasoning)
+
+    def _handle_text_reply(self, message, response, reasoning: str) -> tuple[str, dict] | None:
+        """A reply with no tool calls: nudge the model to continue, or give up."""
+        result = message.content or ""
+
+        # Store assistant turn. Use result (never None) so that _messages
+        # stays well-formed for all subsequent API calls.
+        # DeepSeek thinking mode requires reasoning_content to be echoed back.
+        asst_msg: dict = {"role": "assistant", "content": result}
+        if reasoning:
+            asst_msg["reasoning_content"] = reasoning
+        self.log.append(
+            sev.ASSISTANT_MESSAGE,
+            {"turn": self.turns.turn, "step": self.turns.step, "message": asst_msg},
+            surface_op="append",
+        )
+        self._sync_messages()
+        usage = response.usage
+        thinking_tok = (
+            getattr(getattr(usage, "completion_tokens_details", None), "reasoning_tokens", None)
+            or 0
+        )
+        cached_tok = (
+            getattr(getattr(usage, "prompt_tokens_details", None), "cached_tokens", None)
+            or 0
+        )
+        self.callbacks.on_token_update(
+            getattr(usage, "prompt_tokens", 0) or 0,
+            getattr(usage, "completion_tokens", 0) or 0,
+            getattr(usage, "cost", None),
+            thinking_tok,
+            cached_tok,
+        )
+        self.tracker.record_assistant(
+            message.content, usage, [],
+            cached_tokens=cached_tok, thinking_tokens=thinking_tok,
+        )
+
+        # No tool calls — inject "continue" to prompt model to call write_handoff
+        self.callbacks.on_assistant_text(result)
+        if self._garbled_streak_reached(result):
+            self._recover_from_garbled_loop()
+            return None
+        if self._continuation_count >= self.config.max_continuations:
+            self._process.idle()
+            self.callbacks.on_done(result)
+            return result, sev.reason_max_continuations()
+        self._continuation_count += 1
+        self._log_user_message("user", CONTINUE_PROMPT, "continue")
+        self.callbacks.on_continue_injected(
+            self._continuation_count, self.config.max_continuations
+        )
+        return None
+
+    def _handle_tool_reply(self, message, response, reasoning: str) -> tuple[str, dict] | None:
+        """A reply with tool calls: log it, run the tools, maybe compact."""
+        if message.content:
+            self.callbacks.on_assistant_text(message.content)
+
+        # One assistant message with ALL tool_calls (standard OpenAI format).
+        # Splitting into per-tool-call assistant messages breaks providers that
+        # enforce protocol conformance (e.g. DeepSeek thinking mode).
+        asst_tc_msg: dict = {
+            "role": "assistant",
+            "content": message.content,
+            "tool_calls": [
+                {
+                    "id": tc.id,
+                    "type": "function",
+                    "function": {"name": tc.function.name, "arguments": tc.function.arguments},
+                }
+                for tc in message.tool_calls
+            ],
+        }
+        if reasoning:
+            asst_tc_msg["reasoning_content"] = reasoning
+        self.log.append(
+            sev.ASSISTANT_MESSAGE,
+            {"turn": self.turns.turn, "step": self.turns.step, "message": asst_tc_msg},
+            surface_op="append",
+        )
+        self._sync_messages()
+
+        prompt_tok = getattr(response.usage, "prompt_tokens", 0) or 0
+        self._last_prompt_tokens = prompt_tok
+
+        tool_records: list[ToolCallRecord] = []
+        short_circuit = self._dispatch_tool_calls(message, response, tool_records)
+        if short_circuit is not None:
+            return short_circuit, sev.reason_completed()
+
+        self._finalize_turn(message, response, tool_records)
+
+        # ── Compaction trigger ────────────────────────────────────────
+        if (
+            self.config.context_window > 0
+            and prompt_tok > 0
+            and prompt_tok > self.config.context_window - self.config.reserve_tokens
+        ):
+            self._compact_context()
+        return None
 
     def _garbled_streak_reached(self, reply_text: str) -> bool:
         """Count consecutive empty replies; True once they form a garbled loop."""
@@ -934,22 +926,20 @@ class AgentLoop:
         self._empty_content_streak += 1
         return self._empty_content_streak >= _EMPTY_CONTENT_THRESHOLD
 
-    def _recover_from_garbled_loop(self, turn: int, step: int) -> int:
-        """Drop the empty steps, open a fresh turn and compact everything.
+    def _recover_from_garbled_loop(self) -> None:
+        """Drop the empty steps and compact everything, staying in the same turn.
 
-        The revision is saved to the events file like a user-driven one.
-        Returns the new turn number; the caller restarts its step count.
+        The turn and the user's message are kept. The revision is saved to
+        the events file like a user-driven one.
         """
-        self._continuing_step_finished(turn, step)  # close it so it can be revised
+        self.turns.end_step()  # close it so it can be revised
         try:
-            self.revise_last_steps(self._empty_content_streak)
+            self.revise_last_steps(self._empty_content_streak, keep_turn=True)
         except OSError as exc:
             self.callbacks.on_assistant_text(
                 f"[Warning: could not save the revised session log — {exc}.]"
             )
-        new_turn = self.log.next_turn()
-        self.log.append(sev.TURN_START, {"turn": new_turn})
-        self._sync_messages()
+        self.turns.resync_step()
         self._empty_content_streak = 0
         self._continuation_count = 0
         self.callbacks.on_assistant_text(
@@ -957,9 +947,8 @@ class AgentLoop:
         )
         self.callbacks.on_compaction_started()
         self.compact(summarize_all=True)
-        return new_turn
 
-    def _keep_interrupted_text(self, response, turn: int, step: int) -> None:
+    def _keep_interrupted_text(self, response) -> None:
         """Log what an interrupted *stream* had said, so "continue" makes sense.
 
         Half-streamed tool calls and reasoning are dropped; a blocking response
@@ -971,7 +960,11 @@ class AgentLoop:
         if text:
             self.log.append(
                 sev.ASSISTANT_MESSAGE,
-                {"turn": turn, "step": step, "message": {"role": "assistant", "content": text}},
+                {
+                    "turn": self.turns.turn,
+                    "step": self.turns.step,
+                    "message": {"role": "assistant", "content": text},
+                },
                 surface_op="append",
             )
             self._sync_messages()
