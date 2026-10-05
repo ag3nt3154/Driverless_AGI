@@ -802,3 +802,116 @@ class TestResumeSubagentByPid:
         assert result.is_ok is False
         assert result.pid == 9999
 
+
+
+class TestInheritedResumeKeepsContextIdentity:
+    """R8: a timed-out inherited child must face the same staleness check on resume.
+
+    Without it, a child forked from an outdated parent context returns an
+    accepted result after extend_subagent_timeout, and loses its branch identity.
+    """
+
+    _provider = TestInheritedSubagentExecution._provider
+
+    def _start_timed_out(self, tmp_path, provider, pid=4321):
+        def timed_out_runner(*_args, **kwargs):
+            argv = kwargs["extra_argv"]
+            Path(argv[argv.index("--fork-context") + 1]).unlink()
+            return {"status": "timeout", "pid": pid}
+
+        with patch("tools.subagent_api._runner.run_subagent", side_effect=timed_out_runner):
+            first = run_subagent(
+                task="Inspect", prompt="Inspect.", project_path=tmp_path, parent_context=provider,
+            )
+        assert first.status == "timeout"
+        return first
+
+    def _resume(self, raw, pid=4321):
+        with patch("tools.subagent_api._runner.resume_subagent", return_value=raw):
+            return resume_subagent_by_pid(pid, 60.0)
+
+    def test_resume_after_parent_generation_changed_is_stale(self, tmp_path):
+        handoff = tmp_path / "handoff.md"
+        handoff.write_text("obsolete answer", encoding="utf-8")
+        provider, _capture, generation = self._provider({"model": "parent"})
+        first = self._start_timed_out(tmp_path, provider)
+        generation.return_value = 5
+
+        result = self._resume({"status": "ok", "handoff": str(handoff)})
+
+        assert result.status == "stale"
+        assert result.handoff_text == ""
+        assert result.is_ok is False
+        assert result.branch_id == first.branch_id
+        assert "4" in result.message and "5" in result.message
+
+    def test_resume_with_unchanged_generation_is_accepted_with_branch(self, tmp_path):
+        handoff = tmp_path / "handoff.md"
+        handoff.write_text("fresh answer", encoding="utf-8")
+        provider, _capture, _generation = self._provider({"model": "parent"})
+        first = self._start_timed_out(tmp_path, provider)
+
+        result = self._resume({"status": "ok", "handoff": str(handoff)})
+
+        assert result.status == "ok"
+        assert result.handoff_text == "fresh answer"
+        assert result.branch_id == first.branch_id
+
+    def test_identity_survives_repeated_timeouts(self, tmp_path):
+        handoff = tmp_path / "handoff.md"
+        handoff.write_text("obsolete answer", encoding="utf-8")
+        provider, _capture, generation = self._provider({"model": "parent"})
+        self._start_timed_out(tmp_path, provider)
+
+        again = self._resume({"status": "timeout", "pid": 4321})
+        generation.return_value = 5
+        result = self._resume({"status": "ok", "handoff": str(handoff)})
+
+        assert again.status == "timeout"
+        assert result.status == "stale"
+
+    def test_terminal_resume_releases_child_metadata(self, tmp_path):
+        from tools import subagent_api
+
+        handoff = tmp_path / "handoff.md"
+        handoff.write_text("answer", encoding="utf-8")
+        provider, _capture, _generation = self._provider({"model": "parent"})
+        self._start_timed_out(tmp_path, provider)
+
+        self._resume({"status": "error", "message": "exited with code 1"})
+
+        assert 4321 not in subagent_api._pending_children
+
+    def test_non_inherited_resume_is_unchanged_and_overwrites_reused_pid(self, tmp_path):
+        handoff = tmp_path / "handoff.md"
+        handoff.write_text("answer", encoding="utf-8")
+        provider, _capture, generation = self._provider({"model": "parent"})
+        self._start_timed_out(tmp_path, provider)
+        generation.return_value = 5
+        # The inherited child is gone; the OS hands its PID to a plain child.
+        with patch(
+            "tools.subagent_api._runner.run_subagent",
+            return_value={"status": "timeout", "pid": 4321},
+        ):
+            run_subagent(task="Plain", prompt="Plain.", project_path=tmp_path)
+
+        result = self._resume({"status": "ok", "handoff": str(handoff)})
+
+        assert result.status == "ok"
+        assert result.branch_id is None
+
+    def test_extend_timeout_tool_tells_the_model_why_a_result_was_discarded(self, tmp_path):
+        from tools.extend_timeout._extend_timeout import ExtendSubagentTimeoutTool
+
+        handoff = tmp_path / "handoff.md"
+        handoff.write_text("obsolete answer", encoding="utf-8")
+        provider, _capture, generation = self._provider({"model": "parent"})
+        self._start_timed_out(tmp_path, provider)
+        generation.return_value = 5
+
+        raw = {"status": "ok", "handoff": str(handoff)}
+        with patch("tools.subagent_api._runner.resume_subagent", return_value=raw):
+            text = ExtendSubagentTimeoutTool().run(pid=4321, extra_seconds=60)
+
+        assert "parent context changed" in text
+        assert "obsolete answer" not in text

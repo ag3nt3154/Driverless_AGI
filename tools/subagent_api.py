@@ -12,6 +12,7 @@ from __future__ import annotations
 import json
 import os
 import tempfile
+import threading
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable
@@ -45,6 +46,47 @@ class SubagentResult:
     @property
     def is_ok(self) -> bool:
         return self.status in ("ok", "ok_unverified")
+
+
+@dataclass
+class _PendingChild:
+    """Identity a child keeps across timeouts until a terminal resume."""
+    handoff_path: Path
+    branch_id: str | None
+    fork: ParentFork | None
+    parent_context: ParentContextProvider | None
+
+
+# Timed-out children by PID. Registered on every timeout, inherited or not, so a
+# reused PID overwrites a dead child's entry instead of inheriting its identity.
+_pending_children: dict[int, _PendingChild] = {}
+_pending_lock = threading.Lock()
+
+
+def _finalize(result: SubagentResult, child: _PendingChild) -> SubagentResult:
+    """Attach child identity; reject a result built on an outdated parent context.
+
+    Shared by immediate completion and PID resume so neither can skip the check.
+    """
+    result.branch_id = child.branch_id
+    if child.fork is None or child.parent_context is None or not result.is_ok:
+        return result
+    captured = child.fork.parent_surface_generation
+    current = child.parent_context.get_surface_generation()
+    if current == captured:
+        return result
+    return SubagentResult(
+        status="stale",
+        handoff_text="",
+        handoff_path=child.handoff_path,
+        session_log_path=result.session_log_path,
+        pid=result.pid,
+        branch_id=child.branch_id,
+        message=(
+            f"parent context changed (generation {captured} -> {current}); "
+            "result discarded"
+        ),
+    )
 
 
 def _load_preset(
@@ -377,25 +419,28 @@ def run_subagent(
         _extra_argv, eff_prompt, inherited_context_path,
     )
 
-    result = _build_result(raw, handoff_path)
-    result.branch_id = branch_id
-    if fork is not None and result.is_ok:
-        if parent_context.get_surface_generation() != fork.parent_surface_generation:
-            return SubagentResult(
-                status="stale",
-                handoff_text="",
-                handoff_path=handoff_path,
-                session_log_path=result.session_log_path,
-                pid=result.pid,
-                branch_id=branch_id,
-            )
+    child = _PendingChild(handoff_path, branch_id, fork, parent_context)
+    result = _finalize(_build_result(raw, handoff_path), child)
+    if result.status == "timeout" and result.pid is not None:
+        with _pending_lock:
+            _pending_children[result.pid] = child
     return result
 
 
 def resume_subagent_by_pid(
     pid: int, extra_seconds: float = 120.0,
 ) -> SubagentResult:
-    """Resume a timed-out subagent by PID."""
+    """Resume a timed-out subagent by PID, applying the same finalization as run_subagent.
+
+    The child's identity is kept while it keeps timing out and released on any
+    terminal result.
+    """
     raw = _runner.resume_subagent(pid, extra_seconds)
-    handoff_path = Path(raw.get("handoff", ""))
-    return _build_result(raw, handoff_path)
+    with _pending_lock:
+        if raw["status"] == "timeout":
+            child = _pending_children.get(pid)
+        else:
+            child = _pending_children.pop(pid, None)
+    if child is None:
+        return _build_result(raw, Path(raw.get("handoff", "")))
+    return _finalize(_build_result(raw, child.handoff_path), child)

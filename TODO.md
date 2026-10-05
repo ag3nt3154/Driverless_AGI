@@ -35,8 +35,12 @@
   New R13: typing-send failure leaves the chat busy. Proposed repairs remain unimplemented,
   except R9 (fixed 2026-10-05: tolerant decode, log-independent drain, failure notes in
   the output tail; real-process tests showed the old reader left chatty children blocked
-  on a full pipe until timeout). Next per Admiral: R8, then R7; scheduler/Telegram/TUI
-  items deferred.
+  on a full pipe until timeout) and R8 (fixed 2026-10-05: timed-out children keep their
+  identity by PID; immediate and resumed results share `_finalize`, so resumed inherited
+  results are rejected as `stale` with a reason). R8 residual: entries for children never
+  resumed or force-killed linger until PID reuse/process exit; fold into the R7/S1 owned
+  run handle. Next per Admiral: R7 (note `subagent_api.run_subagent` is CC 25);
+  scheduler/Telegram/TUI items deferred.
   Campaign R1/R5 remain outside this checkout, not resolved. Selected tests: 179 core
   passed; 263 broader checks passed; two WebEngine setup errors passed on unsandboxed
   rerun (444 selected tests ultimately passed). Offline probes made no network calls.
