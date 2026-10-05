@@ -23,16 +23,19 @@
     Add any future user-question tool (e.g. a revived `show_plan`) to `SOLO_TOOLS`.
   - `edit` takes an `edits` list for one file: in order, all-or-nothing, placeholder-tolerant.
 
-- **2026-10-03 review refresh on main.** See
-  [_CODEX_CODE_REVIEW_2026-10-03.md](_CODEX_CODE_REVIEW_2026-10-03.md) and
-  [_CODEX_SUGGESTIONS_2026-10-03.md](_CODEX_SUGGESTIONS_2026-10-03.md).
-  R3/R4/R6 below remain reproduced; R2 fixed 2026-10-03 (see the 2026-10-02 entry); R7
-  persists. New R8: timeout/resume bypasses
-  inherited-subagent generation validation. R9: September 15 R16's callback/write fix
-  still leaves log-open and decode failures able to stop stdout draining. Proposed fixes
-  remain unimplemented. Campaign R1/R5 apply to `task/iteration-engine`, absent from this
-  checkout; do not treat that absence as resolution. Today's suite: 189 passed, one DOCX
-  optional-dependency failure, one skipped PDF integration test.
+- **2026-10-05 review refresh on main.** See
+  [_CODEX_CODE_REVIEW_2026-10-05.md](_CODEX_CODE_REVIEW_2026-10-05.md) and
+  [_CODEX_SUGGESTIONS_2026-10-05.md](_CODEX_SUGGESTIONS_2026-10-05.md).
+  R2 and R6 fixes verified; R3's constructor mismatch is fixed, but initialization
+  failures still escape without recording a run. R4/R8/R9 reproduced; R7 improved
+  (`run` is now 39 lines), with construction/dispatch and adapter contracts remaining.
+  New R10: scheduler records ghost-response exhaustion as success despite the loop's
+  terminal error. Historical September Telegram defects revalidated as R11/R12:
+  final handoffs are dropped and answers cannot dispatch while a task is waiting.
+  New R13: typing-send failure leaves the chat busy. Proposed repairs remain unimplemented.
+  Campaign R1/R5 remain outside this checkout, not resolved. Selected tests: 179 core
+  passed; 263 broader checks passed; two WebEngine setup errors passed on unsandboxed
+  rerun (444 selected tests ultimately passed). Offline probes made no network calls.
 
 - **2026-10-02 automation review follow-ups.** The review covered `task/iteration-engine`
   at `6917b131`. Its report files, `_CODEX_CODE_REVIEW_2026-10-02.md` and

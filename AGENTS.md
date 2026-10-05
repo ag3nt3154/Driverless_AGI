@@ -1,6 +1,6 @@
 # AGENTS.md
 
-> Last updated: 2026-10-05 (merged origin/main) | [README](README.md) | [TODO](TODO.md) | [Task specs & plans](wiki/tasks/)
+> Last updated: 2026-10-05 (merged origin/main; automation review refreshed) | [README](README.md) | [TODO](TODO.md) | [Task specs & plans](wiki/tasks/)
 
 ## Overview
 

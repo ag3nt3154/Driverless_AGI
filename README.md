@@ -1,9 +1,10 @@
 # Driverless AGI
 
 Latest architecture/reliability review:
-[_CODEX_CODE_REVIEW_2026-10-03.md](_CODEX_CODE_REVIEW_2026-10-03.md), with the
-[iterative-work and self-improvement roadmap](_CODEX_SUGGESTIONS_2026-10-03.md).
-These reports contain proposed improvements, not implemented fixes.
+[_CODEX_CODE_REVIEW_2026-10-05.md](_CODEX_CODE_REVIEW_2026-10-05.md), with the
+[iterative-work and self-improvement roadmap](_CODEX_SUGGESTIONS_2026-10-05.md).
+The refresh verifies the END_TURN/public-constructor/recovery fixes and proposes remaining
+scheduler, child-resume and Telegram repairs; those proposed repairs are not implemented.
 
 [R2 fix and implementation-session review](_CODEX_FIX_SESSION_REVIEW_2026-10-03.md):
 the pairing fix passes focused tests and a disk-restore probe; automated restore
