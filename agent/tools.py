@@ -18,7 +18,7 @@ import importlib.util
 import inspect
 import sys
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Iterable
 
 from agent._loop_config import resolve_memory_root
 from agent.base_tool import BaseTool
@@ -112,6 +112,201 @@ def _default_ask_user(question: str, options: list[dict], timeout: "float | None
     )
 
 
+
+# ---------------------------------------------------------------------------
+# Registry assembly — registration order is the provider-visible schema order,
+# so each helper registers in a fixed sequence (pinned by
+# tests/test_tool_registry_contract.py).
+# ---------------------------------------------------------------------------
+
+def _sandbox_roots(
+    cwd: Path, allowed_roots: list[Path] | None, config: "AgentConfig | None",
+) -> list[Path] | None:
+    """File-tool roots: unrestricted in sandbox mode, else the caller's or [dagi, cwd]."""
+    if config is not None and config.sandbox_mode:
+        return None
+    return allowed_roots if allowed_roots is not None else [_DAGI_ROOT, cwd]
+
+
+def _read_tool(cwd: Path, roots: list[Path] | None, config: "AgentConfig | None") -> ReadTool:
+    services = config.services if config else {}
+    return ReadTool(
+        cwd=cwd,
+        allowed_roots=roots,
+        project_path=config.project_path if config else None,
+        service_url=services.get("doc_converter"),
+        reserve_tokens=config.reserve_tokens if config else 0,
+        edge_chars=config.truncate_edge_chars if config else DEFAULT_EDGE_CHARS,
+        max_image_bytes=config.image_input_max_image_bytes if config else None,
+        max_image_pixels=config.image_input_max_pixels if config else None,
+    )
+
+
+def _register_file_tools(
+    reg: ToolRegistry, cwd: Path, roots: list[Path] | None, config: "AgentConfig | None",
+) -> None:
+    """Path-sandboxed file tools, then bash (excluded from path sandboxing by design)."""
+    reg.register(_read_tool(cwd, roots, config))
+    for tool_cls in (GrepTool, FindTool, WriteTool, EditTool, CopyTool):
+        reg.register(tool_cls(cwd=cwd, allowed_roots=roots))
+    reg.register(BashTool(cwd=cwd))
+
+
+def _register_frontend_tools(
+    reg: ToolRegistry, callbacks: "AgentCallbacks | None", project_path: Path,
+) -> None:
+    """Tools that only exist when the frontend can display their output."""
+    if callbacks is None:
+        return
+    if callbacks.on_message_board_post is not None:
+        from tools.emote import EmoteTool
+        memes_root = _DAGI_ROOT / ".dagi" / "emotes" / "memes"
+        reg.register(EmoteTool(on_post=callbacks.on_message_board_post, memes_root=memes_root))
+    if callbacks.on_show_file is not None:
+        from tools.show_file import ShowFileTool
+        reg.register(ShowFileTool(on_show_file=callbacks.on_show_file, project_path=project_path))
+
+
+def _ask_user_tool(config: "AgentConfig | None", callbacks: "AgentCallbacks | None") -> BaseTool:
+    """ask_user bound to the frontend's prompt, or a recommended-option default."""
+    from tools.ask_user import AskUserTool
+    return AskUserTool(
+        on_ask_user=callbacks.on_ask_user if callbacks else _default_ask_user,
+        timeout=config.ask_user_timeout if config else None,
+    )
+
+
+def _register_session_tools(
+    reg: ToolRegistry,
+    *,
+    cwd: Path,
+    config: "AgentConfig | None",
+    callbacks: "AgentCallbacks | None",
+    tracker: "SessionTracker | None",
+    bash_tool: "object | None",
+) -> None:
+    """Planning, user-interaction and session-control tools available to every caller."""
+    if bash_tool is not None:
+        reg.register(bash_tool)
+    from tools.active_plan import CheckActivePlanTool, SetActivePlanTool
+    from tools.reload_skills import ReloadSkillsTool
+    from tools.update_task_status import UpdateTaskStatusTool
+    reg.register(SetActivePlanTool(config=config, callbacks=callbacks, tracker=tracker))
+    reg.register(CheckActivePlanTool(config=config, callbacks=callbacks, tracker=tracker))
+    reg.register(UpdateTaskStatusTool(config=config))
+    reg.register(_ask_user_tool(config, callbacks))
+    if config is not None and (
+        config.advanced_config is not None or config.worker_config is not None
+    ):
+        from tools.switch_model import SwitchModelTool
+        reg.register(SwitchModelTool())
+    reg.register(ReloadSkillsTool())
+    _register_frontend_tools(reg, callbacks, config.project_path if config else cwd)
+    # Global pet notepad: file-backed, so it is readable from every frontend.
+    from tools.read_notepad import ReadNotepadTool
+    reg.register(ReadNotepadTool(on_flush=callbacks.on_flush_notepad if callbacks else None))
+
+
+def _register_each(reg: ToolRegistry, tools: Iterable[BaseTool], kind: str) -> None:
+    """Register discovered tools; one that fails is reported and skipped, never fatal."""
+    for tool in tools:
+        try:
+            reg.register(tool)
+        except Exception as exc:  # noqa: BLE001
+            print(
+                f"[tools] Warning: could not register {kind} tool {tool.name!r}: {exc}",
+                file=sys.stderr,
+            )
+
+
+def _register_skill_tool(
+    reg: ToolRegistry, cwd: Path, skill_roots: list[Path], memory_root: Path | None,
+) -> None:
+    reg.register(SkillTool(
+        skill_roots=skill_roots,
+        dagi_root=_DAGI_ROOT,
+        cwd=cwd,
+        memory_root=resolve_memory_root(memory_root),
+    ))
+
+
+def _register_schedule_tools(reg: ToolRegistry, cwd: Path) -> None:
+    from tools.schedule_tools import (
+        ListScheduledTasksTool,
+        RemoveScheduledTaskTool,
+        ScheduleTaskTool,
+    )
+    sched_path = cwd / ".dagi" / "scheduler" / "schedule.yaml"
+    runs_path = cwd / ".dagi" / "scheduler" / "runs.jsonl"
+    reg.register(ScheduleTaskTool(schedule_path=sched_path))
+    reg.register(ListScheduledTasksTool(schedule_path=sched_path, runs_path=runs_path))
+    reg.register(RemoveScheduledTaskTool(schedule_path=sched_path))
+
+
+def _register_configured_tools(
+    reg: ToolRegistry,
+    *,
+    cwd: Path,
+    config: "AgentConfig",
+    callbacks: "AgentCallbacks | None",
+    tracker: "SessionTracker | None",
+    session_log: "SessionLog | None",
+    parent_context: "ParentContextProvider | None",
+    skill_roots: list[Path] | None,
+    memory_root: Path | None,
+) -> None:
+    """Subagent, project, skill and schedule tools for a configured session."""
+    _register_each(reg, _discover_subagent_tools(
+        cwd=cwd, config=config, callbacks=callbacks,
+        tracker=tracker, session_log=session_log, parent_context=parent_context,
+    ), "subagent")
+    from tools.extend_timeout import ExtendSubagentTimeoutTool
+    reg.register(ExtendSubagentTimeoutTool())
+    _register_each(reg, _load_project_tools(cwd), "project")
+    if skill_roots:
+        _register_skill_tool(reg, cwd, skill_roots, memory_root)
+        from tools.run_skill_script import RunSkillScriptTool
+        reg.register(RunSkillScriptTool(skill_roots=skill_roots, dagi_root=_DAGI_ROOT))
+    # Schedule management tools — interactive sessions only. Autonomous tasks
+    # cannot see or call these, preventing self-modification of the schedule.
+    if not getattr(config, "autonomous", False):
+        _register_schedule_tools(reg, cwd)
+
+
+def _register_fallback_tools(
+    reg: ToolRegistry, cwd: Path, skill_roots: list[Path] | None, memory_root: Path | None,
+) -> None:
+    """Raw web tools for callers that do not supply config (e.g. tests)."""
+    from tools.web_fetch import WebFetchTool
+    from tools.web_search import WebSearchTool
+    reg.register(WebSearchTool())
+    reg.register(WebFetchTool())
+    if skill_roots:
+        _register_skill_tool(reg, cwd, skill_roots, memory_root)
+
+
+def _apply_filters_and_handoff(reg: ToolRegistry, config: "AgentConfig | None") -> None:
+    """Apply config allow/deny lists, then inject the canonical write_handoff."""
+    if config is not None and config.tools is not None:
+        reg.filter_to(config.tools)
+    if config is not None and config.disabled_tools:
+        reg.filter_out(config.disabled_tools)
+    # write_handoff is a lifecycle tool, not a general file-write capability.
+    # Keep it provider-visible even when config.tools restricts ordinary tools so
+    # inherited children can reuse the parent's exact schema without invalidating
+    # the warm tool-cache prefix.
+    from tools.write_handoff import WriteHandoffTool
+    if reg.get("write_handoff") is not None:
+        print(
+            "[tools] Warning: reserved tool name 'write_handoff' ignored; "
+            "using the canonical lifecycle tool",
+            file=sys.stderr,
+        )
+        reg.filter_out(["write_handoff"])
+    # Main agent: no file write — content is returned directly for display in chat.
+    reg.register(WriteHandoffTool(handoff_path=None))
+
+
 def create_tool_registry(
     cwd: Path = Path("."),
     allowed_roots: list[Path] | None = None,
@@ -136,137 +331,18 @@ def create_tool_registry(
     by delegate tools that spin up sub-agents. Without *config* (e.g. in
     tests), the raw web_search and web_fetch tools are registered instead.
     """
-    if config is not None and config.sandbox_mode:
-        effective_roots = None
-    else:
-        effective_roots = allowed_roots if allowed_roots is not None else [_DAGI_ROOT, cwd]
     reg = ToolRegistry()
-    _proj = config.project_path if config else None
-    _services = config.services if config else {}
-    reg.register(ReadTool(
-        cwd=cwd,
-        allowed_roots=effective_roots,
-        project_path=_proj,
-        service_url=_services.get("doc_converter"),
-        reserve_tokens=config.reserve_tokens if config else 0,
-        edge_chars=config.truncate_edge_chars if config else DEFAULT_EDGE_CHARS,
-        max_image_bytes=config.image_input_max_image_bytes if config else None,
-        max_image_pixels=config.image_input_max_pixels if config else None,
-    ))
-    reg.register(GrepTool(cwd=cwd, allowed_roots=effective_roots))
-    reg.register(FindTool(cwd=cwd, allowed_roots=effective_roots))
-    reg.register(WriteTool(cwd=cwd, allowed_roots=effective_roots))
-    reg.register(EditTool(cwd=cwd, allowed_roots=effective_roots))
-    reg.register(CopyTool(cwd=cwd, allowed_roots=effective_roots))
-    reg.register(BashTool(cwd=cwd))
-    if bash_tool is not None:
-        reg.register(bash_tool)
-    from tools.update_task_status import UpdateTaskStatusTool
-    from tools.active_plan import CheckActivePlanTool, SetActivePlanTool
-    reg.register(SetActivePlanTool(config=config, callbacks=callbacks, tracker=tracker))
-    reg.register(CheckActivePlanTool(config=config, callbacks=callbacks, tracker=tracker))
-    reg.register(UpdateTaskStatusTool(config=config))
-    from tools.ask_user import AskUserTool
-    _on_ask = callbacks.on_ask_user if callbacks else _default_ask_user
-    _ask_timeout = (
-        config.ask_user_timeout
-        if (config and config.ask_user_timeout is not None)
-        else None
+    _register_file_tools(reg, cwd, _sandbox_roots(cwd, allowed_roots, config), config)
+    _register_session_tools(
+        reg, cwd=cwd, config=config, callbacks=callbacks, tracker=tracker, bash_tool=bash_tool,
     )
-    reg.register(AskUserTool(on_ask_user=_on_ask, timeout=_ask_timeout))
-    if config is not None and (config.advanced_config is not None or config.worker_config is not None):
-        from tools.switch_model import SwitchModelTool
-        reg.register(SwitchModelTool())
-    from tools.reload_skills import ReloadSkillsTool
-    reg.register(ReloadSkillsTool())
-    if callbacks is not None and callbacks.on_message_board_post is not None:
-        from tools.emote import EmoteTool
-        memes_root = _DAGI_ROOT / ".dagi" / "emotes" / "memes"
-        reg.register(EmoteTool(on_post=callbacks.on_message_board_post, memes_root=memes_root))
-    if callbacks is not None and callbacks.on_show_file is not None:
-        from tools.show_file import ShowFileTool
-        reg.register(ShowFileTool(
-            on_show_file=callbacks.on_show_file,
-            project_path=config.project_path if config else cwd,
-        ))
-    # Global pet notepad: file-backed, so it is readable from every frontend.
-    from tools.read_notepad import ReadNotepadTool
-    reg.register(ReadNotepadTool(on_flush=callbacks.on_flush_notepad if callbacks else None))
     if config is not None:
-        for spawn_tool in _discover_subagent_tools(
-            cwd=cwd, config=config, callbacks=callbacks,
-            tracker=tracker, session_log=session_log, parent_context=parent_context,
-        ):
-            try:
-                reg.register(spawn_tool)
-            except Exception as exc:  # noqa: BLE001
-                print(
-                    f"[tools] Warning: could not register subagent tool "
-                    f"{spawn_tool.name!r}: {exc}",
-                    file=sys.stderr,
-                )
-
-        from tools.extend_timeout import ExtendSubagentTimeoutTool
-        reg.register(ExtendSubagentTimeoutTool())
-
-        for pt in _load_project_tools(cwd):
-            try:
-                reg.register(pt)
-            except Exception as exc:  # noqa: BLE001
-                print(
-                    f"[tools] Warning: could not register project tool "
-                    f"{pt.name!r}: {exc}",
-                    file=sys.stderr,
-                )
-
-        if skill_roots:
-            _effective_memory_root = resolve_memory_root(memory_root)
-            reg.register(SkillTool(skill_roots=skill_roots, dagi_root=_DAGI_ROOT, cwd=cwd, memory_root=_effective_memory_root))
-            from tools.run_skill_script import RunSkillScriptTool
-            reg.register(RunSkillScriptTool(skill_roots=skill_roots, dagi_root=_DAGI_ROOT))
-
-        # Schedule management tools — interactive sessions only.
-        # Autonomous tasks cannot see or call these, preventing
-        # self-modification of the schedule.
-        _is_autonomous = getattr(config, "autonomous", False)
-        if not _is_autonomous:
-            from tools.schedule_tools import (
-                ListScheduledTasksTool,
-                RemoveScheduledTaskTool,
-                ScheduleTaskTool,
-            )
-            _sched_path = cwd / ".dagi" / "scheduler" / "schedule.yaml"
-            _runs_path = cwd / ".dagi" / "scheduler" / "runs.jsonl"
-            reg.register(ScheduleTaskTool(schedule_path=_sched_path))
-            reg.register(ListScheduledTasksTool(
-                schedule_path=_sched_path, runs_path=_runs_path,
-            ))
-            reg.register(RemoveScheduledTaskTool(schedule_path=_sched_path))
-    else:
-        # Fallback for callers that do not supply config (e.g. tests)
-        from tools.web_fetch import WebFetchTool
-        from tools.web_search import WebSearchTool
-        reg.register(WebSearchTool())
-        reg.register(WebFetchTool())
-        if skill_roots:
-            _effective_memory_root = resolve_memory_root(memory_root)
-            reg.register(SkillTool(skill_roots=skill_roots, dagi_root=_DAGI_ROOT, cwd=cwd, memory_root=_effective_memory_root))
-    if config is not None and config.tools is not None:
-        reg.filter_to(config.tools)
-    if config is not None and config.disabled_tools:
-        reg.filter_out(config.disabled_tools)
-    # write_handoff is a lifecycle tool, not a general file-write capability.
-    # Keep it provider-visible even when config.tools restricts ordinary tools so
-    # inherited children can reuse the parent's exact schema without invalidating
-    # the warm tool-cache prefix.
-    from tools.write_handoff import WriteHandoffTool
-    if reg.get("write_handoff") is not None:
-        print(
-            "[tools] Warning: reserved tool name 'write_handoff' ignored; "
-            "using the canonical lifecycle tool",
-            file=sys.stderr,
+        _register_configured_tools(
+            reg, cwd=cwd, config=config, callbacks=callbacks, tracker=tracker,
+            session_log=session_log, parent_context=parent_context,
+            skill_roots=skill_roots, memory_root=memory_root,
         )
-        reg.filter_out(["write_handoff"])
-    # Main agent: no file write — content is returned directly for display in chat.
-    reg.register(WriteHandoffTool(handoff_path=None))
+    else:
+        _register_fallback_tools(reg, cwd, skill_roots, memory_root)
+    _apply_filters_and_handoff(reg, config)
     return reg
