@@ -67,7 +67,7 @@ def _make_loop(registry=None, **config_overrides) -> AgentLoop:
         patch("openai.OpenAI"),
         patch.object(Path, "exists", return_value=False),
     ):
-        loop = AgentLoop(config=config, _registry=real_registry, _tracker=fake_tracker)
+        loop = AgentLoop(config=config, _registry=real_registry, tracker=fake_tracker)
 
     loop.tracker = fake_tracker
     loop.registry = real_registry
@@ -475,7 +475,8 @@ class TestBatchedHandoffPairing:
     A second END_TURN tool in one response used to overwrite the pending one, so
     the first call reached the transcript with no tool result at all. The next
     request then breaks the provider's required call/result pairing, and a
-    replayed session reads the earlier call as unfinished work.
+    replayed session reads the earlier call as unfinished work. The first
+    END_TURN wins; later calls are skipped but answered with a `[skipped]` result.
     """
 
     def test_duplicate_write_handoff_answers_every_call(self):
@@ -491,11 +492,10 @@ class TestBatchedHandoffPairing:
         result = loop.run("do something")
 
         tool_msgs = [m for m in loop._messages if m.get("role") == "tool"]
-        assert [(m["tool_call_id"], m["content"]) for m in tool_msgs] == [
-            ("tc1", "first"),
-            ("tc2", "second"),
-        ]
-        assert result == "second"
+        assert [m["tool_call_id"] for m in tool_msgs] == ["tc1", "tc2"]
+        assert tool_msgs[0]["content"] == "first"
+        assert tool_msgs[1]["content"].startswith("[skipped]")
+        assert result == "first"
         assert loop.client.chat.completions.create.call_count == 1
 
     def test_duplicate_write_handoff_keeps_the_log_call_result_pairs(self):
@@ -534,7 +534,7 @@ class TestBatchedHandoffPairing:
         loop.run("do something")
 
         assert handoff_calls == [True]
-        assert done_calls == ["second"]
+        assert done_calls == ["first"]
 
     @pytest.mark.parametrize("handoff_first", [True, False])
     def test_mixed_batch_records_results_in_call_order(self, handoff_first):
@@ -556,7 +556,8 @@ class TestBatchedHandoffPairing:
         # the batch actually requested.
         expected = [tc.id for tc in batch]
         assert [m["tool_call_id"] for m in loop._messages if m.get("role") == "tool"] == expected
-        assert len(tool.calls) == 1, "the sibling call must still run"
+        # A sibling before the handoff runs; one after it is skipped.
+        assert len(tool.calls) == (0 if handoff_first else 1)
         assert result == "done"
 
     def test_next_turn_request_carries_every_call_result_pair(self):
@@ -722,7 +723,7 @@ class TestSystemPromptRefresh:
             patch("openai.OpenAI"),
             patch.object(Path, "exists", return_value=False),
         ):
-            first_loop = AgentLoop(config=config, _tracker=fake_tracker)
+            first_loop = AgentLoop(config=config, tracker=fake_tracker)
 
         stale_system = first_loop._messages[0]
         old_messages = list(first_loop._messages)
@@ -740,7 +741,7 @@ class TestSystemPromptRefresh:
         ):
             second_loop = AgentLoop(
                 config=updated_config,
-                _tracker=fake_tracker,
+                tracker=fake_tracker,
                 initial_messages=old_messages,
             )
 
@@ -1439,8 +1440,8 @@ class TestRestoredContinuation:
             project_path=tmp_path, supports_images=True,
         )
         loop = AgentLoop(
-            config=config, _registry=registry, _tracker=tracker,
-            _session_log=session_log, initial_messages=initial,
+            config=config, _registry=registry, tracker=tracker,
+            session_log=session_log, initial_messages=initial,
         )
         loop._skip_slug_generation = True
         loop.client = MagicMock()

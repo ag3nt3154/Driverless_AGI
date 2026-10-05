@@ -295,7 +295,6 @@ class SlashCommandHandler:
 
     def _cmd_revise_history(self, arg: str | None) -> str | None:
         """Remove the last N steps from the session log."""
-        from agent.session_store import write_session
         from tui.revise_history import format_step_summaries
 
         conv = self._w.conversation
@@ -358,18 +357,8 @@ class SlashCommandHandler:
             conv.append_info("Revision cancelled.")
             return None
 
-        for _ in range(n):
-            log.revise_last_step()
-
         try:
-            # Rewrite JSONL
-            tracker_path = getattr(self._active_loop.tracker, "_path", None)
-            if isinstance(tracker_path, Path):
-                events_path = tracker_path.with_suffix(".events.jsonl")
-                write_session(events_path, log.events)
-
-            # Sync derived message cache
-            self._active_loop._sync_messages()
+            self._active_loop.revise_last_steps(n)
 
             # Re-render conversation
             conv.clear()

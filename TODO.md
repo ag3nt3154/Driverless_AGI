@@ -36,26 +36,74 @@
 
 - **2026-10-02 automation review follow-ups.** The review covered `task/iteration-engine`
   at `6917b131`. Its report files, `_CODEX_CODE_REVIEW_2026-10-02.md` and
-  `_CODEX_SUGGESTIONS_2026-10-02.md`, are in the repo root. Only R2 is implemented
-  (2026-10-03); the other fixes are not implemented yet.
+  `_CODEX_SUGGESTIONS_2026-10-02.md`, are in the repo root. R2 and R6 are fixed (2026-10-05);
+  R7 is in progress; the rest are still open.
   - **P1 R1 (campaign):** tampering during the *holdout* pass is swallowed by
     `_holdout_if_better` (`campaign/engine.py`), so the trial can still be accepted.
     Fix: propagate `evaluator_modified` and fail the trial, as `_rescore_holdout` already
     does. Add a regression test where holdout inference alters the labels.
-  - **P1 R2 (agent):** two END_TURN results in one tool batch record only the last
-    result (`agent/_tool_dispatch.py`), leaving unmatched tool calls. `finalize_trial`
-    makes this more reachable. **Fixed 2026-10-03 in `0f93469c`:** every call of the batch
-    is bookkept in the model's call order and only termination is deferred.
-  - **P1 R3/R4 (scheduler):** `scheduler/runner.py` passes an unsupported `tracker=` to
-    AgentLoop, and its timeout does not stop the worker. Both are known from the
-    2026-09-06 review; consider reusing `campaign/process.py`.
+  - ~~**P1 R2 (agent):** multiple END_TURN results in one tool batch~~ — fixed 2026-10-05.
+    The first END_TURN call wins. Every later call in the batch is skipped without running,
+    but still gets a `[skipped]` result. Tests: `tests/test_end_turn_batch.py`. (A parallel
+    local fix, `0f93469c`, ran every call and let the last handoff win; the merge of
+    2026-10-05 kept first-wins.)
+  - **P1 R3/R4 (scheduler):** ~~`scheduler/runner.py` passes an unsupported `tracker=` to
+    AgentLoop~~ — fixed 2026-10-05 by R7 step 2 (`tracker=` is now the public argument).
+    Still open: its timeout does not stop the worker (known from the 2026-09-06 review;
+    consider reusing `campaign/process.py`).
   - **P2 R5 (campaign):** an engine killed during the agent stage neither archives the
     workspace nor counts the attempt. This is the documented §9 trade-off; revisit it
     with a started-attempt record.
-  - **P2 R6/R7:** the garbled-response revision is not persisted, and core orchestration
-    is too large.
+  - ~~**P2 R6:** the garbled-response revision is not persisted~~ — fixed 2026-10-05 by R7
+    step 3. Recovery now goes through `AgentLoop.revise_last_steps`, which rewrites the
+    events file (`write_session` is now atomic: temp file + replace). The events path is
+    fixed at construction, so appends and rewrites keep hitting one file after the tracker's
+    slug rename (previously a revise after the rename wrote to a different file).
+    Test: `test_garbled_recovery_is_saved_to_the_events_file` reloads the file and compares.
+    Still open: a durable revision *event* instead of a whole-file rewrite.
+  - **P2 R7 (agent):** core orchestration is too large. Step 1 done 2026-10-05: the request
+    retry loop moved out of `AgentLoop.run` into `agent/_request_executor.py`
+    (`RequestExecutor` returns RESPONSE / ABORTED / PAUSED / NULL_EXHAUSTED); `run()` is
+    351 → 239 lines. Tests: `tests/test_request_executor.py`. Step 2 done 2026-10-05:
+    frontends (GUI, TUI, Telegram, subagent runner, benchmarks) use a public surface —
+    `messages` (copy), `is_paused`, `is_running`, `revise_last_steps(n)` (replaces the
+    duplicated GUI/TUI revise+persist+sync code, and now refreshes messages even if the
+    save fails), and `tracker=` / `session_log=` constructor arguments. Tests:
+    `tests/test_loop_public_api.py`. Remaining private access: `subagent_main.py` sets
+    `_extra_body` / `_parallel_tool_calls`. Step 3 done 2026-10-05: garbled-response
+    detection/recovery moved to `_garbled_streak_reached` / `_recover_from_garbled_loop`
+    (`run()` now 216 lines) and fixed R6. Step 4 done 2026-10-05: `tests/test_run_contract.py`
+    drives every `run()` exit path (handoff, tool step, max continuations, double END_TURN,
+    null exhausted, non-transient error, retries exhausted, retry success, garbled recovery,
+    /reload, consecutive runs, pause-on-error + resume, interrupt + resume) and checks the
+    log is well-formed (turn/step brackets, call/result pairing, turn-end reason) and that the
+    events file replays to the live log. It found and fixed one bug: pausing after exhausted
+    API retries left the step open, so the next step started inside it. Step 5 done
+    2026-10-05: `agent/_turns.py` `TurnBoundaries` (`loop.turns`) is the one writer of
+    turn/step start/end events; `/reload`, `/wtf` and GUI compact use its `side_turn()`.
+    `run()` is now a ~40-line loop over `_run_step()`, which returns (result, turn-end
+    reason) or None; reply handling is in `_handle_text_reply` / `_handle_tool_reply`.
+    Fixed two garbled-recovery bugs found by a new contract test: recovery after any real
+    step in the same turn crashed with `InvariantError` (turn already open), and when every
+    step was garbled it deleted the user's task message. Recovery now removes only the empty
+    steps (`revise_last_step(keep_turn=True)`) and continues in the same turn.
+    Tests: `tests/test_turns.py`, `tests/test_run_contract.py`. Remaining R7 ideas: a
+    tool-batch finalizer for call/result pairing (R2 is already fixed in `_tool_dispatch`);
+    `__init__` is still 167 lines. No repository-wide cosmetic split.
 
-- **Persist history revisions through one save path** — `SessionLog.revise_last_step()`
+- **Windows shell contract and quoting (investigated 2026-10-02; awaiting approval)** —
+  preserve the `bash` name; resolve and advertise its actual shell, CWD and Python executable
+  from runtime; add shell-free argv/stdin execution for Python scripts; replace Unix shell
+  examples in memory skills with native tools, resolving the Claude-copy parity requirement.
+  Include main/subagent registries, prompt overrides, tool filtering and `run_skill_script`.
+  Live probe: multiline `python -c` printed only its first line and returned success;
+  argv plus stdin printed both lines and preserved shell-sensitive arguments.
+  Verify Windows/POSIX execution, errors, timeout and force-kill behavior. No runtime changes.
+
+- ~~**Persist history revisions through one save path**~~ — fixed 2026-10-05 by R6/R7:
+  `AgentLoop.revise_last_steps()` is the one save path (atomic `write_session`), used by
+  garbled recovery and `/revise-history` in both frontends. Original note:
+  `SessionLog.revise_last_step()`
   never reaches `on_append`, so garbled recovery leaves the removed steps in
   `*.events.jsonl`, while `/revise-history` in both frontends rewrites the file itself with a
   non-atomic `write_session` (a crash mid-rewrite loses the log). Fix: one save hook on

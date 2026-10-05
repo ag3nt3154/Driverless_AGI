@@ -28,7 +28,7 @@ When the conversation exceeds the model's context window, **context compaction**
 
 To end a turn the agent calls either **`write_handoff`** (final response) or **`ask_user`** (pause for user input). `write_handoff` takes the complete user-facing response as `content` and returns a typed `ToolResult(side_effect=SideEffect.END_TURN)` that the loop detects and uses to exit cleanly — no in-band string sentinels. `ask_user` pauses the turn and waits for the user's answer; after receiving it, the agent continues working or calls `write_handoff` to finish. If the agent produces a response with no tool calls and neither turn-ending tool, the harness treats it as accidentally truncated and injects a recovery prompt (`.dagi/prompts/main/continue.md`) to resume the loop. A safety valve (`max_continuations`, default 10, configurable in `config.yaml`) prevents runaway recovery loops. Additionally, **garbled loop recovery** detects when the model produces 3 consecutive empty-content responses (a common failure mode with smaller models; any tool-call step breaks the streak), revises those empty steps out of the session log, and triggers a full context compaction to give the model a fresh start.
 
-**Garbled loop recovery:** When a model produces consecutive empty-content responses (common with smaller models), the harness automatically strips the degenerate steps, compacts the full context, and retries — rather than burning through all continuation attempts. Recovery stays inside the current turn: only the empty steps are removed (`revise_last_step(keep_turn=True)`), the turn's prompt stays verbatim after the summary (the full compaction replaces only history up to the last completed step), and step numbers keep counting so no `(turn, step)` coordinate is reused. The revision is not yet written to `*.events.jsonl` (see TODO.md).
+**Garbled loop recovery:** When a model produces consecutive empty-content responses (common with smaller models), the harness automatically strips the empty steps (keeping the turn and the user's task), compacts the full context, and retries in the same turn — rather than burning through all continuation attempts. The stripped steps are also removed from the session's `.events.jsonl` file (rewritten atomically), so replaying it matches the live session.
 
 **Memory:** knowledge lives in one central, grep-first memory wiki shared with Claude Code and
 Codex (`memory_root`, default `G:\My Drive\black_grimoire`; entries under `wiki/projects/<p>/`,
@@ -867,6 +867,8 @@ Driverless_AGI/
 │   ├── registry.py        # ToolRegistry singleton
 │   ├── tools.py           # Builds and returns the tool registry
 │   ├── loop.py            # AgentLoop orchestrator (run loop, __init__, pause/resume)
+│   │                       #   Frontends use only its public surface: messages (copy), is_paused, is_running,
+│   │                       #   revise_last_steps(n), and the tracker= / session_log= constructor arguments
 │   ├── _loop_config.py    # AgentConfig, AgentCallbacks, CompactionResult dataclasses
 │   ├── _loop_helpers.py   # Loop sentinels, CONTINUE_PROMPT, [MEMORY] pointer + reload helpers
 │   ├── _system_prompt.py  # System-prompt assembly (single source of truth)
@@ -875,9 +877,12 @@ Driverless_AGI/
 │   ├── _model_switch.py   # LLM tier switching + shared extra_body builder; preflight rejects a switch when
 │   │                       #   history has dagi_image parts and the target tier's supports_images is False (image input, stage 3)
 │   ├── _streaming.py      # Streaming chat-completions consumer
+│   ├── _turns.py          # TurnBoundaries: the one writer of turn/step start/end events (run(), /reload, /wtf, GUI compact)
+│   ├── _request_executor.py # Retry policy for one model request (transient-error backoff, ghost retries, pause, abort); `run()` uses it.
+│   │                       #   Every `run()` exit path is covered by tests/test_run_contract.py (log well-formedness + replay)
 │   ├── _compaction.py     # Context compaction via forked compact subagent; materializes dagi_image parts in the
 │   │                       #   reconstructed fork prefix before building the fork snapshot (image input, stage 3)
-│   ├── _tool_dispatch.py  # Tool-call dispatch, bookkeeping, write_handoff deferral (runs last in batch), pause gating, malformed-args sanitisation + surface cache reproject
+│   ├── _tool_dispatch.py  # Tool-call dispatch, bookkeeping, first END_TURN wins (later calls in the batch get a `[skipped]` result; on_done fires after all bookkeeping), pause gating, malformed-args sanitisation + surface cache reproject
 │   ├── config_loader.py   # Resolves model config from YAML; reads supports_images + per-model image_input: block (image input, stage 3)
 │   ├── session.py         # SessionTracker — JSONL logs
 │   ├── session_events.py  # Event vocabulary + SESSION_FORMAT_VERSION (3 — bumped for dagi_image content parts, image input stage 2)
@@ -1020,6 +1025,10 @@ Driverless_AGI/
 | `write_handoff` | Always visible to the main agent and auto-injected into every subagent with a `handoff_path`. It writes `content` verbatim to a baked-in path and its sentinel immediately ends the turn, so no `END_OF_RESPONSE` is needed. Main-agent calls save `.dagi/handoffs/main_<thread-hash12>.md` and render the full Markdown in the TUI; inherited children reuse the exact parent-visible schema but write to their assigned child path. The lifecycle name is reserved against project-tool collisions. |
 
 File tools (`read`, `write`, `edit`, `grep`, `find`) are sandboxed to allowed roots via `tools/_path_guard.py`. `bash` is intentionally unsandboxed.
+
+The 2026-10-02 Windows shell investigation reproduced missing Unix commands and partial
+multiline `python -c` execution with a successful exit. Runtime metadata, shell-free argv/stdin
+execution, and aligned skill examples are proposed in [TODO](TODO.md); no runtime fix is applied.
 
 Every subagent spawn tool (worker, review, explore_files, web_research, or any type discovered from `.dagi/subagents/`) reads the subagent's handoff file and inlines its full content directly into the tool's own result on success (via `tools/_handoff_format.py::format_handoff_result()`) — the main agent never has to make a separate `read` call to see what a subagent produced. `extend_subagent_timeout`'s resume path does the same. Large handoffs are still subject to the normal output-filter truncation (head + marker + tail) like any other tool result.
 

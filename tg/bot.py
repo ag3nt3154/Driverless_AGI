@@ -183,6 +183,6 @@ class TelegramBot:
                 pass
         finally:
             if loop:
-                session.messages = loop._messages
+                session.messages = loop.messages
                 loop.finish()
             session.busy = False

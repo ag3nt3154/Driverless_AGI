@@ -86,20 +86,24 @@ def dispatch_tool_calls(
 
     Every call in the batch is bookkept in the model's call order, so the
     transcript always pairs a call with its result; calls skipped for a user
-    pause or a mixed SOLO_TOOLS batch get an explanatory result instead of running. Returns a
-    non-None string only when a tool returned SideEffect.END_TURN
-    (write_handoff): the handoff's result is already recorded by then, and the
-    remaining calls of the batch have been served; `run()` must return the
-    returned value immediately without a further API turn. The last END_TURN
-    output wins, so the streamed user answer stays deterministic.
+    pause, a mixed SOLO_TOOLS batch, or an earlier END_TURN get an explanatory
+    result instead of running. Returns a non-None string only when a tool
+    returned SideEffect.END_TURN (write_handoff), in which case `run()` must
+    return that value immediately without another API call.
 
     Deferred system messages are appended AFTER all tool results so they
     don't break the assistant→tool pairing that strict providers
     (e.g. DeepSeek) enforce.
+
+    The first END_TURN call in a batch wins and is bookkept in place. Every
+    later call in the batch (a redundant handoff or an ordinary tool) is not
+    executed but still gets an explicit result, so each logged tool/call
+    has its tool/result.
     """
     deferred_system_msgs: list[str] = []
     deferred_image_parts: list[dict] = []
-    end_turn_output: str | None = None
+    end_turn_result: str | None = None
+    end_turn_call_id: str | None = None
     solo = _solo_violation(message.tool_calls)
 
     for tc in message.tool_calls:
@@ -121,6 +125,14 @@ def dispatch_tool_calls(
                 "arguments": tc.function.arguments,  # raw, unparsed
             },
         )
+        if end_turn_call_id is not None:
+            result = (
+                f"[skipped] Not executed: the turn already ended via call "
+                f"{end_turn_call_id} earlier in this batch."
+            )
+            bookkeep_tool_call(loop, tc, result, description, tool_records)
+            loop._lifecycle.tool_bookkeeping_finished()
+            continue
         skip = _skip_result(loop, tc.function.name, solo)
         if skip is not None:
             bookkeep_tool_call(loop, tc, skip, description, tool_records)
@@ -148,17 +160,13 @@ def dispatch_tool_calls(
             effect = result.side_effect
 
             if effect is SideEffect.END_TURN:
-                # Record this call's result where it was asked for, then keep
-                # serving the batch: a second handoff (or a plain tool call
-                # alongside it) must not overwrite or orphan this result.
-                # on_handoff() has to precede the bookkeeping so the UIs can
-                # suppress the handoff's own tool-end render in favour of the
-                # single on_done carrying the winner.
-                if end_turn_output is None:
-                    loop.callbacks.on_handoff()
-                end_turn_output = bookkeep_tool_call(
+                # on_handoff must precede on_tool_end so UIs suppress the
+                # handoff's tool card and render it as the final answer.
+                loop.callbacks.on_handoff()
+                end_turn_result = bookkeep_tool_call(
                     loop, tc, result.output, description, tool_records
                 )
+                end_turn_call_id = tc.id
                 loop._lifecycle.tool_bookkeeping_finished()
                 continue
             elif effect is SideEffect.ALL_TASKS_RESOLVED:
@@ -191,8 +199,8 @@ def dispatch_tool_calls(
     if deferred_image_parts:
         loop._log_user_message("user", deferred_image_parts, "tool_image")
 
-    if end_turn_output is not None:
-        return handle_end_turn(loop, end_turn_output, tool_records, (message, response))
+    if end_turn_result is not None:
+        return handle_end_turn(loop, end_turn_result, tool_records, (message, response))
     return None
 
 
@@ -303,23 +311,20 @@ def finalize_turn(loop: AgentLoop, message, response, tool_records: list[ToolCal
 
 def handle_end_turn(
     loop: AgentLoop,
-    output: str,
+    full_str: str,
     tool_records: list[ToolCallRecord],
     message_response: tuple,
 ) -> str:
     """Terminate the agent's turn on SideEffect.END_TURN.
 
-    The winning handoff's result was already bookkept in call order by
-    `dispatch_tool_calls`, together with every other call of the batch; this
-    only closes the turn — token accounting, idle state, and the one `on_done`
-    that surfaces `output` (the last handoff requested). Works for both main
-    agent and subagent — the tool itself decides whether to write a file or
-    just return content.
+    Called after every call in the batch has been bookkept, so the final
+    callback fires only once the conversation is fully paired. Works for
+    both main agent and subagent — the tool itself decides whether to
+    write a file or just return content.
     """
     message, response = message_response
-
     finalize_turn(loop, message, response, tool_records)
 
     loop._process.idle()
-    loop.callbacks.on_done(output)
-    return output
+    loop.callbacks.on_done(full_str)
+    return full_str

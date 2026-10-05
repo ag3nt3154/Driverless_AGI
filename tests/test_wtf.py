@@ -29,7 +29,7 @@ def _loop(tmp_path: Path) -> AgentLoop:
         loop = AgentLoop(config)
     loop.log.append(sev.TURN_START, {"turn": 1})
     loop._log_user_message("user", "The worker failed to start.", "input")
-    loop._close_turn(1, sev.reason_completed())
+    loop.turns.close_turn(sev.reason_completed())
     return loop
 
 
@@ -284,7 +284,7 @@ def test_wtf_rejects_a_surface_generation_change_after_the_child_returns(tmp_pat
             surface_op=("replace", node, node),
             source_seqs=[node],
         )
-        loop._close_turn(turn, sev.reason_completed())
+        loop.turns.close_turn(sev.reason_completed())
         return _result(report_path)
 
     with patch("agent.wtf.run_subagent", side_effect=stale_run):

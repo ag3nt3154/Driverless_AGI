@@ -118,10 +118,16 @@ class _FakeLoop:
     def __init__(self, log: SessionLog, tracker_path: Path) -> None:
         self.log = log
         self.tracker = _FakeTracker(tracker_path)
+        self._events_path = tracker_path.with_suffix(".events.jsonl")
         self.sync_calls = 0
 
     def _sync_messages(self) -> None:
         self.sync_calls += 1
+
+    # The real method, so these tests cover the revise -> sync -> persist order.
+    from agent.loop import AgentLoop as _AgentLoop
+    revise_last_steps = _AgentLoop.revise_last_steps
+    del _AgentLoop
 
 
 def _make_handler_with_loop(log: SessionLog, tmp_path: Path):

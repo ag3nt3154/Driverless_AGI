@@ -5,7 +5,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from agent import session_events as sev
 from agent.wtf_report import parse_wtf_report
 from tools.subagent_api import run_subagent
 
@@ -91,12 +90,8 @@ def run_wtf(loop: "AgentLoop", description: str | None) -> WtfResult:
     )
     report_path, relative_path, parsed_description = _validated_report_path(loop, result)
     if was_idle:
-        turn = loop.log.next_turn()
-        loop.log.append(sev.TURN_START, {"turn": turn})
-        try:
+        with loop.turns.side_turn():
             _append_reference(loop, _literal_invocation(description), relative_path, result.branch_id)
-        finally:
-            loop._close_turn(turn, sev.reason_completed())
     else:
         _append_reference(loop, _literal_invocation(description), relative_path, result.branch_id)
     return WtfResult(parsed_description, report_path, result.branch_id)

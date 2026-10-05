@@ -120,7 +120,7 @@ def _ensure_handoff(loop: AgentLoop, handoff_path: Path) -> None:
 
     from tools._handoff_format import unverified_flag_path
 
-    final_text = _extract_final_assistant_text(loop._messages)
+    final_text = _extract_final_assistant_text(loop.messages)
     handoff_path.parent.mkdir(parents=True, exist_ok=True)
     handoff_path.write_text(
         f"# Handoff\n\n{final_text or '(subagent produced no output)'}",

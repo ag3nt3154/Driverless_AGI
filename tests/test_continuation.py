@@ -95,7 +95,7 @@ def _make_loop(max_continuations: int = 3) -> AgentLoop:
         loop = AgentLoop(
             config=config,
             _registry=fake_registry,
-            _tracker=fake_tracker,
+            tracker=fake_tracker,
         )
 
     loop.tracker = fake_tracker
@@ -257,7 +257,7 @@ class TestApiErrorRetry:
             _exit_response("Done."),
         ]
 
-        with patch("agent.loop.time.sleep"):
+        with patch("agent._request_executor.time.sleep"):
             result = loop.run("do something")
 
         assert loop.client.chat.completions.create.call_count == 2
@@ -281,7 +281,7 @@ class TestApiErrorRetry:
         loop.client = MagicMock()
         loop.client.chat.completions.create.side_effect = _make_api_status_error(503)
 
-        with patch("agent.loop.time.sleep"):
+        with patch("agent._request_executor.time.sleep"):
             with pytest.raises(openai.APIStatusError):
                 loop.run("do something")
 
@@ -296,7 +296,7 @@ class TestApiErrorRetry:
             _exit_response("OK."),
         ]
 
-        with patch("agent.loop.time.sleep"):
+        with patch("agent._request_executor.time.sleep"):
             result = loop.run("do something")
 
         assert "OK." in result
@@ -311,7 +311,7 @@ class TestApiErrorRetry:
             _exit_response("OK."),
         ]
 
-        with patch("agent.loop.time.sleep"):
+        with patch("agent._request_executor.time.sleep"):
             result = loop.run("do something")
 
         assert "OK." in result
@@ -328,7 +328,7 @@ class TestApiErrorRetry:
             _exit_response("Done."),
         ]
 
-        with patch("agent.loop.time.sleep"):
+        with patch("agent._request_executor.time.sleep"):
             result = loop.run("do something")
 
         assert loop.client.chat.completions.create.call_count == 4
@@ -346,7 +346,7 @@ class TestApiErrorRetry:
             _exit_response("OK."),
         ]
 
-        with patch("agent.loop.time.sleep") as mock_sleep:
+        with patch("agent._request_executor.time.sleep") as mock_sleep:
             loop.run("do something")
 
         delays = [call.args[0] for call in mock_sleep.call_args_list]
@@ -365,7 +365,7 @@ class TestApiErrorRetry:
             _exit_response("OK."),
         ]
 
-        with patch("agent.loop.time.sleep"):
+        with patch("agent._request_executor.time.sleep"):
             loop.run("do something")
 
         retry_msgs = [t for t in texts if "Retrying" in t]
@@ -389,7 +389,7 @@ class TestErrorPause:
         loop.client.chat.completions.create.side_effect = _make_api_status_error(503)
 
         t = threading.Thread(target=loop.run, args=("do something",), daemon=True)
-        with patch("agent.loop.time.sleep"):
+        with patch("agent._request_executor.time.sleep"):
             t.start()
             t.join(timeout=1.0)  # should NOT finish — loop is blocked on _pause_event
 
@@ -420,7 +420,7 @@ class TestErrorPause:
             result_holder.append(loop.run("do something"))
 
         t = threading.Thread(target=_run, daemon=True)
-        with patch("agent.loop.time.sleep"):
+        with patch("agent._request_executor.time.sleep"):
             t.start()
             deadline = time.time() + 2.0
             while time.time() < deadline and not paused:

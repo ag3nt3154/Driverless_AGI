@@ -6,21 +6,20 @@ import json
 import os
 import tempfile
 import threading
-import time
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, Callable, Mapping, Sequence
 
-import httpx
-import openai
 from openai.types.chat.chat_completion_message_function_tool_call import (
     ChatCompletionMessageFunctionToolCall,
 )
 
 from agent import DAGI_ROOT
 from agent._git_branch import create_task_branch, get_current_branch
+from agent._request_executor import RequestExecutor, RequestOutcome
+from agent._turns import TurnBoundaries
 from agent.lifecycle import LifecyclePublisher
 from agent.lifecycle import ensure_expression_controller, load_process_library
 from agent.process_state import ProcessSnapshot, ProcessStateController
@@ -70,11 +69,11 @@ class AgentLoop:
         _registry: "ToolRegistry | None" = None,
         _parent_tracker: "SessionTracker | None" = None,
         _subagent_id: str | None = None,
-        _tracker: "SessionTracker | None" = None,
         _bash_tool: "object | None" = None,
         _system_prompt_override: str | None = None,
         _preserve_request_prefix: bool = False,
-        _session_log: "SessionLog | None" = None,
+        tracker: "SessionTracker | None" = None,
+        session_log: "SessionLog | None" = None,
     ):
         from agent.tools import create_tool_registry
         from uuid import uuid4
@@ -88,8 +87,8 @@ class AgentLoop:
         self._injected_bash_tool = _bash_tool
 
         # ── Create tracker first so sub-agent tools can reference it ─────────
-        if _tracker is not None:
-            self.tracker = _tracker
+        if tracker is not None:
+            self.tracker = tracker
         elif _parent_tracker is not None:
             self.tracker = _parent_tracker.child_tracker(_subagent_id or uuid4().hex)
         else:
@@ -101,13 +100,17 @@ class AgentLoop:
 
         self._effective_memory_root = resolve_memory_root(config.memory_root)
 
-        if _session_log is not None:
-            self.log = _session_log
+        if session_log is not None:
+            self.log = session_log
         else:
             self.log = SessionLog()
+        self.turns = TurnBoundaries(self.log)
+        # Fixed here: the tracker may rename its own file later (slug), but
+        # appends and whole-log rewrites must keep targeting the same file.
+        self._events_path: Path | None = None
         _tracker_path = getattr(self.tracker, "_path", None)
         if isinstance(_tracker_path, Path):
-            _events_path = _tracker_path.with_suffix(".events.jsonl")
+            _events_path = self._events_path = _tracker_path.with_suffix(".events.jsonl")
             self.log.on_append = lambda event: append_event(_events_path, event)
 
         if _registry is not None:
@@ -164,7 +167,7 @@ class AgentLoop:
         self._emit_header(system, "resume" if initial_messages else "initial")
         # A supplied log already owns the conversation. Replaying its derived
         # messages would duplicate the entire history on every GUI prompt.
-        if initial_messages and _session_log is None:
+        if initial_messages and session_log is None:
             self._seed_from_messages(initial_messages)
         self._sync_messages()
 
@@ -225,6 +228,41 @@ class AgentLoop:
         self._in_run = False
         self._expression_timer: threading.Timer | None = None
         self._expression_controller = self.tracker.expression_controller
+
+    # ── Public state for frontends ───────────────────────────────────────────
+
+    @property
+    def messages(self) -> list[dict]:
+        """A copy of the conversation as last sent to the model (header first)."""
+        return list(self._messages)
+
+    @property
+    def is_paused(self) -> bool:
+        return not self._pause_event.is_set()
+
+    @property
+    def is_running(self) -> bool:
+        """True while ``run()`` is executing a turn."""
+        return self._in_run
+
+    def revise_last_steps(self, n: int, *, keep_turn: bool = False) -> int:
+        """Remove up to ``n`` steps from the log and refresh ``messages``.
+
+        Stops early when no completed step is left; returns how many were
+        removed. ``keep_turn`` keeps a turn (and its user message) whose last
+        step is removed. The revision always applies in memory; the rewritten
+        log is then saved, and a failure to save is raised to the caller.
+        """
+        from agent.session_store import write_session
+
+        removed = 0
+        while removed < n and self.log.peek_last_step() is not None:
+            self.log.revise_last_step(keep_turn=keep_turn)
+            removed += 1
+        self._sync_messages()
+        if removed and self._events_path is not None:
+            write_session(self._events_path, self.log.events)
+        return removed
 
     def pause(self) -> None:
         self._lifecycle.pause()
@@ -336,9 +374,6 @@ class AgentLoop:
         """Wait until a paused run reaches its safe pre-request checkpoint."""
         return self._pause_checkpoint.wait(timeout)
 
-    def _continuing_step_finished(self, turn: int, step: int) -> None:
-        self.log.append(sev.STEP_END, {"turn": turn, "step": step})
-
     def _start_expression_timer(self) -> None:
         controller = self._expression_controller
         if controller is None:
@@ -449,6 +484,54 @@ class AgentLoop:
 
         return run_wtf(self, description)
 
+    def _send_request(self):
+        """One chat-completions attempt; RequestExecutor owns retries.
+
+        Compacts first when the request would exceed the context budget.
+        A streamed reply is accumulated into the blocking-response shape.
+        """
+        request = self._build_request_messages()
+        if self.config.context_window > 0:
+            est = sum(estimate_tokens(m) for m in request)
+            budget = self.config.context_window - self.config.reserve_tokens
+            if est > budget:
+                self.callbacks.on_assistant_text(
+                    f"[Context budget exceeded (~{est:,} tokens, "
+                    f"budget {budget:,}). Compacting...]"
+                )
+                self._last_prompt_tokens = est
+                self._compact_context()
+                request = self._build_request_messages()
+
+        self.callbacks.on_api_call(list(request))
+        create_kwargs = dict(self.config.request_kwargs)
+        create_kwargs.update(
+            model=self.config.model,
+            messages=request,
+            tools=self.registry.get_openai_tools_list(),
+            parallel_tool_calls=self._parallel_tool_calls,
+        )
+        if self._extra_body:
+            create_kwargs.setdefault("extra_body", {})
+            create_kwargs["extra_body"].update(self._extra_body)
+        self._last_request_snapshot = self._freeze_request_snapshot(create_kwargs)
+        if not self.config.stream:
+            return self.client.chat.completions.create(**create_kwargs)
+
+        stream = self.client.chat.completions.create(
+            stream=True,
+            stream_options={"include_usage": True},
+            **create_kwargs,
+        )
+        self._active_stream = stream
+        if self._abort_request.is_set():
+            self._close_active_stream()
+        try:
+            msg, usage = self._consume_stream(stream)
+        finally:
+            self._active_stream = None
+        return SimpleNamespace(choices=[SimpleNamespace(message=msg)], usage=usage)
+
     def _consume_stream(self, stream) -> "tuple[SimpleNamespace, object | None]":
         """Delegate to agent/_streaming.consume_stream (moved verbatim)."""
         from agent._streaming import consume_stream
@@ -475,18 +558,6 @@ class AgentLoop:
             return slug if slug else None
         except Exception:
             return None
-
-    def _close_turn(self, turn: int, reason: dict) -> None:
-        """Close the open turn, if one is open. Idempotent by design.
-
-        run() has several return paths; each closes its own turn explicitly,
-        and the finally-guard catches any path added later without one.
-        """
-        if self.log.open_turn is None:
-            return
-        if self.log.open_step is not None:
-            self.log.append(sev.STEP_END, {"turn": turn, "step": self.log.open_step})
-        self.log.append(sev.TURN_END, {"turn": turn, "reason": reason})
 
     def _log_user_message(self, role: str, content, source: str) -> None:
         """Append one user/message surface event.
@@ -628,345 +699,31 @@ class AgentLoop:
 
     def run(self, task: str | UserSubmission) -> str:
         submission = task if isinstance(task, UserSubmission) else UserSubmission(text=task)
-        task = submission.text
-        if task.strip().lower() == "/reload":
-            added, removed, errors = self._rebuild_for_reload()
-            notification = _format_reload_notification(len(self.skills), added, removed, errors)
-            # A surface event needs an enclosing turn, and /reload short-circuits
-            # before the normal one opens — so it gets its own.
-            _reload_turn = self.log.next_turn()
-            self.log.append(sev.TURN_START, {"turn": _reload_turn})
-            self._log_user_message("user", notification, "reload")
-            self._close_turn(_reload_turn, sev.reason_completed())
-            self._process.idle()
-            self.callbacks.on_assistant_text(notification)
-            return notification
+        if submission.text.strip().lower() == "/reload":
+            return self._run_reload()
 
-        _turn = self.log.next_turn()
-        self.log.append(sev.TURN_START, {"turn": _turn})
+        self.turns.open_turn()
         with self._inject_lock:
             self._in_run = True
         self._set_mid_step(True)
 
         try:
-            if not self._preserve_request_prefix:
-                wiki_ctx = _build_memory_context(
-                    self._effective_memory_root, self.config.project_path
-                )
-                if wiki_ctx:
-                    self._log_user_message("user", wiki_ctx, "wiki")
-            _content = self._submission_content(submission)
-            self._log_user_message("user", _content, "human")
-            self.tracker.record_user(_content)
-
-            # ── Auto-name session file from first user message ────────────────
-            if not self._skip_slug_generation:
-                slug_text = submission.text.strip() if submission.text.strip() else None
-                if slug_text:
-                    slug = self._generate_session_slug(slug_text)
-                else:
-                    slug = "image-conversation"
-                if slug:
-                    self.tracker.rename_with_slug(slug)
-
+            self._log_task(submission)
             self._continuation_count = 0
             self._empty_content_streak = 0
             self._start_expression_timer()
-            iteration = 0
             while True:
-                iteration += 1
-                self.log.append(sev.STEP_START, {"turn": _turn, "step": iteration})
-                self.callbacks.on_iteration(iteration)
-                self._set_mid_step(False)
-                self._pause_checkpoint.set()
-                try:
-                    self._pause_event.wait()  # blocks here when paused; instant no-op otherwise
-                finally:
-                    self._pause_checkpoint.clear()
-                    self._set_mid_step(True)
-                self._abort_request.clear()
-
-                # ── API call with retry ────────────────────────────────────
-                # Retries on two classes of failure:
-                # 1. Transient API errors (429, 500, 502, 503, connection,
-                #    timeout) — exponential backoff, separate counter.
-                # 2. Ghost responses (HTTP 200, content=None, usage=None) —
-                #    instant retry, separate counter.
-                _TRANSIENT_CODES = (429, 500, 502, 503)
-                _null_retries = 0
-                _error_retries = 0
-                _paused_on_error = False
-                response = None
-                while True:
-                    if self._abort_request.is_set():
-                        break  # interrupted (e.g. during a retry back-off)
-                    self._lifecycle.api_attempt_started()
-                    _request = self._build_request_messages()
-
-                    # ── Pre-request budget guard ─────────────────────────
-                    if self.config.context_window > 0:
-                        _est = sum(
-                            estimate_tokens(m) for m in _request
-                        )
-                        _budget = (
-                            self.config.context_window
-                            - self.config.reserve_tokens
-                        )
-                        if _est > _budget:
-                            self.callbacks.on_assistant_text(
-                                f"[Context budget exceeded "
-                                f"(~{_est:,} tokens, "
-                                f"budget {_budget:,}). "
-                                f"Compacting...]"
-                            )
-                            self._last_prompt_tokens = _est
-                            self._compact_context()
-                            _request = self._build_request_messages()
-                    # ────────────────────────────────────────────────────
-
-                    self.callbacks.on_api_call(list(_request))
-                    try:
-                        _create_kwargs = dict(self.config.request_kwargs)
-                        _create_kwargs.update(
-                            model=self.config.model,
-                            messages=_request,
-                            tools=self.registry.get_openai_tools_list(),
-                            parallel_tool_calls=self._parallel_tool_calls,
-                        )
-                        if self._extra_body:
-                            _create_kwargs.setdefault("extra_body", {})
-                            _create_kwargs["extra_body"].update(self._extra_body)
-                        self._last_request_snapshot = self._freeze_request_snapshot(_create_kwargs)
-                        if self.config.stream:
-                            _stream = self.client.chat.completions.create(
-                                stream=True,
-                                stream_options={"include_usage": True},
-                                **_create_kwargs,
-                            )
-                            self._active_stream = _stream
-                            if self._abort_request.is_set():
-                                self._close_active_stream()
-                            try:
-                                _msg, _usage = self._consume_stream(_stream)
-                            finally:
-                                self._active_stream = None
-                            response = SimpleNamespace(
-                                choices=[SimpleNamespace(message=_msg)], usage=_usage
-                            )
-                        else:
-                            response = self.client.chat.completions.create(**_create_kwargs)
-                    except (openai.APIConnectionError, openai.APITimeoutError, httpx.HTTPError):
-                        _error_retries += 1
-                        if _error_retries >= self.config.api_error_retries:
-                            if self.callbacks.supports_pause:
-                                self.callbacks.on_assistant_text(
-                                    f"[Connection error — all {_error_retries} retries failed. "
-                                    "Session paused. Send a message to retry.]"
-                                )
-                                self.pause()
-                                self.callbacks.on_pause()
-                                _paused_on_error = True
-                                break
-                            raise
-                        delay = min(2 ** _error_retries, 60)
-                        self.callbacks.on_assistant_text(
-                            f"[Connection error. Retrying in {delay}s "
-                            f"({_error_retries}/{self.config.api_error_retries})...]"
-                        )
-                        time.sleep(delay)
-                        continue
-                    except openai.APIStatusError as exc:
-                        if exc.status_code not in _TRANSIENT_CODES:
-                            raise
-                        _error_retries += 1
-                        if _error_retries >= self.config.api_error_retries:
-                            if self.callbacks.supports_pause:
-                                self.callbacks.on_assistant_text(
-                                    f"[Server error {exc.status_code} — all {_error_retries} retries failed. "
-                                    "Session paused. Send a message to retry.]"
-                                )
-                                self.pause()
-                                self.callbacks.on_pause()
-                                _paused_on_error = True
-                                break
-                            raise
-                        delay = min(2 ** _error_retries, 60)
-                        self.callbacks.on_assistant_text(
-                            f"[Server error {exc.status_code}. Retrying in {delay}s "
-                            f"({_error_retries}/{self.config.api_error_retries})...]"
-                        )
-                        time.sleep(delay)
-                        continue
-
-                    if self._abort_request.is_set():
-                        break  # interrupted: skip the ghost check, keep partial text
-                    message = response.choices[0].message
-                    _prompt_tok = getattr(response.usage, "prompt_tokens", 0) or 0
-                    _is_ghost = (
-                        not message.tool_calls
-                        and not (message.content or "").strip()
-                        and _prompt_tok == 0
-                    )
-                    if not _is_ghost:
-                        break  # valid response — proceed
-                    _null_retries += 1
-                    if _null_retries >= self.config.null_response_retries:
-                        error_msg = (
-                            f"Error: model returned a null response "
-                            f"{_null_retries} time(s) in a row. "
-                            "Check your model endpoint and retry your task."
-                        )
-                        self._process.error()
-                        self.callbacks.on_error(Exception(error_msg))
-                        self._close_turn(_turn, sev.reason_error(error_msg))
-                        return error_msg
-                    # else: discard ghost, retry with identical context
-                # ─────────────────────────────────────────────────────────────
-
-                if _paused_on_error:
-                    continue  # restart outer loop → _pause_event.wait() will block
-                if self._abort_request.is_set():
-                    self._keep_interrupted_text(response, _turn, iteration)
-                    self._continuing_step_finished(_turn, iteration)
-                    continue  # → checkpoint; waits for the user's next message
-
-                _reasoning = _extract_reasoning(message)
-                if _reasoning:
-                    self.callbacks.on_reasoning(_reasoning)
-
-                tool_records: list[ToolCallRecord] = []
-
-                if not message.tool_calls:
-                    result = message.content or ""
-
-                    # Store assistant turn. Use result (never None) so that _messages
-                    # stays well-formed for all subsequent API calls.
-                    # DeepSeek thinking mode requires reasoning_content to be echoed back.
-                    _asst_msg: dict = {"role": "assistant", "content": result}
-                    _rc = _extract_reasoning(message)
-                    if _rc:
-                        _asst_msg["reasoning_content"] = _rc
-                    self.log.append(
-                        sev.ASSISTANT_MESSAGE,
-                        {"turn": _turn, "step": iteration, "message": _asst_msg},
-                        surface_op="append",
-                    )
-                    self._sync_messages()
-                    _thinking_tok = (
-                        getattr(getattr(response.usage, "completion_tokens_details", None), "reasoning_tokens", None)
-                        or 0
-                    )
-                    _cached_tok = (
-                        getattr(getattr(response.usage, "prompt_tokens_details", None), "cached_tokens", None)
-                        or 0
-                    )
-                    self.callbacks.on_token_update(
-                        _prompt_tok,
-                        getattr(response.usage, "completion_tokens", 0) or 0,
-                        getattr(response.usage, "cost", None),
-                        _thinking_tok,
-                        _cached_tok,
-                    )
-                    self.tracker.record_assistant(
-                        message.content, response.usage, tool_records,
-                        cached_tokens=_cached_tok, thinking_tokens=_thinking_tok,
-                    )
-
-                    # No tool calls — inject "continue" to prompt model to call write_handoff
-                    self.callbacks.on_assistant_text(result)
-                    # ── Garbled-loop detection ───────────────────────────
-                    if not result.strip():
-                        self._empty_content_streak += 1
-                        if self._empty_content_streak >= _EMPTY_CONTENT_THRESHOLD:
-                            # Close the current (open) step first so it can be revised
-                            self._continuing_step_finished(_turn, iteration)
-                            # keep_turn: drop only the empty steps — the turn and its
-                            # prompt stay open, and `iteration` keeps counting so no
-                            # (turn, step) coordinate is ever reused.
-                            for _ in range(self._empty_content_streak):
-                                try:
-                                    self.log.revise_last_step(keep_turn=True)
-                                except ValueError:
-                                    break
-                            self._sync_messages()
-                            self._empty_content_streak = 0
-                            self._continuation_count = 0
-                            self.callbacks.on_assistant_text(
-                                "[Garbled response loop detected — compacting context for recovery.]"
-                            )
-                            self.callbacks.on_compaction_started()
-                            self.compact(summarize_all=True)
-                            continue
-                    else:
-                        self._empty_content_streak = 0
-                    # ─────────────────────────────────────────────────────
-                    if self._continuation_count >= self.config.max_continuations:
-                        self._process.idle()
-                        self.callbacks.on_done(result)
-                        self._close_turn(_turn, sev.reason_max_continuations())
-                        return result
-                    self._continuation_count += 1
-                    self._log_user_message("user", CONTINUE_PROMPT, "continue")
-                    self.callbacks.on_continue_injected(
-                        self._continuation_count, self.config.max_continuations
-                    )
-                    self._continuing_step_finished(_turn, iteration)
-                    continue  # next while True iteration
-
-                # A tool-call step breaks an empty-reply streak: "in a row" means
-                # adjacent steps, so recovery's "revise the last N" hits only those.
-                self._empty_content_streak = 0
-                if message.content:
-                    self.callbacks.on_assistant_text(message.content)
-
-                # One assistant message with ALL tool_calls (standard OpenAI format).
-                # Splitting into per-tool-call assistant messages breaks providers that
-                # enforce protocol conformance (e.g. DeepSeek thinking mode).
-                _turn_reasoning = _extract_reasoning(message)
-                _asst_tc_msg: dict = {
-                    "role": "assistant",
-                    "content": message.content,
-                    "tool_calls": [
-                        {
-                            "id": tc.id,
-                            "type": "function",
-                            "function": {"name": tc.function.name, "arguments": tc.function.arguments},
-                        }
-                        for tc in message.tool_calls
-                    ],
-                }
-                if _turn_reasoning:
-                    _asst_tc_msg["reasoning_content"] = _turn_reasoning
-                self.log.append(
-                    sev.ASSISTANT_MESSAGE,
-                    {"turn": _turn, "step": iteration, "message": _asst_tc_msg},
-                    surface_op="append",
-                )
-                self._sync_messages()
-
-                _prompt_tok = getattr(response.usage, "prompt_tokens", 0) or 0
-                self._last_prompt_tokens = _prompt_tok
-
-                _short_circuit = self._dispatch_tool_calls(message, response, tool_records)
-                if _short_circuit is not None:
-                    self._close_turn(_turn, sev.reason_completed())
-                    return _short_circuit
-
-                self._finalize_turn(message, response, tool_records)
-
-                # ── Compaction trigger ────────────────────────────────────────
-                if (
-                    self.config.context_window > 0
-                    and _prompt_tok > 0
-                    and _prompt_tok > self.config.context_window - self.config.reserve_tokens
-                ):
-                    self._compact_context()
-                # ─────────────────────────────────────────────────────────────
-
-                self._continuing_step_finished(_turn, iteration)
-
+                step = self.turns.start_step()
+                self.callbacks.on_iteration(step)
+                self._wait_at_checkpoint()
+                finished = self._run_step()
+                if finished is not None:
+                    result, reason = finished
+                    self.turns.close_turn(reason)
+                    return result
+                self.turns.end_step()
         except Exception as e:
-            self._close_turn(_turn, sev.reason_error(str(e), type(e).__name__))
+            self.turns.close_turn(sev.reason_error(str(e), type(e).__name__))
             self._process.error()
             self.callbacks.on_error(e)
             raise
@@ -978,9 +735,224 @@ class AgentLoop:
             self._stop_expression_timer()
             # Defensive: any exit path added later without an explicit close
             # still leaves the log well-formed rather than half-open.
-            self._close_turn(_turn, sev.reason_error("turn closed without a reason"))
+            self.turns.close_turn(sev.reason_error("turn closed without a reason"))
 
-    def _keep_interrupted_text(self, response, turn: int, step: int) -> None:
+    def _run_reload(self) -> str:
+        added, removed, errors = self._rebuild_for_reload()
+        notification = _format_reload_notification(len(self.skills), added, removed, errors)
+        # A surface event needs an enclosing turn, and /reload short-circuits
+        # before the normal one opens — so it gets its own.
+        with self.turns.side_turn():
+            self._log_user_message("user", notification, "reload")
+        self._process.idle()
+        self.callbacks.on_assistant_text(notification)
+        return notification
+
+    def _log_task(self, submission: UserSubmission) -> None:
+        """Log the turn's opening user messages and name the session."""
+        if not self._preserve_request_prefix:
+            wiki_ctx = _build_memory_context(
+                self._effective_memory_root, self.config.project_path
+            )
+            if wiki_ctx:
+                self._log_user_message("user", wiki_ctx, "wiki")
+        content = self._submission_content(submission)
+        self._log_user_message("user", content, "human")
+        self.tracker.record_user(content)
+
+        # ── Auto-name session file from first user message ────────────────
+        if not self._skip_slug_generation:
+            slug_text = submission.text.strip()
+            slug = self._generate_session_slug(slug_text) if slug_text else "image-conversation"
+            if slug:
+                self.tracker.rename_with_slug(slug)
+
+    def _wait_at_checkpoint(self) -> None:
+        """Between steps: block here while paused; consume any old interrupt."""
+        self._set_mid_step(False)
+        self._pause_checkpoint.set()
+        try:
+            self._pause_event.wait()  # instant no-op when not paused
+        finally:
+            self._pause_checkpoint.clear()
+            self._set_mid_step(True)
+        self._abort_request.clear()
+
+    def _run_step(self) -> tuple[str, dict] | None:
+        """One model request and its handling.
+
+        Returns (result, turn-end reason) when the turn is over, or None to
+        go on to the next step. Never closes the step or turn itself.
+        """
+        outcome = RequestExecutor(
+            send=self._send_request,
+            abort=self._abort_request,
+            callbacks=self.callbacks,
+            pause=self.pause,
+            api_error_retries=self.config.api_error_retries,
+            null_response_retries=self.config.null_response_retries,
+            on_attempt=self._lifecycle.api_attempt_started,
+        ).execute()
+        response = outcome.response
+
+        if outcome.outcome is RequestOutcome.PAUSED:
+            return None  # next checkpoint blocks until the user resumes
+        if outcome.outcome is RequestOutcome.ABORTED:
+            self._keep_interrupted_text(response)
+            return None  # next checkpoint waits for the user's next message
+        if outcome.outcome is RequestOutcome.NULL_EXHAUSTED:
+            error_msg = (
+                f"Error: model returned a null response "
+                f"{outcome.null_retries} time(s) in a row. "
+                "Check your model endpoint and retry your task."
+            )
+            self._process.error()
+            self.callbacks.on_error(Exception(error_msg))
+            return error_msg, sev.reason_error(error_msg)
+
+        message = response.choices[0].message
+        reasoning = _extract_reasoning(message)
+        if reasoning:
+            self.callbacks.on_reasoning(reasoning)
+        if message.tool_calls:
+            return self._handle_tool_reply(message, response, reasoning)
+        return self._handle_text_reply(message, response, reasoning)
+
+    def _handle_text_reply(self, message, response, reasoning: str) -> tuple[str, dict] | None:
+        """A reply with no tool calls: nudge the model to continue, or give up."""
+        result = message.content or ""
+
+        # Store assistant turn. Use result (never None) so that _messages
+        # stays well-formed for all subsequent API calls.
+        # DeepSeek thinking mode requires reasoning_content to be echoed back.
+        asst_msg: dict = {"role": "assistant", "content": result}
+        if reasoning:
+            asst_msg["reasoning_content"] = reasoning
+        self.log.append(
+            sev.ASSISTANT_MESSAGE,
+            {"turn": self.turns.turn, "step": self.turns.step, "message": asst_msg},
+            surface_op="append",
+        )
+        self._sync_messages()
+        usage = response.usage
+        thinking_tok = (
+            getattr(getattr(usage, "completion_tokens_details", None), "reasoning_tokens", None)
+            or 0
+        )
+        cached_tok = (
+            getattr(getattr(usage, "prompt_tokens_details", None), "cached_tokens", None)
+            or 0
+        )
+        self.callbacks.on_token_update(
+            getattr(usage, "prompt_tokens", 0) or 0,
+            getattr(usage, "completion_tokens", 0) or 0,
+            getattr(usage, "cost", None),
+            thinking_tok,
+            cached_tok,
+        )
+        self.tracker.record_assistant(
+            message.content, usage, [],
+            cached_tokens=cached_tok, thinking_tokens=thinking_tok,
+        )
+
+        # No tool calls — inject "continue" to prompt model to call write_handoff
+        self.callbacks.on_assistant_text(result)
+        if self._garbled_streak_reached(result):
+            self._recover_from_garbled_loop()
+            return None
+        if self._continuation_count >= self.config.max_continuations:
+            self._process.idle()
+            self.callbacks.on_done(result)
+            return result, sev.reason_max_continuations()
+        self._continuation_count += 1
+        self._log_user_message("user", CONTINUE_PROMPT, "continue")
+        self.callbacks.on_continue_injected(
+            self._continuation_count, self.config.max_continuations
+        )
+        return None
+
+    def _handle_tool_reply(self, message, response, reasoning: str) -> tuple[str, dict] | None:
+        """A reply with tool calls: log it, run the tools, maybe compact."""
+        # A tool-call step breaks an empty-reply streak: "in a row" means
+        # adjacent steps, so recovery's "revise the last N" hits only those.
+        self._empty_content_streak = 0
+        if message.content:
+            self.callbacks.on_assistant_text(message.content)
+
+        # One assistant message with ALL tool_calls (standard OpenAI format).
+        # Splitting into per-tool-call assistant messages breaks providers that
+        # enforce protocol conformance (e.g. DeepSeek thinking mode).
+        asst_tc_msg: dict = {
+            "role": "assistant",
+            "content": message.content,
+            "tool_calls": [
+                {
+                    "id": tc.id,
+                    "type": "function",
+                    "function": {"name": tc.function.name, "arguments": tc.function.arguments},
+                }
+                for tc in message.tool_calls
+            ],
+        }
+        if reasoning:
+            asst_tc_msg["reasoning_content"] = reasoning
+        self.log.append(
+            sev.ASSISTANT_MESSAGE,
+            {"turn": self.turns.turn, "step": self.turns.step, "message": asst_tc_msg},
+            surface_op="append",
+        )
+        self._sync_messages()
+
+        prompt_tok = getattr(response.usage, "prompt_tokens", 0) or 0
+        self._last_prompt_tokens = prompt_tok
+
+        tool_records: list[ToolCallRecord] = []
+        short_circuit = self._dispatch_tool_calls(message, response, tool_records)
+        if short_circuit is not None:
+            return short_circuit, sev.reason_completed()
+
+        self._finalize_turn(message, response, tool_records)
+
+        # ── Compaction trigger ────────────────────────────────────────
+        if (
+            self.config.context_window > 0
+            and prompt_tok > 0
+            and prompt_tok > self.config.context_window - self.config.reserve_tokens
+        ):
+            self._compact_context()
+        return None
+
+    def _garbled_streak_reached(self, reply_text: str) -> bool:
+        """Count consecutive empty replies; True once they form a garbled loop."""
+        if reply_text.strip():
+            self._empty_content_streak = 0
+            return False
+        self._empty_content_streak += 1
+        return self._empty_content_streak >= _EMPTY_CONTENT_THRESHOLD
+
+    def _recover_from_garbled_loop(self) -> None:
+        """Drop the empty steps and compact everything, staying in the same turn.
+
+        The turn and the user's message are kept. The revision is saved to
+        the events file like a user-driven one.
+        """
+        self.turns.end_step()  # close it so it can be revised
+        try:
+            self.revise_last_steps(self._empty_content_streak, keep_turn=True)
+        except OSError as exc:
+            self.callbacks.on_assistant_text(
+                f"[Warning: could not save the revised session log — {exc}.]"
+            )
+        self.turns.resync_step()
+        self._empty_content_streak = 0
+        self._continuation_count = 0
+        self.callbacks.on_assistant_text(
+            "[Garbled response loop detected — compacting context for recovery.]"
+        )
+        self.callbacks.on_compaction_started()
+        self.compact(summarize_all=True)
+
+    def _keep_interrupted_text(self, response) -> None:
         """Log what an interrupted *stream* had said, so "continue" makes sense.
 
         Half-streamed tool calls and reasoning are dropped; a blocking response
@@ -992,7 +964,11 @@ class AgentLoop:
         if text:
             self.log.append(
                 sev.ASSISTANT_MESSAGE,
-                {"turn": turn, "step": step, "message": {"role": "assistant", "content": text}},
+                {
+                    "turn": self.turns.turn,
+                    "step": self.turns.step,
+                    "message": {"role": "assistant", "content": text},
+                },
                 surface_op="append",
             )
             self._sync_messages()

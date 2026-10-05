@@ -12,6 +12,7 @@ Format:
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 from typing import Sequence
 
@@ -30,11 +31,17 @@ def _dump(obj: dict) -> str:
 
 
 def write_session(path: Path, events: Sequence[SessionEvent]) -> None:
-    """Write a complete log, replacing any existing file."""
+    """Write a complete log, replacing any existing file.
+
+    Written to a sibling temp file and swapped in, so a crash mid-write
+    leaves the previous log intact rather than a truncated one.
+    """
     lines = [_dump(_HEADER)]
     lines.extend(_dump(e.to_json()) for e in events)
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    tmp = path.with_name(path.name + ".tmp")
+    tmp.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    os.replace(tmp, path)
 
 
 def append_event(path: Path, event: SessionEvent) -> None:

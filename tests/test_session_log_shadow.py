@@ -48,7 +48,7 @@ def _make_loop(project_path: Path, _initial: list | None = None, **overrides) ->
             config=config,
             initial_messages=_initial,
             _registry=fake_registry,
-            _tracker=fake_tracker,
+            tracker=fake_tracker,
         )
     loop.tracker = fake_tracker
     loop.registry = fake_registry
@@ -670,9 +670,9 @@ class TestResumeSeeding:
                 loop = AgentLoop(
                     config=previous.config,
                     initial_messages=previous._messages,
-                    _session_log=previous.log,
+                    session_log=previous.log,
                     _registry=previous.registry,
-                    _tracker=previous.tracker,
+                    tracker=previous.tracker,
                 )
             assert loop.log is previous.log
             assert loop.log.surface.nodes == nodes

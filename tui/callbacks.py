@@ -111,7 +111,7 @@ def build_callbacks(app: DagiApp, loop_ref: list) -> AgentCallbacks:
         app.call_from_thread(conv.append_info,
             f"[yellow]⚡ Context compacted — removed {removed} messages, kept {kept}[/yellow]")
         if loop_ref:
-            app.call_from_thread(sidebar.update_context, _breakdown(loop_ref[0]._messages))
+            app.call_from_thread(sidebar.update_context, _breakdown(loop_ref[0].messages))
 
     def on_model_switch(from_name, to_name):
         app.call_from_thread(conv.append_info,

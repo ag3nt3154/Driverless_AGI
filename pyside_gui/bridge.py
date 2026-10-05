@@ -170,7 +170,7 @@ class AgentBridge(QObject):
         def on_compaction(kept: int, removed: int) -> None:
             self.compaction_done.emit(kept, removed)
             if loop_ref:
-                self.context_update.emit(_breakdown(loop_ref[0]._messages))
+                self.context_update.emit(_breakdown(loop_ref[0].messages))
 
         def on_model_switch(from_name: str, to_name: str) -> None:
             self.model_switched.emit(from_name, to_name)
