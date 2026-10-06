@@ -22,7 +22,7 @@ from pyside_gui.commands import SlashCommandHandler, UIWidgets
 from pyside_gui.conversation import ConversationView
 from pyside_gui.header import ConversationHeader
 from pyside_gui.left_sidebar import LeftSidebar, _RAIL_WIDTH, panel_sizes
-from pyside_gui.menu import build_main_menu
+from pyside_gui.menu import build_main_menu, choose_theme
 from pyside_gui.overlays import CopyPicker
 from pyside_gui.prompt_input import PromptInput
 from pyside_gui.desktop_pet import DesktopPetWindow
@@ -168,6 +168,9 @@ class DagiMainWindow(QMainWindow):
             on_new_session=lambda: self._cmd_handler.handle("/clear"),
             on_compact=lambda: self._handle_special_command("__COMPACT__"),
             on_compose=self._toggle_compose,
+            on_theme=lambda choice: choose_theme(
+                self, choice, busy=self._worker is not None and self._worker.is_alive()
+            ),
         )
 
     def _build_commands(self) -> None:

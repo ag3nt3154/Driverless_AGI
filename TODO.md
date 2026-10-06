@@ -191,6 +191,17 @@
 
 ## Completed
 
+- **GUI light theme (2026-10-06)** — Material 3 light palette (`theme.LIGHT`, Google's
+  M3 web roles: `#0b57d0` primary, `#f0f4f9` surface containers, white chat surface) beside
+  the existing dark one. **View → Theme → Dark / Light / System**, saved to
+  `.dagi/gui_settings.json`, `DAGI_THEME` env override; applies on restart (offered from the
+  menu). Hard-coded colours (overlay scrim, status pills, icon state) now come from tokens;
+  conversation/notepad pick highlight.js and Vditor themes from `--hljs-style` /
+  `--color-scheme`. Vendored highlight.js `github.min.css` and Vditor `content-theme/light.css`.
+  Tests: palette parity, `use()` swap, preference round-trip, WCAG 4.5:1 contrast for light
+  text tokens; GUI tests pin `DAGI_THEME=dark`. Not done: live switching without restart
+  (needs every widget to rebuild its stylesheet from a theme-changed signal).
+
 - **Garbled recovery fixed 2026-10-03** — it deleted the human prompt when the empty steps
   were the turn's first (whole turn wrapper revised away), crashed with
   `InvariantError: turn N is already open` when a completed step preceded the streak, and

@@ -1,6 +1,12 @@
 from __future__ import annotations
 
+import os
+
 import pytest
+
+# Widget modules read theme tokens at import: pin the dark palette so a saved
+# GUI theme preference cannot change test results.
+os.environ["DAGI_THEME"] = "dark"
 
 import pyside_gui  # noqa: F401 - must be imported before any PySide6 import
 

@@ -16,7 +16,7 @@ from pyside_gui.theme import qss
 
 _OVERLAY_CSS = qss("""
 QWidget#overlay-backdrop {
-    background: rgba(0, 0, 0, 128);
+    background: @scrim;
 }
 QWidget#overlay-panel {
     background: @popover_bg;

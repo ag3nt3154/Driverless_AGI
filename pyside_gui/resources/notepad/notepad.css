@@ -1,4 +1,4 @@
-/* Neutral dark theme: every colour comes from pyside_gui/theme.py tokens,
+/* Every colour comes from pyside_gui/theme.py tokens,
    spliced into <style id="theme-tokens"> (see notepad_editor.py). */
 :root {
     --bg: var(--chat-bg);
@@ -9,7 +9,7 @@
     --heading: var(--fg);
 }
 
-html { color-scheme: dark; }
+html { color-scheme: var(--color-scheme); }
 
 html, body {
     margin: 0;

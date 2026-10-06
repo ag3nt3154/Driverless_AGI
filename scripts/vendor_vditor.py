@@ -28,7 +28,8 @@ import urllib.request
 from pathlib import Path
 
 VDITOR_VERSION = "3.11.3"
-HLJS_STYLE = "tokyo-night-dark"
+# highlight.js styles per GUI theme (dark, light); see pyside_gui/theme.py.
+HLJS_STYLES = ("tokyo-night-dark", "github")
 _REGISTRY = "https://registry.npmjs.org/vditor"
 _DEST = Path(__file__).resolve().parent.parent / "pyside_gui" / "resources" / "vditor"
 
@@ -38,6 +39,7 @@ _KEEP_FILES = frozenset({
     "dist/index.min.js",
     "dist/index.css",
     "dist/css/content-theme/dark.css",
+    "dist/css/content-theme/light.css",
     "dist/js/lute/lute.min.js",
     "dist/js/katex/katex.min.js",
     "dist/js/katex/katex.min.css",
@@ -48,7 +50,7 @@ _KEEP_FILES = frozenset({
     "dist/js/highlight.js/LICENSE",
     "dist/js/highlight.js/highlight.min.js",
     "dist/js/highlight.js/third-languages.js",
-    f"dist/js/highlight.js/styles/{HLJS_STYLE}.min.css",
+    *(f"dist/js/highlight.js/styles/{style}.min.css" for style in HLJS_STYLES),
 })
 # Directories whose files are kept when they match the suffix.
 _KEEP_DIR_SUFFIX = (("dist/js/katex/fonts/", ".woff2"),)

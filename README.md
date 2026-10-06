@@ -236,7 +236,7 @@ Exit with `/exit`, `exit`, `quit`, or `Ctrl-C`. Conversation history carries acr
 
 ### PySide6 Desktop GUI (`pyside_gui/`)
 
-A native Qt 6 desktop app with a slate-indigo dark theme. Functionally equivalent to the TUI — full streaming conversation (rendered with Vditor in a QWebEngineView), right sidebar with token stats and plan tracker, left sidebar with session history/file tree/plan/message board, overlay dialogs, and the full slash-command set. The **message board** tab in the left sidebar displays posts from the `emote` tool — each post shows a meme asset, a text line, and a timestamp.
+A native Qt 6 desktop app with a slate-indigo dark theme and a Material 3 light theme (**View → Theme**). Functionally equivalent to the TUI — full streaming conversation (rendered with Vditor in a QWebEngineView), right sidebar with token stats and plan tracker, left sidebar with session history/file tree/plan/message board, overlay dialogs, and the full slash-command set. The **message board** tab in the left sidebar displays posts from the `emote` tool — each post shows a meme asset, a text line, and a timestamp.
 
 ```bash
 # Launch (Windows/Linux/macOS — requires conda dagi env):
@@ -272,6 +272,9 @@ Vditor 3.11.3 is vendored (trimmed to ~9.4 MB: core, lute, KaTeX woff2 fonts, en
   - The web pages (conversation, notepad) get the same values as CSS custom properties spliced into their HTML's `/*@THEME@*/` slot (`theme.with_theme()`).
   - `theme.qcolor()` / `theme.solid()` cover `QColor` and Qt rich text.
   - `pyside_gui/icons.py` draws the monochrome line icons (rail, header, composer) from inline SVG.
+- **Light theme (Material 3):** `theme.LIGHT` fills the same token names with Google's M3 roles: `#f0f4f9` surface-container sidebars and composer around a `#ffffff` chat surface, on-surface `#1f1f1f` text at 0.92/0.70/0.42/0.12, primary `#0b57d0` (send button, links), secondary-container `#d3e3fd` for selected items, `#e9eef6` user bubbles, tone-40 status colours (every text token clears WCAG 4.5:1 on white — asserted in `test_theme_and_labels.py`), and Google Sans / Roboto fonts where installed (Segoe UI otherwise). Code blocks switch to highlight.js `github` and the notepad to Vditor's `classic`/`light` themes, driven by the `--color-scheme` / `--hljs-style` tokens.
+  - Pick **View → Theme → Dark / Light / System** (System follows Windows' app theme). The choice is saved to `.dagi/gui_settings.json` (git-ignored); `DAGI_THEME=light|dark|system` overrides it for one launch.
+  - Widget modules build their stylesheets at import, so a switch applies after a restart: the menu offers **Restart now** (relaunches with the same arguments) unless an agent run is in flight. `theme.use()` must run before any widget module is imported; `theme.apply_to_app()` matches native dialogs and tooltips.
   - The palette is adapted from [OpenGhost](https://github.com/ANDRETRIPOL/OpenGhost), whose visual design is licensed for non-commercial use only.
 - **Conversation pane** (`resources/conversation.{html,css,js}`, `conversation.py`): Python sends **raw markdown**, and the page renders it with Lute plus Vditor's KaTeX, highlight.js and copy-button renderers.
   - Math: `$…$`, `$$…$$`, `\(…\)` and `\[…\]` all render.

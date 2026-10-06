@@ -225,3 +225,4 @@ pycache*
 !pyside_gui/resources/vditor/dist/
 .dagi/notepad/
 .dagi/recent_folders.json
+.dagi/gui_settings.json

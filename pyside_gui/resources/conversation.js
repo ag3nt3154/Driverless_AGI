@@ -5,9 +5,14 @@
 // model stays literal text: `prepare()` escapes `<` outside code and math.
 
 const STREAM_RENDER_MS = 120;
-const HLJS = { enable: true, style: 'tokyo-night-dark', lineNumber: false };
+let _hljsOptions = null;  // style from the --hljs-style theme token, read on first use
 const MATH_OPTIONS = { engine: 'KaTeX', inlineDigit: true, macros: {} };
 let _cdnUrl = null;
+
+function _hljs() {
+    if (!_hljsOptions) _hljsOptions = { enable: true, style: _token('hljs-style'), lineNumber: false };
+    return _hljsOptions;
+}
 
 // Vditor lazy-loads KaTeX / highlight.js from <cdn>/dist/js/...
 function _cdn() {
@@ -245,7 +250,7 @@ function renderMarkdownInto(el, md, streaming = false) {
         el.innerHTML = _getLute().Md2HTML(text);
         el.classList.add('vditor-reset', 'md');
         Vditor.codeRender(el);
-        Vditor.highlightRender(HLJS, el, _cdn());
+        Vditor.highlightRender(_hljs(), el, _cdn());
         Vditor.mathRender(el, { cdn: _cdn(), math: MATH_OPTIONS });
         renderMermaid(el, streaming && openFence);
     } catch (err) {
@@ -309,7 +314,7 @@ function _mermaidConfig() {
         theme: 'base',
         fontFamily: _token('font-ui'),
         themeVariables: Object.assign(_seriesColours(), {
-            darkMode: true,
+            darkMode: _token('color-scheme') === 'dark',
             fontFamily: _token('font-ui'),
             fontSize: '13px',
             background: _token('chat-bg'),

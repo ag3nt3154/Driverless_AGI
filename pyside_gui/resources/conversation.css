@@ -4,7 +4,7 @@
 
 * { box-sizing: border-box; }
 
-html { color-scheme: dark; }
+html { color-scheme: var(--color-scheme); }
 
 body {
     margin: 0;

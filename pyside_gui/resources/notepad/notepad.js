@@ -37,13 +37,19 @@
         return marker ? marker.textContent.trim() : null;
     }
 
+    // Theme names come from pyside_gui/theme.py tokens (--color-scheme etc.).
+    function token(name) {
+        return getComputedStyle(document.documentElement).getPropertyValue("--" + name).trim();
+    }
+
     function initEditor() {
+        const scheme = token("color-scheme") === "light" ? "light" : "dark";
         vditor = new Vditor("editor", {
             cdn: CDN,
             mode: "ir",
             lang: "en_US",
             icon: "ant",
-            theme: "dark",
+            theme: scheme === "light" ? "classic" : "dark",
             height: "100%",
             placeholder: "Notes… markdown and $math$",
             toolbar: [],
@@ -53,9 +59,9 @@
             outline: { enable: false },
             link: { isOpen: false },
             preview: {
-                theme: { current: "dark", path: CDN + "/dist/css/content-theme" },
+                theme: { current: scheme, path: CDN + "/dist/css/content-theme" },
                 math: { engine: "KaTeX", inlineDigit: false },
-                hljs: { enable: true, style: "tokyo-night-dark", lineNumber: false },
+                hljs: { enable: true, style: token("hljs-style"), lineNumber: false },
             },
             input: function (md) {
                 if (!suppressInput) bridge.contentChanged(md);

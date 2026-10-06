@@ -13,7 +13,7 @@ from PySide6.QtCore import QByteArray, QRectF, Qt
 from PySide6.QtGui import QIcon, QPainter, QPixmap
 from PySide6.QtSvg import QSvgRenderer
 
-from pyside_gui.theme import TOKENS
+from pyside_gui.theme import TOKENS, tint
 
 _PATHS: dict[str, str] = {
     "history": '<circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/>',
@@ -38,7 +38,7 @@ _FILLED: dict[str, str] = {
 _STATES = {
     QIcon.Mode.Normal: TOKENS["fg_secondary"],
     QIcon.Mode.Active: TOKENS["fg"],
-    QIcon.Mode.Selected: TOKENS["fg"].replace("0.85", "0.95"),
+    QIcon.Mode.Selected: tint("fg", 0.95),
     QIcon.Mode.Disabled: TOKENS["fg_tertiary"],
 }
 

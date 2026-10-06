@@ -23,7 +23,9 @@ _SPEC.loader.exec_module(vendor_vditor)
     ("package/dist/js/mermaid/mermaid.min.js", "dist/js/mermaid/mermaid.min.js"),
     ("package/dist/js/echarts/echarts.min.js", None),
     ("package/dist/js/i18n/zh_CN.js", None),
-    ("package/dist/js/highlight.js/styles/github.min.css", None),
+    ("package/dist/js/highlight.js/styles/github.min.css", "dist/js/highlight.js/styles/github.min.css"),
+    ("package/dist/js/highlight.js/styles/github-dark.min.css", None),
+    ("package/dist/css/content-theme/light.css", "dist/css/content-theme/light.css"),
     ("package/src/index.ts", None),
     ("dist/index.min.js", None),
 ])

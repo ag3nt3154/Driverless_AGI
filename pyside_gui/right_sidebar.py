@@ -19,7 +19,7 @@ from PySide6.QtWidgets import (
 from pyside_gui.expression_widget import ExpressionWidget
 from pyside_gui.icons import icon
 from pyside_gui.menu_style import MENU_STYLESHEET
-from pyside_gui.theme import SCROLLBAR_QSS, qss
+from pyside_gui.theme import SCROLLBAR_QSS, qss, tint
 from tui.utils import _system_breakdown
 
 
@@ -30,10 +30,10 @@ def _path_tail(path: Path | str, max_chars: int = 24) -> str:
 
 # status -> (label, qss colour token, pill background)
 _STATUS = {
-    "running":    ("Running", "success", "rgba(110, 205, 140, 0.14)"),
-    "paused":     ("Paused", "warn", "rgba(255, 180, 96, 0.14)"),
-    "compacting": ("Compacting", "link", "rgba(150, 170, 255, 0.14)"),
-    "idle":       ("Idle", "fg_secondary", "rgba(238, 237, 250, 0.07)"),
+    "running":    ("Running", "success", tint("success", 0.14)),
+    "paused":     ("Paused", "warn", tint("warn", 0.14)),
+    "compacting": ("Compacting", "link", tint("link", 0.14)),
+    "idle":       ("Idle", "fg_secondary", tint("fg", 0.07)),
 }
 
 _SIDEBAR_CSS = SCROLLBAR_QSS + qss("""
