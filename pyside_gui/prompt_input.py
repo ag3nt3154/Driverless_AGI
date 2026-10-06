@@ -3,13 +3,12 @@ from __future__ import annotations
 from pathlib import Path
 
 from PySide6.QtCore import QBuffer, QIODevice, QMimeData, QSize, Qt, Signal
-from PySide6.QtGui import QAction, QFocusEvent, QImage, QKeyEvent, QPixmap
+from PySide6.QtGui import QFocusEvent, QImage, QKeyEvent, QPixmap
 from PySide6.QtWidgets import (
     QFileDialog,
     QFrame,
     QHBoxLayout,
     QLabel,
-    QMenu,
     QPlainTextEdit,
     QToolButton,
     QVBoxLayout,
@@ -17,9 +16,7 @@ from PySide6.QtWidgets import (
 )
 
 from agent.user_input import ImageAttachment, UserSubmission
-from pyside_gui.context_meter import ContextMeter
 from pyside_gui.icons import icon
-from pyside_gui.menu_style import MENU_STYLESHEET
 from pyside_gui import paste_cards
 from pyside_gui.slash_completer import SlashCompleterPopup
 from pyside_gui.theme import TOKENS, qss
@@ -61,18 +58,6 @@ QToolButton#composer-attach {
     border-radius: 15px;
 }
 QToolButton#composer-attach:hover { background: @hover_bg; }
-QToolButton#composer-model {
-    background: transparent;
-    color: @fg_secondary;
-    border: none;
-    border-radius: 14px;
-    padding: 0 10px 0 6px;
-    font-family: @font_ui;
-    font-size: 13px;
-}
-QToolButton#composer-model:hover { background: @hover_bg; color: @fg; }
-QToolButton#composer-model:disabled { color: @fg_tertiary; }
-QToolButton#composer-model::menu-indicator { image: none; width: 0; }
 QToolButton#composer-send {
     background: @accent;
     border: none;
@@ -255,7 +240,7 @@ class _Editor(QPlainTextEdit):
 
 class PromptInput(QWidget):
     """The composer: a rounded card holding image attachments, an
-    auto-growing text field and a toolbar (attach, model pill, send/stop).
+    auto-growing text field and a toolbar (attach, send/stop).
 
     Enter submits (text and/or attachments), Shift+Enter/Ctrl+Enter insert a
     newline. Emits a single ``UserSubmission`` object per submit. While the
@@ -266,7 +251,6 @@ class PromptInput(QWidget):
     submitted = Signal(object)  # UserSubmission
     attachment_error = Signal(str)
     stop_requested = Signal()
-    model_selected = Signal(str)  # model id
 
     def __init__(self) -> None:
         super().__init__()
@@ -323,24 +307,6 @@ class PromptInput(QWidget):
         self._attach_btn.clicked.connect(self._pick_images)
         toolbar.addWidget(self._attach_btn)
 
-        self._model_btn = QToolButton()
-        self._model_btn.setObjectName("composer-model")
-        self._model_btn.setIcon(icon("spark", 14))
-        self._model_btn.setIconSize(QSize(14, 14))
-        self._model_btn.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
-        self._model_btn.setFixedHeight(28)
-        self._model_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self._model_btn.setToolTip("Switch model")
-        self._model_btn.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
-        self._model_menu = QMenu(self._model_btn)
-        self._model_menu.setStyleSheet(MENU_STYLESHEET)
-        self._model_btn.setMenu(self._model_menu)
-        self._model_btn.hide()
-        toolbar.addWidget(self._model_btn)
-
-        self._context_meter = ContextMeter()
-        toolbar.addWidget(self._context_meter)
-
         toolbar.addStretch(1)
 
         self._send_btn = QToolButton()
@@ -362,15 +328,10 @@ class PromptInput(QWidget):
     def setDisabled(self, disabled: bool) -> None:  # noqa: N802
         self._editor.setDisabled(disabled)
         self._attach_btn.setDisabled(disabled)
-        self._model_btn.setDisabled(disabled)
         self._refresh_send_button()
 
     def setFocus(self) -> None:  # noqa: N802
         self._editor.setFocus()
-
-    def set_context_usage(self, used: int, window: int) -> None:
-        """Feed the context ring (same total as the right sidebar)."""
-        self._context_meter.set_usage(used, window)
 
     def setPlaceholderText(self, text: str) -> None:  # noqa: N802
         self._editor.setPlaceholderText(text)
@@ -391,23 +352,6 @@ class PromptInput(QWidget):
         """The agent is working: the send button can stop it."""
         self._running = running
         self._refresh_send_button()
-
-    def set_models(self, model_ids: list[str], active_id: str, active_name: str) -> None:
-        """Fill the model pill's menu and show the active model's name."""
-        self._model_menu.clear()
-        for model_id in model_ids:
-            action = QAction(model_id, self._model_menu)
-            action.setCheckable(True)
-            action.setChecked(model_id == active_id)
-            action.triggered.connect(
-                lambda _checked=False, m=model_id: self.model_selected.emit(m)
-            )
-            self._model_menu.addAction(action)
-        self.set_model_name(active_name)
-        self._model_btn.setVisible(bool(model_ids))
-
-    def set_model_name(self, name: str) -> None:
-        self._model_btn.setText(name)
 
     def set_completions(self, items: list[tuple[str, str]]) -> None:
         """Load the list of available slash commands for autocomplete."""

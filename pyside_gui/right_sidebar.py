@@ -2,10 +2,12 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PySide6.QtCore import QSize, Qt, Signal
+from PySide6.QtCore import QPoint, QSize, Qt, Signal
+from PySide6.QtGui import QAction
 from PySide6.QtWidgets import (
     QGridLayout,
     QLabel,
+    QMenu,
     QProgressBar,
     QPushButton,
     QScrollArea,
@@ -16,6 +18,7 @@ from PySide6.QtWidgets import (
 
 from pyside_gui.expression_widget import ExpressionWidget
 from pyside_gui.icons import icon
+from pyside_gui.menu_style import MENU_STYLESHEET
 from pyside_gui.theme import SCROLLBAR_QSS, qss
 from tui.utils import _system_breakdown
 
@@ -64,8 +67,10 @@ QLabel#model-label {
     color: @fg;
     font-size: 14px;
     font-weight: 600;
-    padding-top: 4px;
+    padding: 4px 6px 2px 4px;
+    border-radius: 6px;
 }
+QLabel#model-label[pickable="true"]:hover { background: @hover_bg; }
 QLabel#section-header {
     color: @fg_tertiary;
     font-size: 11px;
@@ -139,9 +144,51 @@ class _Rows(QWidget):
                 label.setText(text)
 
 
+class _ModelPicker(QLabel):
+    """The active model's name; clicking it opens a menu of the catalog.
+
+    A label rather than a button so long names still word-wrap."""
+
+    model_selected = Signal(str)  # model id
+
+    def __init__(self, name: str) -> None:
+        super().__init__(name)
+        self.setObjectName("model-label")
+        self.setWordWrap(True)
+        self._menu = QMenu(self)
+        self._menu.setStyleSheet(MENU_STYLESHEET)
+        self._set_pickable(False)
+
+    def set_models(self, model_ids: list[str], active_id: str) -> None:
+        self._menu.clear()
+        for model_id in model_ids:
+            action = QAction(model_id, self._menu)
+            action.setCheckable(True)
+            action.setChecked(model_id == active_id)
+            action.triggered.connect(
+                lambda _checked=False, m=model_id: self.model_selected.emit(m)
+            )
+            self._menu.addAction(action)
+        self._set_pickable(bool(model_ids))
+
+    def _set_pickable(self, pickable: bool) -> None:
+        self.setProperty("pickable", "true" if pickable else "false")
+        self.setCursor(
+            Qt.CursorShape.PointingHandCursor if pickable else Qt.CursorShape.ArrowCursor
+        )
+        self.setToolTip("Switch model" if pickable else "")
+        self.style().unpolish(self)
+        self.style().polish(self)
+
+    def mouseReleaseEvent(self, event) -> None:  # noqa: N802
+        super().mouseReleaseEvent(event)
+        if event.button() == Qt.MouseButton.LeftButton and not self._menu.isEmpty():
+            self._menu.popup(self.mapToGlobal(QPoint(0, self.height())))
+
+
 class RightSidebar(QScrollArea):
     scroll_to_bottom_requested = Signal()
-    context_usage = Signal(int, int)  # total tokens incl. reserve, context window
+    model_selected = Signal(str)  # model id picked from the model menu
 
     def __init__(
         self,
@@ -200,9 +247,8 @@ class RightSidebar(QScrollArea):
         self._layout.addWidget(self._status_label)
 
         # Model + paths
-        self._model_label = QLabel(model_name)
-        self._model_label.setObjectName("model-label")
-        self._model_label.setWordWrap(True)
+        self._model_label = _ModelPicker(model_name)
+        self._model_label.model_selected.connect(self.model_selected)
         self._layout.addWidget(self._model_label)
         self._paths = _Rows("path")
         self._layout.addWidget(self._paths)
@@ -247,6 +293,11 @@ class RightSidebar(QScrollArea):
     def set_status(self, status: str) -> None:
         self._status = status
         self._refresh_status()
+
+    def set_models(self, model_ids: list[str], active_id: str, active_name: str) -> None:
+        """Fill the model name's click menu and show the active model."""
+        self._model_label.set_models(model_ids, active_id)
+        self.update_model(active_name)
 
     def update_model(self, name: str) -> None:
         self._model_name = name
@@ -334,4 +385,3 @@ class RightSidebar(QScrollArea):
         self._context.set_rows(rows)
         self._context_bar.setValue(round(min(usage, 1.0) * 1000))
         self._context_bar.setToolTip(f"{total:,} of {W:,} tokens ({usage*100:.0f}%)")
-        self.context_usage.emit(total, W)

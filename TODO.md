@@ -288,10 +288,12 @@
   send into a ```` ```pasted ```` fence; user bubbles render that fence as a collapsed card and
   cap tall messages behind "Show more".
 
-- **Context meter (2026-10-01, branch `feat/context-meter`)** — ring in the composer
-  (`pyside_gui/context_meter.py`) fed by a new `RightSidebar.context_usage(total, window)`
-  signal, so it shows exactly the sidebar's CONTEXT total; warn ≥ 70%, danger ≥ 90%,
-  compaction at 100%.
+- **Composer slimmed (2026-10-06)** — removed the composer's model pill and context ring
+  (`context_meter.py` deleted, `RightSidebar.context_usage` dropped); both duplicated the right
+  sidebar. Model switching moved to the sidebar: clicking the model name opens the catalog menu
+  (`_ModelPicker` in `pyside_gui/right_sidebar.py`, routed through `/model`).
+
+- ~~**Context meter (2026-10-01)**~~ — composer ring; removed 2026-10-06 (see above).
 
 - **GUI open-folder button (2026-09-30)** — header folder button performs `/wd` with a
   native picker and the 5 most recent folders (missing ones greyed); `/wd <path>` is now
@@ -334,7 +336,7 @@
     - quiet tool one-liners with derived labels (`tool_labels.py`);
     - "Thought for Ns";
     - a pet welcome screen.
-  - A composer card (auto-grow, `+` attach, model pill, send/stop) and a header bar with sidebar toggles.
+  - A composer card (auto-grow, `+` attach, send/stop; model picker now in the right sidebar) and a header bar with sidebar toggles.
   - Vditor moved to the shared `pyside_gui/resources/vditor/`.
   - Review, decisions and mockup: `docs/2026-09-30_openghost-ui-review.md`, `docs/mockups/`.
 

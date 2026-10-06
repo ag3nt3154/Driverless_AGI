@@ -156,7 +156,7 @@ class DagiMainWindow(QMainWindow):
             ids = list_model_ids()
         except Exception:
             ids = []
-        self._prompt.set_models(ids, self._config.model_id, self._config.display_name)
+        self._right_sidebar.set_models(ids, self._config.model_id, self._config.display_name)
 
     def _on_model_selected(self, model_id: str) -> None:
         if model_id != self._config.model_id:
@@ -208,7 +208,7 @@ class DagiMainWindow(QMainWindow):
     def _connect_signals(self) -> None:
         self._prompt.submitted.connect(self._on_input_submitted)
         self._prompt.stop_requested.connect(self._action_pause)
-        self._prompt.model_selected.connect(self._on_model_selected)
+        self._right_sidebar.model_selected.connect(self._on_model_selected)
         self._prompt.attachment_error.connect(self._conversation.append_error)
         self._left_sidebar.session_selected.connect(self._on_session_selected)
         self._left_sidebar.expansion_changed.connect(self._on_sidebar_expansion)
@@ -224,7 +224,7 @@ class DagiMainWindow(QMainWindow):
         b.stream_reasoning_delta.connect(lambda c: cv.stream_delta("reasoning", c))
         b.stream_ended.connect(self._on_stream_ended)
         b.token_update.connect(rs.update_stats)
-        b.context_update.connect(rs.update_context); rs.context_usage.connect(self._prompt.set_context_usage)
+        b.context_update.connect(rs.update_context)
         b.compaction_started.connect(self._on_compaction_started)
         b.compaction_done.connect(self._on_compaction)
         b.model_switched.connect(self._on_model_switched)
@@ -359,7 +359,6 @@ class DagiMainWindow(QMainWindow):
     def _on_model_switched(self, from_name: str, to_name: str) -> None:
         self._conversation.append_info(f"Model switch: {from_name} → {to_name}")
         self._right_sidebar.update_model(to_name)
-        self._prompt.set_model_name(to_name)
 
     @Slot(str)
     def _on_agent_done(self, result: str) -> None:
