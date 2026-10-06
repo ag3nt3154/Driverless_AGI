@@ -290,7 +290,8 @@
 
 - **Composer slimmed (2026-10-06)** — removed the composer's model pill and context ring
   (`context_meter.py` deleted, `RightSidebar.context_usage` dropped); both duplicated the right
-  sidebar. Model switching moved to the sidebar: clicking the model name opens the catalog menu
+  sidebar. Model switching moved to the sidebar: the model name is a centred, bordered button with a `▾`
+  chevron that opens the catalog menu
   (`_ModelPicker` in `pyside_gui/right_sidebar.py`, routed through `/model`).
 
 - ~~**Context meter (2026-10-01)**~~ — composer ring; removed 2026-10-06 (see above).

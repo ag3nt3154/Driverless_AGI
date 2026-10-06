@@ -81,7 +81,9 @@ def test_composer_has_no_model_pill_or_context_ring(prompt):
 def test_sidebar_model_name_opens_picker_and_emits_selection(sidebar, qtbot):
     sidebar.set_models(["a-model", "b-model"], "a-model", "A Model")
     label = sidebar._model_label
-    assert label.text() == "A Model"
+    assert label.name == "A Model"
+    assert label.text() == "A Model  ▾"
+    assert label.alignment() & Qt.AlignmentFlag.AlignHCenter
     assert label.cursor().shape() == Qt.CursorShape.PointingHandCursor
     actions = label._menu.actions()
     assert [a.text() for a in actions] == ["a-model", "b-model"]
@@ -93,7 +95,7 @@ def test_sidebar_model_name_opens_picker_and_emits_selection(sidebar, qtbot):
 
 def test_sidebar_model_name_not_clickable_without_models(sidebar):
     sidebar.set_models([], "", "Solo")
-    assert sidebar._model_label.text() == "Solo"
+    assert sidebar._model_label.text() == "Solo"  # no chevron: not a button
     assert sidebar._model_label._menu.isEmpty()
     assert sidebar._model_label.cursor().shape() == Qt.CursorShape.ArrowCursor
 

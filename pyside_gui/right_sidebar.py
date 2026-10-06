@@ -65,12 +65,20 @@ QLabel#status-label {
 }
 QLabel#model-label {
     color: @fg;
-    font-size: 14px;
+    font-size: 13px;
     font-weight: 600;
-    padding: 4px 6px 2px 4px;
-    border-radius: 6px;
+    padding: 6px 8px;
+    margin-top: 6px;
+    border-radius: 8px;
 }
-QLabel#model-label[pickable="true"]:hover { background: @hover_bg; }
+QLabel#model-label[pickable="true"] {
+    background: @popover_bg;
+    border: 1px solid @border;
+}
+QLabel#model-label[pickable="true"]:hover {
+    background: @hover_bg;
+    border-color: @fg_quaternary;
+}
 QLabel#section-header {
     color: @fg_tertiary;
     font-size: 11px;
@@ -145,19 +153,34 @@ class _Rows(QWidget):
 
 
 class _ModelPicker(QLabel):
-    """The active model's name; clicking it opens a menu of the catalog.
+    """The active model's name, styled as a centred button; clicking it
+    opens a menu of the catalog.
 
     A label rather than a button so long names still word-wrap."""
 
     model_selected = Signal(str)  # model id
 
     def __init__(self, name: str) -> None:
-        super().__init__(name)
+        super().__init__()
         self.setObjectName("model-label")
         self.setWordWrap(True)
+        self.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._name = name
         self._menu = QMenu(self)
         self._menu.setStyleSheet(MENU_STYLESHEET)
         self._set_pickable(False)
+
+    @property
+    def name(self) -> str:
+        return self._name
+
+    def set_name(self, name: str) -> None:
+        self._name = name
+        self._render()
+
+    def _render(self) -> None:
+        pickable = self.property("pickable") == "true"
+        self.setText(f"{self._name}  ▾" if pickable else self._name)  # nbsp: chevron never wraps alone
 
     def set_models(self, model_ids: list[str], active_id: str) -> None:
         self._menu.clear()
@@ -177,13 +200,15 @@ class _ModelPicker(QLabel):
             Qt.CursorShape.PointingHandCursor if pickable else Qt.CursorShape.ArrowCursor
         )
         self.setToolTip("Switch model" if pickable else "")
+        self._render()
         self.style().unpolish(self)
         self.style().polish(self)
 
     def mouseReleaseEvent(self, event) -> None:  # noqa: N802
         super().mouseReleaseEvent(event)
         if event.button() == Qt.MouseButton.LeftButton and not self._menu.isEmpty():
-            self._menu.popup(self.mapToGlobal(QPoint(0, self.height())))
+            self._menu.setMinimumWidth(self.width())
+            self._menu.popup(self.mapToGlobal(QPoint(0, self.height() + 4)))
 
 
 class RightSidebar(QScrollArea):
@@ -301,7 +326,7 @@ class RightSidebar(QScrollArea):
 
     def update_model(self, name: str) -> None:
         self._model_name = name
-        self._model_label.setText(name)
+        self._model_label.set_name(name)
 
     def update_stats(
         self, inp: int, out: int, cost: float | None,
