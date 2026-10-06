@@ -315,3 +315,13 @@ def test_open_code_fence_after_a_mermaid_block_does_not_hold_it_back(view):
         return !!(card && card.querySelector('svg'));
     """, True, 20000) is True
     view.stream_end(FLOW + "\n\n```python\nprint(1)\n```")
+
+
+def test_renderer_failure_still_shows_handoff_and_question_as_plain_text(view):
+    evaluate(view, "_getLute = () => { throw new Error('engine down'); }; return 0;")
+    view.append_assistant("## Handoff\n\nfull **text**")
+    view.append_question("Pick **one**?", [{"label": "A"}], None)
+    assert evaluate(view, """
+        return [document.querySelector('.assistant-message .md-fallback').textContent,
+                document.querySelector('.question-body').textContent];
+    """) == ["## Handoff\n\nfull **text**", "Pick **one**?"]

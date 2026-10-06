@@ -570,3 +570,6 @@ body {
 #conversation .md .callout-info { display: flex; align-items: center; gap: 6px; font-weight: 600; font-size: 13.5px; color: var(--fg); }
 #conversation .md .callout-icon { font-size: 13px; }
 #conversation .md .callout-content > :last-child { margin-bottom: 0; }
+
+/* Plain-text fallback when the markdown renderer fails. */
+.md-fallback { white-space: pre-wrap; }

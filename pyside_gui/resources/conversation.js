@@ -237,14 +237,22 @@ function prepareMarkdown(md) {
 
 // `streaming`: the text is still arriving, so a mermaid fence left open at
 // the end is shown as a placeholder instead of being drawn half-written.
+// Never throws: if the renderer fails, the text shows plain (callers insert
+// the element after rendering, so a throw would drop the message entirely).
 function renderMarkdownInto(el, md, streaming = false) {
-    const { text, openFence } = _scanMarkdown(md || '');
-    el.innerHTML = _getLute().Md2HTML(text);
-    el.classList.add('vditor-reset', 'md');
-    Vditor.codeRender(el);
-    Vditor.highlightRender(HLJS, el, _cdn());
-    Vditor.mathRender(el, { cdn: _cdn(), math: MATH_OPTIONS });
-    renderMermaid(el, streaming && openFence);
+    try {
+        const { text, openFence } = _scanMarkdown(md || '');
+        el.innerHTML = _getLute().Md2HTML(text);
+        el.classList.add('vditor-reset', 'md');
+        Vditor.codeRender(el);
+        Vditor.highlightRender(HLJS, el, _cdn());
+        Vditor.mathRender(el, { cdn: _cdn(), math: MATH_OPTIONS });
+        renderMermaid(el, streaming && openFence);
+    } catch (err) {
+        console.error(`markdown render failed: ${(err && err.stack) || err}`);
+        el.classList.add('md-fallback');
+        el.textContent = md || '';
+    }
 }
 
 // ---- mermaid ---------------------------------------------------------------
@@ -732,6 +740,9 @@ function updateReasoningPreview(text) {
         bubble.parentNode.insertBefore(reasoning, bubble);
     }
     const body = reasoning.querySelector('.reasoning-preview');
+    // Already finalized (reasoning resumed after answer text): the next
+    // finalizeReasoning refreshes the block instead.
+    if (!body) return;
     body.textContent = text.trimEnd();
     // Cap visible wrapped lines, not source lines, and follow the newest text.
     body.scrollTop = body.scrollHeight;

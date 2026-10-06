@@ -214,6 +214,21 @@
   Verification: 1457 passed / 2 skipped in `tests/`, 255 passed in `pyside_gui/tests`; the one
   failure is the known markitdown `[docx]` optional-dependency one.
 
+- **GUI render stalls on some machines (2026-10-06)** — reported: flashing "Thinking…",
+  handoff not shown in full, `ask_user` question not shown. Cause found: every reasoning
+  delta re-sent the *whole* reasoning text to the page (quadratic; 3,000 deltas left the page
+  ~200 s behind, so later handoffs/questions queued behind it). `ConversationView` now
+  coalesces previews on a 120 ms timer and sends only the last 4,000 chars (3,000 deltas: ~2 s).
+  Also: `renderMarkdownInto` falls back to plain text instead of throwing (a throw dropped the
+  handoff/question and left "Thinking…" pulsing forever); page JS errors are logged to
+  `.dagi/logs/pyside_worker.log`; the `write_handoff` card no longer stays "running"; a late
+  reasoning delta after answer text no longer throws. New `python -m pyside_gui.check_render`
+  self-check. Root cause on the affected machine: its checkout predated the `.gitignore`
+  re-include of `pyside_gui/resources/vditor/dist/` (global `dist/` rule), so Lute/Vditor never
+  loaded. `.gitattributes` `-text` now points at the shared `pyside_gui/resources/vditor/**`
+  (it still named the old `notepad/vditor` path), keeping the engine byte-exact. Open: Lute is
+  quadratic on a single huge paragraph (40k chars ≈ 6 s).
+
 - **GUI auto-scroll after sending (2026-10-03)** — the chat pane no longer gets stuck above
   the newest message after a send. Follow mode changes only on real scroll events (within
   48px of the bottom); the composer resizing the view re-pins; sending always pins; Show

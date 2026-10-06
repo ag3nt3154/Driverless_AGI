@@ -147,6 +147,9 @@ class AgentBridge(QObject):
 
         def on_tool_end(name: str, result: str) -> None:
             if name == "write_handoff" and self._handoff_pending:
+                # The content arrives as the final answer (handoff_text); only
+                # close the card so it doesn't stay "running".
+                self.tool_ended.emit(name, "")
                 return
             stats.record_tool(name)
             if name == "ask_user":

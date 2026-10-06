@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import json
+import logging
 from pathlib import Path
 
-from PySide6.QtCore import QObject, QUrl, Signal, Slot
+from PySide6.QtCore import QObject, QTimer, QUrl, Signal, Slot
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWebChannel import QWebChannel
 from PySide6.QtWebEngineCore import QWebEnginePage
@@ -14,6 +15,11 @@ from pyside_gui.tool_labels import tool_kind, tool_label
 
 
 _RESOURCES = Path(__file__).parent / "resources"
+# Child of the worker logger, so page errors land in pyside_worker.log.
+_page_log = logging.getLogger("dagi.pyside.worker.page")
+
+REASONING_PREVIEW_MS = 120
+REASONING_PREVIEW_CHARS = 4000
 
 
 def _file_url(path: str | Path) -> str:
@@ -34,6 +40,11 @@ class _ConversationPage(QWebEnginePage):
                 QDesktopServices.openUrl(url)
             return False
         return super().acceptNavigationRequest(url, nav_type, is_main_frame)
+
+    def javaScriptConsoleMessage(self, level, message, line, source):  # noqa: N802
+        # A failed render otherwise leaves no trace outside the page.
+        if level == QWebEnginePage.JavaScriptConsoleMessageLevel.ErrorMessageLevel:
+            _page_log.warning("page error %s:%s %s", source, line, message)
 
 
 class _PageBridge(QObject):
@@ -64,6 +75,10 @@ class ConversationView(QWebEngineView):
         self._pending: list[str] = []
         self._stream_reasoning = ""
         self._reasoning_dirty = False
+        self._reasoning_timer = QTimer(self)
+        self._reasoning_timer.setSingleShot(True)
+        self._reasoning_timer.setInterval(REASONING_PREVIEW_MS)
+        self._reasoning_timer.timeout.connect(self._push_reasoning_preview)
         self.setPage(_ConversationPage(self))
         self._page_bridge = _PageBridge(self)
         self._page_bridge.cancel_queued.connect(self.queued_cancel_requested)
@@ -146,6 +161,7 @@ class ConversationView(QWebEngineView):
         self._run_js(f"appendError({self._js_str(text)})")
 
     def stream_start(self) -> None:
+        self._reasoning_timer.stop()
         self._stream_reasoning = ""
         self._reasoning_dirty = False
         self._run_js("createStreamBubble()")
@@ -154,9 +170,13 @@ class ConversationView(QWebEngineView):
         if not chunk:
             return
         if kind == "reasoning":
+            # Coalesced: one page call per REASONING_PREVIEW_MS, never one per
+            # delta (re-sending the whole text per delta is quadratic and left
+            # the page minutes behind on long reasoning).
             self._stream_reasoning += chunk
             self._reasoning_dirty = True
-            self._run_js(f"updateReasoningPreview({self._js_str(self._stream_reasoning)})")
+            if not self._reasoning_timer.isActive():
+                self._reasoning_timer.start()
             return
         # The first answer delta ends the reasoning phase; tool-only turns
         # instead finalize it at stream_end. Later reasoning can refresh it.
@@ -187,12 +207,22 @@ class ConversationView(QWebEngineView):
         self._finish_reasoning()
         self._run_js("interruptStream()")
 
+    def _push_reasoning_preview(self) -> None:
+        # The preview shows only its last few lines, so the tail is enough.
+        tail = self._stream_reasoning[-REASONING_PREVIEW_CHARS:]
+        self._run_js(f"updateReasoningPreview({self._js_str(tail)})")
+
     def _finish_reasoning(self) -> None:
+        if self._reasoning_timer.isActive():
+            # finalizeReasoning replaces the live block, so it must exist first.
+            self._reasoning_timer.stop()
+            self._push_reasoning_preview()
         if self._reasoning_dirty:
             self._run_js(f"finalizeReasoning({self._js_str(self._stream_reasoning)})")
             self._reasoning_dirty = False
 
     def clear(self) -> None:
+        self._reasoning_timer.stop()
         self._stream_reasoning = ""
         self._reasoning_dirty = False
         self._run_js("clearConversation()")

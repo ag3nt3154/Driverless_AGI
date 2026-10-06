@@ -165,6 +165,19 @@ def test_handoff_text_emits_on_done():
     assert len(assistant_received) == 0
 
 
+def test_handoff_card_is_closed_without_duplicating_content():
+    """The write_handoff card must not stay "running"; its content shows once, as the answer."""
+    bridge = AgentBridge()
+    ended = []
+    bridge.tool_ended.connect(lambda name, result: ended.append((name, result)))
+    callbacks = bridge.build_callbacks()
+    callbacks.on_tool_start("write_handoff", "", '{"content": "**report**"}')
+    callbacks.on_handoff()
+    callbacks.on_tool_end("write_handoff", "**report**")
+    _app.processEvents()
+    assert ended == [("write_handoff", "")]
+
+
 def test_pyside_app_stays_under_file_cap():
     from pathlib import Path
 

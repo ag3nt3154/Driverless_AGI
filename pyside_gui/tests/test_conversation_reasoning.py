@@ -9,7 +9,7 @@ import pyside_gui  # noqa: F401 - register DLL paths before Qt imports
 from PySide6.QtCore import QEventLoop, QTimer
 from PySide6.QtWidgets import QApplication
 
-from pyside_gui.conversation import ConversationView
+from pyside_gui.conversation import REASONING_PREVIEW_CHARS, ConversationView
 
 
 _app = QApplication.instance() or QApplication(sys.argv)
@@ -33,6 +33,13 @@ def evaluate(view: ConversationView, script: str):
     timer.stop()
     assert result, "WebEngine JavaScript callback timed out"
     return json.loads(result[0])
+
+
+def wait_for_preview(view: ConversationView) -> None:
+    """Reasoning previews are coalesced on a timer; let the pending one fire."""
+    loop = QEventLoop()
+    QTimer.singleShot(view._reasoning_timer.remainingTime() + 50, loop.quit)
+    loop.exec()
 
 
 @pytest.fixture
@@ -61,6 +68,7 @@ def view():
 def test_stream_preview_shows_last_three_visual_lines(view, text):
     view.stream_start()
     view.stream_delta("reasoning", text)
+    wait_for_preview(view)
     state = evaluate(view, """
         const body = document.querySelector('.reasoning-preview');
         return {
@@ -77,6 +85,18 @@ def test_stream_preview_shows_last_three_visual_lines(view, text):
     assert state["scroll"] > 0
     assert state["scroll"] == pytest.approx(state["overflow"], abs=1)
     assert not state["answerVisible"]
+
+
+def test_reasoning_burst_is_coalesced_into_one_tail_preview(view):
+    calls = []
+    view._run_js = calls.append
+    view.stream_start()
+    for i in range(500):
+        view.stream_delta("reasoning", f"token {i} " * 20)
+    wait_for_preview(view)
+    previews = [js for js in calls if js.startswith("updateReasoningPreview(")]
+    assert len(previews) == 1
+    assert len(previews[0]) < 2 * REASONING_PREVIEW_CHARS
 
 
 def test_answer_start_expands_full_markdown_without_duplicate_on_stream_end(view):
