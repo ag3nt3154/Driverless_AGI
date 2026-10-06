@@ -1,6 +1,6 @@
 # AGENTS.md
 
-> Last updated: 2026-10-05 (merged origin/main; automation review refreshed) | [README](README.md) | [TODO](TODO.md) | [Task specs & plans](wiki/tasks/)
+> Last updated: 2026-10-06 (Codex review R7–R9 fixes; ordering contracts) | [README](README.md) | [TODO](TODO.md) | [Task specs & plans](wiki/tasks/)
 
 ## Overview
 
@@ -18,6 +18,12 @@ session persistence, and multi-UI support (TUI, PySide desktop, Telegram).
   (e.g. `agent._compaction`), not `agent.loop`.
 - Tool filtering: `.dagi/config.yaml` `tools:` restricts the main agent and `disabled_tools:`
   always removes (currently `memory_refresh`); `write_handoff` is always injected.
+- Ordering contracts are pinned by tests; when a change is meant to alter them, update the
+  expected sequence in the same commit: tool registration order
+  (`tests/test_tool_registry_contract.py`), `AgentLoop` construction
+  (`tests/test_loop_construction.py`), per-call dispatch events
+  (`tests/test_end_turn_batch.py::TestDispatchEventTrace`), subagent argv
+  (`tests/test_subagent_api.py::TestChildArgvContract`).
 
 ### Coding standards
 
