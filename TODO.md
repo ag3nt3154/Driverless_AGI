@@ -45,7 +45,9 @@
   ordered tool-name contract in `tests/test_tool_registry_contract.py` — order is the
   provider-visible schema order); `AgentLoop.__init__` done 2026-10-05 (168 lines/CC 13
   -> ordered `_init_*` phases, CC 2; attribute set and tracker/snapshot contract in
-  `tests/test_loop_construction.py`). Remaining: `dispatch_tool_calls` (126), and
+  `tests/test_loop_construction.py`); `dispatch_tool_calls` done 2026-10-06 (126 lines/CC 20
+  -> `_Batch` + per-call phases, CC 5; full event trace pinned by
+  `TestDispatchEventTrace`). All four R7 functions are done. Still open from R7:
   `agent/loop.py` is ~1,080 lines vs the 500-line cap. Small leftovers in `agent/tools.py`: `_load_project_tools`
   CC 12, 106-char `_default_ask_user` line. Scheduler/Telegram/TUI items deferred.
   Note: the intentional `.dagi/skills/` removal breaks 3 tests in

@@ -143,3 +143,79 @@ class TestDuplicateHandoffs:
         replayed = _make_loop(tmp_path, _initial=list(loop._messages))
         assert replayed._messages[1:] == loop._messages[1:]
         _assert_paired(replayed._messages)
+
+
+class TestDispatchEventTrace:
+    """The per-call event sequence of a mixed batch (R7 dispatch refactor guard).
+
+    Pins ordering that results alone cannot show: each call is announced and
+    logged before it runs, on_handoff precedes the handoff's on_tool_end, and
+    every lifecycle start is paired with a bookkeeping finish.
+    """
+
+    def test_mixed_batch_trace(self, tmp_path):
+        dispatched: list[str] = []
+        trace: list[tuple[str, str]] = []
+        loop, done = _loop(tmp_path, dispatched)
+
+        def _dispatch(name, args):
+            dispatched.append(name)
+            if name == "write_handoff":
+                return ToolResult(output=args["content"], side_effect=SideEffect.END_TURN)
+            if name == "set_active_plan":
+                return ToolResult(
+                    output="plan set", side_effect=SideEffect.SET_ACTIVE_PLAN,
+                    side_effect_data={"path": "plan.md"},
+                )
+            if name == "switch_model":
+                return ToolResult(
+                    output="", side_effect=SideEffect.SWITCH_MODEL,
+                    side_effect_data={"tier": "advanced"},
+                )
+            return "ok"
+
+        loop.registry.dispatch = _dispatch
+        loop._handle_switch_model = lambda tier, args: f"switched to {tier} ({args['why']})"
+        started, finished = loop._lifecycle.tool_started, loop._lifecycle.tool_bookkeeping_finished
+        loop._lifecycle.tool_started = lambda name: (trace.append(("started", name)), started(name))
+        loop._lifecycle.tool_bookkeeping_finished = lambda: (
+            trace.append(("finished", "")), finished(),
+        )
+        loop.callbacks.on_tool_start = lambda name, _d, _a: trace.append(("start", name))
+        loop.callbacks.on_tool_end = lambda name, _r: trace.append(("end", name))
+        loop.callbacks.on_handoff = lambda: trace.append(("handoff", ""))
+
+        response = _batch_response(
+            ("c1", "read", {"file_path": "a"}),
+            ("c2", "edit", {}),
+            ("c3", "set_active_plan", {"path": "plan.md"}),
+            ("c4", "switch_model", {"why": "harder"}),
+            ("c5", "write_handoff", {"content": "report"}),
+            ("c6", "read", {"file_path": "b"}),
+        )
+        response.choices[0].message.tool_calls[1].function.arguments = "{not json"
+        loop.client.chat.completions.create.return_value = response
+
+        assert loop.run("go") == "report"
+
+        per_call = lambda name: [  # noqa: E731
+            ("started", name), ("start", name), ("end", name), ("finished", ""),
+        ]
+        assert trace == (
+            per_call("read") + per_call("edit") + per_call("set_active_plan")
+            + per_call("switch_model")
+            + [("started", "write_handoff"), ("start", "write_handoff"), ("handoff", ""),
+               ("end", "write_handoff"), ("finished", "")]
+            + per_call("read")
+        )
+        assert dispatched == ["read", "set_active_plan", "switch_model", "write_handoff"]
+        assert loop.config.active_plan_file == "plan.md"
+        assert done == ["report"]
+        results = _results_by_call(loop)
+        assert results["c1"] == ["ok"]
+        assert results["c2"][0].startswith("Error: invalid JSON arguments for tool 'edit'")
+        assert results["c3"] == ["plan set"]
+        assert results["c4"] == ["switched to advanced (harder)"]
+        assert results["c5"] == ["report"]
+        assert results["c6"][0].startswith("[skipped]") and "c5" in results["c6"][0]
+        _assert_paired(loop._messages)

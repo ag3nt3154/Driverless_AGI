@@ -10,6 +10,7 @@ than magic string patterns.
 from __future__ import annotations
 
 import json
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -76,6 +77,18 @@ def _skip_result(loop: AgentLoop, name: str, solo: str | None) -> str | None:
     return f"[not run: this batch contained {solo}, which must be called alone]"
 
 
+@dataclass
+class _Batch:
+    """State shared by the calls of one assistant tool batch."""
+    solo: str | None
+    #: Reload notices, logged AFTER all tool results so they don't break the
+    #: assistant→tool pairing that strict providers (e.g. DeepSeek) enforce.
+    system_msgs: list[str] = field(default_factory=list)
+    image_parts: list[dict] = field(default_factory=list)
+    end_turn_result: str | None = None
+    end_turn_call_id: str | None = None
+
+
 def dispatch_tool_calls(
     loop: AgentLoop,
     message,
@@ -98,110 +111,139 @@ def dispatch_tool_calls(
     The first END_TURN call in a batch wins and is bookkept in place. Every
     later call in the batch (a redundant handoff or an ordinary tool) is not
     executed but still gets an explicit result, so each logged tool/call
-    has its tool/result.
+    has its tool/result. The per-call event order is pinned by
+    tests/test_end_turn_batch.py::TestDispatchEventTrace.
     """
-    deferred_system_msgs: list[str] = []
-    deferred_image_parts: list[dict] = []
-    end_turn_result: str | None = None
-    end_turn_call_id: str | None = None
-    solo = _solo_violation(message.tool_calls)
-
+    batch = _Batch(solo=_solo_violation(message.tool_calls))
     for tc in message.tool_calls:
-        tool_obj = loop.registry._tools.get(tc.function.name)
-        description = tool_obj.description if tool_obj else tc.function.name
-        loop._lifecycle.tool_started(tc.function.name)
-        loop.callbacks.on_tool_start(tc.function.name, description, tc.function.arguments)
-        loop.tracker.record_tool_start(tc.function.name, description, tc.function.arguments)
+        _dispatch_one(loop, tc, batch, tool_records)
 
-        # Recorded BEFORE execution: a tool/call with no tool/result is a
-        # detectable interruption, which Phase 4 crash repair depends on.
-        loop.log.append(
-            sev.TOOL_CALL,
-            {
-                "turn": loop.log.open_turn,
-                "step": loop.log.open_step,
-                "call_id": tc.id,
-                "name": tc.function.name,
-                "arguments": tc.function.arguments,  # raw, unparsed
-            },
-        )
-        if end_turn_call_id is not None:
-            result = (
-                f"[skipped] Not executed: the turn already ended via call "
-                f"{end_turn_call_id} earlier in this batch."
-            )
-            bookkeep_tool_call(loop, tc, result, description, tool_records)
-            loop._lifecycle.tool_bookkeeping_finished()
-            continue
-        skip = _skip_result(loop, tc.function.name, solo)
-        if skip is not None:
-            bookkeep_tool_call(loop, tc, skip, description, tool_records)
-            loop._lifecycle.tool_bookkeeping_finished()
-            continue
-
-        try:
-            args = json.loads(tc.function.arguments)
-        except json.JSONDecodeError as exc:
-            result = (
-                f"Error: invalid JSON arguments for tool {tc.function.name!r}: {exc}"
-            )
-            # Sanitise the malformed arguments string so it doesn't poison
-            # the conversation history and trigger a 400 on the next API call.
-            _safe_args = json.dumps({"_malformed": tc.function.arguments})
-            tc.function.arguments = _safe_args
-            _patch_logged_tool_args(loop, tc.id, _safe_args)
-            bookkeep_tool_call(loop, tc, result, description, tool_records)
-            loop._lifecycle.tool_bookkeeping_finished()
-            continue
-        result = loop.registry.dispatch(tc.function.name, args)
-
-        # ── Typed side-effect dispatch ──────────────────────────────────────
-        if isinstance(result, ToolResult) and result.side_effect is not None:
-            effect = result.side_effect
-
-            if effect is SideEffect.END_TURN:
-                # on_handoff must precede on_tool_end so UIs suppress the
-                # handoff's tool card and render it as the final answer.
-                loop.callbacks.on_handoff()
-                end_turn_result = bookkeep_tool_call(
-                    loop, tc, result.output, description, tool_records
-                )
-                end_turn_call_id = tc.id
-                loop._lifecycle.tool_bookkeeping_finished()
-                continue
-            elif effect is SideEffect.ALL_TASKS_RESOLVED:
-                result = loop._handle_all_tasks_resolved()
-            elif effect is SideEffect.RELOAD_SKILLS:
-                added, removed, errors = loop._rebuild_for_reload()
-                result = _format_reload_notification(
-                    len(loop.skills), added, removed, errors
-                )
-                deferred_system_msgs.append(result)
-            elif effect is SideEffect.SWITCH_MODEL:
-                tier = (result.side_effect_data or {}).get("tier")
-                result = loop._handle_switch_model(tier, args)
-            elif effect is SideEffect.SET_ACTIVE_PLAN:
-                path = (result.side_effect_data or {}).get("path")
-                loop.config.active_plan_file = path
-                result = result.output
-            elif effect is SideEffect.ATTACH_IMAGE:
-                result = _attach_image(loop, result, deferred_image_parts)
-
-        # Unwrap plain ToolResult to string for bookkeeping
-        if isinstance(result, ToolResult):
-            result = result.output
-
-        bookkeep_tool_call(loop, tc, result, description, tool_records)
-        loop._lifecycle.tool_bookkeeping_finished()
-
-    for _sys_content in deferred_system_msgs:
+    for _sys_content in batch.system_msgs:
         loop._log_user_message("user", _sys_content, "reload")
-    if deferred_image_parts:
-        loop._log_user_message("user", deferred_image_parts, "tool_image")
+    if batch.image_parts:
+        loop._log_user_message("user", batch.image_parts, "tool_image")
 
-    if end_turn_result is not None:
-        return handle_end_turn(loop, end_turn_result, tool_records, (message, response))
+    if batch.end_turn_result is not None:
+        return handle_end_turn(loop, batch.end_turn_result, tool_records, (message, response))
     return None
+
+
+def _dispatch_one(
+    loop: AgentLoop,
+    tc: ChatCompletionMessageFunctionToolCall,
+    batch: _Batch,
+    tool_records: list[ToolCallRecord],
+) -> None:
+    """Announce, then skip or run, then bookkeep exactly one result for one call."""
+    description = _announce_call(loop, tc)
+    blocked = _blocked_result(loop, tc, batch)
+    if blocked is not None:
+        result, ends_turn = blocked, False
+    else:
+        result, ends_turn = _run_call(loop, tc, batch)
+    full_str = bookkeep_tool_call(loop, tc, result, description, tool_records)
+    if ends_turn:
+        batch.end_turn_result = full_str
+        batch.end_turn_call_id = tc.id
+    loop._lifecycle.tool_bookkeeping_finished()
+
+
+def _announce_call(loop: AgentLoop, tc: ChatCompletionMessageFunctionToolCall) -> str:
+    """Publish the call's start and log it; returns its display description."""
+    tool_obj = loop.registry._tools.get(tc.function.name)
+    description = tool_obj.description if tool_obj else tc.function.name
+    loop._lifecycle.tool_started(tc.function.name)
+    loop.callbacks.on_tool_start(tc.function.name, description, tc.function.arguments)
+    loop.tracker.record_tool_start(tc.function.name, description, tc.function.arguments)
+
+    # Recorded BEFORE execution: a tool/call with no tool/result is a
+    # detectable interruption, which Phase 4 crash repair depends on.
+    loop.log.append(
+        sev.TOOL_CALL,
+        {
+            "turn": loop.log.open_turn,
+            "step": loop.log.open_step,
+            "call_id": tc.id,
+            "name": tc.function.name,
+            "arguments": tc.function.arguments,  # raw, unparsed
+        },
+    )
+    return description
+
+
+def _blocked_result(
+    loop: AgentLoop, tc: ChatCompletionMessageFunctionToolCall, batch: _Batch,
+) -> str | None:
+    """Result for a call that must not run: the turn already ended, a pause, or solo."""
+    if batch.end_turn_call_id is not None:
+        return (
+            f"[skipped] Not executed: the turn already ended via call "
+            f"{batch.end_turn_call_id} earlier in this batch."
+        )
+    return _skip_result(loop, tc.function.name, batch.solo)
+
+
+def _parse_args(
+    loop: AgentLoop, tc: ChatCompletionMessageFunctionToolCall,
+) -> tuple[dict | None, str | None]:
+    """Return (args, None), or (None, error) after sanitising malformed arguments."""
+    try:
+        return json.loads(tc.function.arguments), None
+    except json.JSONDecodeError as exc:
+        result = (
+            f"Error: invalid JSON arguments for tool {tc.function.name!r}: {exc}"
+        )
+        # Sanitise the malformed arguments string so it doesn't poison
+        # the conversation history and trigger a 400 on the next API call.
+        _safe_args = json.dumps({"_malformed": tc.function.arguments})
+        tc.function.arguments = _safe_args
+        _patch_logged_tool_args(loop, tc.id, _safe_args)
+        return None, result
+
+
+def _run_call(
+    loop: AgentLoop, tc: ChatCompletionMessageFunctionToolCall, batch: _Batch,
+) -> tuple[object, bool]:
+    """Execute one call; returns (result to bookkeep, whether it ends the turn)."""
+    args, error = _parse_args(loop, tc)
+    if error is not None:
+        return error, False
+    result = loop.registry.dispatch(tc.function.name, args)
+
+    # ── Typed side-effect dispatch ──────────────────────────────────────
+    if isinstance(result, ToolResult) and result.side_effect is SideEffect.END_TURN:
+        # on_handoff must precede on_tool_end so UIs suppress the
+        # handoff's tool card and render it as the final answer.
+        loop.callbacks.on_handoff()
+        return result.output, True
+    if isinstance(result, ToolResult) and result.side_effect is not None:
+        result = _apply_side_effect(loop, result, args, batch)
+
+    # Unwrap plain ToolResult to string for bookkeeping
+    if isinstance(result, ToolResult):
+        result = result.output
+    return result, False
+
+
+def _apply_side_effect(loop: AgentLoop, result: ToolResult, args: dict, batch: _Batch):
+    """Route a non-END_TURN side effect; returns the result to report for the call."""
+    effect = result.side_effect
+    if effect is SideEffect.ALL_TASKS_RESOLVED:
+        return loop._handle_all_tasks_resolved()
+    if effect is SideEffect.RELOAD_SKILLS:
+        added, removed, errors = loop._rebuild_for_reload()
+        notice = _format_reload_notification(len(loop.skills), added, removed, errors)
+        batch.system_msgs.append(notice)
+        return notice
+    if effect is SideEffect.SWITCH_MODEL:
+        tier = (result.side_effect_data or {}).get("tier")
+        return loop._handle_switch_model(tier, args)
+    if effect is SideEffect.SET_ACTIVE_PLAN:
+        loop.config.active_plan_file = (result.side_effect_data or {}).get("path")
+        return result.output
+    if effect is SideEffect.ATTACH_IMAGE:
+        return _attach_image(loop, result, batch.image_parts)
+    return result
 
 
 def _attach_image(loop: AgentLoop, result: ToolResult, parts: list[dict]) -> str:
