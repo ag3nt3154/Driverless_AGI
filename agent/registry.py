@@ -16,6 +16,10 @@ class ToolRegistry:
         """Return the registered tool named *name*, or ``None``."""
         return self._tools.get(name)
 
+    def is_available(self, name: str) -> bool:
+        """True when *name* is registered and not denied, i.e. dispatch would run it."""
+        return name in self._tools and name not in self._denied
+
     def get_openai_tools_list(self) -> list[dict]:
         return [t.schema() for t in self._tools.values()]
 
