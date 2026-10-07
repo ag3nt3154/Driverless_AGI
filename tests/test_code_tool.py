@@ -187,3 +187,9 @@ def test_description_lists_only_available_tools(tmp_path):
 def test_gui_label():
     from pyside_gui.tool_labels import tool_label
     assert tool_label("code", '{"script": "print(1)"}') == "Ran a script"
+
+
+def test_description_warns_read_lines_are_numbered(tmp_path):
+    code, _ = _tool(tmp_path)
+    assert "numbered lines" in code.description
+    assert "split('\\t', 1)[1]" in code.description

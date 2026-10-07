@@ -31,6 +31,7 @@ tools:                      # Restrict the main agent to a specific subset of to
   - copy                    # Copy files or directories
   # ── Shell tools ─────────────────────────────────────────────────────────────
   - bash                    # Run arbitrary shell commands
+  - code                    # Run one Python script chaining tool calls (needs code_mode)
   - tmux_bash               # Run commands in a persistent tmux session
   # ── Planning tools ───────────────────────────────────────────────────────────
   - enter_plan_mode         # Switch agent into plan-writing mode
@@ -59,5 +60,6 @@ tools:                      # Restrict the main agent to a specific subset of to
   # ── GUI tools ────────────────────────────────────────────────────────────────
   - show_file               # Open a file in the GUI file viewer with optional line highlight
 sandbox_mode: false     # true = file tools have no path restrictions (allowed_roots=None)
+code_mode: true         # false = the `code` tool is not registered
 disabled_tools:         # Always off, even if a project config sets `tools: null`.
   - memory_refresh      # Built for the retired memory layout; redesign pending (TODO.md).

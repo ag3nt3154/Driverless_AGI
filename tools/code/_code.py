@@ -39,7 +39,9 @@ _DESCRIPTION = (
     "tools.<name>(**args); a failed call raises ToolError (catch it to continue). Calls are "
     "real and are not undone if the script fails later. Use tools.* for files and commands, "
     "not open()/subprocess. No input(). Top-level `return` is allowed. Runs in the project "
-    "directory with dagi's Python. Available:"
+    "directory with dagi's Python. tools.read returns numbered lines ('{n:6d}\\t{text}'; "
+    "take line.split('\\t', 1)[1] for the text) and cuts very large files in the middle, so "
+    "page with offset/limit. Available:"
 )
 
 

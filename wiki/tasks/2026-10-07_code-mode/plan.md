@@ -565,7 +565,7 @@ Runs in the project directory with dagi's Python. Available:
 - **Task folder:** `wiki/tasks/2026-10-07_code-mode/`
 
 ## Overall Status
-In Progress — Subtask 1 complete.
+Complete — all five subtasks committed; GUI Esc check not run (see Verification).
 
 ## Notes
 - `ToolRegistry.dispatch` catches every exception into `"Error: …"`, so `ToolError` detection by
@@ -585,13 +585,30 @@ In Progress — Subtask 1 complete.
   `tests/conftest.py` trips at 85% system RAM and the machine sat at 84–86% (Chrome, VS Code).
   -> targeted runs use `--noconftest` (the only other autouse fixture isolates the memory root,
   unused by these tests). Under `--noconftest`, two `tests/test_interrupt.py` tests fail on
-  `main` too, so they are not regressions. The full suite still runs with the watchdog.
+  `main` too, so they are not regressions.
+- **Subtask 4, attempt 1:** the full suite with the watchdog errored 1633 tests (RAM 86%).
+  -> compared full `--noconftest` runs: `main@c5c4759` 12 failed / 1577 passed; branch
+  12 failed / 1618 passed, identical failure set.
+- **Subtask 5, attempt 1:** the real `main.py` run said `code` was unavailable — the tracked
+  `.dagi/config.yaml` has a `tools:` allowlist without it, so "default on" never applied.
+  -> added `code` to that allowlist (and the commented example list) plus `code_mode: true`.
+- **Subtask 5, attempt 2:** the real run used `code` once, but the script's
+  `line.startswith("def ")` matched nothing because `tools.read` returns numbered lines.
+  -> the description now says read lines are `{n:6d}	{text}` and large files are cut in
+  the middle. Also fixed the README's stale `main.py --max-iter` flag (it no longer exists).
 
 ## Verification
-- Full suite: only baseline failures remain.
-- `tests/test_code_runner.py`, `tests/test_code_tool.py`, contract and interrupt tests pass.
-- Manual GUI run per Subtask 5.
+- Code-mode tests (`test_code_tool.py`, `test_code_runner.py`, contract, config loader, bash):
+  90 passed.
+- Full suite, `--noconftest`: 1618 passed, failure set identical to `main` apart from
+  `tests/test_stream_preview.py::test_expand_collapse_cycle_on_real_dagi_app` once (passes
+  3/3 alone — flaky TUI timing). Full suite with the RAM watchdog: not achievable while system
+  RAM sits at 84–86%.
+- Real loop, `main.py` with deepseek-flash: one `code` call ran find + read over `agent/*.py`
+  through the registry and returned only the printed summary.
+- **Not run:** GUI Esc during a sleeping script. Covered by `test_force_kill` (real
+  subprocess) and `test_interrupt_kills_bash_then_a_running_code_script` (wiring).
 
 ## Next Action
-Get approval for the spec and plan and for creating `task/code-mode`; then commit both and start
-Subtask 1.
+Ask the Admiral whether to merge `task/code-mode` into `main` (and optionally try Esc on a
+sleeping script in the GUI first).

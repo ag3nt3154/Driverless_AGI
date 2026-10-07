@@ -190,14 +190,14 @@ Runs one task and exits. Uses argparse.
 
 ```bash
 python main.py "Fix the off-by-one error in processor.py"
-python main.py --model gpt-4o-openai --max-iter 50 "your task"
+python main.py --model gpt-4o-openai "your task"
 echo "Add type hints to agent/" | python main.py
 ```
 
 | Flag | Description |
 |------|-------------|
 | `--model` | Model ID from the model catalog |
-| `--max-iter` | Override max iterations |
+| `--verbose` | Verbose logging |
 | `--project` | Path to a project directory to scope file access |
 
 ### Interactive TUI (`tui.py`) — recommended
@@ -806,6 +806,40 @@ Token/cost usage is requested via `stream_options: {"include_usage": true}` on e
 
 While a response is actively streaming, the live preview automatically expands to fill the full window (down to the running-indicator/prompt), so long in-progress replies aren't capped at a few lines — it collapses back to normal once the turn finishes and the final message lands in the conversation pane.
 
+### Code mode
+
+`code_mode` (default `true`) adds the `code` tool: the agent writes one Python script that
+chains several tool calls, and only what the script prints or returns enters the context.
+Use it for mechanical multi-step work — grep then read the matches, the same edit across
+files, run tests and pick out the failures — that would otherwise cost one model request per
+call plus every intermediate result.
+
+```python
+hits = tools.grep(pattern="def dispatch", path="agent")
+for f in sorted({h.split(":")[0] for h in hits.splitlines()}):
+    print(f, tools.read(path=f).count("SideEffect"))
+```
+
+- The script runs in a child process with dagi's own Python, in the project directory.
+  Each `tools.<name>(**args)` call is sent back to the parent and runs through the normal
+  tool registry, so path roots and tool behaviour match a direct call.
+- Callable: `read`, `grep`, `find`, `write`, `edit`, `copy`, `bash` (minus any filtered out
+  by `tools`/`disabled_tools`). `bash` returns `{output, exit_code, timed_out, killed}`; the
+  others return their text. A failed call raises `ToolError`, which the script can catch.
+  Results that need the loop (e.g. `read` on an image) are refused: make that call directly.
+- Calls are real and are not undone. If the script fails, the result shows its output so far,
+  a traceback of the script's own lines, and `[already applied] edit(path=…), …`.
+- `timeout` defaults to 300 s; Esc kills the script's whole process tree.
+- The transcript holds one `code` call and one result; nested calls are not shown as
+  separate tool cards.
+- Not a sandbox: a script could call `open()` or `subprocess` itself, as `bash` can.
+
+```yaml
+code_mode: false   # global only: the code tool is not registered; nothing else changes
+```
+
+Spec and plan: `wiki/tasks/2026-10-07_code-mode/`.
+
 ### Document Conversion Service
 
 The `read` tool converts documents to markdown:
@@ -1011,6 +1045,7 @@ Driverless_AGI/
 | `write` | Overwrite a file. Creates parent dirs. Takes `path` + `content` |
 | `edit` | Edit a file by replacing exact text (`oldText` → `newText`). The match must be unique; CRLF-safe. For several changes to one file, pass `edits` (a list of `{oldText, newText}`): applied in order in one call, all-or-nothing, errors name the failing edit (`edit 2 of 3`). Empty placeholder arguments and a JSON-string `edits` are tolerated |
 | `bash` | Run a shell command. Returns stdout + stderr + exit code. Pass `command` + optional `timeout`. Its description names the real OS, version and shell (`%COMSPEC%`/cmd.exe on Windows, `/bin/sh` on POSIX), so the model uses valid syntax from its first command. A piped command's result ends with a note that the exit status belongs to the last command only (`pytest | findstr` can otherwise hide a failure) |
+| `code` | Run one Python script that chains `read`/`grep`/`find`/`write`/`edit`/`copy`/`bash` calls as `tools.<name>(**args)`; only what the script prints or returns comes back. Registered when `code_mode` is on (the default). See [Code mode](#code-mode) |
 | `grep` | Regex search across files using ripgrep (rg). Returns `file:line:match` format. Automatically excludes binary files (`.pyc`, `.pyo`, `.bin`), `__pycache__`, `.git`, `.dagi`, and other non-source directories. `path` must be a specific subdirectory or file (not `.` / project root). No result cap: very large results go through the shared head + marker + tail filter, with the full list saved |
 | `find` | Find files by glob pattern (e.g. `**/*.py`). Searches all allowed roots when no path given. No result cap: very large results go through the shared head + marker + tail filter, with the full list saved |
 | `skill` | Load a `.dagi/skills/<name>/SKILL.md` guidance document and return it for execution |
@@ -1028,7 +1063,7 @@ Driverless_AGI/
 | `escalate_issue` | Worker/review subagent only: raise a blocking question to the main agent instead of guessing. Writes a sidecar file next to the subagent's handoff report; the main agent's subprocess poll loop detects it, terminates the subagent, and surfaces `"[worker escalated]"` / `"[review escalated]"` with the question and context — does not consume a `dagi-execute` retry attempt |
 | `write_handoff` | Always visible to the main agent and auto-injected into every subagent with a `handoff_path`. It writes `content` verbatim to a baked-in path and its sentinel immediately ends the turn, so no `END_OF_RESPONSE` is needed. Main-agent calls save `.dagi/handoffs/main_<thread-hash12>.md` and render the full Markdown in the TUI; inherited children reuse the exact parent-visible schema but write to their assigned child path. The lifecycle name is reserved against project-tool collisions. |
 
-File tools (`read`, `write`, `edit`, `grep`, `find`) are sandboxed to allowed roots via `tools/_path_guard.py`. `bash` is intentionally unsandboxed.
+File tools (`read`, `write`, `edit`, `grep`, `find`) are sandboxed to allowed roots via `tools/_path_guard.py`. `bash` is intentionally unsandboxed. `code` scripts call the file tools through the same registry, so the same roots apply to `tools.*` calls; the script itself is ordinary Python and is no more sandboxed than `bash`.
 
 The 2026-10-02 Windows shell investigation reproduced missing Unix commands and partial
 multiline `python -c` execution with a successful exit. Runtime metadata, shell-free argv/stdin

@@ -191,6 +191,15 @@
 
 ## Completed
 
+- **Code mode v1 (2026-10-07)** — `code` tool (`tools/code/`): one Python script chains
+  `read`/`grep`/`find`/`write`/`edit`/`copy`/`bash` calls through the parent registry over
+  JSON-lines RPC; only printed output and the return value come back. Global `code_mode`
+  (file default `true`). `BashTool.run_structured` gives scripts the exit code as data.
+  Spec/plan: `wiki/tasks/2026-10-07_code-mode/`. Follow-ups, not done: an `only` mode (normal
+  tools hidden); a per-model switch for weak models; nested tool cards and session events
+  for calls inside a script; read-only parallel calls; benchmark `on` vs `off` in
+  `benchmarks/dagi_eval` (steps, tokens, success rate).
+
 - **GUI light theme (2026-10-06)** — Material 3 light palette (`theme.LIGHT`, Google's
   M3 web roles: `#0b57d0` primary, `#f0f4f9` surface containers, white chat surface) beside
   the existing dark one. **View → Theme → Dark / Light / System**, saved to

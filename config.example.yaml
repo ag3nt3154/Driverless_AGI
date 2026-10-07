@@ -126,6 +126,7 @@ code_mode: true      # true  = add the `code` tool: the agent can run one Python
 #   - copy                    # Copy files or directories
 #   # ── Shell tools ─────────────────────────────────────────────────────────────
 #   - bash                    # Run arbitrary shell commands
+#   - code                    # Run one Python script chaining tool calls (needs code_mode)
 #   # ── Git tools ────────────────────────────────────────────────────────────────
 #   - git_status              # Show current git status / diff
 #   - git_commit              # Stage and commit changes
