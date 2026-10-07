@@ -29,8 +29,9 @@ calls are proxied back to the parent `ToolRegistry`, behind a global `code_mode`
 - Callable tools are exactly `("read", "grep", "find", "write", "edit", "copy", "bash")`.
 - Error-prefixes that raise `ToolError`: `("Error", "Access denied", "[paused]")`.
 - Default script timeout: 300 seconds.
-- Never edit the historical paths: `.superpowers/`, `docs/superpowers/`, `snapshots/`,
-  `_todo/`, `.dagi/plans/`.
+- Never edit the historical paths: `.superpowers/`, `snapshots/`, `_todo/`, `.dagi/plans/`.
+- Never stage or commit the user's unrelated working-tree changes (the `docs/superpowers/`
+  deletions and `.dagi/emotes/memes/are_you_there.jpg`). Never `git stash`.
 - Registration order with `code_mode` off must stay byte-identical (warm-cache prefix).
 
 ## Review Focus
@@ -558,13 +559,13 @@ Runs in the project directory with dagi's Python. Available:
 ---
 
 ## Workspace
-- **Branch:** `task/code-mode` (to be created after approval)
+- **Branch:** `task/code-mode`
 - **Parent:** `main`
 - **Starting commit:** `c5c4759`
 - **Task folder:** `wiki/tasks/2026-10-07_code-mode/`
 
 ## Overall Status
-Pending — spec and plan awaiting approval.
+In Progress — Subtask 1 complete.
 
 ## Notes
 - `ToolRegistry.dispatch` catches every exception into `"Error: …"`, so `ToolError` detection by
@@ -580,7 +581,11 @@ Pending — spec and plan awaiting approval.
 `code_mode: false` turns it off, and off means the `code` tool is simply not registered.
 
 ## Attempts and Resolutions
-(none yet)
+- **Subtask 1, attempt 1:** every test errored at setup — the autouse RAM watchdog in
+  `tests/conftest.py` trips at 85% system RAM and the machine sat at 84–86% (Chrome, VS Code).
+  -> targeted runs use `--noconftest` (the only other autouse fixture isolates the memory root,
+  unused by these tests). Under `--noconftest`, two `tests/test_interrupt.py` tests fail on
+  `main` too, so they are not regressions. The full suite still runs with the watchdog.
 
 ## Verification
 - Full suite: only baseline failures remain.

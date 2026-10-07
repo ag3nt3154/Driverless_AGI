@@ -110,6 +110,11 @@ sandbox_mode: false  # true  = file tools (read, write, edit, grep, find, copy) 
                      # false = file tools are restricted to allowed_roots
                      #         ([dagi_root, cwd] by default). Recommended for most use cases.
 
+code_mode: true      # true  = add the `code` tool: the agent can run one Python script that
+                     #         chains read/grep/find/write/edit/copy/bash calls, and only the
+                     #         script's printed output and return value enter the context.
+                     # false = the `code` tool is not registered; normal tools only.
+
 # tools:                      # Restrict the main agent to a specific subset of tools.
 #                             # Omit (or set to null) to enable all available tools.
 #   # ── File tools ──────────────────────────────────────────────────────────────

@@ -194,3 +194,21 @@ class TestParallelToolCallsResolution:
         entry = {**self._ENTRY, "parallel_tool_calls": False}
         cfg = _build_config_from_entry(entry, {"parallel_tool_calls": True})
         assert cfg.parallel_tool_calls is False
+
+
+class TestCodeModeResolution:
+    _ENTRY = {"model": "m", "api_url": "http://x", "api_key": "k"}
+
+    def test_defaults_on_when_absent(self):
+        assert _build_config_from_entry(self._ENTRY, {}).code_mode is True
+
+    def test_explicit_false_turns_it_off(self):
+        assert _build_config_from_entry(self._ENTRY, {"code_mode": False}).code_mode is False
+
+    def test_model_entry_key_is_ignored(self):
+        entry = {**self._ENTRY, "code_mode": False}
+        assert _build_config_from_entry(entry, {}).code_mode is True
+
+    def test_dataclass_default_is_false(self):
+        from agent.loop import AgentConfig
+        assert AgentConfig().code_mode is False

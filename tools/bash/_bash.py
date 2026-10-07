@@ -88,6 +88,19 @@ class BashTool(BaseTool):
         self._killed_by_user = False
 
     def run(self, command: str, timeout: int | None = None) -> str:
+        r = self.run_structured(command, timeout)
+        if r["timed_out"]:
+            return r["output"]
+        if r["killed"]:
+            return f"{r['output']}\n[killed by user]" if r["output"] else "[killed by user]"
+        return _format_result(r["output"], r["exit_code"], command)
+
+    def run_structured(self, command: str, timeout: int | None = None) -> dict:
+        """Run *command*; return {output, exit_code, timed_out, killed} without formatting.
+
+        On a timeout, output is the "[timed out …]" message and exit_code is None.
+        Used directly by the `code` tool, where a non-zero exit is data, not an error.
+        """
         effective_timeout = timeout if timeout is not None else self.default_timeout
 
         proc = subprocess.Popen(
@@ -114,18 +127,22 @@ class BashTool(BaseTool):
                     proc.communicate(timeout=self._REAP_GRACE)
                 except subprocess.TimeoutExpired:
                     pass
-                return (
+                message = (
                     f"[timed out after {effective_timeout}s and was terminated — "
                     "pass a longer explicit timeout for long-running commands]"
                 )
+                return {"output": message, "exit_code": None, "timed_out": True, "killed": False}
         finally:
             with self._lock:
                 self._proc = None
 
         output = (stdout or "") + (stderr or "")
-        if self._killed_by_user:
-            return f"{output}\n[killed by user]" if output else "[killed by user]"
-        return _format_result(output, proc.returncode, command)
+        return {
+            "output": output,
+            "exit_code": proc.returncode,
+            "timed_out": False,
+            "killed": self._killed_by_user,
+        }
 
     def force_kill(self) -> bool:
         """Force-kill the currently running command, if any. Returns whether

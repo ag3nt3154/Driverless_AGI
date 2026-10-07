@@ -170,3 +170,23 @@ class TestBashPipeStatus:
     def test_has_pipe_detection(self, command, piped):
         from tools.bash._bash import _has_pipe
         assert _has_pipe(command) is piped
+
+
+class TestBashStructured:
+    def test_success(self, tmp_path):
+        r = BashTool(cwd=tmp_path).run_structured("echo hi")
+        assert r["exit_code"] == 0 and "hi" in r["output"]
+        assert r["timed_out"] is False and r["killed"] is False
+
+    def test_nonzero_exit_is_data_not_error(self, tmp_path):
+        r = BashTool(cwd=tmp_path).run_structured("exit 3")
+        assert r["exit_code"] == 3 and r["timed_out"] is False
+
+    def test_timeout(self, tmp_path):
+        cmd = f'"{sys.executable}" -c "import time; time.sleep(5)"'
+        r = BashTool(cwd=tmp_path).run_structured(cmd, timeout=1)
+        assert r["timed_out"] is True and r["exit_code"] is None and r["killed"] is False
+        assert "timed out" in r["output"]
+
+    def test_run_text_unchanged(self, tmp_path):
+        assert BashTool(cwd=tmp_path).run("exit 3").endswith("[exit code 3]")

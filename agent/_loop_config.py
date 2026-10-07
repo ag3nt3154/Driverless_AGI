@@ -91,6 +91,10 @@ class AgentConfig:
     disabled_tools: list[str] | None = None
     # Sandbox mode: when True, file tools have no path restrictions (allowed_roots=None).
     sandbox_mode: bool = False
+    # Code mode: register the `code` tool (one script chaining tool calls). config_loader
+    # defaults the config-file value to True; this dataclass default keeps tests and
+    # benchmarks unchanged.
+    code_mode: bool = False
     # Benchmark/sandbox environment preamble injected at the TOP of the system prompt.
     system_prompt_preamble: str = ""
     # OpenRouter provider routing: ordered list of provider slugs to try in sequence
