@@ -186,7 +186,8 @@ export no_proxy="openai.com,openrouter.ai,api.openai.com"
 
 ### Single-Shot CLI (`main.py`)
 
-Runs one task and exits. Uses argparse.
+Runs one task and exits. Uses argparse. Stdout is reconfigured to UTF-8 (`errors="replace"`)
+at startup, so results with non-cp1252 characters (e.g. `→`) print on a Windows console or pipe.
 
 ```bash
 python main.py "Fix the off-by-one error in processor.py"

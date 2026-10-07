@@ -12,7 +12,14 @@ from agent.loop import AgentLoop
 from agent.log_callbacks import build_cli_callbacks
 
 
+def _ensure_utf8_stdout():
+    # Windows consoles/pipes default to cp1252; a result with '→' etc. would crash print().
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+
+
 def main():
+    _ensure_utf8_stdout()
     parser = argparse.ArgumentParser(description="Driverless AGI coding agent")
     parser.add_argument("task", nargs="?", help="Task to run (reads from stdin if omitted)")
     parser.add_argument("--model", help="Model ID from .dagi/config.yaml (e.g. gpt-4o-openai)")

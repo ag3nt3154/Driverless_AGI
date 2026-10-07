@@ -191,6 +191,11 @@
 
 ## Completed
 
+- **`main.py` UTF-8 stdout (2026-10-07)** — the single-shot CLI crashed with
+  `UnicodeEncodeError` printing a result containing `→` on Windows (cp1252 stdout).
+  `main()` now reconfigures stdout to UTF-8 with `errors="replace"`. Test:
+  `tests/test_main_cli.py`.
+
 - **Code mode v1 (2026-10-07)** — `code` tool (`tools/code/`): one Python script chains
   `read`/`grep`/`find`/`write`/`edit`/`copy`/`bash` calls through the parent registry over
   JSON-lines RPC; only printed output and the return value come back. Global `code_mode`
