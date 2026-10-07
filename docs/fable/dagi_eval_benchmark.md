@@ -6,8 +6,8 @@ comparing dagi versions and models). It was produced via the `superpowers:brains
 → `superpowers:writing-plans` skill flow.
 
 Two artifacts were produced and committed separately during this session:
-- Design spec: [`docs/superpowers/specs/2026-07-06-dagi-eval-benchmark-design.md`](docs/superpowers/specs/2026-07-06-dagi-eval-benchmark-design.md)
-- Implementation plan: [`docs/superpowers/plans/2026-07-06-dagi-eval-benchmark.md`](docs/superpowers/plans/2026-07-06-dagi-eval-benchmark.md)
+- Design spec
+- Implementation plan
 
 Their full contents are embedded below, after the conversation transcript.
 

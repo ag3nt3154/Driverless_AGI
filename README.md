@@ -1240,10 +1240,6 @@ task, `ds_01_tabular`, is the exception: its dataset (`train.csv`,
 committed frozen, since retraining/regenerating it would silently change
 the benchmark's difficulty across runs.
 
-See `docs/superpowers/specs/2026-07-06-dagi-eval-benchmark-design.md` for
-the full design rationale and `docs/superpowers/plans/2026-07-06-dagi-eval-benchmark.md`
-for the implementation plan.
-
 ---
 
 ## Dependencies

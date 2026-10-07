@@ -195,7 +195,6 @@ class AgentLoop:
         self._messages: list[dict] = []
 
         # The log is the source of truth; _messages is a derived cache of it.
-        # See docs/superpowers/specs/2026-08-16-session-event-log-design.md
         # (self.log is initialized earlier, before create_tool_registry, so it
         # can be forwarded to subagent tools at construction time.)
         self._emit_header(system, "resume" if initial_messages else "initial")
