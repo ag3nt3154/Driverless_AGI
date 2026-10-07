@@ -192,3 +192,13 @@ def test_consume_stream_stops_on_abort_and_swallows_the_close_error():
     assert message.content == "one "
     assert message.tool_calls is None
     assert seen == ["one "]
+
+
+def test_interrupt_kills_bash_then_a_running_code_script():
+    from unittest.mock import MagicMock, call
+    loop = _make_loop()
+    order = MagicMock()
+    loop.registry._tools.update({"bash": order.bash, "code": order.code})
+
+    assert loop.interrupt() is True
+    assert order.mock_calls[:2] == [call.bash.force_kill(), call.code.force_kill()]

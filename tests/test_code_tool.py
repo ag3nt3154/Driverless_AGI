@@ -182,3 +182,8 @@ def test_description_lists_only_available_tools(tmp_path):
     text = code.description
     assert "tools.read(path: str" in text and "tools.write(" in text
     assert "tools.bash(" not in text and "tools.code(" not in text
+
+
+def test_gui_label():
+    from pyside_gui.tool_labels import tool_label
+    assert tool_label("code", '{"script": "print(1)"}') == "Ran a script"

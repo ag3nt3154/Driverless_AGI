@@ -145,11 +145,18 @@ def _read_tool(cwd: Path, roots: list[Path] | None, config: "AgentConfig | None"
 def _register_file_tools(
     reg: ToolRegistry, cwd: Path, roots: list[Path] | None, config: "AgentConfig | None",
 ) -> None:
-    """Path-sandboxed file tools, then bash (excluded from path sandboxing by design)."""
+    """Path-sandboxed file tools, then bash (excluded from path sandboxing by design).
+
+    With code mode on, the `code` tool follows bash; its scripts call the tools above
+    through this same registry.
+    """
     reg.register(_read_tool(cwd, roots, config))
     for tool_cls in (GrepTool, FindTool, WriteTool, EditTool, CopyTool):
         reg.register(tool_cls(cwd=cwd, allowed_roots=roots))
     reg.register(BashTool(cwd=cwd))
+    if config is not None and config.code_mode:
+        from tools.code import CodeTool
+        reg.register(CodeTool(registry=reg, cwd=cwd))
 
 
 def _register_frontend_tools(

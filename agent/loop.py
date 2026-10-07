@@ -305,7 +305,7 @@ class AgentLoop:
         self._lifecycle.pause()
 
     def interrupt(self) -> bool:
-        """Stop now: pause, kill bash and subagents, abandon the request in flight.
+        """Stop now: pause, kill bash, code scripts and subagents, abandon the request.
 
         A streamed request is closed at once; a blocking one is left to finish
         and its response is discarded. Returns False when already paused.
@@ -317,6 +317,9 @@ class AgentLoop:
         bash = self.registry._tools.get("bash")
         if bash is not None:
             bash.force_kill()
+        code = self.registry._tools.get("code")
+        if code is not None:
+            code.force_kill()
         from tools._subagent_runner import force_kill_active_subagents
         force_kill_active_subagents()
         self._close_active_stream()

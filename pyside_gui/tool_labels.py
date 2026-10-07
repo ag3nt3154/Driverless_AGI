@@ -18,6 +18,7 @@ _LABELS: dict[str, tuple[str, tuple[str, ...]]] = {
     "edit_text": ("Edited", ("path",)),
     "show_file": ("Showed", ("path",)),
     "bash": ("Ran", ("command",)),
+    "code": ("Ran a script", ()),
     "find": ("Found", ("pattern",)),
     "web_fetch": ("Fetched", ("url",)),
     "web_search": ("Searched the web for", ("query",)),

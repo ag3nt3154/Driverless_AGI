@@ -32,6 +32,7 @@ def _config(project: Path, **overrides) -> MagicMock:
     cfg.tools = None
     cfg.disabled_tools = []
     cfg.sandbox_mode = False
+    cfg.code_mode = False  # a bare MagicMock attribute is truthy
     cfg.advanced_config = None
     cfg.worker_config = None
     cfg.autonomous = False
@@ -125,3 +126,17 @@ def test_extra_bash_and_partial_frontend_callbacks(tmp_path):
         "reload_skills", "emote", "read_notepad", "extend_subagent_timeout", "write_handoff",
     ]
     assert reg.get("grep").allowed_roots == extra_roots
+
+
+def test_code_mode_inserts_code_after_bash_and_nowhere_else(tmp_path):
+    kwargs = dict(callbacks=AgentCallbacks(), skill_roots=[tmp_path])
+    off = _names(_config(tmp_path), tmp_path, **kwargs)
+    on = _names(_config(tmp_path, code_mode=True), tmp_path, **kwargs)
+
+    assert on == _FILE_TOOLS + ["code"] + off[len(_FILE_TOOLS):]
+
+
+def test_code_mode_respects_disabled_tools(tmp_path):
+    config = _config(tmp_path, code_mode=True, disabled_tools=["code"])
+
+    assert "code" not in _names(config, tmp_path)
