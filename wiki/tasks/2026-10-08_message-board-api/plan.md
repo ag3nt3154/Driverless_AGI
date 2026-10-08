@@ -464,6 +464,8 @@ headers={"Cache-Control": "no-cache"})`. A `StoreError` exception handler return
 
 ### Subtask 3: Python client and BoardSession
 
+**Status:** Complete — independent PASS; 57 client/SSE tests passed.
+
 **Goal:** The only dagi-side code that speaks the board's HTTP: typed calls, actionable errors,
 and a per-agent cursor.
 **Requirements:**
@@ -480,8 +482,16 @@ and a per-agent cursor.
     failure or cancellation remove only this call's temp file. Reuse verified cached bytes.
     Use a monotonic total deadline plus bounded read timeouts; expose cancellation checks
     between chunks. The GUI uses a 10 s total deadline and 1 s read timeout. Disable redirects.
+    Keep the public call synchronous, with cancellable async HTTP internally for downloads:
+    the total deadline covers metadata, headers and body even when a peer trickles bytes.
+    An optional async client/factory test seam supports ASGI/MockTransport injection; normal
+    methods retain the synchronous `http` injection. Own production async clients per fetch
+    so concurrent calls and separate event loops never share a pooled client.
   - `stream(after) -> contextmanager yielding str lines` (httpx `stream("GET", "/stream")`
     with `timeout=httpx.Timeout(10.0, read=45.0)`).
+    Yield a closable line iterator so listener shutdown can interrupt a blocked read. SSE
+    requests use `Connection: close`, preventing a finished stream's socket from entering
+    the shared pool while another thread closes the iterator.
   - All HTTP paths are relative. When `http` is None it builds `httpx.Client(base_url=base_url)`, and
     the bearer header is added per request when a token is set.
   - Connection errors become `BoardError("UNREACHABLE", f"message board unreachable at
@@ -521,7 +531,7 @@ and a per-agent cursor.
 **Files:**
 - Create: `agent/board_client.py`
 - Create: `agent/_board_files.py`
-- Test: `tests/test_board_client.py`
+- Test: `tests/test_board_client.py`, `tests/test_board_stream.py`
 
 #### Tests
 - Round trip: register, post, posts.
@@ -541,15 +551,16 @@ and a per-agent cursor.
   verified bytes; bad download size/hash never replaces a valid cached file. Cover deadline,
   cancellation and redirect rejection with injected transports.
 
-- [ ] Step 1 write failing tests · Step 2 run (FAIL: module missing) · Step 3 implement ·
+- [x] Step 1 write failing tests · Step 2 run (FAIL: module missing) · Step 3 implement ·
   Step 4 run (PASS) · Step 5 return for review.
 
 ---
 
 ### Subtask 4: `read_board`/`post_board`/`fetch_attachment` tools, replacing `emote`
 
-**Goal:** Agents read, post and fetch attachments through three tools bound to a `BoardSession`. `emote` is removed
-everywhere.
+**Goal:** Agents read, post and fetch attachments through three tools bound to a `BoardSession`.
+Remove the obsolete `emote` tool and its callback/config/prompt references. Existing affect
+expression assets and identifiers are outside this migration.
 **Requirements:**
 - `tools/board/__init__.py` exports `ReadBoardTool`, `PostBoardTool` and `FetchAttachmentTool`.
   `tools/board/_board.py`
@@ -917,7 +928,7 @@ renders posts live, and lets the user post.
 - **Task folder:** `wiki/tasks/2026-10-08_message-board-api/`
 
 ## Overall Status
-In Progress — approved for delivery on 2026-10-08. Subtasks 1–2 complete; Subtask 3 in progress.
+In Progress — approved for delivery on 2026-10-08. Subtasks 1–3 complete; Subtask 4 in progress.
 
 ## Notes
 - `AgentLoop` is **rebuilt every turn** (`pyside_gui/_dispatch.py:181`), so the handle and
@@ -955,16 +966,25 @@ Expected outcomes below are delivery gates; none has been run for the unimplemen
 
 Delivery evidence so far:
 - Subtask 1: 42 tests passed; independent review PASS; committed as `30d45d0`.
-- Subtask 2: independent PASS; 85 board tests passed, including 5 real CLI checks.
+- Subtask 2: independent PASS; 85 board tests passed, including 5 real CLI checks; commit `05f4270`.
   Shutdown deadline, Windows async refusal, wildcard bind and open-SSE shutdown regressions pass.
   Runtime records use a separate helper module and cross-process publication/cleanup lock.
   FastAPI sync read routes use its threadpool; async writes explicitly offload store/blob work.
+- Subtask 3: independent PASS; combined client/SSE/service run 141 passed, focused client/SSE
+  57 passed after stream cleanup guard, and final SSE header/lifecycle run 4 passed.
+  Per-fetch async clients enforce total deadlines and Event cancellation. Cache reads and
+  publication share a short filesystem-only lock for Windows; network transfers remain parallel.
+  Actual directory junctions tested; file-symlink lstat simulation used because this account
+  cannot create symlinks (WinError 1314). Existing affect/emote asset identifiers are preserved.
 - Baseline before HTTP implementation: 1,880 passed, 7 failed, 3 skipped. Three Git tests
   failed because the temporary test directory was inside the repo; final full-suite runs
   must use outside-repo storage. Three existing workflow-template tests reference the removed
   `.dagi/skills` tree. One GUI clipboard test failed with Windows OpenClipboard unavailable.
   Sandbox TEMP also caused fixture/child-process failures, so use an isolated outside-repo
   TEMP/TMP directory with escalation for the full suite; targeted board tests can use `.dagi/temp`.
+- Baseline recheck with outside-repo temporary storage: 30 passed, 4 failed across Git branch,
+  workflow-template and paste-card tests. All Git tests passed. The remaining failures are the
+  three removed-template references and the same Windows OpenClipboard failure.
 
 - `C:\Users\alexr\anaconda3\envs\dagi\python.exe -u -m pytest -q -p no:pytest-qt tests pyside_gui/tests` → all pass.
 - `C:\Users\alexr\anaconda3\envs\dagi\python.exe -m services.message_board --help` → usage.
@@ -979,4 +999,4 @@ Delivery evidence so far:
   GUI closes.
 
 ## Next Action
-Implement Subtask 3 (Python client and BoardSession), then obtain independent review.
+Implement Subtask 4 (board tools and registry migration), then obtain independent review.

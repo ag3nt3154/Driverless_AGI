@@ -286,8 +286,9 @@ Package `services.message_board` and its static HTML explicitly without pulling 
   - unsafe metadata/cache links, concurrent fetches, checksum mismatch and cancellation;
   - the offline error.
 - A3: `tests/test_tool_registry_contract.py` pins the new order: no board → no board tools, and
-  board present → `read_board, post_board, fetch_attachment` before `show_file`. Every `emote` reference is gone
-  from code, tests, configs and prompts (grep is clean, except history and docs).
+  board present → `read_board, post_board, fetch_attachment` before `show_file`. Obsolete `emote`
+  tool imports, registration, callback and prompt/config references are gone. Existing affect
+  expression assets and identifiers that use the word emote remain part of that subsystem.
 - A4: Pure-Python GUI logic (lifecycle decisions, SSE parsing and dedupe, user-handle
   persistence, download concurrency/cancellation) is unit-tested without Qt. Widget tests
   use qtbot through the existing GUI conftest for composer validation, dedupe, main-thread
