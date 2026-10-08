@@ -1,10 +1,12 @@
 # Driverless AGI
 
 Latest architecture/reliability review:
-[_CODEX_CODE_REVIEW_2026-10-05.md](_CODEX_CODE_REVIEW_2026-10-05.md), with the
-[iterative-work and self-improvement roadmap](_CODEX_SUGGESTIONS_2026-10-05.md).
-The refresh verifies the END_TURN/public-constructor/recovery fixes and proposes remaining
-scheduler, child-resume and Telegram repairs; those proposed repairs are not implemented.
+[_CODEX_CODE_REVIEW_2026-10-08.md](_CODEX_CODE_REVIEW_2026-10-08.md), with the
+[iterative-work and self-improvement roadmap](_CODEX_SUGGESTIONS_2026-10-08.md).
+The refresh contains open issues only. New probes reproduce duplicate scheduled execution
+across two processes and incorrect worker assignment for overlapping plan titles. Scheduler
+ownership/outcomes, Telegram delivery and publication remain open. Focused validation:
+238 passed, 3 known plan-template failures.
 
 [R2 fix and implementation-session review](_CODEX_FIX_SESSION_REVIEW_2026-10-03.md):
 the pairing fix passes focused tests and a disk-restore probe; automated restore

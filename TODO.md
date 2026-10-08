@@ -23,43 +23,30 @@
     Add any future user-question tool (e.g. a revived `show_plan`) to `SOLO_TOOLS`.
   - `edit` takes an `edits` list for one file: in order, all-or-nothing, placeholder-tolerant.
 
-- **2026-10-05 review refresh on main.** See
-  [_CODEX_CODE_REVIEW_2026-10-05.md](_CODEX_CODE_REVIEW_2026-10-05.md) and
-  [_CODEX_SUGGESTIONS_2026-10-05.md](_CODEX_SUGGESTIONS_2026-10-05.md).
-  R2 and R6 fixes verified; R3's constructor mismatch is fixed, but initialization
-  failures still escape without recording a run. R4/R8/R9 reproduced; R7 improved
-  (`run` is now 39 lines), with construction/dispatch and adapter contracts remaining.
-  New R10: scheduler records ghost-response exhaustion as success despite the loop's
-  terminal error. Historical September Telegram defects revalidated as R11/R12:
-  final handoffs are dropped and answers cannot dispatch while a task is waiting.
-  New R13: typing-send failure leaves the chat busy. Proposed repairs remain unimplemented,
-  except R9 (fixed 2026-10-05: tolerant decode, log-independent drain, failure notes in
-  the output tail; real-process tests showed the old reader left chatty children blocked
-  on a full pipe until timeout) and R8 (fixed 2026-10-05: timed-out children keep their
-  identity by PID; immediate and resumed results share `_finalize`, so resumed inherited
-  results are rejected as `stale` with a reason). R8 residual: entries for children never
-  resumed or force-killed linger until PID reuse/process exit; fold into the R7/S1 owned
-  run handle. R7 is being taken one function at a time: `subagent_api.run_subagent`
-  done 2026-10-05 (CC 25 -> 7; argv contract pinned by `TestChildArgvContract`);
-  `agent/tools.py::create_tool_registry` done 2026-10-05 (158 lines/CC 36 -> CC 2;
-  ordered tool-name contract in `tests/test_tool_registry_contract.py` — order is the
-  provider-visible schema order); `AgentLoop.__init__` done 2026-10-05 (168 lines/CC 13
-  -> ordered `_init_*` phases, CC 2; attribute set and tracker/snapshot contract in
-  `tests/test_loop_construction.py`); `dispatch_tool_calls` done 2026-10-06 (126 lines/CC 20
-  -> `_Batch` + per-call phases, CC 5; full event trace pinned by
-  `TestDispatchEventTrace`). All four R7 functions are done. Still open from R7:
-  `agent/loop.py` is ~1,080 lines vs the 500-line cap. Small leftovers in `agent/tools.py`: `_load_project_tools`
-  CC 12, 106-char `_default_ask_user` line. Scheduler/Telegram/TUI items deferred.
-  Note: the intentional `.dagi/skills/` removal breaks 3 tests in
-  `tests/test_workflow_plan_template.py` (they read `write-plan/references/plan-template.md`).
-  Campaign R1/R5 remain outside this checkout, not resolved. Selected tests: 179 core
-  passed; 263 broader checks passed; two WebEngine setup errors passed on unsandboxed
-  rerun (444 selected tests ultimately passed). Offline probes made no network calls.
+- **2026-10-08 review refresh on main.** See
+  [_CODEX_CODE_REVIEW_2026-10-08.md](_CODEX_CODE_REVIEW_2026-10-08.md) and
+  [_CODEX_SUGGESTIONS_2026-10-08.md](_CODEX_SUGGESTIONS_2026-10-08.md).
+  Application HEAD is unchanged since October 6. The review now contains only 12 open
+  findings; resolved entries and campaign findings outside this checkout were removed.
+  R3 startup exceptions, R4 live-worker finalization, R10 false outcomes, R11/R12 Telegram
+  delivery/answer routing, R13 busy leak and R14 publication failure were reproduced again.
+  R8 residual abandoned child metadata remains source-inspected cleanup debt. R7 inventory:
+  five oversized files, three long functions; cyclomatic complexity not remeasured.
+  R15 remains three missing-template contract failures; align inline writer/parser markers.
+  New P1 R16: two real scheduler processes both run one due task and record success. Add
+  process admission locking before reading due state; do not replace owners still executing.
+  New P2 R17: requesting Validate assigns an earlier Validate input subtask. Prefer exact
+  task identity and reject ambiguous partial matches before composing worker payloads.
+  Roadmap S1-S10 retained as unbuilt extensions; S11 adds schedule control/missed-run recovery.
+  Focused tests: 238 passed, 3 known template failures (12.77s). Offline adapter probes ran
+  outside sandbox for Windows asyncio; new process-overlap and plan-selection probes passed
+  inside. No full/GUI/live-provider suite, application changes or Git mutations.
 
 - **2026-10-02 automation review follow-ups.** The review covered `task/iteration-engine`
-  at `6917b131`. Its report files, `_CODEX_CODE_REVIEW_2026-10-02.md` and
-  `_CODEX_SUGGESTIONS_2026-10-02.md`, are in the repo root. R2 and R6 are fixed (2026-10-05);
-  R7 is in progress; the rest are still open.
+  at `6917b131`. The running reports have since been renamed to the current October 8
+  files linked above; the October 2 observations remain historical. R2 and R6 are fixed (2026-10-05);
+  R7's four targeted function refactors and R8/R9 are done; residuals and other findings
+  are tracked in the current report.
   - **P1 R1 (campaign):** tampering during the *holdout* pass is swallowed by
     `_holdout_if_better` (`campaign/engine.py`), so the trial can still be accepted.
     Fix: propagate `evaluator_modified` and fail the trial, as `_rescore_holdout` already
