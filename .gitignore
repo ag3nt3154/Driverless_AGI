@@ -195,6 +195,7 @@ dagi-memory/*
 .dagi/handoffs/*
 .dagi/session-state/*
 .dagi/attachments/
+.dagi/board/
 snapshots/
 benchmarks/jobs/*
 jobs/*

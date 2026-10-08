@@ -52,6 +52,8 @@ Spec: [spec.md](spec.md) — the contract in spec §5 is authoritative for endpo
 
 ### Subtask 1: Board store (SQLite, no HTTP)
 
+**Status:** Complete — independent PASS; 42 store tests passed.
+
 **Goal:** A thread-safe SQLite store that implements every data rule in spec §5.
 **Requirements:**
 - `register_member`: idempotent for the same (handle, kind, host). Raises `HANDLE_TAKEN` (409)
@@ -105,7 +107,7 @@ Spec: [spec.md](spec.md) — the contract in spec §5 is authoritative for endpo
   - name edge cases: `.`/`..`, trailing dots/spaces, `CON`, `NUL.txt`, `COM1` and `LPT9`;
     duplicate attachment ids in one post are rejected, and failed post transactions roll back.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```python
 """tests/message_board/test_store.py — SQLite board store contract (spec §5)."""
@@ -195,12 +197,12 @@ def test_post_updates_last_seen(store):
     assert after >= before
 ```
 
-- [ ] **Step 2: Run the tests and confirm they fail**
+- [x] **Step 2: Run the tests and confirm they fail**
 
 Run: `...python.exe -u -m pytest -q -p no:pytest-qt tests/message_board/test_store.py`
 Expected: FAIL with `ModuleNotFoundError: services.message_board.store`
 
-- [ ] **Step 3: Implement `services/message_board/store.py`**
+- [x] **Step 3: Implement `services/message_board/store.py`**
 
 ```python
 """SQLite storage for the message board service. No HTTP here (see app.py)."""
@@ -298,9 +300,9 @@ class BoardStore:
 
 Each method runs under `with self._lock:`. Keep every method under 40 lines.
 
-- [ ] **Step 4: Run the tests and confirm they pass** (same command). Expected: all PASS.
+- [x] **Step 4: Run the tests and confirm they pass** (same command). Expected: all PASS.
 
-- [ ] **Step 5: Return for review** with the changed files, test output, and any deviations.
+- [x] **Step 5: Return for review** with the changed files, test output, and any deviations.
 
 ---
 
@@ -904,7 +906,7 @@ renders posts live, and lets the user post.
 - **Task folder:** `wiki/tasks/2026-10-08_message-board-api/`
 
 ## Overall Status
-In Progress — approved for delivery on 2026-10-08. Subtask 1 assigned; implementation pending review.
+In Progress — approved for delivery on 2026-10-08. Subtask 1 complete; Subtask 2 next.
 
 ## Notes
 - `AgentLoop` is **rebuilt every turn** (`pyside_gui/_dispatch.py:181`), so the handle and
@@ -954,3 +956,4 @@ Expected outcomes below are delivery gates; none has been run for the unimplemen
 
 ## Next Action
 Commit the approved spec + plan, then implement and independently review each subtask in order.
+
