@@ -308,6 +308,8 @@ Each method runs under `with self._lock:`. Keep every method under 40 lines.
 
 ### Subtask 2: HTTP API, auth, SSE, entry point
 
+**Status:** Complete — independent PASS; 85 board tests passed, including 5 live CLI checks.
+
 **Goal:** Expose the store over the spec §5 HTTP contract, runnable as `python -m services.message_board`.
 **Requirements:**
 - `create_app(store, token=None, *, shutdown=None) -> FastAPI`, no global app. `shutdown`
@@ -334,7 +336,10 @@ Each method runs under `with self._lock:`. Keep every method under 40 lines.
     OS user (Windows user ACL / POSIX 0600), never log its contents, and remove it on exit
     only if it still belongs to this instance. Fail startup if secure storage cannot be set.
   - `stop`: `--url` (default URL), `--runtime-dir` (same default as serve), bearer token from
-    `DAGI_BOARD_TOKEN`. `stop_local(url, *, runtime_dir, client, wait_s=5.0) -> int`:
+    `DAGI_BOARD_TOKEN`. `stop_local(url, *, runtime_dir, client=None, wait_s=5.0) -> int`:
+    - The entry point is synchronous; internally use cancellable async requests to enforce
+      wall-clock deadlines even if a peer trickles bytes. An injected client uses the
+      `httpx.AsyncClient` interface; production creates and closes its own async client.
     - Refuse non-loopback URLs and redirects (exit 1). Connection refused → already down (0);
       timeouts, foreign/malformed health and other errors → 1 with an actionable reason.
     - Read the protected local record and match its port and instance id to health. Host aliases
@@ -409,10 +414,10 @@ Each method runs under `with self._lock:`. Keep every method under 40 lines.
   - Do **not** consume `/stream` through `TestClient` (it's an endless response). The generator
     test covers it, and Subtask 5 covers the real endpoint over a live server.
 
-- [ ] **Step 1: Write the failing tests** (the cases listed above, one test per behaviour).
-- [ ] **Step 2: Install the deps, then run the tests and confirm they fail** on the missing
+- [x] **Step 1: Write the failing tests** (the cases listed above, one test per behaviour).
+- [x] **Step 2: Install the deps, then run the tests and confirm they fail** on the missing
   `services.message_board.app`.
-- [ ] **Step 3: Implement `app.py` and `__main__.py`**
+- [x] **Step 3: Implement `app.py` and `__main__.py`**
 
 Key shapes:
 
@@ -452,8 +457,8 @@ The routes are `async def`. Offload synchronous SQLite/blob operations with a th
 headers={"Cache-Control": "no-cache"})`. A `StoreError` exception handler returns
 `JSONResponse(status_code=e.status, content={"error": e.message, "code": e.code})`.
 
-- [ ] **Step 4: Run the tests and confirm they pass.**
-- [ ] **Step 5: Return for review**, including the pinned versions.
+- [x] **Step 4: Run the tests and confirm they pass.**
+- [x] **Step 5: Return for review**, including the pinned versions.
 
 ---
 
@@ -708,7 +713,7 @@ unit-testable without Qt.
   board DB; also pass a tmp runtime_dir). Then `spawn_service`, wait for health, register,
   post, and read one event through
   `StreamListener` (with a 10 s timeout). Finally,
-  `stop_local(url, runtime_dir=tmp_runtime_dir, client=client)` returns 0 and health is
+  `stop_local(url, runtime_dir=tmp_runtime_dir)` returns 0 and health is
   down. A `finally` block cleans up only the owned child handle if the test failed early.
   This also covers `__main__`
   `serve`/`stop`, detached spawn and `/stream` end to end.
@@ -774,6 +779,10 @@ renders posts live, and lets the user post.
     - `file`: a chip `📎 name (size)`.
     - Clicking either emits `open_file_requested(str)`, which the window connects to
       `self._left_sidebar.open_file(path, None)`.
+    - The existing file viewer reads non-Markdown files as text. Add a bounded image preview
+      branch in `pyside_gui/sidebars/file_viewer.py` so clicking PNG/JPEG/GIF/WebP attachments
+      displays an image, not decoded binary text. Use QImageReader with dimension/allocation
+      limits and scaled decode; retain existing text/Markdown behavior and text-size limits.
     - Downloads are triggered when a card is created, with at most 2 daemon workers in a
       window-owned `DownloadPool` (`pyside_gui/board_downloads.py`, plain Python, queue/Future).
       `stop()` cancels queued futures, sets active cancellation and returns without joining
@@ -794,11 +803,13 @@ renders posts live, and lets the user post.
 **Files:**
 - Modify: `pyside_gui/bridge.py`, `pyside_gui/_dispatch.py:~157`, `pyside_gui/app.py`
   (`__init__`, `_wire_bridge` ~244, `closeEvent` ~286), `pyside_gui/sidebars/message_board.py`
+- Modify: `pyside_gui/sidebars/file_viewer.py` (image attachment preview)
 - Create: `pyside_gui/board_downloads.py`
 - Test: `tests/test_board_runtime.py`, `tests/test_board_downloads.py`,
   `pyside_gui/tests/test_message_board.py` using qtbot and the existing GUI conftest.
   Cover empty/overlong composer text, attachment count/size refusal, post dedupe, queued
-  main-thread thumbnail completion and late completion after destruction. Pool tests cover
+  main-thread thumbnail completion, late completion after destruction, and image attachment
+  opening without changing text/Markdown rendering. Pool tests cover
   two-worker concurrency, queued cancellation and active cancellation; a subprocess test
   with a stalled fake download proves workers do not prevent interpreter exit. Startup/close
   race tests prove late readiness cannot recreate the listener. Keep native-dialog/live checks
@@ -906,7 +917,7 @@ renders posts live, and lets the user post.
 - **Task folder:** `wiki/tasks/2026-10-08_message-board-api/`
 
 ## Overall Status
-In Progress — approved for delivery on 2026-10-08. Subtask 1 complete; Subtask 2 next.
+In Progress — approved for delivery on 2026-10-08. Subtasks 1–2 complete; Subtask 3 in progress.
 
 ## Notes
 - `AgentLoop` is **rebuilt every turn** (`pyside_gui/_dispatch.py:181`), so the handle and
@@ -918,7 +929,7 @@ In Progress — approved for delivery on 2026-10-08. Subtask 1 complete; Subtask
   rather than formatting their own errors.
 - `TestClient` can't consume an endless SSE response. Test the generator directly (Subtask 2)
   and the live endpoint over a real server (Subtask 5).
-- FastAPI isn't installed in `dagi` yet (checked 2026-10-08). Subtask 2 installs it.
+- Board dependencies installed in `dagi`: FastAPI 0.142.4, uvicorn 0.54.0 and python-multipart 0.0.32.
 - `services/doc_converter` uses FastAPI with its own env. The board deliberately uses the
   `dagi` env so the GUI can auto-start it with `sys.executable`.
 
@@ -942,6 +953,19 @@ In Progress — approved for delivery on 2026-10-08. Subtask 1 complete; Subtask
 ## Verification
 Expected outcomes below are delivery gates; none has been run for the unimplemented feature.
 
+Delivery evidence so far:
+- Subtask 1: 42 tests passed; independent review PASS; committed as `30d45d0`.
+- Subtask 2: independent PASS; 85 board tests passed, including 5 real CLI checks.
+  Shutdown deadline, Windows async refusal, wildcard bind and open-SSE shutdown regressions pass.
+  Runtime records use a separate helper module and cross-process publication/cleanup lock.
+  FastAPI sync read routes use its threadpool; async writes explicitly offload store/blob work.
+- Baseline before HTTP implementation: 1,880 passed, 7 failed, 3 skipped. Three Git tests
+  failed because the temporary test directory was inside the repo; final full-suite runs
+  must use outside-repo storage. Three existing workflow-template tests reference the removed
+  `.dagi/skills` tree. One GUI clipboard test failed with Windows OpenClipboard unavailable.
+  Sandbox TEMP also caused fixture/child-process failures, so use an isolated outside-repo
+  TEMP/TMP directory with escalation for the full suite; targeted board tests can use `.dagi/temp`.
+
 - `C:\Users\alexr\anaconda3\envs\dagi\python.exe -u -m pytest -q -p no:pytest-qt tests pyside_gui/tests` → all pass.
 - `C:\Users\alexr\anaconda3\envs\dagi\python.exe -m services.message_board --help` → usage.
 - `... -m services.message_board --host 0.0.0.0` with no token → exits with the refusal message.
@@ -955,5 +979,4 @@ Expected outcomes below are delivery gates; none has been run for the unimplemen
   GUI closes.
 
 ## Next Action
-Commit the approved spec + plan, then implement and independently review each subtask in order.
-
+Implement Subtask 3 (Python client and BoardSession), then obtain independent review.
