@@ -5,9 +5,6 @@ Message board API delivered 2026-10-09 on branch `task/message-board-api`
 
 Source research (2026-10-08): llama.cpp server prefix caching at upstream commit
 `000bee54a544` is recorded in central memory as `llama-cpp-prefix-cache.md`.
-See [inferring saved prefixes from input prompts](LLAMA_CPP_PREFIX_CACHE.md) for the
-save/update rules, worked example, step-n pseudocode, server diagnostics, and limits of
-black-box reconstruction.
 
 Latest architecture/reliability review:
 [_CODEX_CODE_REVIEW_2026-10-08.md](_CODEX_CODE_REVIEW_2026-10-08.md), with the
@@ -16,10 +13,6 @@ The refresh contains open issues only. New probes reproduce duplicate scheduled 
 across two processes and incorrect worker assignment for overlapping plan titles. Scheduler
 ownership/outcomes, Telegram delivery and publication remain open. Focused validation:
 238 passed, 3 known plan-template failures.
-
-[R2 fix and implementation-session review](_CODEX_FIX_SESSION_REVIEW_2026-10-03.md):
-the pairing fix passes focused tests and a disk-restore probe; automated restore
-coverage and tool-chain workflow improvements remain proposed.
 
 A minimal, self-hosted coding agent. Give it a task — it plans, calls tools, reads results, and iterates until done. Ships with a Rich interactive CLI. Supports any OpenAI-compatible API, automatic context compaction for long sessions, extended reasoning, skills-based guidance, and full session logging with auto-named session files and history restore via `/hist`.
 
@@ -683,8 +676,6 @@ The context carries over — no need to restart.
 - **Pause instead of cancelling.** `Esc` in the TUI preserves the agent's full context; you can inject corrections and resume rather than restarting from scratch.
 - **Review sessions with `/hist`.** Session summaries in `.dagi/logs/` capture token counts, cost, and what the agent did. The `review-session` skill accepts a free-text description of which sessions to look at and accumulates findings from all of them into one report, so patterns that recur across sessions surface as a single insight.
 
-  Cross-session findings and proposed tool-chain/prompt improvements are recorded in
-  [_CODEX_SESSION_LOG_REVIEW_2026-10-02.md](_CODEX_SESSION_LOG_REVIEW_2026-10-02.md).
   Reviewed logs carry `__reviewed_2026-10-02` in their filenames, with session-history
   discovery patterns and event companion pairing preserved.
 

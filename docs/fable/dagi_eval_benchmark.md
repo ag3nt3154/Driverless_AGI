@@ -77,13 +77,13 @@ Options: (a) iteration cap + wall-clock timeout, cost recorded not capped, one t
 
 **User:** "ok, write the design doc"
 
-**Assistant:** Wrote and self-reviewed [`docs/superpowers/specs/2026-07-06-dagi-eval-benchmark-design.md`](docs/superpowers/specs/2026-07-06-dagi-eval-benchmark-design.md) (fixed one internal inconsistency: the coding artifact contract said `solution.py` in one place vs "edited system" elsewhere — normalized to the latter, since these tasks edit shipped files in place rather than writing from scratch). Committed as `771dbbd`. Asked the user to review before moving to implementation planning.
+**Assistant:** Wrote and self-reviewed `docs/superpowers/specs/2026-07-06-dagi-eval-benchmark-design.md` (fixed one internal inconsistency: the coding artifact contract said `solution.py` in one place vs "edited system" elsewhere — normalized to the latter, since these tasks edit shipped files in place rather than writing from scratch). Committed as `771dbbd`. Asked the user to review before moving to implementation planning.
 
 **User:** "write the implementation plan"
 
 **Assistant:** Invoked `superpowers:writing-plans`. First inspected the actual codebase APIs it would depend on (`agent/loop.py`, `agent/config_loader.py`) to ground the plan in verified facts rather than assumptions — notably discovering `AgentConfig` has **no** `max_iterations` field (the spec had assumed one), so the wall-clock timeout via a `BenchmarkTimeout` exception raised inside the `on_iteration` callback is the actual enforcement mechanism (verified `AgentLoop.run()` calls `on_iteration` synchronously at the top of every loop iteration, agent/loop.py:381).
 
-Wrote [`docs/superpowers/plans/2026-07-06-dagi-eval-benchmark.md`](docs/superpowers/plans/2026-07-06-dagi-eval-benchmark.md) — an 11-task, TDD-structured, ~3,300-line plan with complete code for every file (harness, scoring, subprocess executor, all five slow systems + their gold-optimized counterparts + seeded generators, the frozen DS dataset generator, and the full test suite). Self-review caught and fixed three bugs before committing:
+Wrote `docs/superpowers/plans/2026-07-06-dagi-eval-benchmark.md` — an 11-task, TDD-structured, ~3,300-line plan with complete code for every file (harness, scoring, subprocess executor, all five slow systems + their gold-optimized counterparts + seeded generators, the frozen DS dataset generator, and the full test suite). Self-review caught and fixed three bugs before committing:
 - Two `Path(...).parents[N]` off-by-one errors (wrong repo-root resolution depth) in generator scripts and in `test_harness.py`.
 - A missing `tokens_think` column in the CLI's output row dict (schema was missing a field defined in the spec's scorecard schema; documented as `None` since `SessionTracker` doesn't track reasoning tokens as a separate stat).
 

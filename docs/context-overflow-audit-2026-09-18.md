@@ -283,5 +283,5 @@ beyond the previously committed C0 change.
 
 ## Related records
 
-- [Investigation and audit evidence](../wiki/notes/gui-context-duplication-2026-09-18.md)
-- [Earlier production review](../wiki/notes/production-review-2026-09-15.md)
+- Investigation and audit evidence: central memory `gui-context-duplication-2026-09-18.md`
+- Earlier production review: central memory `production-review-2026-09-15.md`

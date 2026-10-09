@@ -2,8 +2,6 @@
 
 - [x] 2026-10-08: Inspect llama.cpp prefix-cache capacity and update rules at
   `000bee54a544`; findings saved in central memory (`llama-cpp-prefix-cache.md`).
-  Added [black-box reconstruction guide](LLAMA_CPP_PREFIX_CACHE.md), including which
-  cache state cannot be determined from incoming prompts alone, plus step-n estimator pseudocode.
   Verified `/slots` debug text and trace logs; no built-in saved-RAM-prefix listing endpoint.
 
 ## In progress
@@ -30,7 +28,7 @@
   Add a pairing check on seed before building any events-log restore.
 
 - **Session tool-chain improvements** (from the
-  [fix/session review](_CODEX_FIX_SESSION_REVIEW_2026-10-03.md)) — all items handled.
+  2026-10-03 fix/session review) — all items handled.
   Dropped: schema-arg validation (a clearer error still costs the retry); multi-step tool
   chains (needs a stop-rule language the review itself warns about).
   Done 2026-10-03:
@@ -277,8 +275,8 @@
   more and sent-image loads re-scroll. Tests in `pyside_gui/tests/test_scroll_to_bottom.py`.
 
 - **Session log review (2026-10-02)** — findings, causes, scriptable tool sequences and
-  instruction inconsistencies are in
-  [_CODEX_SESSION_LOG_REVIEW_2026-10-02.md](_CODEX_SESSION_LOG_REVIEW_2026-10-02.md).
+  instruction inconsistencies were recorded in
+  the 2026-10-02 session log review (since removed).
   Recommendations remain proposals; no runtime fixes were implemented.
   Marked the 32 reviewed families (55 files including companions) with
   `__reviewed_2026-10-02`; verified contents unchanged and updated evidence links.

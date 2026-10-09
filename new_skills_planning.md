@@ -95,8 +95,8 @@ successful outcome; failed verification or an unresolved merge is not completion
 
 ## Integrated skills
 
-- [do-TDD](.dagi/skills/do-TDD/SKILL.md): red/green/refactor with test evidence.
-- [merging-git-branch](.dagi/skills/merging-git-branch/SKILL.md): local merge or keep-as-is.
+- do-TDD: red/green/refactor with test evidence.
+- merging-git-branch: local merge or keep-as-is.
 
 These two skills and point 3's entry/resume instructions were integrated on 2026-09-24.
 Runtime end-to-end evaluation and the remaining checklist items are still open. The notes below are
