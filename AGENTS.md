@@ -1,6 +1,6 @@
 # AGENTS.md
 
-> Last updated: 2026-10-09 (Codex code-mode review refreshed; ordering contracts; board v1.1 + multi-agent spawning delivered) | [README](README.md) | [TODO](TODO.md) | [Task specs & plans](wiki/tasks/)
+> Last updated: 2026-10-09 (composer wrap/scrollbar hang fixed; Qt probe gotchas) | [README](README.md) | [TODO](TODO.md) | [Task specs & plans](wiki/tasks/)
 
 ## Overview
 
@@ -69,10 +69,12 @@ session persistence, and multi-UI support (TUI, PySide desktop, Telegram).
 - Python env `dagi` (`DEFAULT_PYTHON_ENV`) for all scripts and installs.
 - Install from the repo root: `python -m pip install -r requirements-core.txt`; add
   `-r requirements-gui.txt`, `-r requirements-tui.txt` or `-r requirements-tools.txt` as needed.
-- Tests: `C:\Users\alexr\anaconda3\envs\dagi\python.exe -u -m pytest -q -p no:pytest-qt`.
+- Tests: `C:\Users\alexr\miniconda3\envs\dagi\python.exe -u -m pytest -q -p no:pytest-qt`.
   `conda run` fully buffers stdout when not on a TTY (looks like a hang) — call the env's
   interpreter directly with `-u`. pytest-qt must be disabled as `-p no:pytest-qt` (not `no:qt`).
 - Hooks use `envs/dagi/python.exe` directly (`conda run` drops stdin).
+- Qt (tests, ad-hoc probes) cannot load in the Claude Code sandbox — run unsandboxed. Ad-hoc
+  scripts must `import pyside_gui` before any `PySide6` import (DLL bootstrap).
 
 ## Memory
 

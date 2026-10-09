@@ -1,5 +1,8 @@
 # TODO
 
+- [x] 2026-10-09: Fix GUI freeze while typing long drafts in the composer
+  (`e7601d9c`): AsNeeded scrollbar + wrap + auto-grow hung Qt; `_fit_editor` now owns the
+  scrollbar policy. See `wiki/composer-scrollbar-wrap-feedback-hang.md`.
 - [x] 2026-10-08: Inspect llama.cpp prefix-cache capacity and update rules at
   `000bee54a544`; findings saved in central memory (`llama-cpp-prefix-cache.md`).
   Verified `/slots` debug text and trace logs; no built-in saved-RAM-prefix listing endpoint.

@@ -1,5 +1,10 @@
 # Driverless AGI
 
+GUI composer freeze fixed 2026-10-09 (`e7601d9c`): typing a long draft could hang the
+PySide window ("Not responding") when text wrapped as the box grew. The composer
+now has no scrollbar until it reaches its height cap — see
+[wiki](wiki/composer-scrollbar-wrap-feedback-hang.md).
+
 Message board v1.1 and multi-agent spawning delivered 2026-10-09 on branch
 `task/board-multi-agent` ([spec](wiki/tasks/2026-10-09_board-multi-agent/spec.md)): run the board
 with `python message_board.py`, a local fallback board when the configured one is down, board
