@@ -23,27 +23,30 @@
     Add any future user-question tool (e.g. a revived `show_plan`) to `SOLO_TOOLS`.
   - `edit` takes an `edits` list for one file: in order, all-or-nothing, placeholder-tolerant.
 
-- **2026-10-08 review refresh on main.** See
-  [_CODEX_CODE_REVIEW_2026-10-08.md](_CODEX_CODE_REVIEW_2026-10-08.md) and
-  [_CODEX_SUGGESTIONS_2026-10-08.md](_CODEX_SUGGESTIONS_2026-10-08.md).
-  Application HEAD is unchanged since October 6. The review now contains only 12 open
-  findings; resolved entries and campaign findings outside this checkout were removed.
-  R3 startup exceptions, R4 live-worker finalization, R10 false outcomes, R11/R12 Telegram
-  delivery/answer routing, R13 busy leak and R14 publication failure were reproduced again.
-  R8 residual abandoned child metadata remains source-inspected cleanup debt. R7 inventory:
-  five oversized files, three long functions; cyclomatic complexity not remeasured.
-  R15 remains three missing-template contract failures; align inline writer/parser markers.
-  New P1 R16: two real scheduler processes both run one due task and record success. Add
-  process admission locking before reading due state; do not replace owners still executing.
-  New P2 R17: requesting Validate assigns an earlier Validate input subtask. Prefer exact
-  task identity and reject ambiguous partial matches before composing worker payloads.
-  Roadmap S1-S10 retained as unbuilt extensions; S11 adds schedule control/missed-run recovery.
-  Focused tests: 238 passed, 3 known template failures (12.77s). Offline adapter probes ran
-  outside sandbox for Windows asyncio; new process-overlap and plan-selection probes passed
-  inside. No full/GUI/live-provider suite, application changes or Git mutations.
+- **2026-10-09 review refresh on main.** See
+  [_CODEX_CODE_REVIEW_2026-10-09.md](_CODEX_CODE_REVIEW_2026-10-09.md) and
+  [_CODEX_SUGGESTIONS_2026-10-09.md](_CODEX_SUGGESTIONS_2026-10-09.md).
+  Main now includes code mode and CLI UTF-8 output. The review retains 12 prior open findings
+  in unchanged owning paths and adds R18/R19, for 14 open findings total.
+  - **P1 R18:** code-mode timeout waits for parent-side tools; a controlled cancellation
+    interleaving writes after force_kill returns. Coordinate tool admission, active-operation
+    cancellation and the remaining deadline under one owner.
+  - **P2 R19:** printed code-mode checkpoints disappear on kill/timeout. Stream or spool
+    partial output with bounded capture and retained artifact references.
+  - R3/R4/R10–R14/R16 retain October 8 runtime evidence, rechecked against unchanged source.
+    R8 is still source-inspected cleanup debt. R17 direct parsing again picks Validate input
+    when Validate is requested. R15 remains three missing-template failures.
+  - R7 inventory: 226 tracked files under explicit production roots/root entry points;
+    five oversized files, three long functions. Broader file set than October 8; no growth
+    claim or cyclomatic-complexity measurement.
+  Roadmap S1–S11 remains unbuilt extensions; S12 measures shipped code-mode effectiveness
+  per verified task. Reconcile the separate board/multi-agent implementation before S5.
+  Focused tests outside sandbox: 155 passed, 3 known failures (9.46s). New probes also pass
+  outside sandbox; sandbox setup/interpreter/kill restrictions are recorded separately.
+  No full/GUI/live-provider suite, application changes or Git mutations.
 
 - **2026-10-02 automation review follow-ups.** The review covered `task/iteration-engine`
-  at `6917b131`. The running reports have since been renamed to the current October 8
+  at `6917b131`. The running reports have since been renamed to the current October 9
   files linked above; the October 2 observations remain historical. R2 and R6 are fixed (2026-10-05);
   R7's four targeted function refactors and R8/R9 are done; residuals and other findings
   are tracked in the current report.

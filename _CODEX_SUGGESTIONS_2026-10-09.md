@@ -1,42 +1,45 @@
-# Dagi suggestions — 2026-10-08
+# Dagi suggestions — 2026-10-09
 
 Proposals for sustained agentic work, measured self-improvement and understandable recovery.
-They do not authorize implementation. Reviewed main at c5c4759ccb2a6c34beace3e05b2927a3ce2520f9
-and its working files. The existing October 6 report was edited and renamed in place; there
-was no October 7 report. Only unbuilt improvements or explicit extensions of existing features
-are listed. Application code is unchanged since the previous run.
+They do not authorize implementation. Reviewed main at 94ca6924880867924ca6a90b7d0ca510e8b601a6. The October 8
+report was edited in place and renamed to October 9. Only unbuilt improvements or explicit
+extensions of existing features are listed.
 
-RequestExecutor, loop properties, persisted revisions, ordering tests, generation-aware child
-resume and tolerant stdout draining already exist. So do active-plan sidecars, process-state
-events, steering with queued-message acknowledgement/cancellation, and the documented
-improve-yourself workflow with baseline/after snapshots. The proposals below extend these
-facilities. Campaign is absent from this checkout; reconcile its separate design before reuse.
-Preserve the standing yolo-only decision and rejection of generic tool-chain languages.
+Code mode now executes Python tool scripts through the current registry; mechanical
+multi-step execution is already built and is not a proposal. CLI UTF-8 output is fixed.
+RequestExecutor, loop properties, persisted revisions, ordering tests, generation-aware
+child resume, tolerant stdout draining, active-plan sidecars, process-state events, steering
+receipts/cancellation and the documented improve-yourself baseline/after workflow already
+exist. S1–S11 extend these facilities. Campaign is absent from this checkout; reconcile its
+separate design before reuse. Central memory also reports a separate board/multi-agent
+implementation; it is absent from this main checkout, so align S5 with it before designing
+another UI. Preserve the standing yolo-only decision; code scripts do not require a new
+workflow language or approval layer.
 
-[Today's review](C:/Users/alexr/Driverless_AGI/_CODEX_CODE_REVIEW_2026-10-08.md) reproduces
-false outcomes, live-worker finalization, Telegram routing/delivery failures and publication
-failure. New R16 demonstrates duplicate scheduled execution across two processes; R17
-demonstrates wrong worker assignment for overlapping task titles. Focused tests: 238 passed,
-three stale-template failures. S1/S2/S8/S10 incorporate these findings; S11 adds schedule
-control and missed-run recovery as an extension beyond the immediate overlap repair.
+[Today's review](C:/Users/alexr/Driverless_AGI/_CODEX_CODE_REVIEW_2026-10-09.md) has 14 open
+findings. New R18/R19 reproduce parent-side execution after script cancellation and lost
+printed checkpoints on termination. Existing adapters remain open in unchanged source.
+Focused tests: 155 passed, three known template failures. S1/S3/S8/S9 now include code-mode
+lifecycle/evidence gaps; new S12 measures its effectiveness before promoting recipes.
 
 ## S1 — One owned run with an explicit outcome
 
 **Improvement:** Give frontends, scheduled tasks and children a supported
 start/status/steer/cancel/await-stopped contract and explicit terminal outcome.
 
-**Issue addressed:** R4/R10 show incompatible meanings of timeout, completion and failure.
+**Issue addressed:** R4/R10/R18 show incompatible meanings of timeout, completion and failure.
 R8 now preserves branch/generation through resume; its abandoned metadata remains ownership
 debt. A PID alone cannot prove stopped execution or own all cleanup.
 
 **Smallest useful version:** Add stable run identity and an outcome containing terminal
 reason, final text, diagnostics and artifact references. Retain branch/generation metadata
 through child resume. Distinguish wait timeout from execution deadline. Prototype with
-scheduler and child resume before migrating all UIs. Include one admitted scheduler owner
+scheduler, code mode and child resume before migrating all UIs. Include one admitted scheduler owner
 (R16); an expired wait must not allow another owner while execution survives.
 
 **Acceptance:** Ghost exhaustion is recorded as failure; immediate and resumed results use
 the same generation check; no owned execution survives reported deadline enforcement;
+no selected code-mode mutation begins after acknowledged cancellation;
 preserve R9 tests proving output drains when its diagnostic log is unavailable. These child
 contracts already exist; S1 extends ownership and outcomes rather than reimplementing them.
 
@@ -67,8 +70,10 @@ and retained baseline/candidate evidence.
 regress. Core tests passed in this review while boundary probes reproduced defects.
 
 **Smallest useful version:** Retain fixtures for pairing, recovery, scheduler outcome,
-child resume, stdout draining, final delivery, question routing and publication failure. Separate candidate work
-from evaluator code/holdouts. Compare the same effective configuration and retain commands,
+child resume, stdout draining, final delivery, question routing, publication failure,
+code-mode nested timeouts/cancellation and interrupted output capture. Separate candidate work
+from evaluator code/holdouts. Include code_mode and the callable registry in comparisons.
+Compare the same effective configuration and retain commands,
 exits, artifacts and failure classifications. Build on
 [dagi_eval](C:/Users/alexr/Driverless_AGI/benchmarks/dagi_eval/harness.py) and improve-yourself.
 
@@ -80,7 +85,7 @@ from application regressions. Provider-dependent claims require repeated compara
 
 **Improvement:** Retain effective inputs and rejected hypotheses for each attempt.
 
-**Issue addressed:** HEAD alone did not describe a run with uncommitted report edits.
+**Issue addressed:** HEAD alone does not describe a run with uncommitted work.
 Prompts, tools, skills, dependencies and fixtures also affect comparisons.
 
 **Smallest useful version:** Save commit, working-diff hash, index/conflict state, effective
@@ -119,8 +124,8 @@ not prove working conversion; prior WebEngine checks were sandbox-sensitive; no 
 
 **Smallest useful version:** Report resolved interpreter, shell contract, tool availability
 and converter-service health with bounded smoke fixtures. Reuse configuration introspection
-and the existing Windows argv/stdin proposal. Preserve the earlier decision against generic
-multi-step tool chains; use preflight and small native helpers rather than a workflow language.
+and the existing Windows argv/stdin proposal. Use the existing code tool for bounded mechanical probes and small native helpers
+for shell-specific cases; no additional workflow language is needed.
 
 **Acceptance:** Unavailable conversion produces one actionable result rather than identical
 retries. Shell examples match execution. Fixtures distinguish missing capability from failed
@@ -156,7 +161,9 @@ Promote still-open scheduler/Telegram/publication probes as their repairs land. 
 provider, delivery sink and controlled worker to drive real adapters. Assert outcomes,
 delivery counts, answer routing, cleanup and disk/live equivalence. Use existing pytest;
 link review IDs to fixtures. Add the R16 two-process admission scenario and R17 exact-name
-worker-selection scenario, plus skill-format checks from S10.
+worker-selection scenario, plus skill-format checks from S10. Add R18
+controlled admission-versus-cancellation and nested-budget fixtures, and R19
+print-before-timeout/kill fixtures; idle-script timeout tests do not cover these boundaries.
 
 **Acceptance:** A fixture fails on the current defect and passes only with correct behavior.
 Adapters agree on the same core scenario. Infrastructure errors report separately.
@@ -168,13 +175,16 @@ Future reviews can check verified closure rather than rediscovering the defect.
 without paying for another agent run or repeating its tools.
 
 **Issue addressed:** R14 records success before file publication; R11 drops the final
-Telegram handoff. Computation, acceptance and delivery have different failure modes.
+Telegram handoff. R19 additionally loses printed code-mode evidence on kill/timeout.
+Computation, acceptance and delivery have different failure modes.
 
 **Smallest useful version:** Retain final text and artifact references under S1's stable
 run identity. Record a delivery receipt with destination, attempt, status and diagnostic.
 Offer retry export with a new path and redelivery of the retained final message. Show
 computed / verified / delivered separately in S5. Keep scheduler jobs runnable after an
 individual publication error; never automatically rerun computation just to export it.
+Retain code-mode partial output and its mutation ledger as incomplete attempt evidence;
+never treat a checkpoint as verified completion.
 
 **Acceptance:** An unwritable destination retains the result and reports delivery failure.
 A corrected destination exports the same retained result without provider or tool calls.
@@ -228,10 +238,35 @@ skipped. Restart with a live owner cannot launch a replacement; confirmed owner 
 one recoverable interrupted attempt. Several missed ticks produce one pending run under the
 default policy. Manual retry names the prior attempt and preserves its evidence.
 
+## S12 — Measure code-mode effectiveness per verified task
+
+**Improvement:** Record enough execution evidence to choose when code mode improves work,
+and feed verified examples back into the existing improvement workflow.
+
+**Issue addressed:** Script chaining is already shipped, but its advertised efficiency is
+not established by passing functional tests. Compressing output can also hide evidence that
+the next model step needs. A completed script is not proof that the coding objective passed.
+
+**Smallest useful version:** After R18/R19, record script/registry identity, nested-call count,
+durations, intermediate-result byte counts, returned bytes, output artifact and final task
+acceptance. Use bounded artifact storage and redact sensitive results; full raw tool results
+need not be duplicated. Compare matched code_mode on/off runs for two mechanical tasks with
+the same provider/configuration and independent acceptance command. Explicitly admit code
+in the benchmark allowlist for the enabled arm; its current tools list omits code, so toggling
+code_mode alone cannot exercise it. Feed only accepted
+examples and their limitations into S3/S4; keep ordinary tools available.
+
+**Acceptance:** A shorter transcript with failed acceptance cannot win. Report observed
+latency, tokens and context bytes separately; do not label estimated avoided requests as
+measured savings. If prompt/tool configuration differs between runs, disclose it. Failed
+scripts retain partial evidence without replaying mutations. No automatic recipe promotion
+or new tool-chain language is needed.
+
 ## Sequence and measures
 
-1. Repair R4/R10/R16 and Telegram R11/R12; retain verified R2/R6/R8/R9 contracts.
-2. Repair R3/R13/R14, add S8 regression fixtures and the minimal S9 retained-export path.
+1. Repair R4/R10/R16/R18 and Telegram R11/R12; retain verified R2/R6/R8/R9 contracts.
+2. Repair R3/R13/R14, add S8 regression fixtures and the minimal S9 retained-export path;
+   repair R19 to retain interrupted script diagnostics.
    Extend S1 ownership to abandoned-child cleanup. Repair R15/R17 and establish S10's plan
    contract before relying on unattended delivery.
 3. Add S2 objectives and S4 manifests; prototype S5 on those records. S6 remains a bounded
@@ -239,9 +274,10 @@ default policy. Manual retry names the prior attempt and preserves its evidence.
    Add S11 once admission and attempt recovery have durable ownership.
 4. Connect S7 checkpoints and extend S3's existing self-improvement workflow. Candidate
    promotion requires intact evaluator evidence and passing behavioral contracts.
+   Measure shipped code mode through S12 before choosing examples to reuse.
 
 Measure verified acceptance, false-success rate, final-delivery failures, question-answer
-latency, cancellation latency, export recovery without recomputation, plan-contract rejection,
+latency, cancellation latency, code-mode deadline overrun/partial-output retention, export recovery without recomputation, plan-contract rejection,
 recovery success, duplicate-admission rate, exact task-selection accuracy, stale-result
 rejection and repeated failed hypotheses. Record cost per verified outcome with missing-cost
 cases explicit. Establish

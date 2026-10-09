@@ -1,6 +1,6 @@
 # AGENTS.md
 
-> Last updated: 2026-10-08 (Codex review refreshed; ordering contracts) | [README](README.md) | [TODO](TODO.md) | [Task specs & plans](wiki/tasks/)
+> Last updated: 2026-10-09 (Codex code-mode review refreshed; ordering contracts) | [README](README.md) | [TODO](TODO.md) | [Task specs & plans](wiki/tasks/)
 
 ## Overview
 

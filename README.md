@@ -1,16 +1,13 @@
 # Driverless AGI
 
 Latest architecture/reliability review:
-[_CODEX_CODE_REVIEW_2026-10-08.md](_CODEX_CODE_REVIEW_2026-10-08.md), with the
-[iterative-work and self-improvement roadmap](_CODEX_SUGGESTIONS_2026-10-08.md).
-The refresh contains open issues only. New probes reproduce duplicate scheduled execution
-across two processes and incorrect worker assignment for overlapping plan titles. Scheduler
-ownership/outcomes, Telegram delivery and publication remain open. Focused validation:
-238 passed, 3 known plan-template failures.
-
-[R2 fix and implementation-session review](_CODEX_FIX_SESSION_REVIEW_2026-10-03.md):
-the pairing fix passes focused tests and a disk-restore probe; automated restore
-coverage and tool-chain workflow improvements remain proposed.
+[_CODEX_CODE_REVIEW_2026-10-09.md](_CODEX_CODE_REVIEW_2026-10-09.md), with the
+[iterative-work and self-improvement roadmap](_CODEX_SUGGESTIONS_2026-10-09.md).
+The review contains 14 open findings. New code-mode probes reproduce parent-side execution
+after script cancellation and loss of printed progress on timeout/kill. Scheduler ownership,
+truthful outcomes, Telegram delivery, publication and plan contracts remain open.
+Focused validation: 155 passed, 3 known plan-template failures. The roadmap recognizes
+shipped code mode and proposes measured use and retained execution evidence.
 
 A minimal, self-hosted coding agent. Give it a task — it plans, calls tools, reads results, and iterates until done. Ships with a Rich interactive CLI. Supports any OpenAI-compatible API, automatic context compaction for long sessions, extended reasoning, skills-based guidance, and full session logging with auto-named session files and history restore via `/hist`.
 
