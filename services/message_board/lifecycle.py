@@ -4,7 +4,6 @@ from __future__ import annotations
 import asyncio
 import errno
 import ipaddress
-import os
 import re
 import sys
 from dataclasses import dataclass
@@ -132,7 +131,9 @@ async def _stop_request(url: str, runtime_dir: Path, client, wait_s: float) -> i
         raise
     record = _matching_record(runtime_dir, port, health)
     headers = {"X-Dagi-Stop-Token": record["capability"]}
-    token = os.environ.get("DAGI_BOARD_TOKEN")
+    from .settings import resolve_token  # settings imports this module
+
+    token = resolve_token()
     if token:
         headers["Authorization"] = f"Bearer {token}"
     async with asyncio.timeout(3.0):

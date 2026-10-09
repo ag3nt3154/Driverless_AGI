@@ -73,7 +73,7 @@ def test_bind_failure_never_publishes_record(tmp_path):
         port = occupied.getsockname()[1]
         runtime = tmp_path / "run"
         result, _ = run_cli(
-            ["--port", str(port), "--db", str(tmp_path / "b.sqlite3"),
+            ["--host", "127.0.0.1", "--port", str(port), "--db", str(tmp_path / "b.sqlite3"),
              "--runtime-dir", str(runtime)], tmp_path)
         assert result.returncode != 0
         assert not record_path(runtime, port).exists()
@@ -88,7 +88,7 @@ def test_secure_storage_failure_stops_startup(tmp_path):
     runtime = tmp_path / "run"
     runtime.write_text("existing file prevents secure runtime directory")
     result, output = run_cli(
-        ["--port", str(unused_port()), "--db", str(tmp_path / "b.sqlite3"),
+        ["--host", "127.0.0.1", "--port", str(unused_port()), "--db", str(tmp_path / "b.sqlite3"),
          "--runtime-dir", str(runtime)], tmp_path)
     assert result.returncode != 0
     assert b"cannot establish protected message board runtime storage" in output
