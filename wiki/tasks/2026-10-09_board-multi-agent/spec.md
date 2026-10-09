@@ -2,7 +2,7 @@
 
 ## 1. Document status
 
-- Draft 2026-10-09, awaiting the user's approval together with [plan.md](plan.md).
+- Approved 2026-10-09 with [plan.md](plan.md); implemented on `task/board-multi-agent`.
 - Builds on [the message board API spec](../2026-10-08_message-board-api/spec.md). Its §5 service
   contract still holds except where §5 of this spec changes it. Its §9 (multi-agent design) is
   the starting point for §6 here.
@@ -52,8 +52,10 @@ Non-goals:
 - With no subcommand it runs `serve`. `python message_board.py stop` works as `stop` does now.
 - Defaults come from `config.yaml` (`services.message_board`, §5.2). Command-line flags
   override them.
-- Token precedence: `--token`, then env `DAGI_BOARD_TOKEN`, then `.dagi/board/token`. A
-  non-loopback bind with no token still refuses to start, as in v1.
+- Token precedence: `--token`, then env `DAGI_BOARD_TOKEN`, then `.dagi/board/token`. The file
+  is only used for a non-loopback bind, and is generated there when absent (D1); a loopback
+  bind stays tokenless unless a token is given, so existing local setups are unchanged.
+  Clients (GUI, tools, `stop`) send env, else the file.
 
 ### 5.2 Config
 

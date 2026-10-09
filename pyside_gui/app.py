@@ -17,6 +17,7 @@ from agent.loop import AgentConfig
 
 from pyside_gui import esc_stop, recent_folders
 from pyside_gui.agent_session import AgentSession
+from pyside_gui.agents_controller import AgentsController
 from pyside_gui.bridge import init_worker_logger
 from pyside_gui.board_controller import BoardController
 from pyside_gui.header import ConversationHeader
@@ -38,6 +39,7 @@ QLabel#running-label {
 """)
 
 _SPINNER = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
+_NARROW_VIEWS = ("board", "agents")  # left panels that open as wide as the right sidebar
 
 
 class DagiMainWindow(QMainWindow):
@@ -78,6 +80,7 @@ class DagiMainWindow(QMainWindow):
         main.show_welcome()
         init_worker_logger(config.project_path / ".dagi" / "logs")
         self._board_controller = BoardController(self)
+        self._agents = AgentsController(self)
         self._board_controller.start()
 
     # ── the active session, as the rest of the GUI sees it ─────────────────────────────
@@ -223,6 +226,22 @@ class DagiMainWindow(QMainWindow):
         self._conversation_stack.addWidget(session._conversation)
         return session
 
+    def remove_session(self, session: AgentSession) -> None:
+        """Drop a spawned agent from the window; the main agent is never removed."""
+        if session is self._main or session not in self._sessions:
+            return
+        if session is self._active:
+            self._activate(self._main)
+        self._sessions.remove(session)
+        self._conversation_stack.removeWidget(session._conversation)
+        session._conversation.hide()
+
+    def _on_board_ready(self) -> None:
+        """Called by the board controller each time a board becomes the live one."""
+        agents = getattr(self, "_agents", None)
+        if agents is not None:
+            agents.on_board_ready()
+
     def _activate(self, session: AgentSession) -> None:
         """Show ``session`` in the main chat and point the shared chrome at it."""
         self._active = session
@@ -308,7 +327,7 @@ class DagiMainWindow(QMainWindow):
         s = self._splitter.sizes()
         if not expanded:
             self._splitter.setSizes([_RAIL_WIDTH, s[0] + s[1] - _RAIL_WIDTH, s[2]]); return
-        self._left_narrow = self._left_sidebar.active_view() == "board"
+        self._left_narrow = self._left_sidebar.active_view() in _NARROW_VIEWS
         rs = self._right_sidebar
         width = (
             rs.width() if rs.isVisible() else rs.maximumWidth()
@@ -316,8 +335,8 @@ class DagiMainWindow(QMainWindow):
         self._splitter.setSizes(panel_sizes(s, width))
 
     def _on_left_view_changed(self, view: str) -> None:
-        # Re-size only when switching to or from the narrow message board.
-        if (view == "board") != getattr(self, "_left_narrow", False):
+        # Re-size only when switching to or from a narrow panel.
+        if (view in _NARROW_VIEWS) != getattr(self, "_left_narrow", False):
             self._on_sidebar_expansion(True)
 
     def _action_pause(self) -> None:

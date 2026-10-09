@@ -462,3 +462,24 @@ def test_fallback_badge_shows_central_address(qtbot):
     assert "central:8765" in view._url_label.toolTip()
     view.set_connection("http://central:8765", None)
     assert view._fallback.isHidden()
+
+
+def test_each_agent_meme_renders_in_its_own_conversation(qtbot, tmp_path):
+    window = _window(qtbot)
+    main_emotes, helper_emotes = [], []
+    window._sessions = [
+        SimpleNamespace(_board_session=SimpleNamespace(handle="main_12345678"),
+                        _conversation=SimpleNamespace(
+                            append_emote=lambda *args: main_emotes.append(args))),
+        SimpleNamespace(_board_session=SimpleNamespace(handle="helper_abcdef12"),
+                        _conversation=SimpleNamespace(
+                            append_emote=lambda *args: helper_emotes.append(args))),
+    ]
+    controller = BoardController(window)
+    window._left_sidebar.board_view._memes = {"wave": tmp_path / "wave.png"}
+    controller.runtime = SimpleNamespace(session=SimpleNamespace(handle="main_12345678"))
+    controller._on_post({
+        "id": 1, "author": "helper_abcdef12", "text": "hi", "meme": "wave",
+        "reply_to": None, "attachments": [], "created_at": "2026-10-09T00:00:00Z",
+    })
+    assert main_emotes == [] and [args[0] for args in helper_emotes] == ["wave"]

@@ -102,6 +102,29 @@
   - memory-add with decisions and gotchas.
 - **Then:** the user runs the spec §7 manual checks.
 
+## Progress (2026-10-09)
+
+All 8 subtasks done on `task/board-multi-agent`; spec and plan approved by the user ("yes, go
+ahead").
+
+| # | Commit | Evidence |
+|---|---|---|
+| 1 | `fac00e9` | `tests/message_board/test_entry.py` (settings forms, flag overrides, token precedence, generated token, loopback ignores the file, `message_board.py serve --help`) |
+| 2 | `23e2250` | `tests/test_board_runtime.py`: unreachable twice → spawn on `0.0.0.0:<port>` for refused/timeout/DNS × local/remote URL; retry success; auth failure; cancel during retry; stable main handle |
+| 3 | `35d0f61` | `tests/test_board_tools.py`: image → `ATTACH_IMAGE` via `ReadTool.read_image`; unreadable image falls back to text; registry wiring |
+| 4 | `1f8c73a` | pytest-qt Save as… bytes, cancel, failed download; viewer harness `attach` (overlay, preview, binary, >256 KB) and `outage` (dead → live, catch-up from last id, no duplicates) |
+| 5 | `c4803ba` | `pyside_gui/tests/test_board_controller.py`: switch rebinds every session + listener + view, 401 asks for a token and keeps the old board, central probe, URL normalisation, fallback badge |
+| 6 | `f0791f6` | Full GUI suite unchanged in behaviour (301 passed); headless smoke run of the real window |
+| 7 | (this commit) | `pyside_gui/tests/test_agents.py` (A7, incl. a real-window background turn) and meme routing per agent |
+| 8 | (this commit) | README, TODO, AGENTS.md |
+
+Deviations from the plan:
+- Main-handle persistence landed in subtask 2 (it lives in `register_runtime`).
+- The web viewer's offline (dead/live) state landed in subtask 4, since it is the same file.
+- The viewer test's 400-line cap became the repo's 500-line file cap (page is 467 lines).
+- Closing an agent mid-turn pauses it; `AgentLoop` has no cancel, so the paused worker thread
+  is kept (with its session) until exit. Logged in TODO.
+
 ## Next Action
 
-User approval of the spec and plan, and of creating `task/board-multi-agent`.
+The user runs the spec §7 manual checks, then decides on merging `task/board-multi-agent`.

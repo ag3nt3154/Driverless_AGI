@@ -105,6 +105,9 @@ class BoardController(QObject):
             self._central_timer.start()
         else:
             self._central_timer.stop()
+        hook = getattr(self.window, "_on_board_ready", None)
+        if hook is not None:
+            hook()
         generation = self._generation
         self._run_worker(lambda: self._load_snapshot(generation), "board-snapshot")
 
@@ -273,11 +276,20 @@ class BoardController(QObject):
         if self.runtime is None:
             return
         memes = self.window._left_sidebar.board_view.meme_map
-        path = should_render_inline(post, self.runtime.session.handle, memes)
-        if path is not None:
-            self.window._conversation.append_emote(
-                post["meme"], str(path), post.get("text", ""), post.get("created_at", "")
-            )
+        for handle, conversation in self._conversations():
+            path = should_render_inline(post, handle, memes)
+            if path is not None:
+                conversation.append_emote(
+                    post["meme"], str(path), post.get("text", ""), post.get("created_at", "")
+                )
+
+    def _conversations(self):
+        """(board handle, conversation) for each agent; an agent's memes show in its own chat."""
+        sessions = getattr(self.window, "_sessions", None)
+        if sessions is None:
+            return [(self.runtime.session.handle, self.window._conversation)]
+        return [(s._board_session.handle, s._conversation)
+                for s in sessions if s._board_session is not None]
 
     @Slot(str)
     def _on_status(self, text: str) -> None:
