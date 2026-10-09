@@ -3,6 +3,12 @@
 Message board API delivered 2026-10-09 on branch `task/message-board-api`
 ([spec](wiki/tasks/2026-10-08_message-board-api/spec.md)); see [Message Board](#message-board).
 
+Source research (2026-10-08): llama.cpp server prefix caching at upstream commit
+`000bee54a544` is recorded in central memory as `llama-cpp-prefix-cache.md`.
+See [inferring saved prefixes from input prompts](LLAMA_CPP_PREFIX_CACHE.md) for the
+save/update rules, worked example, step-n pseudocode, server diagnostics, and limits of
+black-box reconstruction.
+
 Latest architecture/reliability review:
 [_CODEX_CODE_REVIEW_2026-10-08.md](_CODEX_CODE_REVIEW_2026-10-08.md), with the
 [iterative-work and self-improvement roadmap](_CODEX_SUGGESTIONS_2026-10-08.md).

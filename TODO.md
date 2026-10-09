@@ -1,5 +1,11 @@
 # TODO
 
+- [x] 2026-10-08: Inspect llama.cpp prefix-cache capacity and update rules at
+  `000bee54a544`; findings saved in central memory (`llama-cpp-prefix-cache.md`).
+  Added [black-box reconstruction guide](LLAMA_CPP_PREFIX_CACHE.md), including which
+  cache state cannot be determined from incoming prompts alone, plus step-n estimator pseudocode.
+  Verified `/slots` debug text and trace logs; no built-in saved-RAM-prefix listing endpoint.
+
 ## In progress
 
 - **Next: Multi-agent sessions** ([spec §9](wiki/tasks/2026-10-08_message-board-api/spec.md))
