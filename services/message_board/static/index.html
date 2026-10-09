@@ -63,9 +63,24 @@ figure img {
 figcaption, .err { font-size: 12px; color: var(--muted); }
 .err { color: var(--bad); }
 .empty { color: var(--muted); }
+body[data-live="0"] #posts { opacity: .45; pointer-events: none; filter: grayscale(.6); }
+figure img { cursor: zoom-in; }
+.file-row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+pre.preview {
+  flex-basis: 100%; max-height: 320px; overflow: auto; margin: 4px 0 0; padding: 8px;
+  background: var(--chip); border-radius: 6px; font-size: 12px; white-space: pre-wrap;
+}
+#lightbox {
+  position: fixed; inset: 0; z-index: 10; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: 10px; padding: 16px;
+  background: rgba(0, 0, 0, .82);
+}
+#lightbox[hidden] { display: none; }
+#lightbox img { max-width: 100%; max-height: calc(100vh - 90px); object-fit: contain; }
+#lightbox .bar { display: flex; gap: 8px; align-items: center; color: #e4e7ee; }
 </style>
 </head>
-<body>
+<body data-live="0">
 <main>
   <div class="top">
     <h1>Message board</h1>
@@ -79,6 +94,14 @@ figcaption, .err { font-size: 12px; color: var(--muted); }
   <p id="empty" class="empty">No posts yet.</p>
   <ol id="posts"></ol>
 </main>
+<div id="lightbox" hidden role="dialog" aria-modal="true" aria-label="Image">
+  <img id="lightbox-img" alt="">
+  <div class="bar">
+    <span id="lightbox-name"></span>
+    <button type="button" id="lightbox-save">Download</button>
+    <button type="button" id="lightbox-close">Close</button>
+  </div>
+</div>
 <script>
 "use strict";
 // Read-only viewer. Posts are untrusted: they are rendered only via textContent and
@@ -89,11 +112,15 @@ const BACKOFF = [1, 2, 4, 8, 16, 30];
 const STALL_MS = 45000;
 const HEADERS_MS = 15000;
 const TOKEN_KEY = "dagiBoardToken";
+const PREVIEW_MAX = 256 * 1024;
 const listEl = document.getElementById("posts");
 const statusEl = document.getElementById("status");
 const emptyEl = document.getElementById("empty");
 const authForm = document.getElementById("auth");
 const tokenInput = document.getElementById("token");
+const lightbox = document.getElementById("lightbox");
+const lightboxImg = document.getElementById("lightbox-img");
+const lightboxName = document.getElementById("lightbox-name");
 const state = {last: 0, seen: new Set(), loaded: false, retry: 0, timer: null,
                ctrl: null, connected: false, memToken: ""};
 
@@ -119,9 +146,13 @@ async function api(path, signal) {
   return response;
 }
 
+// Any state but "ok" means the board is unreachable or locked: the page goes dead (dimmed and
+// inert) until the stream reconnects, then catches up from the last post id it saw.
 function setStatus(text, kind) {
   statusEl.textContent = text;
   statusEl.dataset.state = kind;
+  document.body.dataset.live = kind === "ok" ? "1" : "0";
+  if (kind !== "ok") closeLightbox();
 }
 
 function make(tag, cls, text) {
@@ -150,17 +181,44 @@ async function loadBlob(id, signal) {
   return (await api("/attachments/" + id, signal)).blob();
 }
 
+function saveBlobUrl(url, name) {
+  const link = make("a");
+  link.href = url;
+  link.download = name;
+  document.body.append(link);
+  link.click();
+  link.remove();
+}
+
+function openLightbox(url, name) {
+  lightboxImg.src = url;
+  lightboxImg.alt = name;
+  lightboxName.textContent = name;
+  lightbox.dataset.name = name;
+  lightbox.hidden = false;
+  document.getElementById("lightbox-close").focus();
+}
+
+function closeLightbox() {
+  if (lightbox.hidden) return;
+  lightbox.hidden = true;
+  lightboxImg.removeAttribute("src");
+}
+
 function renderImage(att, label, post) {
   const figure = make("figure");
   const img = make("img");
-  img.alt = String(att.name || att.id);
+  const name = String(att.name || att.id);
+  img.alt = name;
   img.decoding = "async";
+  img.title = "Open full size";
   figure.append(img, make("figcaption", null, label));
   loadBlob(att.id).then((blob) => {
     const url = URL.createObjectURL(blob);
     if (!post.isConnected) { URL.revokeObjectURL(url); return; }
     post.blobUrls.push(url);
     img.src = url;
+    img.addEventListener("click", () => openLightbox(url, name));
   }).catch((err) => {
     img.remove();
     figure.append(make("span", "err", err instanceof AuthError ? "token required"
@@ -175,12 +233,7 @@ async function download(id, name, button) {
   try {
     const blob = await loadBlob(id);
     const url = URL.createObjectURL(new Blob([blob], {type: "application/octet-stream"}));
-    const link = make("a");
-    link.href = url;
-    link.download = name;
-    document.body.append(link);
-    link.click();
-    link.remove();
+    saveBlobUrl(url, name);
     setTimeout(() => URL.revokeObjectURL(url), 10000);
     button.title = "";
   } catch (err) {
@@ -198,10 +251,41 @@ function renderAttachment(att, post) {
   const name = String(att.name || att.id);
   const label = name + " (" + humanSize(att.size) + ")";
   if (att.kind === "image") return renderImage(att, label, post);
+  const row = make("div", "file-row");
   const button = make("button", "file", "\u{1F4CE} " + label);
   button.type = "button";
   button.addEventListener("click", () => download(att.id, name, button));
-  return button;
+  row.append(button);
+  const size = Number(att.size);
+  if (Number.isFinite(size) && size > 0 && size <= PREVIEW_MAX) {
+    const toggle = make("button", "preview-toggle", "Preview");
+    toggle.type = "button";
+    toggle.addEventListener("click", () => togglePreview(att.id, row, toggle));
+    row.append(toggle);
+  }
+  return row;
+}
+
+// Show a small attachment as text when it is valid UTF-8 without NUL bytes.
+async function togglePreview(id, row, toggle) {
+  const shown = row.querySelector("pre.preview, .preview-err");
+  if (shown) { shown.remove(); toggle.textContent = "Preview"; return; }
+  toggle.disabled = true;
+  try {
+    const blob = await loadBlob(id);
+    if (blob.size > PREVIEW_MAX) throw new RangeError("too large");
+    const text = new TextDecoder("utf-8", {fatal: true}).decode(await blob.arrayBuffer());
+    if (text.includes("\u0000")) throw new TypeError("binary");
+    row.append(make("pre", "preview", text));
+    toggle.textContent = "Hide";
+  } catch (err) {
+    if (err instanceof AuthError) askToken();
+    const reason = err instanceof AuthError ? "token required"
+      : err instanceof TypeError ? "not a text file" : "preview unavailable";
+    row.append(make("span", "err preview-err", reason));
+  } finally {
+    toggle.disabled = false;
+  }
 }
 
 function renderPost(p) {
@@ -334,7 +418,7 @@ function scheduleRetry() {
   const tick = () => {
     if (left <= 0) { start(); return; }
     if (navigator.onLine === false) setStatus("offline, retrying in " + left + "s", "bad");
-    else setStatus("reconnecting in " + left + "s", "warn");
+    else setStatus("board offline — retrying in " + left + "s", "bad");
     left -= 1;
     state.timer = setTimeout(tick, 1000);
   };
@@ -362,6 +446,13 @@ authForm.addEventListener("submit", (event) => {
   state.retry = 0;
   start();
 });
+
+document.getElementById("lightbox-close").addEventListener("click", closeLightbox);
+document.getElementById("lightbox-save").addEventListener("click", () => {
+  if (lightboxImg.src) saveBlobUrl(lightboxImg.src, lightbox.dataset.name || "image");
+});
+lightbox.addEventListener("click", (event) => { if (event.target === lightbox) closeLightbox(); });
+document.addEventListener("keydown", (event) => { if (event.key === "Escape") closeLightbox(); });
 
 window.addEventListener("online", () => {
   if (!state.connected && authForm.hidden) { state.retry = 0; start(); }

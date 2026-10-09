@@ -310,3 +310,56 @@ def test_png_meme_uses_static_preview(qtbot, tmp_path):
     label = _meme_label(view)
     assert label.movie() is None
     assert not label.pixmap().isNull()
+
+
+def test_save_as_copies_downloaded_bytes(qtbot, tmp_path, monkeypatch):
+    from pyside_gui.sidebars import board_widgets
+
+    source = tmp_path / "cache" / "notes.txt"
+    source.parent.mkdir()
+    source.write_bytes(b"attachment bytes")
+    future = Future()
+    view = _view(qtbot, future)
+    attachment = _attachment("file", "notes.txt")
+    view.add_post(_post(1, attachments=[attachment]))
+    card = view._cards[1]()
+    save = card._save_buttons[attachment["id"]]
+    assert not save.isEnabled()
+    future.set_result(source)
+    qtbot.waitUntil(save.isEnabled)
+    target = tmp_path / "out" / "copy.txt"
+    target.parent.mkdir()
+    asked = []
+
+    def choose(parent, title, default):
+        asked.append(default)
+        return str(target), ""
+
+    monkeypatch.setattr(board_widgets.QFileDialog, "getSaveFileName", choose)
+    save.click()
+    assert asked == ["notes.txt"]
+    assert target.read_bytes() == b"attachment bytes"
+    assert save.text().startswith("Saved")
+
+
+def test_save_as_cancel_and_failed_download(qtbot, tmp_path, monkeypatch):
+    from pyside_gui.sidebars import board_widgets
+
+    source = tmp_path / "a.txt"
+    source.write_bytes(b"x")
+    ok, bad = Future(), Future()
+    futures = iter([ok, bad])
+    view = _view(qtbot)
+    view.set_fetcher(lambda _attachment_id: next(futures))
+    first = _attachment("file", "a.txt")
+    second = {**_attachment(), "id": "att_222222222222"}
+    view.add_post(_post(1, attachments=[first, second]))
+    card = view._cards[1]()
+    ok.set_result(source)
+    bad.set_exception(OSError("disk full"))
+    qtbot.waitUntil(lambda: card._save_buttons[first["id"]].isEnabled())
+    qtbot.waitUntil(lambda: card._save_buttons[second["id"]].isHidden())
+    monkeypatch.setattr(board_widgets.QFileDialog, "getSaveFileName",
+                        lambda *args: ("", ""))
+    card._save_buttons[first["id"]].click()
+    assert card._save_buttons[first["id"]].text() == "Save as…"

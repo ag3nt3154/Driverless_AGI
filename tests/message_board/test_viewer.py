@@ -95,7 +95,7 @@ def test_page_is_self_contained_and_small():
     assert "http://" not in _strip_comments(source)
     assert "https://" not in _strip_comments(source)
     assert not re.search(r"<(?:script|link|img|iframe)[^>]*\s(?:src|href)=", source)
-    assert len(source.splitlines()) <= 400
+    assert len(source.splitlines()) <= 500  # repo file-size cap
 
 
 # --- behaviour in a JS runtime (node) with a fake DOM and fetch -----------------------------
@@ -105,7 +105,8 @@ def _harness(scenario: str, cwd: Path) -> dict:
     if not node:
         pytest.skip("node is not installed; the browser check covers the page script")
     result = subprocess.run([node, str(HARNESS), str(PAGE), scenario], capture_output=True,
-                            text=True, timeout=30, cwd=cwd, creationflags=NO_WINDOW)
+                            text=True, encoding="utf-8", timeout=30, cwd=cwd,
+                            creationflags=NO_WINDOW)
     assert result.returncode == 0, result.stderr
     return json.loads(result.stdout)
 
@@ -146,6 +147,27 @@ def test_hanging_requests_time_out_and_reconnect(tmp_path):
                      "/stream?after=2"]
     assert final["countdowns"] == [1, 2] and final["status"] == "connected"
     assert final["ids"] == [2, 1]
+
+
+def test_viewer_goes_dead_during_outage_and_recovers_without_reload(tmp_path):
+    final = _harness("outage", tmp_path)["final"]
+    assert final["liveHistory"] == ["0", "1", "0", "1"] and final["live"] == "1"
+    assert any(text.startswith("board offline — retrying in") for text in final["statusHistory"])
+    streams = [path for path, _ in final["requests"] if path.startswith("/stream")]
+    assert streams == ["/stream?after=2"] + ["/stream?after=3"] * 3
+    assert final["ids"] == [5, 4, 3, 2, 1]  # outage posts arrive once; 3 is not duplicated
+    assert final["status"] == "connected" and final["countdowns"] == [1, 2, 4]
+
+
+def test_image_overlay_and_text_preview(tmp_path):
+    extra = _harness("attach", tmp_path)["extra"]
+    assert extra["lightboxOpen"] and extra["lightboxSameUrl"]
+    assert extra["lightboxSrc"].startswith("blob:") and extra["lightboxName"] == "plot.png"
+    assert extra["lightboxClosed"]
+    assert extra["previewButtons"] == 2  # notes.md and blob.bin; big.log is over 256 KB
+    assert extra["previews"] == ["# notes\n<b>not html</b>"]
+    assert extra["previewErrors"] == ["not a text file"]
+    assert extra["previewHidden"]
 
 
 # --- packaging and clean installs -----------------------------------------------------------
