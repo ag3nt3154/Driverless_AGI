@@ -1,6 +1,11 @@
 """The composer card: auto-grow, send/stop button, attachments; the sidebar model picker."""
 from __future__ import annotations
 
+import os
+import subprocess
+import sys
+from pathlib import Path
+
 import pytest
 from PySide6.QtCore import Qt
 
@@ -26,9 +31,56 @@ def test_editor_grows_with_text_up_to_a_cap(prompt, qtbot):
     qtbot.waitUntil(lambda: prompt._editor.height() == one_line)
 
 
+def test_scrollbar_only_once_the_editor_is_capped(prompt, qtbot):
+    off, on = Qt.ScrollBarPolicy.ScrollBarAlwaysOff, Qt.ScrollBarPolicy.ScrollBarAlwaysOn
+    assert prompt._editor.verticalScrollBarPolicy() == off
+    prompt._editor.setPlainText("\n".join("x" * 5 for _ in range(200)))
+    qtbot.waitUntil(lambda: prompt._editor.height() == MAX_EDITOR_HEIGHT)
+    assert prompt._editor.verticalScrollBarPolicy() == on
+    prompt._editor.clear()
+    qtbot.waitUntil(lambda: prompt._editor.verticalScrollBarPolicy() == off)
+
+
+# Typing char by char at these card widths once hung Qt inside insertPlainText:
+# a wrap onto a new line showed the AsNeeded scrollbar, which narrowed the text,
+# which rewrapped it, while _fit_editor resized the editor underneath.
+_TYPE_INTO_COMPOSER = """
+import sys
+import pyside_gui
+from PySide6.QtWidgets import QApplication, QLabel, QVBoxLayout, QWidget
+app = QApplication(sys.argv)
+from pyside_gui.prompt_input import PromptInput
+for width in range(478, 534, 13):
+    window = QWidget()
+    layout = QVBoxLayout(window)
+    layout.addWidget(QLabel("conversation"), 1)
+    prompt = PromptInput()
+    layout.addWidget(prompt)
+    window.resize(width, 600)
+    window.show()
+    app.processEvents()
+    for ch in "lorem ipsum dolor sitamet consectetur adipiscing " * 4:
+        prompt._editor.insertPlainText(ch)
+        for _ in range(15):
+            app.processEvents()
+    window.close()
+print("done")
+"""
+
+
+def test_typing_across_a_wrap_does_not_hang():
+    env = {**os.environ, "QT_QPA_PLATFORM": "offscreen",
+           "PYTHONPATH": str(Path(__file__).resolve().parents[2])}
+    result = subprocess.run([sys.executable, "-c", _TYPE_INTO_COMPOSER], env=env,
+                            capture_output=True, text=True, timeout=60)
+    assert result.returncode == 0, result.stderr[-2000:]
+    assert "done" in result.stdout
+
+
 def test_compose_mode_gives_a_tall_editor(prompt):
     prompt.set_compose_mode(True)
     assert prompt._editor.minimumHeight() >= 300
+    assert prompt._editor.verticalScrollBarPolicy() == Qt.ScrollBarPolicy.ScrollBarAsNeeded
     prompt.set_compose_mode(False)
     assert prompt._editor.maximumHeight() <= MAX_EDITOR_HEIGHT
 

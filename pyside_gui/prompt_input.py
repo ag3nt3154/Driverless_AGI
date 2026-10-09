@@ -287,7 +287,6 @@ class PromptInput(QWidget):
         self._editor.setPlaceholderText(PLACEHOLDER)
         self._editor.setFrameShape(QFrame.Shape.NoFrame)
         self._editor.document().setDocumentMargin(2)
-        self._editor.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         self._editor.document().documentLayout().documentSizeChanged.connect(
             lambda _size: self._fit_editor()
         )
@@ -365,11 +364,19 @@ class PromptInput(QWidget):
         if self._compose:
             self._editor.setMinimumHeight(COMPOSE_MIN_HEIGHT)
             self._editor.setMaximumHeight(16777215)  # QWIDGETSIZE_MAX
+            # Height here doesn't follow the text, so AsNeeded can't feed back.
+            self._editor.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
             return
         doc = self._editor.document()
         line = self._editor.fontMetrics().lineSpacing()
         lines = max(1, int(doc.documentLayout().documentSize().height()))
         height = lines * line + 2 * int(doc.documentMargin()) + 4
+        # Scrollbar only once capped, never AsNeeded: an AsNeeded bar narrows the
+        # text as it shows, the text rewraps, and Qt can hang flipping it on/off.
+        policy = (Qt.ScrollBarPolicy.ScrollBarAlwaysOn if height >= MAX_EDITOR_HEIGHT
+                  else Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        if self._editor.verticalScrollBarPolicy() != policy:
+            self._editor.setVerticalScrollBarPolicy(policy)
         self._editor.setFixedHeight(min(max(height, line + 8), MAX_EDITOR_HEIGHT))
 
     def _set_card_focused(self, focused: bool) -> None:
