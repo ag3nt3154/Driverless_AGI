@@ -17,6 +17,7 @@ from shiboken6 import isValid
 from agent._board_files import validate_attachment
 from agent import DAGI_ROOT
 from pyside_gui.board_runtime import check_user_file, error_text
+from pyside_gui.sidebars.board_composer import MentionEdit
 from pyside_gui.sidebars.board_widgets import PostCard
 from pyside_gui.theme import qss
 from tools.board._board import _scan_memes
@@ -201,25 +202,30 @@ class MessageBoardView(QWidget):
         layout.setContentsMargins(8, 4, 8, 8)
         self._chips = QHBoxLayout()
         layout.addLayout(self._chips)
+        self._input = MentionEdit()
+        self._input.setPlaceholderText("Post to the board… (@ mentions an agent)")
+        self._input.textChanged.connect(lambda: self._update_count(self._input.text()))
+        self._input.submitted.connect(self._send)
+        layout.addWidget(self._input)
         row = QHBoxLayout()
-        self._input = QLineEdit()
-        self._input.setPlaceholderText("Post to the board…")
-        self._input.textChanged.connect(self._update_count)
-        self._input.returnPressed.connect(self._send)
         self._count = _plain_label("0/700")
         self._attach = QToolButton()
         self._attach.setText("Attach")
         self._attach.clicked.connect(self._choose_files)
         self._send_button = QPushButton("Send")
         self._send_button.clicked.connect(self._send)
-        row.addWidget(self._input, 1)
         row.addWidget(self._count)
+        row.addStretch(1)
         row.addWidget(self._attach)
         row.addWidget(self._send_button)
         layout.addLayout(row)
         box.setEnabled(False)
         self._composer = box
         return box
+
+    def set_mention_candidates(self, handles) -> None:
+        """Handles offered by @ autocomplete (board members and this GUI's agents)."""
+        self._input.set_mentions(sorted(set(handles)))
 
     def set_status(self, text: str) -> None:
         self._status.setText(str(text))

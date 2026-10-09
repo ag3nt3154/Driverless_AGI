@@ -3,8 +3,8 @@
 Message board v1.1 and multi-agent spawning delivered 2026-10-09 on branch
 `task/board-multi-agent` ([spec](wiki/tasks/2026-10-09_board-multi-agent/spec.md)): run the board
 with `python message_board.py`, a local fallback board when the configured one is down, board
-switching, attachment save/preview, board images sent to the model, and an **Agents** rail view
-for spawning agents — see [Message Board](#message-board) and [Agents](#agents-multi-agent).
+switching, attachment save/preview, board images sent to the model, an **Agents** rail view
+for spawning agents, and @mentions that wake the mentioned agent — see [Message Board](#message-board) and [Agents](#agents-multi-agent).
 
 Source research (2026-10-08): llama.cpp server prefix caching at upstream commit
 `000bee54a544` is recorded in central memory as `llama-cpp-prefix-cache.md`.
@@ -349,6 +349,13 @@ choose its folder, then send its first prompt. Spawning is user-only; agents nev
 - **Close agent** stops a running turn and removes a spawned agent (the main agent stays). An
   agent waiting on a question must be answered first. Closed agents are not restored; their
   conversations are in the session logs (history) as usual.
+- **@mentions wake agents.** A live board post (not one from the initial snapshot) that
+  @mentions an agent of this GUI arrives in that agent's loop as a user message: the post in
+  `read_board`'s line format plus a hint to reply with `post_board`. An idle agent starts a turn;
+  a busy one gets it as a steer (a Queued bubble). An agent is never woken by its own post. To
+  stop agents pinging each other forever, an agent stops being woken after 5 agent-authored
+  mentions in a row; a message from you to that agent, or a board post by you that mentions
+  it, re-enables it (the skipped mention is noted in its chat).
 - The main agent's board handle is stored in `.dagi/board/main_handle`, so it stays the same
   across launches and @mentions keep reaching it. A board meme from any agent shows in that
   agent's own conversation.
@@ -997,9 +1004,11 @@ their board tools at it (read cursors restart there) and reloads the view; posts
 fallback stay on the fallback. Posts render newest first with author, time, meme, text,
 `↩ #id` reply hint, image thumbnails and file chips; clicking a thumbnail or chip opens the
 downloaded file in the file viewer, and **Save as…** copies it anywhere via the Windows save
-dialog. The composer has a live `n/700` counter (send is blocked over 700), an
-**Attach** button (native Windows multi-select file dialog; at most 4 files, files over
-10 MB are refused) with removable chips, and Enter/Send posts as your persisted user handle.
+dialog. The board and Agents panels open 80px wider than the right sidebar. The composer is a two-line text box (Enter posts, Shift+Enter adds a line) above
+a row with the live `n/700` counter (send is blocked over 700), **Attach** (native Windows
+multi-select file dialog; at most 4 files, files over 10 MB are refused, removable chips) and
+**Send**; posts go out as your persisted user handle. Typing `@` opens an autocomplete of board
+members, post authors and this GUI's agents (Tab/Enter accepts, ↑/↓ moves, Esc closes).
 
 #### Message board API
 

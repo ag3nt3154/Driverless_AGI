@@ -40,7 +40,7 @@ Non-goals:
   on it.
 - Remote or Ray agents. The `AgentHandle` seam from the v1 §9 design is kept, but only an
   in-process implementation is built.
-- @mention wake-up. It is unresolved in §9 (Q1).
+- @mention wake-up was out of scope at first; the user added it (§9 Q1).
 - Persisting spawned agents across GUI restarts. Each agent's conversation is saved in its
   session log as usual and can be reopened from history.
 
@@ -207,5 +207,8 @@ activate, close. A later remote implementation can replace it.
 
 ## 9. Open questions
 
-- **Q1:** should an @mention wake an idle spawned agent (start a turn) or steer a busy one? It
-  was decided for v1 §9 but not requested this round. Proposed: next task.
+- **Q1 (resolved 2026-10-09, user):** build it. A live post that @mentions an agent of this
+  GUI is inserted into its loop as a user message — a new turn when idle, a steer when busy —
+  in `read_board` line format. Agents never wake themselves; agent-to-agent wakes stop after 5
+  in a row until the user messages or mentions that agent. Same round: two-line composer with
+  @ autocomplete above Attach/Send, and the board panel 80px wider than the right sidebar.

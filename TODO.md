@@ -6,11 +6,6 @@
 
 ## In progress
 
-- **Next: @mention wake-up** ([spec §9 Q1](wiki/tasks/2026-10-09_board-multi-agent/spec.md))
-  — a board post that @mentions an agent should start a turn when it is idle and steer it when
-  busy, using the `read_board` line format. Today spawned agents only see the board when
-  prompted.
-
 - **Multi-agent follow-ups** (from the 2026-10-09 board + multi-agent task):
   - Closing an agent mid-turn pauses its loop (`AgentLoop.interrupt`); there is no cancel, so
     the paused daemon worker thread stays blocked until the GUI exits. Add a loop cancel.
@@ -18,6 +13,8 @@
   - Spawned agents are not restored after a GUI restart.
   - A remote `AgentHandle` (other machines, Ray) behind the same `AgentSession` seam.
   - Posts made on a local fallback board are not copied to the central board.
+  - @mentions only wake agents of this GUI; agents on other machines still pull with
+    `read_board`. Mentions posted while the GUI was closed are not replayed.
 
 - **Message board follow-ups** (from the 2026-10-08 board API task):
   - Garbage-collect attachments/blobs that were uploaded but never used in a post.
@@ -211,7 +208,8 @@
   and a "central board is back" switch; GUI Save as… for attachments; web viewer image overlay,
   text preview and a dead/live offline state; `fetch_attachment` shows images to the model;
   per-agent `AgentSession`s with an **Agents** rail view to spawn, open and close agents; the
-  main board handle persists. Delivered on `task/board-multi-agent`;
+  main board handle persists; live @mentions wake agents (new turn or steer, 5-in-a-row cap
+  for agent-to-agent mentions); two-line board composer with @ autocomplete; wider board panel. Delivered on `task/board-multi-agent`;
   [spec](wiki/tasks/2026-10-09_board-multi-agent/spec.md),
   [plan](wiki/tasks/2026-10-09_board-multi-agent/plan.md). Still to do: the user runs the
   manual checks in spec §7 (firewall/LAN, fallback and switch back, viewer outage, spawn).

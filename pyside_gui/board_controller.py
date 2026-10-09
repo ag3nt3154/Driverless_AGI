@@ -32,6 +32,7 @@ class BoardController(QObject):
     _post_result = Signal(object)
     _switch_done = Signal(object)  # (url, token, BoardRuntime | BoardError)
     _central_state = Signal(object)  # (url, reachable)
+    _members_loaded = Signal(object)  # list of member handles
 
     def __init__(self, window) -> None:
         super().__init__(window)
@@ -48,6 +49,8 @@ class BoardController(QObject):
         self._error_shown = False
         self._generation = 0  # bumps on every board switch; stale listeners are ignored
         self._token = None
+        self._live_after: int | None = None  # posts above this id are live (may wake agents)
+        self._known_handles: set[str] = set()
         self.sessions: list[BoardSession] = []  # every agent's session, main first
         self._central_timer = QTimer(self)
         self._central_timer.setInterval(CENTRAL_PROBE_MS)
@@ -55,6 +58,7 @@ class BoardController(QObject):
         self._post_result.connect(self._on_post_result)
         self._switch_done.connect(self._on_switched)
         self._central_state.connect(self._on_central_state)
+        self._members_loaded.connect(self._on_members)
         self.downloads = DownloadPool(self._download)
         bridge = window._bridge
         bridge.board_ready.connect(self._on_ready)
@@ -111,6 +115,20 @@ class BoardController(QObject):
         generation = self._generation
         self._run_worker(lambda: self._load_snapshot(generation), "board-snapshot")
 
+    # ── @mention autocomplete ───────────────────────────────────────────────────────────
+
+    @Slot(object)
+    def _on_members(self, handles) -> None:
+        self._known_handles.update(h for h in handles if isinstance(h, str))
+        self.refresh_mentions()
+
+    def refresh_mentions(self) -> None:
+        """Offer board members, seen authors and this GUI's agents to @ autocomplete."""
+        handles = set(self._known_handles)
+        handles.update(session.handle for session in self.sessions)
+        handles.discard(getattr(self.runtime, "user_handle", None))
+        self.window._left_sidebar.board_view.set_mention_candidates(handles)
+
     # ── extra agents ────────────────────────────────────────────────────────────────────
 
     def add_session(self, handle: str) -> BoardSession | None:
@@ -119,6 +137,7 @@ class BoardController(QObject):
             return None
         session = BoardSession(self.runtime.client, handle)
         self.sessions.append(session)
+        self.refresh_mentions()
         client = self.runtime.client
         self._run_worker(lambda: client.register(handle, "agent", host=socket.gethostname()),
                          "board-register")
@@ -127,6 +146,7 @@ class BoardController(QObject):
     def remove_session(self, session: BoardSession) -> None:
         if session in self.sessions[1:]:
             self.sessions.remove(session)
+            self.refresh_mentions()
 
     # ── switching boards ────────────────────────────────────────────────────────────────
 
@@ -184,6 +204,8 @@ class BoardController(QObject):
             session.rebind(result.client)
         result.session = self.sessions[0]
         self._token = token
+        self._live_after = None
+        self._known_handles = set()
         view.clear_posts()
         self._adopt(result)
         if old_runtime is not None:
@@ -243,6 +265,11 @@ class BoardController(QObject):
         raw = self._fetch_snapshot(runtime)
         if raw is None or self.closing or generation != self._generation:
             return
+        try:
+            members = runtime.client.members()
+        except Exception:  # autocomplete still learns handles from posts
+            members = []
+        self._members_loaded.emit([m.get("handle") for m in members if isinstance(m, dict)])
         posts, is_list = _valid_snapshot(raw)
         if not is_list:
             self.window._bridge.board_status.emit(
@@ -251,6 +278,7 @@ class BoardController(QObject):
         for post in posts:
             self.window._bridge.board_post.emit(post)
         after = max((post["id"] for post in posts), default=0)
+        self._live_after = after
         bridge = self.window._bridge
 
         def current() -> bool:
@@ -275,6 +303,14 @@ class BoardController(QObject):
         self.window._left_sidebar.board_view.add_post(post)
         if self.runtime is None:
             return
+        author = post.get("author")
+        if isinstance(author, str) and author not in self._known_handles:
+            self._known_handles.add(author)
+            self.refresh_mentions()
+        live = self._live_after is not None and type(post.get("id")) is int             and post["id"] > self._live_after
+        hook = getattr(self.window, "_on_board_mention", None)
+        if live and post.get("mentions") and hook is not None:
+            hook(post, getattr(self.runtime, "user_handle", None))
         memes = self.window._left_sidebar.board_view.meme_map
         for handle, conversation in self._conversations():
             path = should_render_inline(post, handle, memes)

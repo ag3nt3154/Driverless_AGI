@@ -45,6 +45,7 @@ class StubSession(AgentSession):
         self._streaming_active = False
         self._submission_seq = 0
         self._board_session = None
+        self.agent_wakes = 0
         self.status = "idle"
         self.running = False
         self._last_tokens = None

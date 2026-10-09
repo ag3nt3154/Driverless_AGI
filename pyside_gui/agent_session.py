@@ -24,6 +24,7 @@ from pyside_gui.bridge import AgentBridge
 from pyside_gui.commands import SlashCommandHandler, UIWidgets
 from pyside_gui.conversation import ConversationView
 from pyside_gui.overlays import CopyPicker
+from pyside_gui.steer_queue import SteerQueue
 from pyside_gui.utils import idle_emote_path
 from agent import DAGI_ROOT
 
@@ -52,6 +53,7 @@ class AgentSession(QObject):
         self._streaming_active = False
         self._submission_seq = 0
         self._board_session = None
+        self.agent_wakes = 0  # consecutive board mentions from agents (see agents_controller)
         self.status = "idle"
         self.running = False
         self._last_tokens: tuple | None = None
@@ -167,7 +169,20 @@ class AgentSession(QObject):
     # ── submission and worker (see _dispatch) ──────────────────────────────────────────
 
     def _on_input_submitted(self, submission: object) -> None:
+        self.agent_wakes = 0
         _dispatch.on_input_submitted(self, submission)
+
+    def deliver_mention(self, text: str) -> None:
+        """A board @mention arrives as a user message: a new turn, or a steer while busy."""
+        from agent.user_input import UserSubmission
+
+        submission = UserSubmission(text=text)
+        if self.busy:
+            SteerQueue.for_window(self).submit(submission)
+        else:
+            self._dispatch_agent(submission)
+        lines = text.splitlines()
+        self._notify("Board mention", lines[1] if len(lines) > 1 else text)
 
     def _handle_special_command(self, result: str) -> None:
         _dispatch.handle_special_command(self, result)

@@ -39,7 +39,8 @@ QLabel#running-label {
 """)
 
 _SPINNER = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
-_NARROW_VIEWS = ("board", "agents")  # left panels that open as wide as the right sidebar
+_NARROW_VIEWS = ("board", "agents")  # left panels sized from the right sidebar's width
+_NARROW_EXTRA = 80  # ...plus this much, so the board composer has room
 
 
 class DagiMainWindow(QMainWindow):
@@ -242,6 +243,12 @@ class DagiMainWindow(QMainWindow):
         if agents is not None:
             agents.on_board_ready()
 
+    def _on_board_mention(self, post: dict, user_handle: str) -> None:
+        """A live board post mentions someone; agents it names get it as a user message."""
+        agents = getattr(self, "_agents", None)
+        if agents is not None:
+            agents.on_board_mention(post, user_handle)
+
     def _activate(self, session: AgentSession) -> None:
         """Show ``session`` in the main chat and point the shared chrome at it."""
         self._active = session
@@ -330,7 +337,7 @@ class DagiMainWindow(QMainWindow):
         self._left_narrow = self._left_sidebar.active_view() in _NARROW_VIEWS
         rs = self._right_sidebar
         width = (
-            rs.width() if rs.isVisible() else rs.maximumWidth()
+            (rs.width() if rs.isVisible() else rs.maximumWidth()) + _NARROW_EXTRA
         ) if self._left_narrow else None
         self._splitter.setSizes(panel_sizes(s, width))
 

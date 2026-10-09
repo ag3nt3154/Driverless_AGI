@@ -6,6 +6,21 @@ import uuid
 from PySide6.QtCore import QObject
 
 from pyside_gui.sidebars.agents_view import slug_error
+from tools.board._board import format_post
+
+# Agent-to-agent mentions can ping-pong forever; stop waking an agent after this many in a row
+# that no user message or user post has interrupted.
+MAX_AGENT_WAKES = 5
+
+
+def mention_message(post: dict, handle: str) -> str:
+    """The user message an @mention becomes: the post in read_board's line format."""
+    return (
+        "[Message board] You were mentioned in this post:\n"
+        f"{format_post(post, handle)}\n"
+        "Reply on the board with post_board if a reply is needed; use fetch_attachment for "
+        "any attachment you need."
+    )
 
 
 def agent_state(session) -> str:
@@ -99,6 +114,28 @@ class AgentsController(QObject):
                 session._board_session = controller.add_session(session.handle)
         self.refresh()
 
+    def on_board_mention(self, post: dict, user_handle: str) -> None:
+        """Deliver a live post to every agent it @mentions (never to its own author)."""
+        mentions = post.get("mentions") or []
+        author = post.get("author")
+        from_user = author == user_handle
+        for session in list(self.window._sessions):
+            board = session._board_session
+            if board is None or board.handle not in mentions or board.handle == author:
+                continue
+            if from_user:
+                session.agent_wakes = 0
+            elif session.agent_wakes >= MAX_AGENT_WAKES:
+                session._conversation.append_info(
+                    f"Board mention from {author} not delivered: {MAX_AGENT_WAKES} agent "
+                    "mentions in a row woke this agent. Send it a message to re-enable."
+                )
+                continue
+            else:
+                session.agent_wakes += 1
+            session.deliver_mention(mention_message(post, board.handle))
+        self.refresh()
+
     def refresh(self, *_args) -> None:
         win = self.window
         self.view.set_agents([
@@ -108,3 +145,6 @@ class AgentsController(QObject):
         ])
         if len(win._sessions) > 1:
             win._refresh_title()
+        controller = getattr(win, "_board_controller", None)
+        if controller is not None and hasattr(controller, "refresh_mentions"):
+            controller.refresh_mentions()
