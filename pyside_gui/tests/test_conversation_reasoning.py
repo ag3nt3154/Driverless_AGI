@@ -183,13 +183,13 @@ def test_turn_without_reasoning_does_not_create_thinking_block(view, text):
 
 
 def test_final_reasoning_callback_does_not_duplicate_streamed_thinking(view):
-    from pyside_gui.app import DagiMainWindow
+    from pyside_gui.agent_session import AgentSession
 
     window = SimpleNamespace(_conversation=view)
-    DagiMainWindow._on_stream_started(window)
+    AgentSession._on_stream_started(window)
     view.stream_delta("reasoning", "**Only once**")
-    DagiMainWindow._on_stream_ended(window, "", "**Only once**")
-    DagiMainWindow._on_reasoning(window, "**Only once**")
+    AgentSession._on_stream_ended(window, "", "**Only once**")
+    AgentSession._on_reasoning(window, "**Only once**")
     assert evaluate(view, """
         return Array.from(document.querySelectorAll('.reasoning-message strong'),
                           node => node.textContent);
