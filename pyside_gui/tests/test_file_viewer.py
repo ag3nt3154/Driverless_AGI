@@ -3,6 +3,8 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+from PySide6.QtCore import QSize
+from PySide6.QtGui import QImage
 
 from pyside_gui.sidebars.file_viewer import (
     FileViewerView,
@@ -70,3 +72,24 @@ def test_open_nonexistent_file_shows_error(viewer, tmp_path):
     viewer.open_file("/nonexistent/path/file.py", tmp_path)
     assert "Cannot open file" in viewer._text_edit.toPlainText()
     assert viewer._stack.currentIndex() == 0
+
+
+def test_open_image_uses_bounded_image_page(viewer, tmp_path):
+    path = tmp_path / "preview.png"
+    image = QImage(8, 6, QImage.Format.Format_RGB32)
+    image.fill(0x336699)
+    assert image.save(str(path))
+    viewer.open_file(str(path), tmp_path)
+    assert viewer._stack.currentWidget() is viewer._image_scroll
+    assert not viewer._image_view.pixmap().isNull()
+
+
+def test_image_decode_is_not_bounded_by_narrow_viewer(viewer, tmp_path):
+    path = tmp_path / "wide.png"
+    image = QImage(1000, 800, QImage.Format.Format_RGB32)
+    image.fill(0x336699)
+    assert image.save(str(path))
+    viewer.resize(200, 300)
+    viewer.open_file(str(path), tmp_path)
+    assert viewer._image_view.pixmap().size() == QSize(1000, 800)
+    assert viewer.minimumSizeHint().width() < 1000

@@ -66,12 +66,12 @@ def test_config_schema_has_required_keys():
         assert "description" not in data, f"{config_path}: 'description' should be removed"
 
 
-def test_subagent_tool_allowlists_never_expose_emote():
-    """Emotion adjustment is a main-agent affordance, not a child registry surface."""
+def test_subagent_tool_allowlists_never_expose_board_tools():
+    """Board sessions belong to the main agent, not ordinary child registries."""
     for config_path in _registered_subagent_config_paths():
         data = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
-        assert "emote" not in data["tools"], (
-            f"{config_path}: subagents must not expose emote"
+        assert {"read_board", "post_board", "fetch_attachment"}.isdisjoint(data["tools"]), (
+            f"{config_path}: subagents must not expose board tools"
         )
 
 

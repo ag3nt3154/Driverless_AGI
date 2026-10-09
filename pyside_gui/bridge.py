@@ -52,7 +52,9 @@ class AgentBridge(QObject):
     process_state_changed = Signal(object)
     continue_injected = Signal(int, int)   # cur, max
     subagent_event = Signal(str, str)      # type, json line
-    message_board_post = Signal(str, str, str, str, str)  # author, meme_name, asset_path, text, timestamp
+    board_post = Signal(object)
+    board_status = Signal(str)
+    board_ready = Signal(object)
     show_file_requested = Signal(str, object)             # path, line (int | None)
     notepad_flush_requested = Signal(object)              # threading.Event set once flushed
 
@@ -137,6 +139,7 @@ class AgentBridge(QObject):
     def build_callbacks(
         self,
         loop_ref: list | None = None,
+        board=None,
     ) -> AgentCallbacks:
         stats = self._stats
 
@@ -204,9 +207,6 @@ class AgentBridge(QObject):
                 self.subagent_event.emit(subagent_type, line)
             return on_event
 
-        def on_message_board_post(author: str, name: str, path: str, text: str, ts: str) -> None:
-            self.message_board_post.emit(author, name, path, text, ts)
-
         def on_show_file(path: str, line: int | None) -> None:
             self.show_file_requested.emit(path, line)
 
@@ -236,8 +236,8 @@ class AgentBridge(QObject):
             on_stream_end=self._on_stream_end,
             on_assistant_text_delta=self._on_stream_text_delta,
             on_reasoning_delta=self._on_reasoning_delta,
-            on_message_board_post=on_message_board_post,
             on_show_file=on_show_file,
             on_flush_notepad=self._flush_notepad,
             on_user_injected=self.user_injected.emit,
+            board=board,
         )

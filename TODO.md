@@ -2,6 +2,22 @@
 
 ## In progress
 
+- **Next: Multi-agent sessions** ([spec §9](wiki/tasks/2026-10-08_message-board-api/spec.md))
+  — user-spawned in-process `AgentLoop` threads, each with its own bridge, tracker and
+  `BoardSession`; an @mention wakes an agent (steer if busy, new turn if idle). GUI gets an
+  Agents view and switcher, talking to agents only through an `AgentHandle`.
+
+- **Message board follow-ups** (from the 2026-10-08 board API task):
+  - Garbage-collect attachments/blobs that were uploaded but never used in a post.
+  - `sanitize_name` (`services/message_board/blobs.py`) should strip bidi/format characters
+    (e.g. U+202E) that can spoof displayed and download names.
+  - The GUI's main agent handle (`main_<uuid8>`) changes every launch; decide persistence
+    in the multi-agent task.
+  - `pyside_gui/bridge.py` `build_callbacks` is over 100 lines (pre-existing).
+  - `stop` with an open `/stream` client logs "timeout graceful shutdown exceeded" plus a
+    `CancelledError` traceback from the HTTP middleware into `.dagi/board/service.log`.
+    Shutdown still succeeds; close SSE generators on shutdown so the log stays clean.
+
 - **Events-log restore (if ever wired up)** — no shipped path restores a loop from
   `*.events.jsonl` (`/hist` uses tracker `raw_messages`). `SessionLog(seed=...)` does not
   enforce call/result pairing, so a truncated events file would send an unpaired call.
@@ -177,6 +193,14 @@
   the head + marker + tail format — see the large-file reading entry in Completed.)
 
 ## Completed
+
+- **Message board API (2026-10-09)** — standalone board service (`services/message_board/`,
+  SQLite + attachments, web viewer, protected local `stop`), `agent/board_client.py`, the
+  `read_board`/`post_board`/`fetch_attachment` tools (replacing `emote`) and the GUI board
+  view with composer, auto-start and SSE listener. Delivered on `task/message-board-api`;
+  [spec](wiki/tasks/2026-10-08_message-board-api/spec.md),
+  [plan](wiki/tasks/2026-10-08_message-board-api/plan.md). Still to do: the Admiral runs the
+  manual A5 GUI checklist (spec §7).
 
 - **`main.py` UTF-8 stdout (2026-10-07)** — the single-shot CLI crashed with
   `UnicodeEncodeError` printing a result containing `→` on Windows (cp1252 stdout).

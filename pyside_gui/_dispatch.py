@@ -147,14 +147,17 @@ def dispatch_agent(win, task: str | UserSubmission, show: bool = True) -> None:
     if win._worker and win._worker.is_alive():
         win._conversation.append_info("Agent is already running — please wait.")
         if hasattr(win, "_prompt"):
-            win._prompt.restore_draft(task if isinstance(task, UserSubmission) else _as_submission(task))
+            submission = task if isinstance(task, UserSubmission) else _as_submission(task)
+            win._prompt.restore_draft(submission)
         return
     win._submission_seq = getattr(win, "_submission_seq", 0) + 1
     if show:
         _append_user_with_images(win, _as_submission(task))
     win._show_running()
     win._current_loop_ref = []
-    callbacks = win._bridge.build_callbacks(win._current_loop_ref)
+    callbacks = win._bridge.build_callbacks(
+        win._current_loop_ref, board=getattr(win, "_board_session", None)
+    )
     win._worker = threading.Thread(
         target=win._agent_work, args=(task, callbacks, win._current_loop_ref), daemon=True)
     win._worker.start()
@@ -205,3 +208,56 @@ def agent_work(win, task: str | UserSubmission, callbacks: object, loop_ref: lis
         queue = getattr(win, "_steer_queue", None)
         if queue is not None:
             queue.turn_finished.emit()  # leftover queued messages → next turn
+
+
+def run_wtf(win, description: str | None) -> None:
+    loop = win._active_loop
+    if loop is None:
+        win._conversation.append_info("Nothing to diagnose — no active conversation.")
+        return
+
+    def work() -> None:
+        try:
+            result = loop.run_wtf(description)
+        except Exception as error:
+            win._bridge.error_occurred.emit(f"/wtf failed: {error}")
+            return
+        path = Path(result.report_path).resolve()
+        win._bridge.assistant_text.emit(
+            f"Diagnosis: {result.description}\n\nReport: `{path}`"
+        )
+
+    win._show_running()
+    threading.Thread(target=work, daemon=True).start()
+
+
+def notify(win, title: str, message: str) -> None:
+    if win.isActiveWindow():
+        return
+    try:
+        from tui.notifications import notify as system_notify
+        system_notify(title, message)
+    except Exception:
+        pass
+
+
+def on_stream_ended(win, stream_text: str, stream_reasoning: str) -> None:
+    if not win._streaming_active:
+        return
+    text = stream_text.strip()
+    if stream_reasoning.strip():
+        win._stream_had_reasoning = True
+    if text:
+        win._stream_had_content = True
+    win._conversation.stream_end(text)
+    win._streaming_active = False
+
+
+def on_reasoning(win, text: str) -> None:
+    should_append = (
+        not win._streaming_active
+        and not win._stream_had_content
+        and not win._stream_had_reasoning
+    )
+    if should_append:
+        win._conversation.append_reasoning(text)
