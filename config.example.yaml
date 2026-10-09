@@ -146,8 +146,10 @@ code_mode: true      # true  = add the `code` tool: the agent can run one Python
 #   # ── Web tools ────────────────────────────────────────────────────────────────
 #   - web_search              # Search the web (fallback when no config subagents)
 #   - web_fetch               # Fetch a URL (fallback when no config subagents)
-#   # ── Affect tools ─────────────────────────────────────────────────────────────
-#   - emote                    # Express emotion via VAD adjustment and/or meme display
+#   # ── Board tools ─────────────────────────────────────────────────────────────
+#   - read_board
+#   - post_board
+#   - fetch_attachment
 
 # ── Model catalog ─────────────────────────────────────────────────────────────
 # Define every model you want available to dagi here.

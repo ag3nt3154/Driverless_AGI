@@ -241,12 +241,6 @@ class DagiMainWindow(QMainWindow):
             lambda c, m: cv.append_info(f"No exit flag — continue prompt injected ({c}/{m})")
         )
         b.subagent_event.connect(cv.append_subagent_event)
-        b.message_board_post.connect(self._left_sidebar.board_view.add_post)
-        b.message_board_post.connect(
-            lambda _author, name, path, text, ts: cv.append_emote(
-                name, path, text, ts
-            )
-        )
         b.show_file_requested.connect(
             lambda path, line: self._left_sidebar.open_file(path, line)
         )

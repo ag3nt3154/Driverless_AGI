@@ -558,6 +558,8 @@ and a per-agent cursor.
 
 ### Subtask 4: `read_board`/`post_board`/`fetch_attachment` tools, replacing `emote`
 
+**Status:** Complete — independent PASS; 114 targeted tests and 28 final board-tool tests passed.
+
 **Goal:** Agents read, post and fetch attachments through three tools bound to a `BoardSession`.
 Remove the obsolete `emote` tool and its callback/config/prompt references. Existing affect
 expression assets and identifiers are outside this migration.
@@ -652,7 +654,7 @@ expression assets and identifiers are outside this migration.
   - a `BoardError` from the client surfaces as an `Error: …` result through
     `ToolRegistry.dispatch`.
 
-- [ ] Step 1 write failing tests · Step 2 run (FAIL) · Step 3 implement and edit callers ·
+- [x] Step 1 write failing tests · Step 2 run (FAIL) · Step 3 implement and edit callers ·
   Step 4 run the touched test files plus the full suite (PASS) · Step 5 return for review.
 
 ---
@@ -805,6 +807,8 @@ renders posts live, and lets the user post.
     `pyside_gui/sidebars/board_widgets.py`.
   - Card header: author, then `↩ #id` when there's a reply, then the timestamp converted to local
     time. A missing meme shows `[name]`, and no meme shows no image row.
+  - Render remote post text, member names, filenames and status errors as plain text in Qt
+    labels (`Qt.PlainText`), so untrusted strings cannot become QLabel rich-text markup.
   - Keep the file ≤ 500 lines.
 **Acceptance Criteria:**
 - The app starts with the board up (auto-spawned) or down (offline status), and the full test
@@ -928,7 +932,7 @@ renders posts live, and lets the user post.
 - **Task folder:** `wiki/tasks/2026-10-08_message-board-api/`
 
 ## Overall Status
-In Progress — approved for delivery on 2026-10-08. Subtasks 1–3 complete; Subtask 4 in progress.
+In Progress — approved for delivery on 2026-10-08. Subtasks 1–4 complete; Subtask 5 in progress.
 
 ## Notes
 - `AgentLoop` is **rebuilt every turn** (`pyside_gui/_dispatch.py:181`), so the handle and
@@ -959,10 +963,10 @@ In Progress — approved for delivery on 2026-10-08. Subtasks 1–3 complete; Su
 - **Planning review, 2026-10-08:** replaced HTTP-PID termination with instance-capability
   shutdown; added streaming multipart bounds, shared safe cache writes, complete 13,000-char
   renderer tests, cancellable daemon downloads, package metadata/install checks and GUI tests.
-  Spec contracts updated alongside the plan. These are proposed requirements, not shipped fixes.
+  Spec contracts were updated alongside the plan; delivery is now in progress.
 
 ## Verification
-Expected outcomes below are delivery gates; none has been run for the unimplemented feature.
+Expected outcomes below are final delivery gates. Completed subtask evidence is recorded first.
 
 Delivery evidence so far:
 - Subtask 1: 42 tests passed; independent review PASS; committed as `30d45d0`.
@@ -976,6 +980,12 @@ Delivery evidence so far:
   publication share a short filesystem-only lock for Windows; network transfers remain parallel.
   Actual directory junctions tested; file-symlink lstat simulation used because this account
   cannot create symlinks (WinError 1314). Existing affect/emote asset identifiers are preserved.
+- Subtask 4: independent PASS; 114 targeted tool/registry/filter/loop/config tests, 28 final
+  board-tool tests and 37 focused GUI bridge/label tests passed. The full suite reported 2,048
+  passed, 4 failed and 3 skipped: three known removed-template failures and one unrelated GUI
+  timer teardown race that passed immediately in isolation. The earlier clipboard baseline
+  failure passed in this run. Obsolete emote tool/callback references are gone; affect emote
+  identifiers remain. Cache `.gitignore` link rejection is covered before any HTTP request.
 - Baseline before HTTP implementation: 1,880 passed, 7 failed, 3 skipped. Three Git tests
   failed because the temporary test directory was inside the repo; final full-suite runs
   must use outside-repo storage. Three existing workflow-template tests reference the removed
@@ -999,4 +1009,4 @@ Delivery evidence so far:
   GUI closes.
 
 ## Next Action
-Implement Subtask 4 (board tools and registry migration), then obtain independent review.
+Implement Subtask 5 (GUI board runtime without Qt), then obtain independent review.

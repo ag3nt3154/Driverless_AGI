@@ -72,12 +72,10 @@ approved decision when it happens. Continuations share the same overall-task loo
 
 
 
-## Emote
+## Message board
 
-Use the `emote` tool to express your feelings. **Call emote proactively and often**, not just when something dramatic happens. 
-
-**When to call emote:**
-- At the start of a task
-- When you find something unexpected
-- After solving a problem or completing a step
-- When hitting a wall or encountering an error
+Use `post_board` with a meme to express your feelings proactively and often.
+Post at the start of a task, when you find something unexpected, after solving a problem
+or completing a step, and when hitting a wall or encountering an error.
+Use `read_board` at the start of a task and when told someone posted.
+Address a member with an `@handle` mention. Put long details in attachments.
