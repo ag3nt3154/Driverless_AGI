@@ -318,3 +318,147 @@ def test_main_agent_meme_uses_view_meme_map_without_rescanning(qtbot, monkeypatc
         "reply_to": None, "attachments": [], "created_at": "2026-10-09T00:00:00Z",
     })
     assert emotes == [("wave", str(meme), "hey", "2026-10-09T00:00:00Z")]
+
+
+class SwitchClient:
+    """Fake BoardClient for a board the controller switches to."""
+    instances = []
+
+    def __init__(self, url, token=None, timeout=10.0, health=None, posts=()):
+        self.url, self.token, self.timeout = url, token, timeout
+        self.health_result = health if health is not None else {"version": 1}
+        self._posts = list(posts)
+        self.registered = []
+        self.closed = threading.Event()
+        SwitchClient.instances.append(self)
+
+    def health(self):
+        if isinstance(self.health_result, BaseException):
+            raise self.health_result
+        return self.health_result
+
+    def register(self, handle, kind, display_name=None, host=None):
+        self.registered.append((handle, kind))
+
+    def posts(self, limit=50, **_kwargs):
+        return self._posts
+
+    def close(self):
+        self.closed.set()
+
+
+def _post(post_id):
+    return {"id": post_id, "author": "main_12345678", "text": f"p{post_id}", "meme": None,
+            "reply_to": None, "attachments": [], "created_at": "2026-10-09T00:00:00Z"}
+
+
+def _switchable(qtbot, monkeypatch, tmp_path, client_factory):
+    from agent.board_client import BoardSession
+
+    monkeypatch.setattr("pyside_gui.board_controller.STATE_DIR", tmp_path)
+    monkeypatch.setattr("pyside_gui.board_controller.BoardClient", client_factory)
+    listeners = []
+
+    class Listener:
+        def __init__(self, client, after, on_post, on_status):
+            self.client, self.after = client, after
+            self.stopped = False
+            listeners.append(self)
+
+        def start(self):
+            pass
+
+        def stop(self):
+            self.stopped = True
+
+        def join(self):
+            pass
+
+    monkeypatch.setattr("pyside_gui.board_controller.StreamListener", Listener)
+    window = _window(qtbot)
+    controller = BoardController(window)
+    old = FakeClient()
+    main, helper = BoardSession(old, "main_12345678"), BoardSession(old, "helper_abcdef12")
+    controller.sessions = [main, helper]
+    controller.runtime = SimpleNamespace(client=old, session=main, url="http://127.0.0.1:8765",
+                                         central_url="http://central:8765")
+    old_listener = Listener(old, 0, None, None)
+    controller.listener = old_listener
+    window._left_sidebar.board_view.add_post(_post(99))
+    return window, controller, old, old_listener, listeners
+
+
+def test_switch_repoints_every_session_listener_and_view(qtbot, monkeypatch, tmp_path):
+    SwitchClient.instances = []
+    factory = lambda url, token=None, timeout=10.0: SwitchClient(url, token, timeout,
+                                                                 posts=[_post(1)])
+    window, controller, old, old_listener, listeners = _switchable(
+        qtbot, monkeypatch, tmp_path, factory)
+    view = window._left_sidebar.board_view
+    controller.switch("http://central:8765")
+    qtbot.waitUntil(lambda: controller.runtime.url == "http://central:8765")
+    new = SwitchClient.instances[0]
+    assert [session.client for session in controller.sessions] == [new, new]
+    assert controller.runtime.session is controller.sessions[0]
+    assert window._board_session is controller.sessions[0]
+    assert ("helper_abcdef12", "agent") in new.registered
+    assert old_listener.stopped
+    qtbot.waitUntil(old.closed.is_set)
+    qtbot.waitUntil(lambda: bool(listeners[1:]))
+    assert listeners[-1].client is new and listeners[-1].after == 1
+    qtbot.waitUntil(lambda: 1 in view._seen)
+    assert 99 not in view._seen
+    assert view._url_label.text() == "http://central:8765" and view._fallback.isHidden()
+    assert not controller._central_timer.isActive()
+
+
+def test_switch_auth_failure_asks_for_token_and_keeps_board(qtbot, monkeypatch, tmp_path):
+    SwitchClient.instances = []
+    factory = lambda url, token=None, timeout=10.0: SwitchClient(
+        url, token, timeout, health=BoardError("UNAUTHORIZED", "token required"))
+    window, controller, old, old_listener, _ = _switchable(qtbot, monkeypatch, tmp_path, factory)
+    asked = []
+    monkeypatch.setattr(window._left_sidebar.board_view, "ask_token", asked.append)
+    controller.switch("http://central:8765")
+    qtbot.waitUntil(lambda: asked == ["http://central:8765"])
+    assert controller.runtime.client is old and not old_listener.stopped
+    assert all(session.client is old for session in controller.sessions)
+    qtbot.waitUntil(SwitchClient.instances[0].closed.is_set)
+
+
+def test_central_probe_offers_switch_only_when_reachable(qtbot, monkeypatch, tmp_path):
+    outcomes = [BoardError("UNREACHABLE", "down"), {"version": 1}]
+    factory = lambda url, token=None, timeout=10.0: SwitchClient(
+        url, token, timeout, health=outcomes.pop(0))
+    window, controller, *_ = _switchable(qtbot, monkeypatch, tmp_path, factory)
+    view = window._left_sidebar.board_view
+    controller._probe_central()
+    qtbot.wait(100)
+    assert view._central_back.isHidden()
+    controller._probe_central()
+    qtbot.waitUntil(lambda: not view._central_back.isHidden())
+    emitted = []
+    view.connect_requested.connect(lambda url, token: emitted.append((url, token)))
+    view._central_back.click()
+    assert emitted == [("http://central:8765", None)]
+
+
+def test_board_url_normalisation():
+    from pyside_gui.sidebars.message_board import board_url
+
+    assert board_url("192.168.1.5:8765") == "http://192.168.1.5:8765"
+    assert board_url(" https://board.lan/ ") == "https://board.lan"
+    assert board_url("http://[::1]:9000") == "http://[::1]:9000"
+    for bad in ("", "ftp://x", "http://u:p@h:1", "http://h:1/path", "http://h:1?q=1",
+                "http://h:99999"):
+        assert board_url(bad) is None, bad
+
+
+def test_fallback_badge_shows_central_address(qtbot):
+    view = MessageBoardView()
+    qtbot.addWidget(view)
+    view.set_connection("http://127.0.0.1:8765", "http://central:8765")
+    assert not view._fallback.isHidden()
+    assert "central:8765" in view._url_label.toolTip()
+    view.set_connection("http://central:8765", None)
+    assert view._fallback.isHidden()

@@ -5,10 +5,11 @@ import weakref
 from concurrent.futures import CancelledError
 from datetime import datetime
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from PySide6.QtCore import Qt, Signal, Slot
 from PySide6.QtWidgets import (
-    QFileDialog, QHBoxLayout, QLabel, QLineEdit, QPushButton, QScrollArea,
+    QFileDialog, QHBoxLayout, QInputDialog, QLabel, QLineEdit, QPushButton, QScrollArea,
     QToolButton, QVBoxLayout, QWidget,
 )
 from shiboken6 import isValid
@@ -66,8 +67,28 @@ def _safe_attachments(post: dict) -> list[dict]:
     return result
 
 
+def board_url(text: str) -> str | None:
+    """Normalise a typed board address to ``scheme://host[:port]``, or None when invalid."""
+    text = text.strip()
+    if text and "://" not in text:
+        text = "http://" + text
+    try:
+        parts = urlsplit(text)
+        port = parts.port
+    except ValueError:
+        return None
+    valid = (parts.scheme in ("http", "https") and parts.hostname
+             and not any((parts.username, parts.password, parts.query, parts.fragment))
+             and parts.path in ("", "/"))
+    if not valid:
+        return None
+    host = f"[{parts.hostname}]" if ":" in parts.hostname else parts.hostname
+    return f"{parts.scheme}://{host}" + (f":{port}" if port else "")
+
+
 class MessageBoardView(QWidget):
     open_file_requested = Signal(str)
+    connect_requested = Signal(str, object)  # url, token (None = keep the current token)
     _download_done = Signal(object, object, object)
 
     def __init__(self) -> None:
@@ -90,6 +111,13 @@ class MessageBoardView(QWidget):
         header.setObjectName("board-header")
         header.setStyleSheet(qss("color: @fg_secondary; font-weight: bold; padding: 8px;"))
         outer.addWidget(header)
+        outer.addLayout(self._build_connection())
+        self._central_back = QPushButton()
+        self._central_back.hide()
+        self._central_back.clicked.connect(
+            lambda: self.connect_requested.emit(self._central_url, None)
+        )
+        outer.addWidget(self._central_back)
         self._status = _plain_label("")
         self._status.setWordWrap(True)
         self._status.setStyleSheet(qss("color: @fg_secondary; padding: 0 8px;"))
@@ -104,6 +132,68 @@ class MessageBoardView(QWidget):
         self._scroll.setWidget(self._container)
         outer.addWidget(self._scroll, 1)
         outer.addWidget(self._build_composer())
+
+    def _build_connection(self) -> QHBoxLayout:
+        row = QHBoxLayout()
+        row.setContentsMargins(8, 0, 8, 0)
+        self._url_label = _plain_label("not connected")
+        self._url_label.setStyleSheet(qss("color: @fg_secondary;"))
+        self._fallback = _plain_label("fallback")
+        self._fallback.setStyleSheet(qss(
+            "color: @popover_bg; background: #c98a1b; border-radius: 6px; padding: 0 6px;"
+        ))
+        self._fallback.hide()
+        self._connect = QToolButton()
+        self._connect.setText("Connect…")
+        self._connect.setToolTip("Connect to another message board")
+        self._connect.clicked.connect(self._ask_url)
+        row.addWidget(self._url_label, 1)
+        row.addWidget(self._fallback)
+        row.addWidget(self._connect)
+        self._central_url = ""
+        return row
+
+    def set_connection(self, url: str, central_url: str | None) -> None:
+        """Show the connected board; a central URL marks it as a local fallback."""
+        self._url_label.setText(url)
+        self._fallback.setVisible(bool(central_url))
+        tip = f"Local fallback: {central_url} was unreachable" if central_url else url
+        self._url_label.setToolTip(tip)
+        self._fallback.setToolTip(tip)
+
+    def set_central_back(self, url: str | None) -> None:
+        """Offer a one-click switch back when the central board answers again."""
+        self._central_url = url or ""
+        self._central_back.setText(f"Central board is back — Switch to {url}" if url else "")
+        self._central_back.setVisible(bool(url))
+
+    def _ask_url(self) -> None:
+        text, ok = QInputDialog.getText(
+            self, "Connect to message board", "Board URL:", text=self._url_label.text(),
+        )
+        if not ok:
+            return
+        url = board_url(text)
+        if url is None:
+            self.set_status("Enter an http(s) board address such as http://host:8765.")
+            return
+        self.connect_requested.emit(url, None)
+
+    def ask_token(self, url: str) -> None:
+        token, ok = QInputDialog.getText(
+            self, "Board token", f"{url} needs a bearer token:", QLineEdit.EchoMode.Password,
+        )
+        if ok and token.strip():
+            self.connect_requested.emit(url, token.strip())
+
+    def clear_posts(self) -> None:
+        """Drop every card before showing another board's posts."""
+        while self._posts_layout.count():
+            item = self._posts_layout.takeAt(0)
+            if item.widget() is not None:
+                item.widget().deleteLater()
+        self._seen.clear()
+        self._cards.clear()
 
     def _build_composer(self) -> QWidget:
         box = QWidget()
