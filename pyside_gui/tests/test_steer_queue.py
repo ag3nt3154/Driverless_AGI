@@ -102,7 +102,7 @@ def test_combine_keeps_order_and_images():
 
 
 def test_running_submission_is_queued_and_slash_commands_are_refused(monkeypatch):
-    from pyside_gui.app import DagiMainWindow
+    from pyside_gui.agent_session import AgentSession
 
     queued = []
     monkeypatch.setattr(SteerQueue, "for_window",
@@ -114,10 +114,10 @@ def test_running_submission_is_queued_and_slash_commands_are_refused(monkeypatch
         _worker=SimpleNamespace(is_alive=lambda: True), _current_loop_ref=[loop],
         _conversation=_Conversation(), _prompt=SimpleNamespace(restore_draft=restored.append),
     )
-    DagiMainWindow._on_input_submitted(win, "keep the old API")
+    AgentSession._on_input_submitted(win, "keep the old API")
     assert [s.text for s in queued] == ["keep the old API"]
 
-    DagiMainWindow._on_input_submitted(win, "/model x")
+    AgentSession._on_input_submitted(win, "/model x")
     assert len(queued) == 1
     assert restored and restored[0].text == "/model x"
     assert win._conversation.calls[-1][0] == "append_info"

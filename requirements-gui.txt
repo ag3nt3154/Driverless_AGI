@@ -2,6 +2,7 @@
 # Exact versions preserved from the original requirements.txt.
 # GUI imports TUI helpers, so it also needs the TUI group.
 -r requirements-tui.txt
+-r requirements-board.txt
 
 pyside6==6.11.2
 pyside6-addons==6.11.2

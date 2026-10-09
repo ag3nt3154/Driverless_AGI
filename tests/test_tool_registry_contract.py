@@ -78,7 +78,7 @@ def test_full_interactive_config_order(tmp_path):
     names = _names(config, tmp_path, callbacks=AgentCallbacks(), skill_roots=[tmp_path])
 
     assert names == _FILE_TOOLS + _SESSION_TOOLS + [
-        "switch_model", "reload_skills", "emote", "show_file", "read_notepad",
+        "switch_model", "reload_skills", "show_file", "read_notepad",
         "spawn_alpha", "spawn_beta", "extend_subagent_timeout", "project_x",
         "skill", "run_skill_script",
         "schedule_task", "list_scheduled_tasks", "remove_scheduled_task",
@@ -123,7 +123,7 @@ def test_extra_bash_and_partial_frontend_callbacks(tmp_path):
 
     names = [name for name, _ in reg.list_tools()]
     assert names == _FILE_TOOLS + ["bash_session"] + _SESSION_TOOLS + [
-        "reload_skills", "emote", "read_notepad", "extend_subagent_timeout", "write_handoff",
+        "reload_skills", "read_notepad", "extend_subagent_timeout", "write_handoff",
     ]
     assert reg.get("grep").allowed_roots == extra_roots
 
@@ -140,3 +140,12 @@ def test_code_mode_respects_disabled_tools(tmp_path):
     config = _config(tmp_path, code_mode=True, disabled_tools=["code"])
 
     assert "code" not in _names(config, tmp_path)
+
+
+def test_board_tools_take_emote_slot_before_show_file(tmp_path):
+    names = _names(_config(tmp_path), tmp_path, callbacks=AgentCallbacks(board=MagicMock()))
+    assert names == _FILE_TOOLS + _SESSION_TOOLS + [
+        "reload_skills", "read_board", "post_board", "fetch_attachment", "show_file",
+        "read_notepad", "spawn_alpha", "spawn_beta", "extend_subagent_timeout", "project_x",
+        "schedule_task", "list_scheduled_tasks", "remove_scheduled_task", "write_handoff",
+    ]

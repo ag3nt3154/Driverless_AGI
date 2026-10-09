@@ -57,25 +57,26 @@ def test_main_window_wires_scroll_request_to_conversation(
             super().__init__()
 
     monkeypatch.setattr("pyside_gui.app.LeftSidebar", FakeLeftSidebar)
-    monkeypatch.setattr("pyside_gui.app.ConversationView", FakeConversation)
     monkeypatch.setattr("pyside_gui.app.RightSidebar", FakeRightSidebar)
-    monkeypatch.setattr("pyside_gui.app.CopyPicker", lambda _view: object())
 
     window = DagiMainWindow.__new__(DagiMainWindow)
     QMainWindow.__init__(window)
-    window._project_path = tmp_path
     window._verbose = False
-    window._config = SimpleNamespace(
+    config = SimpleNamespace(
         display_name="test",
         context_window=1000,
         reserve_tokens=100,
         memory_root=None,
     )
-    DagiMainWindow._build_ui(window)
-
+    DagiMainWindow._build_ui(window, config, tmp_path)
+    first, second = FakeConversation(False), FakeConversation(False)
+    window._active = SimpleNamespace(_conversation=first)
+    window._right_sidebar.scroll_to_bottom_requested.emit()
+    window._active = SimpleNamespace(_conversation=second)
     window._right_sidebar.scroll_to_bottom_requested.emit()
 
-    assert window._conversation.scroll_calls == 1
+    # The button follows whichever agent is shown in the main chat.
+    assert (first.scroll_calls, second.scroll_calls) == (1, 1)
 
 
 def test_conversation_force_scroll_runs_unconditional_javascript() -> None:

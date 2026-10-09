@@ -15,6 +15,7 @@ from pyside_gui.icons import icon
 from pyside_gui.theme import qss
 
 from pyside_gui.sidebars import (
+    AgentsView,
     FileTreeView,
     FileViewerView,
     MessageBoardView,
@@ -22,9 +23,9 @@ from pyside_gui.sidebars import (
     SessionHistoryView,
 )
 
-_VIEW_NAMES = ("history", "files", "viewer", "plan", "board")
-_RAIL_ICONS = ("history", "folder", "file", "plan", "board")
-_RAIL_TIPS = ("Session history", "Files", "File viewer", "Plan", "Message board")
+_VIEW_NAMES = ("history", "files", "viewer", "plan", "board", "agents")
+_RAIL_ICONS = ("history", "folder", "file", "plan", "board", "agents")
+_RAIL_TIPS = ("Session history", "Files", "File viewer", "Plan", "Message board", "Agents")
 _RAIL_WIDTH = 44
 
 _RAIL_CSS = qss("""
@@ -103,11 +104,13 @@ class LeftSidebar(QWidget):
         self._file_viewer = FileViewerView()
         self._plan_view = PlanView()
         self._board_view = MessageBoardView()
+        self._agents_view = AgentsView()
         self._panel.addWidget(self._history_view)
         self._panel.addWidget(self._file_tree)
         self._panel.addWidget(self._file_viewer)
         self._panel.addWidget(self._plan_view)
         self._panel.addWidget(self._board_view)
+        self._panel.addWidget(self._agents_view)
 
         self._file_tree.file_selected.connect(
             self._on_file_selected
@@ -171,6 +174,10 @@ class LeftSidebar(QWidget):
     @property
     def board_view(self) -> MessageBoardView:
         return self._board_view
+
+    @property
+    def agents_view(self) -> AgentsView:
+        return self._agents_view
 
     def update_plan(self, subtasks: list[dict], title: str = "") -> None:
         """Push plan data to the plan view (delegation for main-window code)."""

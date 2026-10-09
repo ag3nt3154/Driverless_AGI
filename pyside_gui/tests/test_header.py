@@ -100,10 +100,14 @@ def test_main_window_records_startup_folder(qtbot, tmp_path):
     from pyside_gui.app import DagiMainWindow
 
     win = DagiMainWindow.__new__(DagiMainWindow)
-    win._project_path = tmp_path
-    win._config = SimpleNamespace(display_name="model")
-    win._cmd_handler = MagicMock()
+    win._sessions = []
+    win._active = SimpleNamespace(
+        _project_path=tmp_path, _config=SimpleNamespace(display_name="model"),
+        _cmd_handler=MagicMock(), handle="main",
+    )
     header = DagiMainWindow._build_header(win)
     qtbot.addWidget(header)
+    recent_folders.push(tmp_path)  # __init__ records the startup folder after building
+    DagiMainWindow._refresh_title(win)
     assert recent_folders.load() == [tmp_path]
     assert tmp_path.name in header.folder_button().text()

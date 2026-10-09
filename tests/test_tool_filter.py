@@ -62,42 +62,42 @@ class TestConfigDrivenFilter:
         reg = create_tool_registry(cwd=Path("."), config=self._config(tools=None))
         names = {n for n, _ in reg.list_tools()}
         assert "bash" in names and "read" in names
-        assert "emote" not in names
+        assert {"read_board", "post_board", "fetch_attachment"}.isdisjoint(names)
 
-    def test_emote_registered_only_in_normal_mode_with_callbacks(self, tmp_path):
+    def test_post_board_registered_only_in_normal_mode_with_callbacks(self, tmp_path):
         from agent._loop_config import AgentCallbacks
         cfg = self._config(tools=None)
         cfg.project_path = tmp_path
-        cb = AgentCallbacks(on_message_board_post=lambda *a: None)
+        cb = AgentCallbacks(board=MagicMock())
         reg = create_tool_registry(
             cwd=tmp_path,
             config=cfg,
             callbacks=cb,
         )
         names = {n for n, _ in reg.list_tools()}
-        assert "emote" in names
+        assert "post_board" in names
 
-    def test_emote_allowlist_must_name_tool_explicitly(self, tmp_path):
+    def test_post_board_allowlist_must_name_tool_explicitly(self, tmp_path):
         from agent._loop_config import AgentCallbacks
         cfg = self._config(tools=["read"])
         cfg.project_path = tmp_path
-        cb = AgentCallbacks(on_message_board_post=lambda *a: None)
+        cb = AgentCallbacks(board=MagicMock())
         reg = create_tool_registry(
             cwd=tmp_path,
             config=cfg,
             callbacks=cb,
         )
         names = {n for n, _ in reg.list_tools()}
-        assert "emote" not in names
+        assert {"read_board", "post_board", "fetch_attachment"}.isdisjoint(names)
 
-        cfg.tools = ["read", "emote"]
+        cfg.tools = ["read", "post_board"]
         reg = create_tool_registry(
             cwd=tmp_path,
             config=cfg,
             callbacks=cb,
         )
         names = {n for n, _ in reg.list_tools()}
-        assert "emote" in names
+        assert "post_board" in names
 
     def test_tools_list_filters_registry(self):
         reg = create_tool_registry(cwd=Path("."), config=self._config(tools=["read", "grep"]))

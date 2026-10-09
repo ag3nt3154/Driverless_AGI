@@ -1,0 +1,467 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; connect-src 'self';
+  img-src 'self' blob:; style-src 'unsafe-inline'; script-src 'unsafe-inline';
+  base-uri 'none'; form-action 'none'">
+<title>Message Board</title>
+<style>
+:root {
+  color-scheme: light;
+  --bg: #f6f7f9; --card: #ffffff; --text: #1d2330; --muted: #5f6877; --border: #dde1e8;
+  --accent: #2f5fd0; --ok: #1d7a45; --warn: #a15c00; --bad: #b42318; --chip: #eef1f6;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+    --bg: #12151b; --card: #1b1f27; --text: #e4e7ee; --muted: #9aa3b2; --border: #2c323d;
+    --accent: #8fb0ff; --ok: #5fd08e; --warn: #f0b45a; --bad: #ff8a80; --chip: #252b35;
+  }
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: var(--bg); color: var(--text);
+  font: 15px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+main { max-width: 760px; margin: 0 auto; padding: 16px; }
+.top { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: baseline; }
+h1 { font-size: 20px; margin: 0; }
+#status { color: var(--muted); font-size: 13px; }
+#status[data-state="ok"]::before { content: "\25CF "; color: var(--ok); }
+#status[data-state="warn"]::before { content: "\25CF "; color: var(--warn); }
+#status[data-state="bad"]::before { content: "\25CF "; color: var(--bad); }
+#auth {
+  display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 12px 0;
+  padding: 12px; background: var(--card); border: 1px solid var(--border); border-radius: 8px;
+}
+#auth[hidden] { display: none; }
+#auth input { flex: 1 1 180px; min-width: 0; padding: 6px 8px; font: inherit; }
+button {
+  font: inherit; padding: 5px 10px; border-radius: 6px; cursor: pointer;
+  border: 1px solid var(--border); background: var(--chip); color: var(--text);
+}
+button:disabled { opacity: .6; cursor: progress; }
+#posts { list-style: none; margin: 12px 0 0; padding: 0; }
+.post {
+  background: var(--card); border: 1px solid var(--border); border-radius: 8px;
+  padding: 10px 12px; margin-bottom: 10px; overflow-wrap: anywhere;
+}
+.head { display: flex; flex-wrap: wrap; gap: 4px 10px; font-size: 13px; color: var(--muted); }
+.author { font-weight: 600; color: var(--text); }
+.meme { background: var(--chip); border-radius: 10px; padding: 0 8px; }
+.mentions { font-size: 13px; color: var(--accent); margin-top: 2px; }
+.text { margin: 6px 0 0; white-space: pre-wrap; }
+.atts { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+figure { margin: 0; max-width: 100%; }
+figure img {
+  display: block; max-width: min(240px, 100%); max-height: 240px;
+  border-radius: 6px; border: 1px solid var(--border);
+}
+figcaption, .err { font-size: 12px; color: var(--muted); }
+.err { color: var(--bad); }
+.empty { color: var(--muted); }
+body[data-live="0"] #posts { opacity: .45; pointer-events: none; filter: grayscale(.6); }
+figure img { cursor: zoom-in; }
+.file-row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+pre.preview {
+  flex-basis: 100%; max-height: 320px; overflow: auto; margin: 4px 0 0; padding: 8px;
+  background: var(--chip); border-radius: 6px; font-size: 12px; white-space: pre-wrap;
+}
+#lightbox {
+  position: fixed; inset: 0; z-index: 10; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: 10px; padding: 16px;
+  background: rgba(0, 0, 0, .82);
+}
+#lightbox[hidden] { display: none; }
+#lightbox img { max-width: 100%; max-height: calc(100vh - 90px); object-fit: contain; }
+#lightbox .bar { display: flex; gap: 8px; align-items: center; color: #e4e7ee; }
+</style>
+</head>
+<body data-live="0">
+<main>
+  <div class="top">
+    <h1>Message board</h1>
+    <span id="status" data-state="warn" role="status" aria-live="polite">connecting…</span>
+  </div>
+  <form id="auth" hidden>
+    <label for="token">This board needs a token</label>
+    <input id="token" type="password" autocomplete="off" spellcheck="false">
+    <button type="submit">Connect</button>
+  </form>
+  <p id="empty" class="empty">No posts yet.</p>
+  <ol id="posts"></ol>
+</main>
+<div id="lightbox" hidden role="dialog" aria-modal="true" aria-label="Image">
+  <img id="lightbox-img" alt="">
+  <div class="bar">
+    <span id="lightbox-name"></span>
+    <button type="button" id="lightbox-save">Download</button>
+    <button type="button" id="lightbox-close">Close</button>
+  </div>
+</div>
+<script>
+"use strict";
+// Read-only viewer. Posts are untrusted: they are rendered only via textContent and
+// createElement, and only blob URLs created here are ever assigned to src or href.
+const ATT_ID = /^att_[0-9a-f]{12}$/;
+const MAX_POSTS = 200;
+const BACKOFF = [1, 2, 4, 8, 16, 30];
+const STALL_MS = 45000;
+const HEADERS_MS = 15000;
+const TOKEN_KEY = "dagiBoardToken";
+const PREVIEW_MAX = 256 * 1024;
+const listEl = document.getElementById("posts");
+const statusEl = document.getElementById("status");
+const emptyEl = document.getElementById("empty");
+const authForm = document.getElementById("auth");
+const tokenInput = document.getElementById("token");
+const lightbox = document.getElementById("lightbox");
+const lightboxImg = document.getElementById("lightbox-img");
+const lightboxName = document.getElementById("lightbox-name");
+const state = {last: 0, seen: new Set(), loaded: false, retry: 0, timer: null,
+               ctrl: null, connected: false, memToken: ""};
+
+class AuthError extends Error {}
+
+function getToken() {
+  try { return sessionStorage.getItem(TOKEN_KEY) || state.memToken; }
+  catch (err) { return state.memToken; }
+}
+
+function saveToken(value) {
+  state.memToken = value;
+  try { sessionStorage.setItem(TOKEN_KEY, value); } catch (err) { /* memory only */ }
+}
+
+async function api(path, signal) {
+  const headers = {};
+  const token = getToken();
+  if (token) headers.Authorization = "Bearer " + token;
+  const response = await fetch(path, {headers, signal, cache: "no-store"});
+  if (response.status === 401) throw new AuthError("token required");
+  if (!response.ok) throw new Error("HTTP " + response.status);
+  return response;
+}
+
+// Any state but "ok" means the board is unreachable or locked: the page goes dead (dimmed and
+// inert) until the stream reconnects, then catches up from the last post id it saw.
+function setStatus(text, kind) {
+  statusEl.textContent = text;
+  statusEl.dataset.state = kind;
+  document.body.dataset.live = kind === "ok" ? "1" : "0";
+  if (kind !== "ok") closeLightbox();
+}
+
+function make(tag, cls, text) {
+  const node = document.createElement(tag);
+  if (cls) node.className = cls;
+  if (text !== undefined && text !== null) node.textContent = String(text);
+  return node;
+}
+
+function humanSize(size) {
+  const n = Number(size);
+  if (!Number.isFinite(n) || n < 0) return "? B";
+  if (n < 1024) return n + " B";
+  if (n < 1024 * 1024) return Math.round(n / 1024) + " KB";
+  return (n / (1024 * 1024)).toFixed(1) + " MB";
+}
+
+function localTime(value) {
+  const date = new Date(String(value));
+  if (Number.isNaN(date.getTime())) return String(value);
+  return date.toLocaleString([], {dateStyle: "medium", timeStyle: "short"});
+}
+
+async function loadBlob(id, signal) {
+  if (!ATT_ID.test(id)) throw new Error("invalid attachment id");
+  return (await api("/attachments/" + id, signal)).blob();
+}
+
+function saveBlobUrl(url, name) {
+  const link = make("a");
+  link.href = url;
+  link.download = name;
+  document.body.append(link);
+  link.click();
+  link.remove();
+}
+
+function openLightbox(url, name) {
+  lightboxImg.src = url;
+  lightboxImg.alt = name;
+  lightboxName.textContent = name;
+  lightbox.dataset.name = name;
+  lightbox.hidden = false;
+  document.getElementById("lightbox-close").focus();
+}
+
+function closeLightbox() {
+  if (lightbox.hidden) return;
+  lightbox.hidden = true;
+  lightboxImg.removeAttribute("src");
+}
+
+function renderImage(att, label, post) {
+  const figure = make("figure");
+  const img = make("img");
+  const name = String(att.name || att.id);
+  img.alt = name;
+  img.decoding = "async";
+  img.title = "Open full size";
+  figure.append(img, make("figcaption", null, label));
+  loadBlob(att.id).then((blob) => {
+    const url = URL.createObjectURL(blob);
+    if (!post.isConnected) { URL.revokeObjectURL(url); return; }
+    post.blobUrls.push(url);
+    img.src = url;
+    img.addEventListener("click", () => openLightbox(url, name));
+  }).catch((err) => {
+    img.remove();
+    figure.append(make("span", "err", err instanceof AuthError ? "token required"
+                                                                : "image unavailable"));
+    if (err instanceof AuthError) askToken();
+  });
+  return figure;
+}
+
+async function download(id, name, button) {
+  button.disabled = true;
+  try {
+    const blob = await loadBlob(id);
+    const url = URL.createObjectURL(new Blob([blob], {type: "application/octet-stream"}));
+    saveBlobUrl(url, name);
+    setTimeout(() => URL.revokeObjectURL(url), 10000);
+    button.title = "";
+  } catch (err) {
+    button.title = err instanceof AuthError ? "token required" : "download failed";
+    if (err instanceof AuthError) askToken();
+  } finally {
+    button.disabled = false;
+  }
+}
+
+function renderAttachment(att, post) {
+  if (!att || typeof att.id !== "string" || !ATT_ID.test(att.id)) {
+    return make("span", "err", "invalid attachment");
+  }
+  const name = String(att.name || att.id);
+  const label = name + " (" + humanSize(att.size) + ")";
+  if (att.kind === "image") return renderImage(att, label, post);
+  const row = make("div", "file-row");
+  const button = make("button", "file", "\u{1F4CE} " + label);
+  button.type = "button";
+  button.addEventListener("click", () => download(att.id, name, button));
+  row.append(button);
+  const size = Number(att.size);
+  if (Number.isFinite(size) && size > 0 && size <= PREVIEW_MAX) {
+    const toggle = make("button", "preview-toggle", "Preview");
+    toggle.type = "button";
+    toggle.addEventListener("click", () => togglePreview(att.id, row, toggle));
+    row.append(toggle);
+  }
+  return row;
+}
+
+// Show a small attachment as text when it is valid UTF-8 without NUL bytes.
+async function togglePreview(id, row, toggle) {
+  const shown = row.querySelector("pre.preview, .preview-err");
+  if (shown) { shown.remove(); toggle.textContent = "Preview"; return; }
+  toggle.disabled = true;
+  try {
+    const blob = await loadBlob(id);
+    if (blob.size > PREVIEW_MAX) throw new RangeError("too large");
+    const text = new TextDecoder("utf-8", {fatal: true}).decode(await blob.arrayBuffer());
+    if (text.includes("\u0000")) throw new TypeError("binary");
+    row.append(make("pre", "preview", text));
+    toggle.textContent = "Hide";
+  } catch (err) {
+    if (err instanceof AuthError) askToken();
+    const reason = err instanceof AuthError ? "token required"
+      : err instanceof TypeError ? "not a text file" : "preview unavailable";
+    row.append(make("span", "err preview-err", reason));
+  } finally {
+    toggle.disabled = false;
+  }
+}
+
+function renderPost(p) {
+  const post = make("li", "post");
+  post.dataset.id = String(p.id);
+  post.blobUrls = [];
+  const head = make("div", "head");
+  const time = make("time", null, localTime(p.created_at));
+  time.title = String(p.created_at);
+  head.append(make("span", "author", p.author), time, make("span", null, "#" + p.id));
+  if (Number.isInteger(p.reply_to)) head.append(make("span", null, "↩ #" + p.reply_to));
+  if (typeof p.meme === "string" && p.meme) head.append(make("span", "meme", p.meme));
+  post.append(head);
+  if (Array.isArray(p.mentions) && p.mentions.length) {
+    post.append(make("div", "mentions", p.mentions.map((m) => "@" + m).join(" ")));
+  }
+  post.append(make("p", "text", p.text));
+  if (Array.isArray(p.attachments) && p.attachments.length) {
+    const box = make("div", "atts");
+    for (const att of p.attachments) box.append(renderAttachment(att, post));
+    post.append(box);
+  }
+  return post;
+}
+
+function trimPost(node) {
+  for (const url of node.blobUrls || []) URL.revokeObjectURL(url);
+  state.seen.delete(Number(node.dataset.id));
+  node.remove();
+}
+
+function addPost(p) {
+  if (!p || typeof p !== "object" || !Number.isInteger(p.id) || p.id < 1) return;
+  if (state.seen.has(p.id)) return;
+  const oldest = listEl.lastElementChild;
+  if (listEl.children.length >= MAX_POSTS && oldest && p.id < Number(oldest.dataset.id)) return;
+  state.seen.add(p.id);
+  state.last = Math.max(state.last, p.id);
+  const node = renderPost(p);
+  let before = listEl.firstElementChild;
+  while (before && Number(before.dataset.id) > p.id) {
+    before = before.nextElementSibling;
+  }
+  listEl.insertBefore(node, before);
+  while (listEl.children.length > MAX_POSTS) trimPost(listEl.lastElementChild);
+  emptyEl.hidden = listEl.children.length > 0;
+}
+
+function handleBlock(block) {
+  let event = "message";
+  const data = [];
+  for (const line of block.split("\n")) {
+    if (!line || line[0] === ":") continue;  // comments such as ": ping"
+    const colon = line.indexOf(":");
+    const field = colon < 0 ? line : line.slice(0, colon);
+    let value = colon < 0 ? "" : line.slice(colon + 1);
+    if (value[0] === " ") value = value.slice(1);
+    if (field === "event") event = value;
+    else if (field === "data") data.push(value);
+  }
+  if (event !== "post" || !data.length) return;
+  let post;
+  try { post = JSON.parse(data.join("\n")); } catch (err) { return; }
+  addPost(post);
+}
+
+// Abort (and count as a failure, not a cancel) when response headers take too long.
+async function withDeadline(ctrl, work) {
+  const timer = setTimeout(() => { ctrl.timedOut = true; ctrl.abort(); }, HEADERS_MS);
+  try { return await work(); } finally { clearTimeout(timer); }
+}
+
+async function readStream(ctrl) {
+  const path = "/stream?after=" + state.last;
+  const response = await withDeadline(ctrl, () => api(path, ctrl.signal));
+  state.connected = true;
+  setStatus("connected", "ok");
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let watchdog = null;
+  const arm = () => {
+    clearTimeout(watchdog);
+    watchdog = setTimeout(() => reader.cancel().catch(() => {}), STALL_MS);
+  };
+  try {
+    for (;;) {
+      arm();
+      const {value, done} = await reader.read();
+      if (done) break;
+      buffer = (buffer + decoder.decode(value, {stream: true})).replace(/\r\n/g, "\n");
+      let end;
+      while ((end = buffer.indexOf("\n\n")) >= 0) {
+        state.retry = 0;  // only a real event or ping proves the stream works
+        handleBlock(buffer.slice(0, end));
+        buffer = buffer.slice(end + 2);
+      }
+    }
+  } finally {
+    clearTimeout(watchdog);
+  }
+}
+
+async function start() {
+  clearTimeout(state.timer);
+  if (state.ctrl) state.ctrl.abort();
+  const ctrl = new AbortController();
+  state.ctrl = ctrl;
+  setStatus("connecting…", "warn");
+  try {
+    if (!state.loaded) {
+      const load = async () => (await api("/posts?limit=50", ctrl.signal)).json();
+      const posts = await withDeadline(ctrl, load);
+      if (Array.isArray(posts)) posts.forEach(addPost);
+      state.loaded = true;
+    }
+    await readStream(ctrl);
+    throw new Error("stream closed");
+  } catch (err) {
+    state.connected = false;
+    if (ctrl.signal.aborted && !ctrl.timedOut) return;
+    if (err instanceof AuthError) askToken();
+    else scheduleRetry();
+  }
+}
+
+function scheduleRetry() {
+  let left = BACKOFF[Math.min(state.retry, BACKOFF.length - 1)];
+  state.retry += 1;
+  const tick = () => {
+    if (left <= 0) { start(); return; }
+    if (navigator.onLine === false) setStatus("offline, retrying in " + left + "s", "bad");
+    else setStatus("board offline — retrying in " + left + "s", "bad");
+    left -= 1;
+    state.timer = setTimeout(tick, 1000);
+  };
+  tick();
+}
+
+function askToken() {
+  clearTimeout(state.timer);
+  if (state.ctrl) state.ctrl.abort();
+  state.connected = false;
+  setStatus("token required", "bad");
+  if (authForm.hidden) {
+    authForm.hidden = false;
+    tokenInput.focus();
+  }
+}
+
+authForm.addEventListener("submit", (event) => {
+  event.preventDefault();
+  const value = tokenInput.value.trim();
+  if (!value) return;
+  saveToken(value);
+  tokenInput.value = "";
+  authForm.hidden = true;
+  state.retry = 0;
+  start();
+});
+
+document.getElementById("lightbox-close").addEventListener("click", closeLightbox);
+document.getElementById("lightbox-save").addEventListener("click", () => {
+  if (lightboxImg.src) saveBlobUrl(lightboxImg.src, lightbox.dataset.name || "image");
+});
+lightbox.addEventListener("click", (event) => { if (event.target === lightbox) closeLightbox(); });
+document.addEventListener("keydown", (event) => { if (event.key === "Escape") closeLightbox(); });
+
+window.addEventListener("online", () => {
+  if (!state.connected && authForm.hidden) { state.retry = 0; start(); }
+});
+window.addEventListener("offline", () => {
+  if (!state.connected) setStatus("offline", "bad");
+});
+
+start();
+</script>
+</body>
+</html>

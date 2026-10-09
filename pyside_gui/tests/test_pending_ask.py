@@ -13,7 +13,7 @@ from types import SimpleNamespace
 
 import pyside_gui  # noqa: F401 — must be imported before any PySide6 import
 
-from pyside_gui.app import DagiMainWindow
+from pyside_gui.agent_session import AgentSession
 
 
 class _Conversation:
@@ -73,7 +73,7 @@ def test_stale_pending_ask_does_not_swallow_the_next_task() -> None:
     evt, container = threading.Event(), []
     app = _submit_app(worker_alive=False, pending=evt, container=container)
 
-    DagiMainWindow._on_input_submitted(app, "next task")
+    AgentSession._on_input_submitted(app, "next task")
 
     assert [s.text for s in app.dispatched] == ["next task"]
     assert container == []
@@ -88,7 +88,7 @@ def test_live_pending_ask_answers_the_question() -> None:
     evt, container = threading.Event(), []
     app = _submit_app(worker_alive=True, pending=evt, container=container)
 
-    DagiMainWindow._on_input_submitted(app, "option b")
+    AgentSession._on_input_submitted(app, "option b")
 
     assert container == ["option b"]
     assert evt.is_set()
@@ -131,12 +131,16 @@ def _work_app() -> SimpleNamespace:
 
     def _invoke_on_main(slot: str, arg: str | None = None) -> None:
         app.slots.append(slot)
-        method = getattr(DagiMainWindow, slot)
+        method = getattr(AgentSession, slot)
         method(app, arg) if arg is not None else method(app)
 
     app._invoke_on_main = _invoke_on_main
+    app.is_active = True
+    app.win = SimpleNamespace(_prompt=app._prompt)
+    app.state_changed = SimpleNamespace(emit=lambda _session: None)
+    app._set_status = lambda _status: None
     app._hide_running = lambda: None
-    app._enable_input = lambda: DagiMainWindow._enable_input(app)
+    app._enable_input = lambda: AgentSession._enable_input(app)
     return app
 
 
@@ -145,7 +149,7 @@ def test_worker_exit_clears_a_pending_ask(monkeypatch) -> None:
     monkeypatch.setattr("pyside_gui._dispatch.AgentLoop", _StubLoop)
     app = _work_app()
 
-    DagiMainWindow._agent_work(app, "task", SimpleNamespace(), [])
+    AgentSession._agent_work(app, "task", SimpleNamespace(), [])
 
     assert app._pending_ask is None
     assert app._pending_ask_container is None
@@ -161,7 +165,7 @@ def test_worker_crash_clears_a_pending_ask(monkeypatch) -> None:
     monkeypatch.setattr("pyside_gui._dispatch.AgentLoop", _boom)
     app = _work_app()
 
-    DagiMainWindow._agent_work(app, "task", SimpleNamespace(), [])
+    AgentSession._agent_work(app, "task", SimpleNamespace(), [])
 
     assert app._pending_ask is None
     assert app.errors == ["provider exploded"]

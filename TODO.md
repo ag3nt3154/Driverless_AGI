@@ -1,6 +1,29 @@
 # TODO
 
+- [x] 2026-10-08: Inspect llama.cpp prefix-cache capacity and update rules at
+  `000bee54a544`; findings saved in central memory (`llama-cpp-prefix-cache.md`).
+  Verified `/slots` debug text and trace logs; no built-in saved-RAM-prefix listing endpoint.
+
 ## In progress
+
+- **Multi-agent follow-ups** (from the 2026-10-09 board + multi-agent task):
+  - Closing an agent mid-turn pauses its loop (`AgentLoop.interrupt`); there is no cancel, so
+    the paused daemon worker thread stays blocked until the GUI exits. Add a loop cancel.
+  - Header switcher chip and Ctrl+1…9 shortcuts; clickable handles on board posts.
+  - Spawned agents are not restored after a GUI restart.
+  - A remote `AgentHandle` (other machines, Ray) behind the same `AgentSession` seam.
+  - Posts made on a local fallback board are not copied to the central board.
+  - @mentions only wake agents of this GUI; agents on other machines still pull with
+    `read_board`. Mentions posted while the GUI was closed are not replayed.
+
+- **Message board follow-ups** (from the 2026-10-08 board API task):
+  - Garbage-collect attachments/blobs that were uploaded but never used in a post.
+  - `sanitize_name` (`services/message_board/blobs.py`) should strip bidi/format characters
+    (e.g. U+202E) that can spoof displayed and download names.
+  - `pyside_gui/bridge.py` `build_callbacks` is over 100 lines (pre-existing).
+  - `stop` with an open `/stream` client logs "timeout graceful shutdown exceeded" plus a
+    `CancelledError` traceback from the HTTP middleware into `.dagi/board/board.log`.
+    Shutdown still succeeds; close SSE generators on shutdown so the log stays clean.
 
 - **Events-log restore (if ever wired up)** — no shipped path restores a loop from
   `*.events.jsonl` (`/hist` uses tracker `raw_messages`). `SessionLog(seed=...)` does not
@@ -8,7 +31,7 @@
   Add a pairing check on seed before building any events-log restore.
 
 - **Session tool-chain improvements** (from the
-  [fix/session review](_CODEX_FIX_SESSION_REVIEW_2026-10-03.md)) — all items handled.
+  2026-10-03 fix/session review) — all items handled.
   Dropped: schema-arg validation (a clearer error still costs the retry); multi-step tool
   chains (needs a stop-rule language the review itself warns about).
   Done 2026-10-03:
@@ -181,6 +204,27 @@
 
 ## Completed
 
+- **Message board v1.1 + multi-agent spawning (2026-10-09)** — `python message_board.py`
+  (config `services.message_board` as URL or `{url, bind}`, token file
+  `.dagi/board/token`); the GUI retries an unreachable board once, then launches a local one
+  on `bind:<port>` (default `0.0.0.0`); board tab shows the URL, a fallback badge, Connect…,
+  and a "central board is back" switch; GUI Save as… for attachments; web viewer image overlay,
+  text preview and a dead/live offline state; `fetch_attachment` shows images to the model;
+  per-agent `AgentSession`s with an **Agents** rail view to spawn, open and close agents; the
+  main board handle persists; live @mentions wake agents (new turn or steer, 5-in-a-row cap
+  for agent-to-agent mentions); two-line board composer with @ autocomplete; wider board panel. Delivered on `task/board-multi-agent`;
+  [spec](wiki/tasks/2026-10-09_board-multi-agent/spec.md),
+  [plan](wiki/tasks/2026-10-09_board-multi-agent/plan.md). Still to do: the user runs the
+  manual checks in spec §7 (firewall/LAN, fallback and switch back, viewer outage, spawn).
+
+- **Message board API (2026-10-09)** — standalone board service (`services/message_board/`,
+  SQLite + attachments, web viewer, protected local `stop`), `agent/board_client.py`, the
+  `read_board`/`post_board`/`fetch_attachment` tools (replacing `emote`) and the GUI board
+  view with composer, auto-start and SSE listener. Delivered on `task/message-board-api`;
+  [spec](wiki/tasks/2026-10-08_message-board-api/spec.md),
+  [plan](wiki/tasks/2026-10-08_message-board-api/plan.md). Still to do: the Admiral runs the
+  manual A5 GUI checklist (spec §7).
+
 - **`main.py` UTF-8 stdout (2026-10-07)** — the single-shot CLI crashed with
   `UnicodeEncodeError` printing a result containing `→` on Windows (cp1252 stdout).
   `main()` now reconfigures stdout to UTF-8 with `errors="replace"`. Test:
@@ -250,8 +294,8 @@
   more and sent-image loads re-scroll. Tests in `pyside_gui/tests/test_scroll_to_bottom.py`.
 
 - **Session log review (2026-10-02)** — findings, causes, scriptable tool sequences and
-  instruction inconsistencies are in
-  [_CODEX_SESSION_LOG_REVIEW_2026-10-02.md](_CODEX_SESSION_LOG_REVIEW_2026-10-02.md).
+  instruction inconsistencies were recorded in
+  the 2026-10-02 session log review (since removed).
   Recommendations remain proposals; no runtime fixes were implemented.
   Marked the 32 reviewed families (55 files including companions) with
   `__reviewed_2026-10-02`; verified contents unchanged and updated evidence links.

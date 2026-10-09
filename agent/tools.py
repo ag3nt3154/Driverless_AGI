@@ -161,14 +161,20 @@ def _register_file_tools(
 
 def _register_frontend_tools(
     reg: ToolRegistry, callbacks: "AgentCallbacks | None", project_path: Path,
+    *, cwd: Path, roots: list[Path] | None, image_reader=None,
 ) -> None:
     """Tools that only exist when the frontend can display their output."""
     if callbacks is None:
         return
-    if callbacks.on_message_board_post is not None:
-        from tools.emote import EmoteTool
-        memes_root = _DAGI_ROOT / ".dagi" / "emotes" / "memes"
-        reg.register(EmoteTool(on_post=callbacks.on_message_board_post, memes_root=memes_root))
+    if callbacks.board is not None:
+        from tools.board import FetchAttachmentTool, PostBoardTool, ReadBoardTool
+        board = callbacks.board
+        reg.register(ReadBoardTool(session=board))
+        reg.register(PostBoardTool(session=board,
+                                  memes_root=_DAGI_ROOT / ".dagi" / "emotes" / "memes",
+                                  cwd=cwd, allowed_roots=roots))
+        reg.register(FetchAttachmentTool(session=board, cwd=cwd, allowed_roots=roots,
+                                         image_reader=image_reader))
     if callbacks.on_show_file is not None:
         from tools.show_file import ShowFileTool
         reg.register(ShowFileTool(on_show_file=callbacks.on_show_file, project_path=project_path))
@@ -187,6 +193,7 @@ def _register_session_tools(
     reg: ToolRegistry,
     *,
     cwd: Path,
+    roots: list[Path] | None,
     config: "AgentConfig | None",
     callbacks: "AgentCallbacks | None",
     tracker: "SessionTracker | None",
@@ -208,7 +215,9 @@ def _register_session_tools(
         from tools.switch_model import SwitchModelTool
         reg.register(SwitchModelTool())
     reg.register(ReloadSkillsTool())
-    _register_frontend_tools(reg, callbacks, config.project_path if config else cwd)
+    _register_frontend_tools(reg, callbacks, config.project_path if config else cwd,
+                             cwd=cwd, roots=roots,
+                             image_reader=_read_tool(cwd, roots, config).read_image)
     # Global pet notepad: file-backed, so it is readable from every frontend.
     from tools.read_notepad import ReadNotepadTool
     reg.register(ReadNotepadTool(on_flush=callbacks.on_flush_notepad if callbacks else None))
@@ -339,9 +348,11 @@ def create_tool_registry(
     tests), the raw web_search and web_fetch tools are registered instead.
     """
     reg = ToolRegistry()
-    _register_file_tools(reg, cwd, _sandbox_roots(cwd, allowed_roots, config), config)
+    roots = _sandbox_roots(cwd, allowed_roots, config)
+    _register_file_tools(reg, cwd, roots, config)
     _register_session_tools(
-        reg, cwd=cwd, config=config, callbacks=callbacks, tracker=tracker, bash_tool=bash_tool,
+        reg, cwd=cwd, roots=roots, config=config, callbacks=callbacks,
+        tracker=tracker, bash_tool=bash_tool,
     )
     if config is not None:
         _register_configured_tools(

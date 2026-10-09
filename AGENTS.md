@@ -1,6 +1,6 @@
 # AGENTS.md
 
-> Last updated: 2026-10-09 (Codex code-mode review refreshed; ordering contracts) | [README](README.md) | [TODO](TODO.md) | [Task specs & plans](wiki/tasks/)
+> Last updated: 2026-10-09 (Codex code-mode review refreshed; ordering contracts; board v1.1 + multi-agent spawning delivered) | [README](README.md) | [TODO](TODO.md) | [Task specs & plans](wiki/tasks/)
 
 ## Overview
 
@@ -24,6 +24,9 @@ session persistence, and multi-UI support (TUI, PySide desktop, Telegram).
   (`tests/test_loop_construction.py`), per-call dispatch events
   (`tests/test_end_turn_batch.py::TestDispatchEventTrace`), subagent argv
   (`tests/test_subagent_api.py::TestChildArgvContract`).
+- Board HTTP lives only in `agent/board_client.py`; posts never carry local paths.
+- GUI per-agent state lives in `AgentSession` (`pyside_gui/agent_session.py`); window chrome
+  (prompt, right sidebar, file viewer) only follows the active session.
 
 ### Coding standards
 
@@ -66,7 +69,7 @@ session persistence, and multi-UI support (TUI, PySide desktop, Telegram).
 - Python env `dagi` (`DEFAULT_PYTHON_ENV`) for all scripts and installs.
 - Install from the repo root: `python -m pip install -r requirements-core.txt`; add
   `-r requirements-gui.txt`, `-r requirements-tui.txt` or `-r requirements-tools.txt` as needed.
-- Tests: `C:\Users\alexr\miniconda3\envs\dagi\python.exe -u -m pytest -q -p no:pytest-qt`.
+- Tests: `C:\Users\alexr\anaconda3\envs\dagi\python.exe -u -m pytest -q -p no:pytest-qt`.
   `conda run` fully buffers stdout when not on a TTY (looks like a hang) — call the env's
   interpreter directly with `-u`. pytest-qt must be disabled as `-p no:pytest-qt` (not `no:qt`).
 - Hooks use `envs/dagi/python.exe` directly (`conda run` drops stdin).

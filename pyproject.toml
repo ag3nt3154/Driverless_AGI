@@ -11,10 +11,11 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+board = ["fastapi==0.142.4", "uvicorn==0.54.0", "python-multipart==0.0.32"]
 tui = ["textual>=0.80.0", "typer>=0.24,<0.25"]
 # GUI currently imports tui helpers; tui/__init__.py imports the Textual app.
 gui = [
-    "driverless-agi[tui]",
+    "driverless-agi[tui,board]",
     "pyside6>=6.11.2",
     "markdown-it-py>=4.0",
     "pygments>=2.20",
@@ -45,10 +46,14 @@ build-backend = "setuptools.build_meta"
 py-modules = ["main", "dagi_launch", "hist"]
 
 [tool.setuptools.packages.find]
-include = ["agent*", "tools*", "scheduler*", "tui*", "pyside_gui*", "tg*"]
+include = ["agent*", "tools*", "scheduler*", "tui*", "pyside_gui*", "tg*", "services.message_board*"]
 exclude = ["*.tests", "*.tests.*"]
+
+[tool.setuptools.package-data]
+"services.message_board" = ["static/*.html"]
 
 [tool.pytest.ini_options]
 pythonpath = ["."]
 testpaths = ["tests"]
 addopts = "-p no:pytest-qt"
+markers = ["slow: builds wheels and clean venvs (network); deselect with -m \"not slow\""]

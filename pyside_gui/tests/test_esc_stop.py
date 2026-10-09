@@ -106,22 +106,22 @@ def test_interrupt_freezes_the_stream_bubble_and_ignores_late_output(view):
 
 
 def _pause_window(streaming: bool, pending_ask=None, interrupted=True):
+    """Esc on a busy agent: the window delegates to the active session's stop()."""
     from types import SimpleNamespace
     from unittest.mock import MagicMock
 
-    from pyside_gui.app import DagiMainWindow
+    from pyside_gui.tests.session_stub import StubSession
 
-    win = DagiMainWindow.__new__(DagiMainWindow)
+    session = StubSession()
     loop = MagicMock()
     loop.interrupt.return_value = interrupted
-    win._worker = SimpleNamespace(is_alive=lambda: True)
-    win._current_loop_ref = [loop]
-    win._pending_ask = pending_ask
-    win._streaming_active = streaming
-    for name in ("_conversation", "_right_sidebar", "_left_sidebar", "_hide_running", "_enable_input"):
-        setattr(win, name, MagicMock())
-    DagiMainWindow._action_pause(win)
-    return win, loop
+    session._worker = SimpleNamespace(is_alive=lambda: True)
+    session._current_loop_ref = [loop]
+    session._pending_ask = pending_ask
+    session._streaming_active = streaming
+    session._enable_input = MagicMock()
+    session.stop()
+    return session, loop
 
 
 def test_pause_action_interrupts_and_freezes_a_live_stream():

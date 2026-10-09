@@ -8,7 +8,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Callable
+from typing import TYPE_CHECKING, Callable
+
+if TYPE_CHECKING:
+    from agent.board_client import BoardSession
 
 from agent.expression import ExpressionSnapshot
 from agent.process_state import ProcessSnapshot
@@ -202,10 +205,7 @@ class AgentCallbacks:
     on_stream_end:           Callable[[], None]    = field(default=lambda: None)
     on_assistant_text_delta: Callable[[str], None] = field(default=lambda t: None)
     on_reasoning_delta:      Callable[[str], None] = field(default=lambda t: None)
-    # Message board: emote tool posts (author, meme_name, asset_path, text, iso_timestamp)
-    on_message_board_post:   Callable[[str, str, str, str, str], None] = field(
-        default=lambda author, name, path, text, ts: None
-    )
+    board: "BoardSession | None" = None
     # Show file in the GUI viewer (path, optional line number)
     on_show_file: Callable[[str, int | None], None] = field(
         default=lambda path, line: None

@@ -27,7 +27,6 @@ def test_start_timers_does_not_require_removed_affect_config(monkeypatch):
     timer = MagicMock()
     monkeypatch.setattr("pyside_gui.app.QTimer", MagicMock(return_value=timer))
     window = DagiMainWindow.__new__(DagiMainWindow)
-    window._config = SimpleNamespace(expression_interval=1.0)
     window._tick_spinner = MagicMock()
     window._poll_plan = MagicMock()
 
@@ -45,6 +44,12 @@ def test_tool_started_signal_emits():
     _app.processEvents()
     assert len(received) == 1
     assert received[0] == ("bash", '{"command": "ls"}')
+
+
+def test_build_callbacks_passes_board_session():
+    bridge = AgentBridge()
+    board = object()
+    assert bridge.build_callbacks(board=board).board is board
 
 
 def test_assistant_text_emits_raw_markdown():
@@ -89,21 +94,13 @@ def test_agent_done_emits():
 
 def test_stale_pending_ask_cleared_on_agent_done():
     """A timed-out ask_user must not swallow the next user message."""
-    from pyside_gui.app import DagiMainWindow
+    from pyside_gui.tests.session_stub import StubSession
 
-    app = DagiMainWindow.__new__(DagiMainWindow)
+    app = StubSession()
     bridge = AgentBridge()
     app._bridge = bridge
-    app._conversation = MagicMock()
-    app._right_sidebar = MagicMock()
-    app._prompt = MagicMock()
-    # The window is built via __new__ (no QMainWindow.__init__), so any path
-    # reaching the C++ base (e.g. _notify -> isActiveWindow) would raise.
     # Notifications are not this test's target — stub them out.
     app._notify = MagicMock()
-    app._run_start_time = None
-    app._running_label = MagicMock()
-    app._running_label.isVisible.return_value = False
 
     stale_event = threading.Event()
     app._pending_ask = stale_event

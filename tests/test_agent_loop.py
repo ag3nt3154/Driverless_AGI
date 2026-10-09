@@ -870,22 +870,22 @@ class TestSessionLogWiring:
         assert captured_kwargs["session_log"] is loop.log
 
     def test_main_loop_binds_expression_controller_before_registry_build(self, tmp_path):
-        """A normal main loop must expose emote when config allowlists it."""
+        """A normal main loop must expose post_board when config allowlists it."""
         from agent.expression import ExpressionController
 
         config = AgentConfig(
             api_key="test-key",
             project_path=tmp_path,
             system_prompt="{tools_and_skills}",
-            tools=["emote"],
+            tools=["post_board"],
         )
 
         with patch("openai.OpenAI"):
-            loop = AgentLoop(config=config)
+            loop = AgentLoop(config=config, callbacks=AgentCallbacks(board=MagicMock()))
 
         names = {name for name, _description in loop.registry.list_tools()}
         assert isinstance(loop.tracker.expression_controller, ExpressionController)
-        assert "emote" in names
+        assert "post_board" in names
 
 
 class TestProcessLifecycle:
