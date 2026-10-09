@@ -262,9 +262,14 @@ models:
 # URLs for standalone dagi microservices. Omit a service to use its built-in default.
 services:
   doc_converter: "http://localhost:8100"  # Document converter service URL (start with: python -m services.doc_converter)
-  # Message board service (python -m services.message_board). The GUI auto-starts it when this
-  # URL is loopback. The bearer token is never set here: it comes from env DAGI_BOARD_TOKEN.
-  message_board: "http://127.0.0.1:8765"
+  # Message board service (python message_board.py). Either a URL string or {url, bind}.
+  # The GUI pings `url`; if it is still unreachable after one retry, the GUI launches a local
+  # board on `bind` (default 0.0.0.0, i.e. reachable on the LAN) at the URL's port.
+  # The bearer token is never set here: env DAGI_BOARD_TOKEN, else .dagi/board/token (generated
+  # on first non-loopback launch). Use the same token on every machine that shares a board.
+  message_board:
+    url: "http://127.0.0.1:8765"
+    bind: "0.0.0.0"
 
 # ── Telegram bot ──────────────────────────────────────────────────────────────
 # Configure the Telegram bot interface (telegram_bot.py entry point).

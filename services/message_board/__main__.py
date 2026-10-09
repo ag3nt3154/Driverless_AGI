@@ -1,4 +1,7 @@
-"""Run or stop the standalone board: python -m services.message_board."""
+"""Run or stop the standalone board: python message_board.py [serve|stop] [options].
+
+Defaults come from ``services.message_board`` in .dagi/config.yaml; flags override them.
+"""
 from __future__ import annotations
 
 import argparse
@@ -13,9 +16,10 @@ import uvicorn
 from agent import DAGI_ROOT
 
 from .app import create_app
-from .lifecycle import DEFAULT_URL, ShutdownControl, check_bind, stop_local
+from .lifecycle import ShutdownControl, check_bind, stop_local
 from .lifecycle import is_loopback_host as is_loopback_host
 from .runtime_records import remove_record, write_record
+from .settings import TOKEN_PATH, BoardSettings, ensure_token, load_settings, read_token
 from .store import BoardStore
 
 DEFAULT_ROOT = DAGI_ROOT / ".dagi" / "board"
@@ -60,17 +64,19 @@ class RecordServer(uvicorn.Server):
                 remove_record(self.runtime_dir, self.record_port, self.control.instance_id)
 
 
-def parse_args(argv=None):
+def parse_args(argv=None, settings: BoardSettings | None = None):
+    settings = settings or load_settings()
     parser = argparse.ArgumentParser(description="Standalone message board HTTP service")
     commands = parser.add_subparsers(dest="command")
     serve = commands.add_parser("serve", help="run the board in the foreground (default)")
-    serve.add_argument("--host", default="127.0.0.1")
-    serve.add_argument("--port", type=int, default=8765)
+    serve.add_argument("--host", default=settings.bind)
+    serve.add_argument("--port", type=int, default=settings.port)
     serve.add_argument("--db", type=Path, default=DEFAULT_ROOT / "board.sqlite3")
-    serve.add_argument("--token", default=os.environ.get("DAGI_BOARD_TOKEN"))
+    serve.add_argument("--token", default=None,
+                       help="bearer token (default: env DAGI_BOARD_TOKEN, then the token file)")
     serve.add_argument("--runtime-dir", type=Path, default=DEFAULT_ROOT / "run")
     stop = commands.add_parser("stop", help="stop a local board using its protected capability")
-    stop.add_argument("--url", default=DEFAULT_URL)
+    stop.add_argument("--url", default=f"http://127.0.0.1:{settings.port}")
     stop.add_argument("--runtime-dir", type=Path, default=DEFAULT_ROOT / "run")
     arguments = list(sys.argv[1:] if argv is None else argv)
     if not arguments or arguments[0].startswith("--") and arguments[0] not in ("--help", "-h"):
@@ -78,7 +84,25 @@ def parse_args(argv=None):
     return parser.parse_args(arguments)
 
 
+def resolve_serve_token(host: str, explicit: str | None, path: Path = TOKEN_PATH) -> str | None:
+    """Resolve the serve token: ``--token``, then env DAGI_BOARD_TOKEN.
+
+    Only a non-loopback bind falls back to the token file, generating one when absent, so a
+    loopback board stays tokenless unless a token is given explicitly.
+    """
+    token = explicit or os.environ.get("DAGI_BOARD_TOKEN")
+    if token or is_loopback_host(host):
+        return token
+    existing = read_token(path)
+    if existing:
+        return existing
+    token = ensure_token(path)
+    print(f"message board: generated a bearer token in {path}", file=sys.stderr)
+    return token
+
+
 def serve_board(args) -> None:
+    args.token = resolve_serve_token(args.host, args.token)
     check_bind(args.host, args.token)
     store = BoardStore(args.db)
     control = ShutdownControl(uuid.uuid4().hex, secrets.token_hex(32), lambda: None)

@@ -1,5 +1,5 @@
 // Runs the viewer's inline script against a minimal fake DOM and a scripted board server.
-// Usage: node viewer_harness.js <index.html> <main|eof|hang>; prints a JSON report.
+// Usage: node viewer_harness.js <index.html> <main|eof|hang|outage|attach>; prints JSON.
 "use strict";
 const fs = require("fs");
 const vm = require("vm");
@@ -50,6 +50,13 @@ class El {
   addEventListener(type, fn) { (this.listeners[type] = this.listeners[type] || []).push(fn); }
   focus() {}
   click() {}
+  removeAttribute(name) { delete this[name]; }
+  querySelector(selector) {
+    const classes = selector.split(",").map((part) => part.trim().split(".").pop());
+    return this.children.find((node) => classes.some(
+      (cls) => String(node.className || "").split(" ").includes(cls))) || null;
+  }
+  fire(type, event = {}) { for (const fn of this.listeners[type] || []) fn(event); }
 }
 
 const root = new El("html");
@@ -57,11 +64,22 @@ const body = new El("body");
 root.append(body);
 const byId = {};
 for (const [id, tag] of [["posts", "ol"], ["status", "span"], ["empty", "p"],
-                         ["auth", "form"], ["token", "input"]]) {
+                         ["auth", "form"], ["token", "input"], ["lightbox", "div"],
+                         ["lightbox-img", "img"], ["lightbox-name", "span"],
+                         ["lightbox-save", "button"], ["lightbox-close", "button"]]) {
   byId[id] = new El(tag);
   body.append(byId[id]);
 }
 byId.auth.hidden = true;
+byId.lightbox.hidden = true;
+const liveHistory = [];
+let live;
+Object.defineProperty(body.dataset, "live", {
+  get: () => live,
+  set: (value) => { if (value !== live) liveHistory.push(value); live = value; },
+  enumerable: true,
+});
+const docListeners = {};
 byId.token.value = "";
 
 const encoder = new TextEncoder();
@@ -75,10 +93,15 @@ const image = {id: "att_0123456789ab", name: "plot.png", size: 2048, mime: "imag
 const initial = [post(1), post(2, {reply_to: 1, mentions: ["main_3f9a1c2e"], meme: "ok",
   attachments: [image, {id: "att_bad", name: "x", size: 1, kind: "image"},
                 {id: "att_ffffffffffff", name: "notes.md", size: 12, kind: "file"}]})];
+const notes = "# notes\n<b>not html</b>";
+const binary = {id: "att_eeeeeeeeeeee", name: "blob.bin", size: 3, kind: "file"};
+const big = {id: "att_dddddddddddd", name: "big.log", size: 300 * 1024, kind: "file"};
 
 const scenario = process.argv[3] || "main";
+if (scenario === "attach") initial[1].attachments.push(binary, big);
 const scale = scenario === "main" ? 1 : 20;  // eof/hang compress page timers 20x
 if (scenario !== "main") storage.set("dagiBoardToken", "secret");
+const outage = (n) => n >= 2 && n <= 3;  // stream calls 2 and 3 find the server down
 const history = [];
 let statusText = "";
 Object.defineProperty(byId.status, "textContent", {
@@ -122,7 +145,27 @@ async function fakeFetch(path, options) {
   if (path === "/attachments/" + image.id) {
     return new Response(new Blob([new Uint8Array([137, 80, 78, 71])], {type: "image/png"}));
   }
+  if (path === "/attachments/att_ffffffffffff") return new Response(new Blob([notes]));
+  if (path === "/attachments/" + binary.id) {
+    return new Response(new Blob([new Uint8Array([0, 1, 2])]));
+  }
+  if (kind === "/stream" && scenario === "outage") {
+    if (calls[kind] === 1) {
+      return new Response(new ReadableStream({async start(controller) {
+        controller.enqueue(encoder.encode(event(post(3))));
+        await sleep(30);
+        controller.error(new TypeError("network error"));
+      }}));
+    }
+    if (outage(calls[kind])) throw new TypeError("Failed to fetch");
+    return new Response(calls[kind] === 4
+      ? new ReadableStream({start(controller) {
+        controller.enqueue(encoder.encode(event(post(4)) + event(post(5)) + event(post(3))));
+      }})
+      : new ReadableStream({start() {}}));
+  }
   if (kind === "/stream") {
+    if (scenario === "attach") return new Response(new ReadableStream({start() {}}));
     if (scenario === "eof") return new Response(closeAtOnce());
     if (scenario === "hang") return new Response(pingForever());
     return new Response(calls[kind] === 1 ? firstStream() : new ReadableStream({start() {}}));
@@ -134,6 +177,7 @@ const context = {
   document: {
     getElementById: (id) => byId[id],
     createElement: (tag) => { const node = new El(tag); created.push(node); return node; },
+    addEventListener: (type, fn) => { (docListeners[type] = docListeners[type] || []).push(fn); },
     body,
   },
   window: {addEventListener() {}},
@@ -150,8 +194,8 @@ function countdowns() {
   // The first "reconnecting in Ns" of each countdown is the backoff delay chosen.
   const starts = [];
   history.forEach((text, i) => {
-    const match = /^reconnecting in (\d+)s$/.exec(text);
-    if (match && !/^reconnecting/.test(history[i - 1] || "")) starts.push(Number(match[1]));
+    const match = /^board offline — retrying in (\d+)s$/.exec(text);
+    if (match && !/^board offline/.test(history[i - 1] || "")) starts.push(Number(match[1]));
   });
   return starts;
 }
@@ -164,7 +208,34 @@ function snapshot() {
   return {status: statusText, authVisible: !byId.auth.hidden,
           token: storage.get("dagiBoardToken") || null, requests: requests.slice(), ids,
           hostileText: text ? text.textContent : null, imageSrc: img ? img.src || null : null,
-          revoked: revoked.slice(), countdowns: countdowns()};
+          revoked: revoked.slice(), countdowns: countdowns(), live, liveHistory: liveHistory.slice(),
+          statusHistory: history.slice()};
+}
+
+const findAll = (pred) => created.filter(pred);
+const button = (text) => findAll((node) => node.tagName === "BUTTON" && node.textContent === text);
+
+async function exerciseAttachments() {
+  const report = {};
+  const img = created.find((node) => node.tagName === "IMG" && node.src);
+  img.fire("click");
+  report.lightboxOpen = !byId.lightbox.hidden;
+  report.lightboxSrc = byId["lightbox-img"].src || null;
+  report.lightboxSameUrl = report.lightboxSrc === img.src;
+  report.lightboxName = byId["lightbox-name"].textContent;
+  for (const fn of docListeners.keydown || []) fn({key: "Escape"});
+  report.lightboxClosed = byId.lightbox.hidden && !byId["lightbox-img"].src;
+  report.previewButtons = button("Preview").length;  // big.log (300 KB) gets none
+  for (const toggle of button("Preview")) toggle.fire("click");
+  await sleep(100);
+  report.previews = findAll((node) => node.tagName === "PRE").map((node) => node.textContent);
+  report.previewErrors = findAll((node) => /preview-err/.test(node.className || ""))
+    .map((node) => node.textContent);
+  const notesRow = findAll((node) => node.tagName === "PRE")[0].parent;
+  const hide = notesRow.children.find((node) => node.textContent === "Hide");
+  hide.fire("click");
+  report.previewHidden = !notesRow.children.some((node) => node.tagName === "PRE");
+  return report;
 }
 
 (async () => {
@@ -175,7 +246,8 @@ function snapshot() {
     byId.token.value = " secret ";
     for (const fn of byId.auth.listeners.submit) fn({preventDefault() {}});
   }
-  await sleep(scenario === "eof" ? 1000 : 2000);
-  process.stdout.write(JSON.stringify({first, final: snapshot()}));
+  await sleep(scenario === "eof" ? 1000 : scenario === "attach" ? 300 : 2000);
+  const extra = scenario === "attach" ? await exerciseAttachments() : null;
+  process.stdout.write(JSON.stringify({first, final: snapshot(), extra}));
   process.exit(0);
 })().catch((err) => { console.error(err); process.exit(1); });

@@ -2,10 +2,12 @@
 from __future__ import annotations
 
 import stat
+from dataclasses import replace
 from pathlib import Path
 
 from agent._board_files import validate_attachment_id
 from agent.base_tool import BaseTool
+from agent.protocol import ToolResult
 from tools._path_guard import validate_path
 
 _MAX_FILE = 10 * 1024 * 1024
@@ -161,17 +163,26 @@ def _prepare_cache(cwd: Path, roots, attachment_id: str) -> None:
 
 class FetchAttachmentTool(BaseTool):
     name = "fetch_attachment"
-    description = "Save a board attachment locally so you can open it with read."
+    description = (
+        "Save a board attachment locally. An image attachment is also shown to you in the "
+        "next message; open any other file with read."
+    )
     _parameters = {"type": "object", "properties": {
         "attachment_id": {"type": "string", "pattern": "^att_[0-9a-f]{12}$"}},
         "required": ["attachment_id"]}
 
-    def __init__(self, *, session, cwd: Path, allowed_roots):
+    def __init__(self, *, session, cwd: Path, allowed_roots, image_reader=None):
         self._session, self._cwd, self._roots = session, cwd, allowed_roots
+        self._image_reader = image_reader
 
-    def run(self, attachment_id: str) -> str:
+    def run(self, attachment_id: str):
         validate_attachment_id(attachment_id)
         _prepare_cache(self._cwd, self._roots, attachment_id)
         att, path = self._session.fetch(attachment_id, self._cwd)
-        return (f"Saved {att['name']} ({human_size(att['size'])}, {att['kind']}) "
-                f"to {path} — open it with read.")
+        saved = f"Saved {att['name']} ({human_size(att['size'])}, {att['kind']}) to {path}"
+        if att.get("kind") != "image" or self._image_reader is None:
+            return f"{saved} — open it with read."
+        result = self._image_reader(Path(path))
+        if isinstance(result, ToolResult):
+            return replace(result, output=f"{saved}. {result.output}")
+        return f"{saved}, but it could not be shown: {result}"

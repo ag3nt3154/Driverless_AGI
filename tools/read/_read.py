@@ -140,6 +140,10 @@ class ReadTool(BaseTool):
             hint=hint,
         )
 
+    def read_image(self, p: Path) -> str | ToolResult:
+        """Image result for an already-validated path (used by fetch_attachment)."""
+        return self._read_image(p, None)
+
     def _read_image(self, p: Path, pages: str | None) -> str | ToolResult:
         """Load ``p`` and ask the loop to attach it for the model.
 

@@ -204,3 +204,51 @@ def test_malformed_fetch_and_registry_error(tools):
     registry.register(ReadBoardTool(session=SimpleNamespace(
         read=lambda **kwargs: (_ for _ in ()).throw(BoardError("UNREACHABLE", "board offline")))))
     assert registry.dispatch("read_board", {}) == "Error: board offline"
+
+
+def _png(path: Path) -> None:
+    from PIL import Image
+
+    Image.new("RGB", (4, 3), (255, 0, 0)).save(path, format="PNG")
+
+
+def test_fetched_image_is_attached_for_the_model(tools):
+    from agent.protocol import SideEffect
+    from tools.read import ReadTool
+
+    _png(tools.project / "red.png")
+    tools.post.run(text="look", attachments=["red.png"])
+    attachment = tools.session.client.posts()[0]["attachments"][0]
+    assert attachment["kind"] == "image"
+    reader = ReadTool(cwd=tools.project, allowed_roots=[tools.project])
+    fetch = FetchAttachmentTool(session=tools.session, cwd=tools.project,
+                                allowed_roots=[tools.project], image_reader=reader.read_image)
+    result = fetch.run(attachment_id=attachment["id"])
+    saved = tools.project / ".dagi/board/attachments" / attachment["id"] / "red.png"
+    assert result.side_effect is SideEffect.ATTACH_IMAGE
+    assert result.side_effect_data["path"] == str(saved)
+    image = result.side_effect_data["image"]
+    assert (image.width, image.height) == (4, 3)
+    assert result.output.startswith("Saved red.png (") and str(saved) in result.output
+    assert "attached in the next message" in result.output
+
+
+def test_unreadable_image_falls_back_to_text(tools):
+    _png(tools.project / "red.png")
+    tools.post.run(text="look", attachments=["red.png"])
+    attachment = tools.session.client.posts()[0]["attachments"][0]
+    fetch = FetchAttachmentTool(session=tools.session, cwd=tools.project,
+                                allowed_roots=[tools.project],
+                                image_reader=lambda path: "Error: too large")
+    result = fetch.run(attachment_id=attachment["id"])
+    assert isinstance(result, str) and result.endswith("could not be shown: Error: too large")
+
+
+def test_registry_wires_fetch_attachment_to_the_read_image_path(tmp_path):
+    from agent._loop_config import AgentCallbacks
+    from agent.tools import create_tool_registry
+
+    reg = create_tool_registry(cwd=tmp_path, callbacks=AgentCallbacks(board=object()))
+    fetch = reg.get("fetch_attachment")
+    assert fetch is not None and fetch._image_reader is not None
+    assert fetch._image_reader.__func__.__name__ == "read_image"

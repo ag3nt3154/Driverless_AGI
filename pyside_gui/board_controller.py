@@ -1,19 +1,20 @@
 """Main-window board lifecycle and worker coordination."""
 from __future__ import annotations
 
-import os
+import socket
 import threading
 from pathlib import Path
 
-from PySide6.QtCore import QObject, Signal, Slot
+from PySide6.QtCore import QObject, QTimer, Signal, Slot
 
 from agent import DAGI_ROOT
-from agent.board_client import BoardError
+from agent.board_client import BoardClient, BoardError, BoardSession
 from pyside_gui.board_downloads import DownloadPool
 from pyside_gui.board_runtime import (
-    _BACKOFF, DEFAULT_BOARD_URL, StreamListener, error_text, should_render_inline,
+    _BACKOFF, StreamListener, error_text, probe, register_runtime, should_render_inline,
     start_board, validate_user_files,
 )
+from services.message_board.settings import board_settings, resolve_token
 
 
 def _valid_snapshot(posts) -> tuple[list[dict], bool]:
@@ -23,8 +24,15 @@ def _valid_snapshot(posts) -> tuple[list[dict], bool]:
     return [p for p in posts if isinstance(p, dict) and type(p.get("id")) is int], True
 
 
+STATE_DIR = DAGI_ROOT / ".dagi" / "board"
+CENTRAL_PROBE_MS = 30_000
+
+
 class BoardController(QObject):
     _post_result = Signal(object)
+    _switch_done = Signal(object)  # (url, token, BoardRuntime | BoardError)
+    _central_state = Signal(object)  # (url, reachable)
+    _members_loaded = Signal(object)  # list of member handles
 
     def __init__(self, window) -> None:
         super().__init__(window)
@@ -39,7 +47,18 @@ class BoardController(QObject):
         self._idle = threading.Event()
         self._idle.set()
         self._error_shown = False
+        self._generation = 0  # bumps on every board switch; stale listeners are ignored
+        self._token = None
+        self._live_after: int | None = None  # posts above this id are live (may wake agents)
+        self._known_handles: set[str] = set()
+        self.sessions: list[BoardSession] = []  # every agent's session, main first
+        self._central_timer = QTimer(self)
+        self._central_timer.setInterval(CENTRAL_PROBE_MS)
+        self._central_timer.timeout.connect(self._probe_central)
         self._post_result.connect(self._on_post_result)
+        self._switch_done.connect(self._on_switched)
+        self._central_state.connect(self._on_central_state)
+        self._members_loaded.connect(self._on_members)
         self.downloads = DownloadPool(self._download)
         bridge = window._bridge
         bridge.board_ready.connect(self._on_ready)
@@ -47,16 +66,16 @@ class BoardController(QObject):
         bridge.board_status.connect(self._on_status)
         view = window._left_sidebar.board_view
         view.open_file_requested.connect(lambda path: window._left_sidebar.open_file(path, None))
+        view.connect_requested.connect(self.switch)
 
     def start(self) -> None:
-        services = getattr(self.window._config, "services", {}) or {}
-        url = services.get("message_board", DEFAULT_BOARD_URL)
-        token = os.environ.get("DAGI_BOARD_TOKEN") or None
-        state_dir = DAGI_ROOT / ".dagi" / "board"
+        settings = board_settings(getattr(self.window._config, "services", None))
+        token = self._token = resolve_token()
 
         def work() -> None:
             try:
-                result = start_board(url, token, state_dir=state_dir, cancel=self.cancel)
+                result = start_board(settings.url, token, state_dir=STATE_DIR,
+                                     bind=settings.bind, cancel=self.cancel)
             except BoardError as error:
                 result = error
             except Exception as error:
@@ -73,20 +92,163 @@ class BoardController(QObject):
         if isinstance(result, BoardError):
             self._on_status(f"Board offline — {result.message}")
             return
-        self.runtime = result
-        self.window._board_runtime = result
-        self.window._board_session = result.session
+        self.sessions = [result.session]
+        self._adopt(result)
+
+    def _adopt(self, runtime) -> None:
+        """Make ``runtime`` the live board: wire the view, show the address, load posts."""
+        self.runtime = runtime
+        self.window._board_runtime = runtime
+        self.window._board_session = self.sessions[0]
         view = self.window._left_sidebar.board_view
         view.set_poster(self.post)
         view.set_fetcher(self.downloads.submit)
-        self._run_worker(self._load_snapshot, "board-snapshot")
+        view.set_connection(runtime.url, runtime.central_url)
+        view.set_central_back(None)
+        if runtime.central_url:
+            self._central_timer.start()
+        else:
+            self._central_timer.stop()
+        hook = getattr(self.window, "_on_board_ready", None)
+        if hook is not None:
+            hook()
+        generation = self._generation
+        self._run_worker(lambda: self._load_snapshot(generation), "board-snapshot")
 
-    def _fetch_snapshot(self) -> list | None:
-        """Load recent posts, retrying with backoff until success or close."""
-        failures = 0
-        while not self.cancel.is_set():
+    # ── @mention autocomplete ───────────────────────────────────────────────────────────
+
+    @Slot(object)
+    def _on_members(self, handles) -> None:
+        self._known_handles.update(h for h in handles if isinstance(h, str))
+        self.refresh_mentions()
+
+    def refresh_mentions(self) -> None:
+        """Offer board members, seen authors and this GUI's agents to @ autocomplete."""
+        handles = set(self._known_handles)
+        handles.update(session.handle for session in self.sessions)
+        handles.discard(getattr(self.runtime, "user_handle", None))
+        self.window._left_sidebar.board_view.set_mention_candidates(handles)
+
+    # ── extra agents ────────────────────────────────────────────────────────────────────
+
+    def add_session(self, handle: str) -> BoardSession | None:
+        """Bind a spawned agent to the current board; None while the board is offline."""
+        if self.runtime is None or self.closing:
+            return None
+        session = BoardSession(self.runtime.client, handle)
+        self.sessions.append(session)
+        self.refresh_mentions()
+        client = self.runtime.client
+        self._run_worker(lambda: client.register(handle, "agent", host=socket.gethostname()),
+                         "board-register")
+        return session
+
+    def remove_session(self, session: BoardSession) -> None:
+        if session in self.sessions[1:]:
+            self.sessions.remove(session)
+            self.refresh_mentions()
+
+    # ── switching boards ────────────────────────────────────────────────────────────────
+
+    def switch(self, url: str, token=None) -> None:
+        """Connect every agent and the view to the board at ``url`` (worker, then UI thread)."""
+        if self.closing:
+            return
+        token = token if token is not None else self._token
+        extra = [session.handle for session in self.sessions[1:]]
+        self._on_status(f"Connecting to {url}…")
+
+        def work() -> None:
+            client = BoardClient(url, token, timeout=10.0)
             try:
-                return self.runtime.client.posts(limit=50)
+                if not probe(client, 5.0):
+                    raise BoardError("OFFLINE", "no board is answering there")
+                runtime = register_runtime(client, STATE_DIR)
+                for handle in extra:
+                    client.register(handle, "agent", host=socket.gethostname())
+                runtime.url = url
+            except Exception as error:
+                client.close()
+                if not isinstance(error, BoardError):
+                    error = BoardError("SWITCH_FAILED", error_text(error))
+                self._switch_done.emit((url, token, error))
+                return
+            self._switch_done.emit((url, token, runtime))
+
+        self._run_worker(work, "board-switch")
+
+    @Slot(object)
+    def _on_switched(self, outcome) -> None:
+        url, token, result = outcome
+        if self.closing:
+            self._close_result(result)
+            return
+        view = self.window._left_sidebar.board_view
+        if isinstance(result, BoardError):
+            if result.code in ("UNAUTHORIZED", "FORBIDDEN"):
+                self._on_status(f"{url} needs a token.")
+                view.ask_token(url)
+            else:
+                self._on_status(f"Cannot connect to {url} — {result.message}")
+            return
+        old_runtime = self.runtime
+        with self._listener_lock:
+            self._generation += 1
+            old_listener, self.listener = self.listener, None
+            self.window._board_listener = None
+        if old_listener is not None:
+            old_listener.stop()
+        if not self.sessions:
+            self.sessions = [result.session]
+        for session in self.sessions:
+            session.rebind(result.client)
+        result.session = self.sessions[0]
+        self._token = token
+        self._live_after = None
+        self._known_handles = set()
+        view.clear_posts()
+        self._adopt(result)
+        if old_runtime is not None:
+            threading.Thread(target=self._retire, args=(old_runtime, old_listener),
+                             daemon=True, name="board-retire").start()
+
+    @staticmethod
+    def _retire(runtime, listener) -> None:
+        if listener is not None:
+            listener.join()
+        runtime.client.close()
+
+    def _probe_central(self) -> None:
+        url = self.runtime.central_url if self.runtime is not None else None
+        if not url or self.closing:
+            return
+        token = self._token
+
+        def work() -> None:
+            client = BoardClient(url, token, timeout=3.0)
+            try:
+                reachable = probe(client, 3.0)
+            except BoardError:
+                reachable = True  # something answers there; switching reports the details
+            finally:
+                client.close()
+            self._central_state.emit((url, reachable))
+
+        self._run_worker(work, "board-central-probe")
+
+    @Slot(object)
+    def _on_central_state(self, outcome) -> None:
+        url, reachable = outcome
+        if self.closing or self.runtime is None or self.runtime.central_url != url:
+            return
+        self.window._left_sidebar.board_view.set_central_back(url if reachable else None)
+
+    def _fetch_snapshot(self, runtime) -> list | None:
+        """Load recent posts, retrying with backoff until success, close or a switch."""
+        failures = 0
+        while not self.cancel.is_set() and self.runtime is runtime:
+            try:
+                return runtime.client.posts(limit=50)
             except Exception as error:
                 delay = _BACKOFF[min(failures, len(_BACKOFF) - 1)]
                 failures += 1
@@ -97,10 +259,17 @@ class BoardController(QObject):
                     return None
         return None
 
-    def _load_snapshot(self) -> None:
-        raw = self._fetch_snapshot()
-        if raw is None or self.closing:
+    def _load_snapshot(self, generation: int | None = None) -> None:
+        generation = self._generation if generation is None else generation
+        runtime = self.runtime
+        raw = self._fetch_snapshot(runtime)
+        if raw is None or self.closing or generation != self._generation:
             return
+        try:
+            members = runtime.client.members()
+        except Exception:  # autocomplete still learns handles from posts
+            members = []
+        self._members_loaded.emit([m.get("handle") for m in members if isinstance(m, dict)])
         posts, is_list = _valid_snapshot(raw)
         if not is_list:
             self.window._bridge.board_status.emit(
@@ -109,12 +278,19 @@ class BoardController(QObject):
         for post in posts:
             self.window._bridge.board_post.emit(post)
         after = max((post["id"] for post in posts), default=0)
+        self._live_after = after
+        bridge = self.window._bridge
+
+        def current() -> bool:
+            return generation == self._generation
+
         listener = StreamListener(
-            self.runtime.client, after, self.window._bridge.board_post.emit,
-            self.window._bridge.board_status.emit,
+            runtime.client, after,
+            lambda post: current() and bridge.board_post.emit(post),
+            lambda text: current() and bridge.board_status.emit(text),
         )
         with self._listener_lock:
-            if self.closing:
+            if self.closing or not current():
                 return
             self.listener = listener
             self.window._board_listener = listener
@@ -127,12 +303,29 @@ class BoardController(QObject):
         self.window._left_sidebar.board_view.add_post(post)
         if self.runtime is None:
             return
+        author = post.get("author")
+        if isinstance(author, str) and author not in self._known_handles:
+            self._known_handles.add(author)
+            self.refresh_mentions()
+        live = self._live_after is not None and type(post.get("id")) is int             and post["id"] > self._live_after
+        hook = getattr(self.window, "_on_board_mention", None)
+        if live and post.get("mentions") and hook is not None:
+            hook(post, getattr(self.runtime, "user_handle", None))
         memes = self.window._left_sidebar.board_view.meme_map
-        path = should_render_inline(post, self.runtime.session.handle, memes)
-        if path is not None:
-            self.window._conversation.append_emote(
-                post["meme"], str(path), post.get("text", ""), post.get("created_at", "")
-            )
+        for handle, conversation in self._conversations():
+            path = should_render_inline(post, handle, memes)
+            if path is not None:
+                conversation.append_emote(
+                    post["meme"], str(path), post.get("text", ""), post.get("created_at", "")
+                )
+
+    def _conversations(self):
+        """(board handle, conversation) for each agent; an agent's memes show in its own chat."""
+        sessions = getattr(self.window, "_sessions", None)
+        if sessions is None:
+            return [(self.runtime.session.handle, self.window._conversation)]
+        return [(s._board_session.handle, s._conversation)
+                for s in sessions if s._board_session is not None]
 
     @Slot(str)
     def _on_status(self, text: str) -> None:
@@ -210,6 +403,7 @@ class BoardController(QObject):
             raise
 
     def close(self) -> None:
+        self._central_timer.stop()
         with self._listener_lock:
             self.closing = True
             listener = self.listener
@@ -234,5 +428,7 @@ class BoardController(QObject):
 
     @staticmethod
     def _close_result(result) -> None:
+        if isinstance(result, tuple):
+            result = result[-1]
         if not isinstance(result, BoardError):
             threading.Thread(target=result.client.close, daemon=True).start()

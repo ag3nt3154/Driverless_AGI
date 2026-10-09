@@ -20,11 +20,11 @@ def _make_window(
 
     window = DagiMainWindow.__new__(DagiMainWindow)
     window._left_sidebar = MagicMock()
-    window._current_loop_ref = (
+    window._active = SimpleNamespace(_current_loop_ref=(
         [SimpleNamespace(config=SimpleNamespace(active_plan_file=plan_path))]
         if bound
         else []
-    )
+    ))
     return window
 
 

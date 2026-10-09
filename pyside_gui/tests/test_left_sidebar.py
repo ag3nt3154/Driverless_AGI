@@ -71,9 +71,9 @@ def test_set_project_path(sidebar, tmp_path):
 
 
 def test_rail_has_one_button_per_view(sidebar):
-    # history, files, viewer, plan, board
-    assert len(sidebar._rail_buttons) == 5
-    assert sidebar._panel.count() == 5
+    # history, files, viewer, plan, board, agents
+    assert len(sidebar._rail_buttons) == 6
+    assert sidebar._panel.count() == 6
 
 
 def test_activate_plan_expands_to_plan_view(sidebar):

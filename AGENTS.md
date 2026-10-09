@@ -1,6 +1,6 @@
 # AGENTS.md
 
-> Last updated: 2026-10-09 (message board API delivered; Codex review refreshed) | [README](README.md) | [TODO](TODO.md) | [Task specs & plans](wiki/tasks/)
+> Last updated: 2026-10-09 (board v1.1 + multi-agent spawning delivered) | [README](README.md) | [TODO](TODO.md) | [Task specs & plans](wiki/tasks/)
 
 ## Overview
 
@@ -25,6 +25,8 @@ session persistence, and multi-UI support (TUI, PySide desktop, Telegram).
   (`tests/test_end_turn_batch.py::TestDispatchEventTrace`), subagent argv
   (`tests/test_subagent_api.py::TestChildArgvContract`).
 - Board HTTP lives only in `agent/board_client.py`; posts never carry local paths.
+- GUI per-agent state lives in `AgentSession` (`pyside_gui/agent_session.py`); window chrome
+  (prompt, right sidebar, file viewer) only follows the active session.
 
 ### Coding standards
 

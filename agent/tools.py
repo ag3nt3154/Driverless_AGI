@@ -161,7 +161,7 @@ def _register_file_tools(
 
 def _register_frontend_tools(
     reg: ToolRegistry, callbacks: "AgentCallbacks | None", project_path: Path,
-    *, cwd: Path, roots: list[Path] | None,
+    *, cwd: Path, roots: list[Path] | None, image_reader=None,
 ) -> None:
     """Tools that only exist when the frontend can display their output."""
     if callbacks is None:
@@ -173,7 +173,8 @@ def _register_frontend_tools(
         reg.register(PostBoardTool(session=board,
                                   memes_root=_DAGI_ROOT / ".dagi" / "emotes" / "memes",
                                   cwd=cwd, allowed_roots=roots))
-        reg.register(FetchAttachmentTool(session=board, cwd=cwd, allowed_roots=roots))
+        reg.register(FetchAttachmentTool(session=board, cwd=cwd, allowed_roots=roots,
+                                         image_reader=image_reader))
     if callbacks.on_show_file is not None:
         from tools.show_file import ShowFileTool
         reg.register(ShowFileTool(on_show_file=callbacks.on_show_file, project_path=project_path))
@@ -215,7 +216,8 @@ def _register_session_tools(
         reg.register(SwitchModelTool())
     reg.register(ReloadSkillsTool())
     _register_frontend_tools(reg, callbacks, config.project_path if config else cwd,
-                             cwd=cwd, roots=roots)
+                             cwd=cwd, roots=roots,
+                             image_reader=_read_tool(cwd, roots, config).read_image)
     # Global pet notepad: file-backed, so it is readable from every frontend.
     from tools.read_notepad import ReadNotepadTool
     reg.register(ReadNotepadTool(on_flush=callbacks.on_flush_notepad if callbacks else None))

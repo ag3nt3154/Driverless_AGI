@@ -21,6 +21,8 @@ _PATHS: dict[str, str] = {
     "file": '<path d="M6 3h8l4 4v14H6z"/><path d="M14 3v4h4"/>',
     "plan": '<path d="M9 6h11M9 12h11M9 18h11"/><path d="M4 6l1 1 2-2M4 12l1 1 2-2"/><circle cx="5" cy="18" r="1"/>',
     "board": '<path d="M4 5h16v11H9l-5 4z"/>',
+    "agents": '<circle cx="9" cy="8" r="3"/><path d="M3 19c0-3.3 2.7-5 6-5s6 1.7 6 5"/>'
+              '<circle cx="17" cy="9" r="2.3"/><path d="M16.5 14c2.6.2 4.5 1.9 4.5 5"/>',
     "panel_left": '<rect x="3" y="4" width="18" height="16" rx="3"/><path d="M9 4v16"/>',
     "panel_right": '<rect x="3" y="4" width="18" height="16" rx="3"/><path d="M15 4v16"/>',
     "plus": '<path d="M12 5v14M5 12h14"/>',

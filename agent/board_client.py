@@ -338,6 +338,12 @@ class BoardSession:
         self._lock = threading.Lock()
         self._cursors = {False: None, True: None}
 
+    def rebind(self, client: BoardClient) -> None:
+        """Point this identity at another board; read cursors restart there."""
+        with self._lock:
+            self.client = client
+            self._cursors = {False: None, True: None}
+
     def read(self, limit: int = 20, mentions_only: bool = False) -> list[dict]:
         with self._lock:
             posts = self.client.posts(after=self._cursors[mentions_only], limit=limit,

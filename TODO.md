@@ -6,20 +6,23 @@
 
 ## In progress
 
-- **Next: Multi-agent sessions** ([spec §9](wiki/tasks/2026-10-08_message-board-api/spec.md))
-  — user-spawned in-process `AgentLoop` threads, each with its own bridge, tracker and
-  `BoardSession`; an @mention wakes an agent (steer if busy, new turn if idle). GUI gets an
-  Agents view and switcher, talking to agents only through an `AgentHandle`.
+- **Multi-agent follow-ups** (from the 2026-10-09 board + multi-agent task):
+  - Closing an agent mid-turn pauses its loop (`AgentLoop.interrupt`); there is no cancel, so
+    the paused daemon worker thread stays blocked until the GUI exits. Add a loop cancel.
+  - Header switcher chip and Ctrl+1…9 shortcuts; clickable handles on board posts.
+  - Spawned agents are not restored after a GUI restart.
+  - A remote `AgentHandle` (other machines, Ray) behind the same `AgentSession` seam.
+  - Posts made on a local fallback board are not copied to the central board.
+  - @mentions only wake agents of this GUI; agents on other machines still pull with
+    `read_board`. Mentions posted while the GUI was closed are not replayed.
 
 - **Message board follow-ups** (from the 2026-10-08 board API task):
   - Garbage-collect attachments/blobs that were uploaded but never used in a post.
   - `sanitize_name` (`services/message_board/blobs.py`) should strip bidi/format characters
     (e.g. U+202E) that can spoof displayed and download names.
-  - The GUI's main agent handle (`main_<uuid8>`) changes every launch; decide persistence
-    in the multi-agent task.
   - `pyside_gui/bridge.py` `build_callbacks` is over 100 lines (pre-existing).
   - `stop` with an open `/stream` client logs "timeout graceful shutdown exceeded" plus a
-    `CancelledError` traceback from the HTTP middleware into `.dagi/board/service.log`.
+    `CancelledError` traceback from the HTTP middleware into `.dagi/board/board.log`.
     Shutdown still succeeds; close SSE generators on shutdown so the log stays clean.
 
 - **Events-log restore (if ever wired up)** — no shipped path restores a loop from
@@ -197,6 +200,19 @@
   the head + marker + tail format — see the large-file reading entry in Completed.)
 
 ## Completed
+
+- **Message board v1.1 + multi-agent spawning (2026-10-09)** — `python message_board.py`
+  (config `services.message_board` as URL or `{url, bind}`, token file
+  `.dagi/board/token`); the GUI retries an unreachable board once, then launches a local one
+  on `bind:<port>` (default `0.0.0.0`); board tab shows the URL, a fallback badge, Connect…,
+  and a "central board is back" switch; GUI Save as… for attachments; web viewer image overlay,
+  text preview and a dead/live offline state; `fetch_attachment` shows images to the model;
+  per-agent `AgentSession`s with an **Agents** rail view to spawn, open and close agents; the
+  main board handle persists; live @mentions wake agents (new turn or steer, 5-in-a-row cap
+  for agent-to-agent mentions); two-line board composer with @ autocomplete; wider board panel. Delivered on `task/board-multi-agent`;
+  [spec](wiki/tasks/2026-10-09_board-multi-agent/spec.md),
+  [plan](wiki/tasks/2026-10-09_board-multi-agent/plan.md). Still to do: the user runs the
+  manual checks in spec §7 (firewall/LAN, fallback and switch back, viewer outage, spawn).
 
 - **Message board API (2026-10-09)** — standalone board service (`services/message_board/`,
   SQLite + attachments, web viewer, protected local `stop`), `agent/board_client.py`, the
