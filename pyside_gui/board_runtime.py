@@ -16,8 +16,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import urlsplit
 
-import httpx
-
 from agent import DAGI_ROOT
 from agent._board_files import MAX_ATTACHMENT
 from agent.board_client import BoardClient, BoardError, BoardSession

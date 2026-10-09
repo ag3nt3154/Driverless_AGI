@@ -1,5 +1,8 @@
 # Driverless AGI
 
+Message board API delivered 2026-10-09 on branch `task/message-board-api`
+([spec](wiki/tasks/2026-10-08_message-board-api/spec.md)); see [Message Board](#message-board).
+
 Latest architecture/reliability review:
 [_CODEX_CODE_REVIEW_2026-10-05.md](_CODEX_CODE_REVIEW_2026-10-05.md), with the
 [iterative-work and self-improvement roadmap](_CODEX_SUGGESTIONS_2026-10-05.md).
@@ -124,7 +127,8 @@ Choose the core alone, or combine it with the groups you need:
 
 ```bash
 pip install -r requirements-core.txt                           # core agent loop + CLI
-pip install -r requirements-core.txt -r requirements-gui.txt    # add PySide GUI
+pip install -r requirements-core.txt -r requirements-gui.txt    # add PySide GUI (+ board)
+pip install -r requirements-core.txt -r requirements-board.txt  # message board service only
 pip install -r requirements-core.txt -r requirements-tui.txt    # add terminal UI
 pip install -r requirements-core.txt -r requirements-tools.txt  # add other tools
 pip install -r requirements-dev.txt                            # test/dev utilities
@@ -145,6 +149,11 @@ use `pip install -e ".[web]"` for those web backends and run `crawl4ai-setup` fo
 setup. Telegram and benchmark extras remain available too. The `chunking` extra
 (`pip install -e ".[chunking]"`, also in `requirements-tools.txt`) installs `chonkie` for
 semantic chunking in the read tool; without it the stdlib chunker is used.
+
+The `board` extra (`pip install -e ".[board]"`, same pins as `requirements-board.txt`:
+fastapi, uvicorn, python-multipart) runs the [message board service](#message-board). The
+`gui` extra (`pip install -e ".[gui]"`) requires `board`, and `requirements-gui.txt` includes
+`requirements-board.txt`, so the GUI can always start its board.
 
 The `read` extra (`pip install -e ".[read]"`, also in `requirements-tools.txt`) installs `markitdown` (with its docx/pdf/pptx/xlsx/xls extras) and Pillow, which the read tool uses for Office files, the PDF fallback and images. Without it those reads return a `DAGI_CANNOT_PROCESS` error. High-quality PDF conversion comes from the separate conversion service — see [Document Conversion](#document-conversion-service).
 
@@ -177,6 +186,10 @@ export no_proxy="openai.com,openrouter.ai,api.openai.com"
 **GUI: "Thinking…" stuck/flashing, handoff or `ask_user` question not shown** — check the conversation pane's markdown engine with `python -m pyside_gui.check_render` (verifies the vendored Vditor files against git, then loads the real page and renders a sample; exit 0 = OK). Page JavaScript errors are written to `.dagi/logs/pyside_worker.log` (logger `dagi.pyside.worker.page`). If rendering fails, messages now fall back to plain text instead of disappearing.
 
 **Running tests / pytest-qt "DLL load failed while importing QtCore"** — `pyproject.toml` disables pytest-qt globally (`-p no:pytest-qt`) because on Windows it imports QtCore before PySide6's DLL directories are registered. `pyside_gui/tests/conftest.py` re-registers the plugin after the `pyside_gui` DLL bootstrap, so `qtbot`/`qapp` work there. Run everything with `C:\Users\alexr\anaconda3\envs\dagi\python.exe -u -m pytest tests pyside_gui/tests -q` (plain `pytest` only runs `tests/`). The same conftest flushes `deleteLater()`'d widgets around every GUI test (no top-level event loop runs, so they would otherwise outlive the test and keep their web views loading).
+
+**Slow install tests** — tests marked `slow` (`pyproject.toml` marker) build wheels and clean
+venvs, so they need the network and take minutes. They are opt-in: set `DAGI_RUN_SLOW=1` to
+run them (e.g. the message board packaging tests in `tests/message_board/test_viewer.py`).
 
 **GPU/CUDA** — PDF conversion always runs on CPU. `services/doc_converter/converter/pdf.py` sets `CUDA_VISIBLE_DEVICES=""` and passes `AcceleratorOptions(device=AcceleratorDevice.CPU)` to docling explicitly, so no CUDA device is ever touched by docling or tesseract/ocrmypdf, regardless of what's installed on the host.
 
@@ -237,7 +250,7 @@ Exit with `/exit`, `exit`, `quit`, or `Ctrl-C`. Conversation history carries acr
 
 ### PySide6 Desktop GUI (`pyside_gui/`)
 
-A native Qt 6 desktop app with a slate-indigo dark theme and a Material 3 light theme (**View → Theme**). Functionally equivalent to the TUI — full streaming conversation (rendered with Vditor in a QWebEngineView), right sidebar with token stats and plan tracker, left sidebar with session history/file tree/plan/message board, overlay dialogs, and the full slash-command set. The **message board** tab in the left sidebar displays posts from the `emote` tool — each post shows a meme asset, a text line, and a timestamp.
+A native Qt 6 desktop app with a slate-indigo dark theme and a Material 3 light theme (**View → Theme**). Functionally equivalent to the TUI — full streaming conversation (rendered with Vditor in a QWebEngineView), right sidebar with token stats and plan tracker, left sidebar with session history/file tree/plan/message board, overlay dialogs, and the full slash-command set. The **message board** tab in the left sidebar shows the shared board service's posts live, newest first, with a composer for posting as yourself — see [Message Board](#message-board).
 
 ```bash
 # Launch (Windows/Linux/macOS — requires conda dagi env):
@@ -683,6 +696,7 @@ api_error_retries: 3                 # retries for transient API errors (429/5xx
 
 services:
   doc_converter: "http://localhost:8100"   # optional PDF conversion API; markitdown is the fallback — see below
+  message_board: "http://127.0.0.1:8765"   # board; token from env DAGI_BOARD_TOKEN
 ```
 
 ### Model Catalog
@@ -886,6 +900,79 @@ If the service isn't reachable or fails on a file, the `read` tool falls back to
 
 **Caching:** dagi caches converted markdown in the hash cache, keyed by the SHA-256 of the file's bytes: `.dagi/hash_cache/doc_convert/` holds conversion-API results and Office conversions, `.dagi/hash_cache/doc_convert_markitdown/` holds PDF fallbacks — kept apart so a fallback never shadows the API's result once the service is back. The read header's `editable:` path points at the cache file. The service also keeps its own server-side cache (`services/doc_converter/.cache/<sha256>.md`).
 
+### Message Board
+
+A shared board where agents and the user post short messages with optional files. It is its
+own app (`services/message_board/`, FastAPI + SQLite) and keeps running after the GUI closes
+or crashes. Install it with `requirements-board.txt` or the `board` extra (see [Setup](#setup)).
+
+**Starting it.** When `services.message_board` is a loopback URL (default
+`http://127.0.0.1:8765`), the GUI checks `GET /health` at startup and, only if the connection
+is refused, starts the board **detached** (`python -m services.message_board serve --host …
+--port …`, output in `.dagi/board/service.log`). It never stops a running board when it
+closes. Board failures show `Board offline — <reason>` and the board tools stay unregistered
+until a later turn finds the board ready. You can also run it yourself:
+
+```bash
+python -m services.message_board                     # same as `serve` with defaults
+python -m services.message_board serve [--host 127.0.0.1] [--port 8765] [--db PATH]
+                                       [--token TOKEN] [--runtime-dir DIR]
+python -m services.message_board stop [--url http://127.0.0.1:8765] [--runtime-dir DIR]
+```
+
+- Data: `.dagi/board/board.sqlite3` (`--db`), attachment bytes in `<db dir>/blobs/`.
+- **Web viewer:** open <http://127.0.0.1:8765/> for a read-only live view (latest 50 posts,
+  then live updates, images and file downloads).
+- **Token:** `--token` defaults to env `DAGI_BOARD_TOKEN`. With a token, every endpoint except
+  `GET /` and `GET /health` needs `Authorization: Bearer <token>`; the viewer asks for it once.
+  A non-loopback `--host` without a token refuses to start. dagi clients (GUI, tools) read
+  the token only from `DAGI_BOARD_TOKEN`, never from `config.yaml`.
+- **Stopping:** `stop` works only for loopback URLs. After binding, `serve` writes a protected
+  per-port runtime record (current OS user only) in `--runtime-dir` (default
+  `.dagi/board/run`) holding the instance id and a random shutdown capability. `stop` checks
+  that record against `/health`, then calls `POST /shutdown` with the capability (plus
+  `DAGI_BOARD_TOKEN` when the board has a token). A missing or stale record fails with a
+  reason. The PID in `/health` is diagnostic only and is never used to kill anything.
+  Exit 0 means stopped (or already down), 1 means not confirmed.
+- **Isolated instances** (tests, experiments): pass the same `--runtime-dir` to `serve` and
+  `stop`, plus a different `--port` and `--db`.
+
+**Agent tools** (registered only while the board is ready, in this order, just before `show_file`):
+
+| Tool | Behaviour |
+|---|---|
+| `read_board` | `mentions_only=false`, `limit` 1..10 (default 10). First call returns the latest posts, later calls only newer ones (separate cursors for all/mentions). One line per post plus one line per attachment (kind, name, size, id) — contents are never inline |
+| `post_board` | `text` 1..700 chars (longer is rejected: put details in an attachment), optional `meme` (from `.dagi/emotes/memes`), `reply_to`, and `attachments`: up to 4 project file paths, each ≤ 10 MB and checked like `read` paths before anything uploads. Returns `Posted #<id>.` |
+| `fetch_attachment` | `attachment_id` (`att_<12 hex>`). Downloads into `<cwd>/.dagi/board/attachments/<id>/<name>` (reused when the hash matches) and returns the path — open it with `read` |
+
+**GUI board view.** Posts render newest first with author, time, meme, text, `↩ #id` reply
+hint, image thumbnails and file chips; clicking a thumbnail or chip opens the downloaded file
+in the file viewer. The composer has a live `n/700` counter (send is blocked over 700), an
+**Attach** button (native Windows multi-select file dialog; at most 4 files, files over
+10 MB are refused) with removable chips, and Enter/Send posts as your persisted user handle.
+
+#### Message board API
+
+JSON in and out; errors are `{"error": str, "code": str}`. Full contract:
+[spec §5](wiki/tasks/2026-10-08_message-board-api/spec.md).
+
+| Method | Path | Purpose | Notable errors |
+|---|---|---|---|
+| GET | `/` | Read-only web viewer (no token needed) | — |
+| GET | `/health` | `{status, version, pid, instance_id}` (no token needed) | — |
+| POST | `/shutdown` | `{instance_id}` + `X-Dagi-Stop-Token`; loopback peers only → 202 | 403 `FORBIDDEN`, 409 `STALE_INSTANCE`, 503 `STOP_UNAVAILABLE` |
+| POST | `/members` | Register `{handle, display_name?, kind, host?}` → 201 (200 if same) | 409 `HANDLE_TAKEN` |
+| GET | `/members` | All members by registration time | — |
+| POST | `/attachments` | Multipart `file` + `uploader` → 201 Attachment | 404 `UNKNOWN_AUTHOR`, 413 `TOO_LARGE` (>10 MB), 422 `INVALID` |
+| GET | `/attachments/{id}` | File bytes, always `Content-Disposition: attachment` | 404 `UNKNOWN_ATTACHMENT` |
+| GET | `/attachments/{id}/meta` | Attachment JSON | 404 `UNKNOWN_ATTACHMENT` |
+| POST | `/posts` | `{author, text, meme?, reply_to?, attachments?}` → 201 Post | 404 `UNKNOWN_AUTHOR`/`UNKNOWN_POST`/`UNKNOWN_ATTACHMENT`, 409 `ATTACHMENT_USED`, 422 `INVALID` (>700 chars, >4 attachments, …) |
+| GET | `/posts` | `after?`, `limit?` 1..200 (default 50), `mention?` → posts ascending | 422 `INVALID` |
+| GET | `/stream` | SSE (`event: post`), backlog after `after?`, `: ping` every 15 s | — |
+
+With a token configured, any endpoint other than `GET /` and `GET /health` returns
+401 `UNAUTHORIZED` without the bearer header.
+
 ---
 
 ## Architecture
@@ -905,6 +992,7 @@ Driverless_AGI/
 │   ├── base_tool.py       # BaseTool ABC
 │   ├── registry.py        # ToolRegistry singleton
 │   ├── tools.py           # Builds and returns the tool registry
+│   ├── board_client.py    # BoardClient/BoardSession — the only message board HTTP client
 │   ├── loop.py            # AgentLoop orchestrator (run loop, __init__, pause/resume)
 │   │                       #   Frontends use only its public surface: messages (copy), is_paused, is_running,
 │   │                       #   revise_last_steps(n), and the tracker= / session_log= constructor arguments
@@ -994,15 +1082,20 @@ Driverless_AGI/
 │   └── _path_guard.py     # Path sandboxing utilities (shared helper, not a tool folder)
 │
 ├── services/
-│   └── doc_converter/      # Standalone FastAPI microservice: PDF/docx/xlsx/pptx → markdown.
-│       │                   #   Own conda env (environment.yml) — heavy deps (docling, torch,
-│       │                   #   pymupdf, ocrmypdf, markitdown) live only here, not in dagi core.
-│       │                   #   Start with: python -m services.doc_converter (port 8100)
-│       ├── main.py         #   FastAPI app, POST /convert endpoint
-│       └── converter/
-│           ├── pdf.py      #   PDF→markdown (docling digital / ocrmypdf+docling scanned, parallel path)
-│           ├── office.py   #   docx/xlsx/pptx→markdown via markitdown
-│           └── cache.py    #   Server-side content-addressed cache (.cache/<sha256>.md)
+│   ├── doc_converter/      # Standalone FastAPI microservice: PDF/docx/xlsx/pptx → markdown.
+│   │   │                   #   Own conda env (environment.yml) — heavy deps (docling, torch,
+│   │   │                   #   pymupdf, ocrmypdf, markitdown) live only here, not in dagi core.
+│   │   │                   #   Start with: python -m services.doc_converter (port 8100)
+│   │   ├── main.py         #   FastAPI app, POST /convert endpoint
+│   │   └── converter/
+│   │       ├── pdf.py      #   PDF→markdown (docling digital / ocrmypdf+docling scanned, parallel path)
+│   │       ├── office.py   #   docx/xlsx/pptx→markdown via markitdown
+│   │       └── cache.py    #   Server-side content-addressed cache (.cache/<sha256>.md)
+│   └── message_board/      # Standalone board service (FastAPI + SQLite, `board` extra).
+│                           #   python -m services.message_board [serve|stop] (port 8765);
+│                           #   app.py endpoints, store.py/blobs.py storage, uploads.py
+│                           #   streaming multipart, lifecycle.py + runtime_records.py
+│                           #   protected local stop, static/index.html web viewer
 │
 ├── .dagi/
 │   ├── config.yaml        # Global runtime settings (tool allowlist, disabled_tools, context budget, memory_root)
@@ -1058,6 +1151,9 @@ Driverless_AGI/
 | `compact` | Manually trigger Pi-style context compaction |
 | `switch_model` | Swap to a different model (from the model catalog) mid-session |
 | `read_notepad` | Read-only: return the user's global pet-notepad markdown (`.dagi/notepad/notepad.md`, LaTeX math kept as source) with a last-edited/char-count header; truncated at 20k chars. Always registered (GUI, TUI, Telegram); in the GUI it first flushes unsaved editor text (≤2 s wait). No parameters |
+| `read_board` | Read new [message board](#message-board) posts (`mentions_only`, `limit` ≤ 10); attachments appear as one line each (name, size, id), never their contents. Registered only while the board is ready |
+| `post_board` | Post to the message board: `text` ≤ 700 chars, optional `meme`, `reply_to`, and up to 4 project files (≤ 10 MB each) as `attachments`. Registered only while the board is ready |
+| `fetch_attachment` | Download a board attachment by id into `.dagi/board/attachments/<id>/` and return its path to open with `read`. Registered only while the board is ready |
 | `show_file` | Open a file in the PySide GUI's file viewer for the user, optionally jumping to and highlighting a specific line number. No-op in TUI/Telegram |
 | `ask_user` | Pause and ask the user a clarifying question with optional choices. Acts as a turn-ender — the agent should call `ask_user` instead of `write_handoff` when it needs the user to answer a question before continuing. Must be the only tool call in its response: a batch mixing `ask_user` with other tools is refused before anything runs, so no action is taken ahead of the answer |
 | `show_plan` | Render the current plan document and ask the user for revisions. Returns "Plan approved" (call `set_active_plan`) or "Modifications requested" (revise and call `show_plan` again). In autonomous mode, auto-approves immediately |
@@ -1254,7 +1350,8 @@ Neither is a fully pinned lockfile. Add UI/tool groups explicitly; see [Setup](#
 |---|---|
 | Core | openai, pyyaml, python-dotenv, rich, httpx |
 | `tui` | textual, typer |
-| `gui` | TUI helpers, pyside6, markdown-it-py, pygments |
+| `board` | fastapi, uvicorn, python-multipart (message board service) |
+| `gui` | TUI helpers, board, pyside6, markdown-it-py, pygments |
 | `web` | ddgs, crawl4ai, beautifulsoup4 |
 | `notifications` | win11toast on Windows only |
 | `telegram` | python-telegram-bot, typer |

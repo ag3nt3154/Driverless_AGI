@@ -934,7 +934,8 @@ renders posts live, and lets the user post.
 - **Task folder:** `wiki/tasks/2026-10-08_message-board-api/`
 
 ## Overall Status
-In Progress — approved for delivery on 2026-10-08. Subtasks 1–5 complete; Subtask 6 in progress.
+In Progress — approved for delivery on 2026-10-08. Subtasks 1–8 complete and verified. The manual A5 GUI checklist is pending, and so is the
+merge decision.
 
 ## Notes
 - `AgentLoop` is **rebuilt every turn** (`pyside_gui/_dispatch.py:181`), so the handle and
@@ -993,6 +994,59 @@ Delivery evidence so far:
   through registration, closes clients on every failure, spawns only for a proven local refusal,
   and rejects non-root service URLs before client or process creation. Listener tests cover
   active close, stop-entry ordering, dedupe, EOF status and 1/2/4-second reconnect backoff.
+- Subtask 6: committed as `e3fd64e` after independent PASS.
+  - Main-agent review of the user's partial implementation found 10 issues, all fixed with tests:
+    - attachment fixtures lacked `sha256`, so 3 tests were vacuous or failing;
+    - failed downloads stayed "Loading…";
+    - malformed `created_at` raised in a slot;
+    - file validation was duplicated;
+    - the meme folder was rescanned per post;
+    - GIF memes were no longer animated;
+    - previews upscaled small images;
+    - whitespace-only text could be posted;
+    - the error status was never cleared;
+    - a failed snapshot never started the live stream (it now retries with backoff).
+  - Reviewer minors also fixed:
+    - malformed snapshot items are filtered, and non-dict posts are ignored;
+    - the file viewer decodes images against a fixed screen bound inside a scroll area;
+    - the poster returns accepted/refused, so text survives a refusal;
+    - `&` in chip text is escaped;
+    - the unused `BoardPost` was removed;
+    - two vacuous tests were strengthened, each verified by removing its guard.
+  - Left as is: `bridge.build_callbacks` was already over 100 lines before this change.
+  - Evidence: `pyside_gui/tests` 294 passed; the targeted board suite 209 passed; the full
+    `tests` run had only the 3 known workflow-template failures, plus one
+    `test_stream_preview.py` timing flake that passed on rerun.
+  - The manual A5 GUI checks are still open (they need a person at the GUI).
+- Subtask 7: committed as `3bd8538` after independent PASS.
+  - Live browser check against an isolated board passed:
+    - render, newest first, and a post made through the API appearing within about 1 s;
+    - `<b>` shown as literal text;
+    - an image thumbnail and a file chip;
+    - no console or CSP errors;
+    - no horizontal scroll at 375 px;
+    - `stop` exits 0 and health goes down.
+  - Reviewer minors fixed:
+    - backoff resets only after the first event;
+    - a 15 s timeout before response headers;
+    - the dedupe test now fails without its guard;
+    - the sink grep also catches `setAttribute`, `location` and `srcset`, with mutation tests;
+    - CSP gains `form-action 'none'`.
+  - The clean-venv install tests are opt-in with `DAGI_RUN_SLOW=1`. The wheel-contents test
+    always runs.
+  - `tests/message_board`: 100 passed and 2 skipped normally; 102 passed with
+    `DAGI_RUN_SLOW=1`. The viewer is served through `importlib.resources` as an `HTMLResponse`
+    rather than the planned `FileResponse`, because a packaged resource has no stable path.
+- Subtask 8:
+  - README: Message Board section, endpoint table, install and test notes.
+  - TODO: done entry, multi-agent next, and follow-ups.
+  - AGENTS: anaconda3 interpreter path and the board-HTTP rule.
+  - `config.example.yaml`: the `services.message_board` URL.
+  - Every documented command was run. The Admiral's unrelated llama.cpp README/TODO lines are
+    left uncommitted.
+- Final verification, 2026-10-09:
+  - full `tests`: 1844 passed, 5 skipped, 3 failed (the known workflow-template tests);
+  - `pyside_gui/tests`: 294 passed.
 - Baseline before HTTP implementation: 1,880 passed, 7 failed, 3 skipped. Three Git tests
   failed because the temporary test directory was inside the repo; final full-suite runs
   must use outside-repo storage. Three existing workflow-template tests reference the removed
@@ -1016,4 +1070,5 @@ Delivery evidence so far:
   GUI closes.
 
 ## Next Action
-Implement Subtask 6 (GUI wiring, composer and attachment rendering), then obtain independent review.
+The Admiral runs the manual A5 GUI checklist (spec §7), then decides whether to merge
+`task/message-board-api` into `main`.
