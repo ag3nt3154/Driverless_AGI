@@ -81,3 +81,18 @@ def test_entry_script_runs():
     )
     assert result.returncode == 0, result.stderr
     assert "--token" in result.stdout and "--host" in result.stdout
+
+
+def test_load_settings_reads_yaml_without_the_agent_stack(tmp_path):
+    from services.message_board.settings import load_settings
+
+    config = tmp_path / "config.yaml"
+    config.write_text("services:\n  message_board:\n    url: http://h:9100\n    bind: 127.0.0.1\n",
+                      encoding="utf-8")
+    assert load_settings(config) == BoardSettings("http://h:9100", "127.0.0.1")
+    assert load_settings(tmp_path / "missing.yaml") == BoardSettings()
+    probe = ("import sys; from services.message_board.__main__ import parse_args; parse_args([]); "
+             "print('agent.loop' in sys.modules)")
+    result = subprocess.run([sys.executable, "-c", probe], cwd=ROOT, capture_output=True,
+                            text=True, timeout=60)
+    assert result.stdout.strip() == "False", result.stderr

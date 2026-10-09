@@ -14,6 +14,7 @@ from .lifecycle import DEFAULT_URL
 
 STATE_ROOT = DAGI_ROOT / ".dagi" / "board"
 TOKEN_PATH = STATE_ROOT / "token"
+CONFIG_PATH = DAGI_ROOT / ".dagi" / "config.yaml"
 DEFAULT_BIND = "0.0.0.0"
 
 
@@ -42,11 +43,19 @@ def board_settings(services) -> BoardSettings:
     return BoardSettings()
 
 
-def load_settings() -> BoardSettings:
-    """Settings from {DAGI_ROOT}/.dagi/config.yaml; defaults when it is absent."""
-    from agent.config_loader import load_raw_config
+def load_settings(path: Path = CONFIG_PATH) -> BoardSettings:
+    """Settings from {DAGI_ROOT}/.dagi/config.yaml; defaults when it is absent.
 
-    return board_settings(load_raw_config().get("services"))
+    Reads the YAML directly: agent.config_loader imports the agent loop and openai, which
+    adds seconds to every board start.
+    """
+    import yaml
+
+    try:
+        raw = yaml.safe_load(Path(path).read_text(encoding="utf-8")) or {}
+    except FileNotFoundError:
+        raw = {}
+    return board_settings(raw.get("services") if isinstance(raw, dict) else None)
 
 
 def read_token(path: Path = TOKEN_PATH) -> str | None:
