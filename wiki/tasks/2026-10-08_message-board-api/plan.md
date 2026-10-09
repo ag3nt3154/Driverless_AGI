@@ -661,6 +661,8 @@ expression assets and identifiers are outside this migration.
 
 ### Subtask 5: GUI board runtime (no Qt)
 
+**Status:** Complete — independent PASS; 108 combined runtime/client/service tests passed.
+
 **Goal:** Service lifecycle, identity and the SSE listener as plain Python, so they're
 unit-testable without Qt.
 **Requirements:**
@@ -731,7 +733,7 @@ unit-testable without Qt.
   This also covers `__main__`
   `serve`/`stop`, detached spawn and `/stream` end to end.
 
-- [ ] Step 1 write failing tests · Step 2 run (FAIL) · Step 3 implement · Step 4 run (PASS) ·
+- [x] Step 1 write failing tests · Step 2 run (FAIL) · Step 3 implement · Step 4 run (PASS) ·
   Step 5 return for review.
 
 ---
@@ -932,7 +934,7 @@ renders posts live, and lets the user post.
 - **Task folder:** `wiki/tasks/2026-10-08_message-board-api/`
 
 ## Overall Status
-In Progress — approved for delivery on 2026-10-08. Subtasks 1–4 complete; Subtask 5 in progress.
+In Progress — approved for delivery on 2026-10-08. Subtasks 1–5 complete; Subtask 6 in progress.
 
 ## Notes
 - `AgentLoop` is **rebuilt every turn** (`pyside_gui/_dispatch.py:181`), so the handle and
@@ -986,6 +988,11 @@ Delivery evidence so far:
   timer teardown race that passed immediately in isolation. The earlier clipboard baseline
   failure passed in this run. Obsolete emote tool/callback references are gone; affect emote
   identifiers remain. Cache `.gitignore` link rejection is covered before any HTTP request.
+- Subtask 5: independent PASS; 108 combined runtime/client/service tests passed, including a
+  live detached service, SSE delivery and capability shutdown. Startup retains child ownership
+  through registration, closes clients on every failure, spawns only for a proven local refusal,
+  and rejects non-root service URLs before client or process creation. Listener tests cover
+  active close, stop-entry ordering, dedupe, EOF status and 1/2/4-second reconnect backoff.
 - Baseline before HTTP implementation: 1,880 passed, 7 failed, 3 skipped. Three Git tests
   failed because the temporary test directory was inside the repo; final full-suite runs
   must use outside-repo storage. Three existing workflow-template tests reference the removed
@@ -1009,4 +1016,4 @@ Delivery evidence so far:
   GUI closes.
 
 ## Next Action
-Implement Subtask 5 (GUI board runtime without Qt), then obtain independent review.
+Implement Subtask 6 (GUI wiring, composer and attachment rendering), then obtain independent review.
