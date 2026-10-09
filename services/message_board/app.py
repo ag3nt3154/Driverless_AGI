@@ -7,7 +7,7 @@ import json
 import logging
 import os
 import uuid
-from pathlib import Path
+from importlib import resources
 
 from fastapi import BackgroundTasks, FastAPI, Query, Request
 from fastapi.exceptions import RequestValidationError
@@ -149,10 +149,8 @@ def create_app(store: BoardStore, token: str | None = None, *, shutdown=None) ->
 def _read_routes(app: FastAPI, store: BoardStore, hub: PostHub, instance_id: str) -> None:
     @app.get("/")
     def viewer():
-        path = Path(__file__).parent / "static" / "index.html"
-        if path.exists():
-            return FileResponse(path, media_type="text/html")
-        return HTMLResponse("<!doctype html><title>Message board</title><p>Message board</p>")
+        page = resources.files("services.message_board") / "static" / "index.html"
+        return HTMLResponse(page.read_bytes(), headers={"Cache-Control": "no-cache"})
 
     @app.get("/health")
     def health():

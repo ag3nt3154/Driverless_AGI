@@ -56,3 +56,4 @@ exclude = ["*.tests", "*.tests.*"]
 pythonpath = ["."]
 testpaths = ["tests"]
 addopts = "-p no:pytest-qt"
+markers = ["slow: builds wheels and clean venvs (network); deselect with -m \"not slow\""]
