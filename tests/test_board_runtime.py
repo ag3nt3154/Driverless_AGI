@@ -67,6 +67,22 @@ class FakeSpawn:
         return self.pid
 
 
+@pytest.fixture(autouse=True)
+def stub_token(monkeypatch):
+    """Never write the real .dagi/board/token from a test."""
+    import pyside_gui.board_runtime as runtime
+
+    monkeypatch.setattr(runtime, "ensure_token", lambda: "generated")
+
+
+def factory(client, urls=None):
+    def make(url, token, **kwargs):
+        if urls is not None:
+            urls.append((url, token))
+        return client
+    return make
+
+
 class Clock:
     def __init__(self):
         self.now = 0.0
@@ -117,51 +133,96 @@ def test_start_board_uses_existing_healthy_service_without_spawning(tmp_path):
     )
     assert runtime.client is client and runtime.session.handle.startswith("main_")
     assert runtime.user_handle.startswith("user_") and runtime.spawned_pid is None
+    assert (runtime.url, runtime.central_url) == ("http://127.0.0.1:8765", None)
     assert (tmp_path / "user_handle").read_text(encoding="utf-8").strip() == runtime.user_handle
     assert [entry[1] for entry in client.registered] == ["agent", "user"]
     assert not spawns
 
 
-@pytest.mark.parametrize("windows", [False, True])
-def test_start_board_spawns_only_for_true_local_refusal(tmp_path, windows):
+def test_main_handle_is_stable_across_starts(tmp_path):
     from pyside_gui.board_runtime import start_board
 
-    client = FakeClient([refused_error(windows=windows), {"status": "ok", "version": 1}])
-    child, calls = FakeSpawn(), []
+    handles = []
+    for _ in range(2):
+        client = FakeClient([{"version": 1}])
+        handles.append(start_board(
+            "http://127.0.0.1:8765", None, state_dir=tmp_path,
+            client_factory=lambda *args, **kwargs: client,
+        ).session.handle)
+    assert handles[0] == handles[1]
+    assert (tmp_path / "main_handle").read_text(encoding="utf-8").strip() == handles[0]
+
+
+def unreachable(kind):
+    if kind == "refused":
+        return refused_error()
+    if kind == "refused-windows":
+        return refused_error(windows=True)
+    if kind == "timeout":
+        return BoardError("TIMEOUT", "slow")
+    return BoardError("UNREACHABLE", "name resolution failed")
+
+
+@pytest.mark.parametrize("kind", ["refused", "refused-windows", "timeout", "dns"])
+@pytest.mark.parametrize("url", ["http://127.0.0.1:9876", "http://central.lan:9876"])
+def test_unreachable_twice_launches_local_board(tmp_path, url, kind):
+    from pyside_gui.board_runtime import start_board
+
+    client = FakeClient([unreachable(kind), unreachable(kind), {"status": "ok", "version": 1}])
+    child, calls, urls, clock = FakeSpawn(), [], [], Clock()
 
     def spawn(*args, **kwargs):
         calls.append((args, kwargs))
         return child
 
-    clock = Clock()
     runtime = start_board(
-        "http://127.0.0.1:9876", "secret", state_dir=tmp_path,
-        client_factory=lambda *args, **kwargs: client, spawn=spawn,
+        url, None, state_dir=tmp_path, client_factory=factory(client, urls), spawn=spawn,
         sleep=clock.sleep, clock=clock,
     )
     assert runtime.spawned_pid == child.pid and child.released
     assert not child.terminated and not child.waited
     args, kwargs = calls[0]
-    assert args[:2] == ("127.0.0.1", 9876)
+    assert args[:2] == ("0.0.0.0", 9876)
     assert kwargs["db_path"] == tmp_path / "board.sqlite3"
     assert kwargs["runtime_dir"] == tmp_path / "run"
+    assert urls == [(url, None), ("http://127.0.0.1:9876", "generated")]
+    assert runtime.url == "http://127.0.0.1:9876"
+    assert runtime.central_url == (None if "127.0.0.1" in url else url)
+    assert clock.now >= 2.0
 
 
-@pytest.mark.parametrize(
-    ("url", "error", "code"),
-    [
-        ("http://example.com:8765", refused_error(), "OFFLINE"),
-        ("http://127.0.0.1:8765", BoardError("TIMEOUT", "slow"), "OFFLINE"),
-        ("http://127.0.0.1:8765", BoardError("UNAUTHORIZED", "bad token"), "UNAUTHORIZED"),
-    ],
-)
-def test_start_board_does_not_spawn_for_remote_timeout_or_auth(tmp_path, url, error, code):
+def test_retry_success_does_not_spawn(tmp_path):
     from pyside_gui.board_runtime import start_board
 
-    client, spawns = FakeClient([error]), []
+    client, spawns, clock = FakeClient([refused_error(), {"version": 1}]), [], Clock()
+    runtime = start_board(
+        "http://central.lan:8765", "secret", state_dir=tmp_path,
+        client_factory=factory(client), spawn=lambda *a, **k: spawns.append(1),
+        sleep=clock.sleep, clock=clock,
+    )
+    assert not spawns and runtime.central_url is None and clock.now == 2.0
+
+
+def test_configured_token_is_used_for_the_local_board(tmp_path):
+    from pyside_gui.board_runtime import start_board
+
+    client, urls, clock = FakeClient([refused_error(), refused_error(), {"version": 1}]), [], Clock()
+    start_board(
+        "http://127.0.0.1:8765", "secret", state_dir=tmp_path, bind="127.0.0.1",
+        client_factory=factory(client, urls), spawn=lambda *a, **k: FakeSpawn(),
+        sleep=clock.sleep, clock=clock,
+    )
+    assert urls[-1] == ("http://127.0.0.1:8765", "secret")
+
+
+@pytest.mark.parametrize("code", ["UNAUTHORIZED", "FORBIDDEN"])
+def test_auth_failure_never_spawns(tmp_path, code):
+    from pyside_gui.board_runtime import start_board
+
+    client, spawns = FakeClient([BoardError(code, "bad token")]), []
     with pytest.raises(BoardError) as caught:
-        start_board(url, None, state_dir=tmp_path,
-                    client_factory=lambda *args, **kwargs: client,
+        start_board("http://central.lan:8765", None, state_dir=tmp_path,
+                    client_factory=factory(client),
                     spawn=lambda *args, **kwargs: spawns.append(1))
     assert caught.value.code == code and not spawns
 
@@ -200,19 +261,36 @@ def test_failed_or_cancelled_spawn_cleans_up_only_owned_child(tmp_path, cancelle
 
     clock, child = Clock(), FakeSpawn()
     cancel = threading.Event()
-    if cancelled:
-        cancel.set()
-    outcomes = [refused_error(), refused_error(), refused_error()]
-    client = FakeClient(outcomes)
+
+    def spawn(*args, **kwargs):
+        if cancelled:
+            cancel.set()
+        return child
+
+    client = FakeClient([refused_error() for _ in range(8)])
     with pytest.raises(BoardError) as caught:
         start_board(
             "http://127.0.0.1:8765", None, state_dir=tmp_path,
-            client_factory=lambda *args, **kwargs: client,
-            spawn=lambda *args, **kwargs: child, wait_s=.3,
+            client_factory=factory(client), spawn=spawn, wait_s=.3,
             sleep=clock.sleep, clock=clock, cancel=cancel,
         )
     assert caught.value.code == ("CANCELLED" if cancelled else "SPAWN_FAILED")
     assert child.terminated and child.waited and not child.released
+    assert client.closed
+
+
+def test_cancel_during_retry_does_not_spawn(tmp_path):
+    from pyside_gui.board_runtime import start_board
+
+    cancel, spawns = threading.Event(), []
+    client = FakeClient([refused_error(), refused_error()])
+    with pytest.raises(BoardError) as caught:
+        start_board(
+            "http://127.0.0.1:8765", None, state_dir=tmp_path,
+            client_factory=factory(client), spawn=lambda *a, **k: spawns.append(1),
+            sleep=lambda _seconds: cancel.set(), cancel=cancel,
+        )
+    assert caught.value.code == "CANCELLED" and not spawns and client.closed
 
 
 def test_cancel_existing_service_does_not_spawn_or_terminate(tmp_path):
@@ -235,7 +313,7 @@ def test_cancel_existing_service_does_not_spawn_or_terminate(tmp_path):
 def test_registration_failure_closes_client_and_retains_child_ownership(tmp_path, spawned):
     from pyside_gui.board_runtime import start_board
 
-    outcomes = [refused_error(), {"version": 1}] if spawned else [{"version": 1}]
+    outcomes = [refused_error()] * 2 + [{"version": 1}] if spawned else [{"version": 1}]
     client, child = FakeClient(outcomes), FakeSpawn()
 
     def fail_register(*args, **kwargs):
@@ -246,7 +324,7 @@ def test_registration_failure_closes_client_and_retains_child_ownership(tmp_path
         start_board(
             "http://127.0.0.1:8765", None, state_dir=tmp_path,
             client_factory=lambda *args, **kwargs: client,
-            spawn=lambda *args, **kwargs: child,
+            spawn=lambda *args, **kwargs: child, sleep=lambda _seconds: None,
         )
     assert client.closed
     assert (child.terminated, child.waited, child.released) == (

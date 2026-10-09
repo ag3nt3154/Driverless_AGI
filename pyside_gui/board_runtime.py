@@ -1,7 +1,6 @@
 """Qt-free message board lifecycle, persistent GUI identity and SSE listener."""
 from __future__ import annotations
 
-import errno
 import ipaddress
 import json
 import os
@@ -20,6 +19,7 @@ from agent import DAGI_ROOT
 from agent._board_files import MAX_ATTACHMENT
 from agent.board_client import BoardClient, BoardError, BoardSession
 from services.message_board.lifecycle import DEFAULT_URL
+from services.message_board.settings import DEFAULT_BIND, ensure_token
 
 DEFAULT_BOARD_URL = DEFAULT_URL
 _BACKOFF = (1.0, 2.0, 4.0, 8.0, 16.0, 30.0)
@@ -82,25 +82,30 @@ def is_loopback_url(url: str) -> bool:
     return address.is_loopback
 
 
-def _valid_user_handle(value: str) -> bool:
+def _valid_handle(value: str, slug: str) -> bool:
     head, separator, tail = value.partition("_")
-    return head == "user" and separator == "_" and len(tail) == 8 and all(
+    return head == slug and separator == "_" and len(tail) == 8 and all(
         char in "0123456789abcdef" for char in tail
     )
 
 
 def load_or_create_user_handle(path: Path) -> str:
+    return load_or_create_handle(path, "user")
+
+
+def load_or_create_handle(path: Path, slug: str) -> str:
+    """Return the persisted ``<slug>_<uuid8>`` at ``path``, creating it when absent or invalid."""
     path = Path(path)
     if path.is_symlink():
         raise BoardError("IDENTITY_ERROR", "board identity path must not be a link")
     try:
         value = path.read_text(encoding="utf-8").strip()
-        if _valid_user_handle(value):
+        if _valid_handle(value, slug):
             return value
     except FileNotFoundError:
         pass
     path.parent.mkdir(parents=True, exist_ok=True)
-    value = f"user_{uuid.uuid4().hex[:8]}"
+    value = f"{slug}_{uuid.uuid4().hex[:8]}"
     temporary = None
     try:
         with tempfile.NamedTemporaryFile(
@@ -125,6 +130,8 @@ class BoardRuntime:
     session: BoardSession
     user_handle: str
     spawned_pid: int | None
+    url: str = DEFAULT_URL
+    central_url: str | None = None  # the configured board, when running on a local fallback
 
 
 class SpawnedService:
@@ -169,20 +176,6 @@ def spawn_service(host: str, port: int, log_path: Path, *, db_path: Path | None 
     return SpawnedService(process)
 
 
-def _connection_refused(error: BaseException) -> bool:
-    seen = set()
-    while error is not None and id(error) not in seen:
-        seen.add(id(error))
-        if isinstance(error, ConnectionRefusedError):
-            return True
-        if isinstance(error, OSError) and error.errno in (errno.ECONNREFUSED, 10061):
-            return True
-        if getattr(error, "winerror", None) in (10061, 1225):
-            return True
-        error = error.__cause__ or error.__context__
-    return False
-
-
 def _health(client, remaining: float) -> dict:
     if remaining <= 0:
         raise BoardError("TIMEOUT", "message board startup deadline expired")
@@ -216,13 +209,20 @@ def _cancelled(cancel) -> bool:
     return cancel is not None and cancel.is_set()
 
 
-def _register_runtime(client, state_dir: Path, spawned_pid: int | None) -> BoardRuntime:
-    agent_handle = f"main_{uuid.uuid4().hex[:8]}"
+def register_runtime(client, state_dir: Path, spawned_pid: int | None = None) -> BoardRuntime:
+    """Register the persistent main-agent and user handles on ``client``'s board."""
+    agent_handle = load_or_create_handle(state_dir / "main_handle", "main")
     user_handle = load_or_create_user_handle(state_dir / "user_handle")
     host = socket.gethostname()
     client.register(agent_handle, "agent", host=host)
     client.register(user_handle, "user", host=host)
     return BoardRuntime(client, BoardSession(client, agent_handle), user_handle, spawned_pid)
+
+
+def local_url(bind: str, port: int) -> str:
+    """The loopback URL that reaches a board listening on ``bind``."""
+    host = {"": "127.0.0.1", "0.0.0.0": "127.0.0.1", "::": "::1"}.get(bind, bind)
+    return f"http://[{host}]:{port}" if ":" in host else f"http://{host}:{port}"
 
 
 def _service_address(url: str) -> tuple[str, int]:
@@ -240,28 +240,28 @@ def _service_address(url: str) -> tuple[str, int]:
         raise BoardError("NOT_A_BOARD", "board URL must be an HTTP service root") from error
 
 
-def _offline(error: BoardError) -> BoardError:
-    if error.code not in ("UNREACHABLE", "TIMEOUT"):
-        return error
-    result = BoardError("OFFLINE", error.message)
-    result.__cause__ = error
-    return result
-
-
-def _initial_probe(client, url: str, deadline: float, clock) -> bool:
+def probe(client, timeout_s: float) -> bool:
+    """True when a compatible board answers; False when unreachable; raises otherwise."""
     try:
-        _health(client, deadline - clock())
-        return False
+        _health(client, timeout_s)
+        return True
     except (TypeError, ValueError) as error:
         raise BoardError("NOT_A_BOARD", "the address returned malformed health data") from error
     except BoardError as error:
-        if _connection_refused(error) and is_loopback_url(url):
-            return True
         if error.code in ("UNREACHABLE", "TIMEOUT"):
-            raise _offline(error)
-        if error.code in ("UNAUTHORIZED", "FORBIDDEN"):
+            return False
+        if error.code in ("UNAUTHORIZED", "FORBIDDEN", "NOT_A_BOARD"):
             raise
         raise BoardError("NOT_A_BOARD", "the address is not a compatible board") from error
+
+
+def _reachable_with_retry(client, probe_s: float, retry_s: float, sleep, cancel) -> bool:
+    if probe(client, probe_s):
+        return True
+    sleep(retry_s)
+    if _cancelled(cancel):
+        raise BoardError("CANCELLED", "message board startup cancelled")
+    return probe(client, probe_s)
 
 
 def _await_ready(client, deadline: float, clock, sleep, cancel) -> None:
@@ -280,25 +280,62 @@ def _await_ready(client, deadline: float, clock, sleep, cancel) -> None:
         sleep(min(0.25, max(0.0, deadline - clock())))
 
 
-def start_board(url: str, token: str | None, *, state_dir: Path,
-                client_factory=BoardClient, spawn=spawn_service, wait_s: float = 10.0,
-                sleep=time.sleep, clock=time.monotonic, cancel=None) -> BoardRuntime:
-    state_dir = Path(state_dir)
-    host, port = _service_address(url)
-    deadline = clock() + wait_s
-    client = client_factory(url, token, timeout=min(10.0, max(0.001, wait_s)))
+@dataclass
+class _Launch:
+    """How to launch a local board when the configured one is unreachable."""
+    bind: str
+    state_dir: Path
+    spawn: object
+    wait_s: float
+
+
+def _spawn_local(launch: _Launch, port: int, token, client_factory, timing):
+    """Spawn a board on ``launch.bind``; return (client, child) once it is healthy."""
+    clock, sleep, cancel = timing
+    token = token or ensure_token()
+    client = client_factory(local_url(launch.bind, port), token,
+                            timeout=min(10.0, max(0.001, launch.wait_s)))
     child = None
-    runtime = None
     try:
-        if _initial_probe(client, url, deadline, clock):
-            child = spawn(
-                host, port, state_dir / "board.log", db_path=state_dir / "board.sqlite3",
-                runtime_dir=state_dir / "run",
+        child = launch.spawn(
+            launch.bind, port, launch.state_dir / "board.log",
+            db_path=launch.state_dir / "board.sqlite3", runtime_dir=launch.state_dir / "run",
+        )
+        _await_ready(client, clock() + launch.wait_s, clock, sleep, cancel)
+    except BaseException:
+        client.close()
+        if child is not None:
+            _cleanup_child(child)
+        raise
+    return client, child
+
+
+def start_board(url: str, token: str | None, *, state_dir: Path, bind: str = DEFAULT_BIND,
+                client_factory=BoardClient, spawn=spawn_service, wait_s: float = 10.0,
+                probe_s: float = 3.0, retry_s: float = 2.0,
+                sleep=time.sleep, clock=time.monotonic, cancel=None) -> BoardRuntime:
+    """Connect to the board at ``url``; after one failed retry, launch a local board instead.
+
+    Only an unreachable board (refused, timed out, DNS failure) triggers the fallback. An auth
+    failure or a non-board reply raises, because something is answering at ``url``.
+    """
+    state_dir = Path(state_dir)
+    _, port = _service_address(url)
+    client = client_factory(url, token, timeout=probe_s)
+    child = runtime = None
+    try:
+        if not _reachable_with_retry(client, probe_s, retry_s, sleep, cancel):
+            client.close()
+            launch = _Launch(bind, state_dir, spawn, wait_s)
+            client, child = _spawn_local(
+                launch, port, token, client_factory, (clock, sleep, cancel),
             )
-            _await_ready(client, deadline, clock, sleep, cancel)
         if _cancelled(cancel):
             raise BoardError("CANCELLED", "message board startup cancelled")
-        runtime = _register_runtime(client, state_dir, getattr(child, "pid", None))
+        runtime = register_runtime(client, state_dir, getattr(child, "pid", None))
+        runtime.url = local_url(bind, port) if child is not None else url
+        if child is not None and not is_loopback_url(url):
+            runtime.central_url = url
         if child is not None:
             child.release()
             child = None

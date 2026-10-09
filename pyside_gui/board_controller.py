@@ -1,7 +1,6 @@
 """Main-window board lifecycle and worker coordination."""
 from __future__ import annotations
 
-import os
 import threading
 from pathlib import Path
 
@@ -11,9 +10,10 @@ from agent import DAGI_ROOT
 from agent.board_client import BoardError
 from pyside_gui.board_downloads import DownloadPool
 from pyside_gui.board_runtime import (
-    _BACKOFF, DEFAULT_BOARD_URL, StreamListener, error_text, should_render_inline,
+    _BACKOFF, StreamListener, error_text, should_render_inline,
     start_board, validate_user_files,
 )
+from services.message_board.settings import board_settings, resolve_token
 
 
 def _valid_snapshot(posts) -> tuple[list[dict], bool]:
@@ -49,14 +49,14 @@ class BoardController(QObject):
         view.open_file_requested.connect(lambda path: window._left_sidebar.open_file(path, None))
 
     def start(self) -> None:
-        services = getattr(self.window._config, "services", {}) or {}
-        url = services.get("message_board", DEFAULT_BOARD_URL)
-        token = os.environ.get("DAGI_BOARD_TOKEN") or None
+        settings = board_settings(getattr(self.window._config, "services", None))
+        token = resolve_token()
         state_dir = DAGI_ROOT / ".dagi" / "board"
 
         def work() -> None:
             try:
-                result = start_board(url, token, state_dir=state_dir, cancel=self.cancel)
+                result = start_board(settings.url, token, state_dir=state_dir,
+                                     bind=settings.bind, cancel=self.cancel)
             except BoardError as error:
                 result = error
             except Exception as error:
