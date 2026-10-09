@@ -47,6 +47,12 @@ def test_tool_started_signal_emits():
     assert received[0] == ("bash", '{"command": "ls"}')
 
 
+def test_build_callbacks_passes_board_session():
+    bridge = AgentBridge()
+    board = object()
+    assert bridge.build_callbacks(board=board).board is board
+
+
 def test_assistant_text_emits_raw_markdown():
     """The conversation page renders markdown itself (Vditor), so the bridge
     passes the model's text through untouched."""

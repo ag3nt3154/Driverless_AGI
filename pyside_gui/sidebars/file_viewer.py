@@ -3,21 +3,25 @@ from __future__ import annotations
 from pathlib import Path
 
 from PySide6.QtCore import Qt, QRect, QSize, QTimer
-from PySide6.QtGui import QFont, QPainter, QTextCursor
+from PySide6.QtGui import QFont, QGuiApplication, QPainter, QPixmap, QTextCursor
 from PySide6.QtWebEngineWidgets import QWebEngineView
 from PySide6.QtWidgets import (
     QLabel,
     QPlainTextEdit,
+    QScrollArea,
     QStackedWidget,
     QVBoxLayout,
     QWidget,
 )
 
 from pyside_gui.markdown_renderer import render_markdown_with_source_lines
+from pyside_gui.image_preview import MAX_IMAGE_BYTES, read_preview
 from pyside_gui.theme import qcolor, qss
 
 
 _MAX_FILE_SIZE = 500_000  # 500 KB
+_IMAGE_SUFFIXES = frozenset({".png", ".jpg", ".jpeg", ".gif", ".webp"})
+_MIN_IMAGE_BOUND = QSize(1600, 1200)
 
 _CSS = qss("""
 QWidget#file-viewer {
@@ -245,6 +249,14 @@ class FileViewerView(QWidget):
         self._pending_md_line: int | None = None
         self._stack.addWidget(self._md_view)
 
+        self._image_view = QLabel()
+        self._image_view.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._image_view.setTextFormat(Qt.TextFormat.PlainText)
+        self._image_scroll = QScrollArea()
+        self._image_scroll.setWidgetResizable(True)
+        self._image_scroll.setWidget(self._image_view)
+        self._stack.addWidget(self._image_scroll)
+
     def open_file(self, path: str, project_root: Path, line: int | None = None) -> None:
         file_path = Path(path)
         try:
@@ -258,6 +270,10 @@ class FileViewerView(QWidget):
         except OSError as exc:
             self._stack.setCurrentIndex(0)
             self._text_edit.setPlainText(f"Cannot open file: {exc}")
+            return
+
+        if file_path.suffix.lower() in _IMAGE_SUFFIXES:
+            self._open_image(file_path, size)
             return
 
         if size > _MAX_FILE_SIZE:
@@ -288,6 +304,29 @@ class FileViewerView(QWidget):
             if line is not None:
                 QTimer.singleShot(0, lambda: self._jump_to_line(line))
 
+    def _open_image(self, path: Path, size: int) -> None:
+        if size > MAX_IMAGE_BYTES:
+            self._show_image_error(f"Image too large to display ({size:,} bytes)")
+            return
+        image, error = read_preview(path, self._image_decode_bound())
+        if image is None:
+            self._show_image_error(error or "Cannot display image")
+            return
+        self._image_view.setText("")
+        self._image_view.setPixmap(QPixmap.fromImage(image))
+        self._stack.setCurrentWidget(self._image_scroll)
+
+    def _image_decode_bound(self) -> QSize:
+        """Fixed decode cap, independent of the panel's current width (it may widen later)."""
+        screen = self.screen() or QGuiApplication.primaryScreen()
+        bound = screen.availableGeometry().size() if screen is not None else QSize()
+        return bound.expandedTo(_MIN_IMAGE_BOUND)
+
+    def _show_image_error(self, message: str) -> None:
+        self._image_view.setPixmap(QPixmap())
+        self._image_view.setText(message)
+        self._stack.setCurrentWidget(self._image_scroll)
+
     def _on_md_loaded(self, ok: bool) -> None:
         if ok and self._pending_md_line is not None:
             line = self._pending_md_line
@@ -313,4 +352,6 @@ class FileViewerView(QWidget):
         self._path_label.setText("")
         self._text_edit.setPlainText("")
         self._md_view.setHtml("")
+        self._image_view.setPixmap(QPixmap())
+        self._image_view.setText("")
         self._stack.setCurrentIndex(0)

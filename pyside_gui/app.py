@@ -18,6 +18,7 @@ from agent.loop import AgentConfig, AgentLoop
 
 from pyside_gui import _dispatch, esc_stop, recent_folders
 from pyside_gui.bridge import AgentBridge, init_worker_logger
+from pyside_gui.board_controller import BoardController
 from pyside_gui.commands import SlashCommandHandler, UIWidgets
 from pyside_gui.conversation import ConversationView
 from pyside_gui.header import ConversationHeader
@@ -67,6 +68,9 @@ class DagiMainWindow(QMainWindow):
         self._stream_had_reasoning = False
         self._streaming_active = False
         self._submission_seq = 0
+        self._board_runtime = None
+        self._board_session = None
+        self._board_listener = None
 
         self.setWindowTitle(f"Driverless AGI — {config.display_name}")
         self.setMinimumSize(1200, 700)
@@ -83,6 +87,8 @@ class DagiMainWindow(QMainWindow):
         self._start_timers()
         self._show_welcome()
         init_worker_logger(config.project_path / ".dagi" / "logs")
+        self._board_controller = BoardController(self)
+        self._board_controller.start()
 
     def _build_ui(self) -> None:
         self._splitter = QSplitter(Qt.Orientation.Horizontal)
@@ -278,6 +284,7 @@ class DagiMainWindow(QMainWindow):
         self._desktop_pet.flush_notepad_async(done.set)
 
     def closeEvent(self, event) -> None:
+        self._board_controller.close()
         self._desktop_pet.close()
         super().closeEvent(event)
 
@@ -293,12 +300,15 @@ class DagiMainWindow(QMainWindow):
             self._splitter.setSizes([_RAIL_WIDTH, s[0] + s[1] - _RAIL_WIDTH, s[2]]); return
         self._left_narrow = self._left_sidebar.active_view() == "board"
         rs = self._right_sidebar
-        width = (rs.width() if rs.isVisible() else rs.maximumWidth()) if self._left_narrow else None
+        width = (
+            rs.width() if rs.isVisible() else rs.maximumWidth()
+        ) if self._left_narrow else None
         self._splitter.setSizes(panel_sizes(s, width))
 
     def _on_left_view_changed(self, view: str) -> None:
         # Re-size only when switching to or from the narrow message board.
-        if (view == "board") != getattr(self, "_left_narrow", False): self._on_sidebar_expansion(True)
+        if (view == "board") != getattr(self, "_left_narrow", False):
+            self._on_sidebar_expansion(True)
 
     def _action_pause(self) -> None:
         if not (self._worker and self._worker.is_alive()):
@@ -307,7 +317,9 @@ class DagiMainWindow(QMainWindow):
         loop = self._current_loop_ref[0] if self._current_loop_ref else None
         if loop is None or self._pending_ask is not None or not loop.interrupt():
             return
-        if self._streaming_active: self._streaming_active = False; self._conversation.interrupt_stream()
+        if self._streaming_active:
+            self._streaming_active = False
+            self._conversation.interrupt_stream()
         self._right_sidebar.set_status("paused")
         self._conversation.append_info("Interrupted — type a message to continue")
         self._hide_running(); self._enable_input()
@@ -321,21 +333,11 @@ class DagiMainWindow(QMainWindow):
 
     @Slot(str, str)
     def _on_stream_ended(self, stream_text: str, stream_reasoning: str) -> None:
-        if not self._streaming_active: return  # interrupted: the bubble is already frozen
-        text = stream_text.strip()
-        if stream_reasoning.strip():
-            self._stream_had_reasoning = True
-        if text:
-            self._stream_had_content = True
-            self._conversation.stream_end(text)
-        else:
-            self._conversation.stream_end("")
-        self._streaming_active = False
+        _dispatch.on_stream_ended(self, stream_text, stream_reasoning)
 
     @Slot(str)
     def _on_reasoning(self, text: str) -> None:
-        if not self._streaming_active and not self._stream_had_content and not self._stream_had_reasoning:
-            self._conversation.append_reasoning(text)
+        _dispatch.on_reasoning(self, text)
 
     @Slot(str)
     def _on_assistant_text(self, markdown: str) -> None:
@@ -350,7 +352,9 @@ class DagiMainWindow(QMainWindow):
 
     @Slot(int, int)
     def _on_compaction(self, kept: int, removed: int) -> None:
-        self._conversation.append_info(f"Context compacted — removed {removed} messages, kept {kept}")
+        self._conversation.append_info(
+            f"Context compacted — removed {removed} messages, kept {kept}"
+        )
 
     @Slot(str, str)
     def _on_model_switched(self, from_name: str, to_name: str) -> None:
@@ -419,22 +423,7 @@ class DagiMainWindow(QMainWindow):
         threading.Thread(target=_work, daemon=True).start()
 
     def _do_wtf(self, description: str | None) -> None:
-        loop = self._active_loop
-        if loop is None:
-            self._conversation.append_info("Nothing to diagnose — no active conversation.")
-            return
-
-        def _work() -> None:
-            try:
-                r = loop.run_wtf(description)
-            except Exception as exc:
-                self._bridge.error_occurred.emit(f"/wtf failed: {exc}"); return
-            rp = Path(r.report_path).resolve()
-            self._bridge.assistant_text.emit(
-                f"Diagnosis: {r.description}\n\nReport: `{rp}`"
-            )
-        self._show_running()
-        threading.Thread(target=_work, daemon=True).start()
+        _dispatch.run_wtf(self, description)
 
     def _show_running(self) -> None:
         self._run_start_time = time.monotonic()
@@ -487,12 +476,7 @@ class DagiMainWindow(QMainWindow):
         )
 
     def _notify(self, title: str, message: str) -> None:
-        if self.isActiveWindow():
-            return
-        try:
-            from tui.notifications import notify; notify(title, message)
-        except Exception:
-            pass
+        _dispatch.notify(self, title, message)
 
     @Slot(str)
     def _set_status_slot(self, s: str) -> None: self._right_sidebar.set_status(s)
