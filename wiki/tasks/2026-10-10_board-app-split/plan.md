@@ -140,11 +140,11 @@ the web UI.
 - `test_entry.py::test_browser_opens_after_health_answers` — fake serve + probe that answers on
   the 2nd poll; opener called once with the loopback URL.
 
-- [ ] **Step 1:** Write the failing tests (inject `serve` and `probe` so no real server runs).
-- [ ] **Step 2:** Run; expect TypeError on the new keyword arguments.
-- [ ] **Step 3:** Implement the flags, the pre-check and the opener thread.
-- [ ] **Step 4:** Run `tests/message_board/test_entry.py`; all pass.
-- [ ] **Step 5:** Return for review.
+- [x] **Step 1:** Write the failing tests (inject `serve` and `probe` so no real server runs).
+- [x] **Step 2:** Run; expect TypeError on the new keyword arguments.
+- [x] **Step 3:** Implement the flags, the pre-check and the opener thread.
+- [x] **Step 4:** Run `tests/message_board/test_entry.py`; all pass.
+- [x] **Step 5:** Return for review.
 
 ---
 
@@ -437,13 +437,16 @@ shows no stale statements.
 - **Task folder:** `wiki/tasks/2026-10-10_board-app-split/`
 
 ## Overall Status
-In Progress — approved in commit `0b9312cf`; Subtask 1 passed review and Subtask 2 is next.
+In Progress — Subtasks 1-2 passed review; Subtask 3 is next.
 
 ## Notes
 - Subtask 1 review: PASS. `test_store.py` + `test_api.py`: 49 passed; live
   `test_exit_with_stdin_stops_on_eof`: 1 passed in 1.01 s. The `dagi` environment on this host
   lacks `sqlite3.dll`; the live test used a temporary, uncommitted DLL-search bootstrap pointing
   at the existing `ai2` environment's DLL, then removed it. No runtime workaround was added.
+- Subtask 2 review: PASS after keying browser readiness to this server's validated instance ID,
+  disabling proxy inheritance for loopback probes, and covering LAN hint secrecy. Entry +
+  lifecycle suites: 46 passed (one existing Starlette deprecation warning) in 2.74 s.
 - Today the fallback launches **detached on the central port** and binds `0.0.0.0`
   (`board_runtime.py:292-341`). For a loopback central URL it also leaves `central_url=None`, so
   the GUI never probes for central. Both go away in Subtask 3.
@@ -480,4 +483,4 @@ None.
      GUI start sweeps the folder.
 
 ## Next Action
-Implement and review Subtask 2: the foreground board app launcher and browser readiness flow.
+Implement and review Subtask 3: the Qt-free, GUI-owned temporary board runtime.

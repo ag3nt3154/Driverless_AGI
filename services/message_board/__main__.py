@@ -7,19 +7,23 @@ from __future__ import annotations
 import argparse
 import os
 import secrets
+import socket
 import sys
 import threading
+import time
 import uuid
+import webbrowser
 from pathlib import Path
 
+import httpx
 import uvicorn
 
 from agent import DAGI_ROOT
 
 from .app import create_app
-from .lifecycle import ShutdownControl, check_bind, stop_local
+from .lifecycle import ShutdownControl, check_bind, stop_local, validate_health_identity
 from .lifecycle import is_loopback_host as is_loopback_host
-from .runtime_records import remove_record, write_record
+from .runtime_records import RecordError, remove_record, write_record
 from .settings import TOKEN_PATH, BoardSettings, ensure_token, load_settings, read_token
 from .store import BoardStore
 
@@ -78,6 +82,8 @@ def parse_args(argv=None, settings: BoardSettings | None = None):
     serve.add_argument("--runtime-dir", type=Path, default=DEFAULT_ROOT / "run")
     serve.add_argument("--exit-with-stdin", action="store_true",
                        help="stop when stdin reaches EOF (used by a parent that owns this board)")
+    serve.add_argument("--no-browser", action="store_true",
+                       help="do not open the board in a browser")
     stop = commands.add_parser("stop", help="stop a local board using its protected capability")
     stop.add_argument("--url", default=f"http://127.0.0.1:{settings.port}")
     stop.add_argument("--runtime-dir", type=Path, default=DEFAULT_ROOT / "run")
@@ -104,9 +110,46 @@ def resolve_serve_token(host: str, explicit: str | None, path: Path = TOKEN_PATH
     return token
 
 
-def serve_board(args) -> None:
+def _probe_v1(url: str) -> str | None:
+    """Return the instance id when ``url`` serves a valid v1 health response."""
+    try:
+        with httpx.Client(trust_env=False, timeout=1.0) as client:
+            response = client.get(url.rstrip("/") + "/health", follow_redirects=False)
+        if response.status_code != 200:
+            return None
+        body = response.json()
+        validate_health_identity(body)
+    except (httpx.HTTPError, ValueError, RecordError):
+        return None
+    return body["instance_id"]
+
+
+def _loopback_url(port: int) -> str:
+    return f"http://127.0.0.1:{port}"
+
+
+def _open_when_ready(url: str, instance_id: str, opener, probe,
+                     stopped: threading.Event) -> None:
+    deadline = time.monotonic() + 10.0
+    while not stopped.is_set():
+        try:
+            ready = probe(url) == instance_id
+        except Exception:
+            ready = False
+        if ready and not stopped.is_set():
+            opener(url.rstrip("/") + "/")
+            return
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            return
+        stopped.wait(min(0.25, remaining))
+
+
+def serve_board(args, *, on_start=None) -> None:
     args.token = resolve_serve_token(args.host, args.token)
     check_bind(args.host, args.token)
+    if not is_loopback_host(args.host):
+        print(f"LAN: http://{socket.gethostname()}:{args.port}/ (token in {TOKEN_PATH})")
     store = BoardStore(args.db)
     control = ShutdownControl(uuid.uuid4().hex, secrets.token_hex(32), lambda: None)
     config = uvicorn.Config(create_app(store, args.token, shutdown=control),
@@ -123,16 +166,47 @@ def serve_board(args) -> None:
 
         threading.Thread(target=_watch_stdin, daemon=True, name="stdin-watch").start()
     try:
+        if on_start is not None:
+            on_start(control.instance_id)
         server.run()
     finally:
         store.close()
 
 
-def main(argv=None) -> int:
+def main(argv=None, *, open_browser: bool = False, opener=webbrowser.open,
+         probe=_probe_v1, serve=None) -> int:
     args = parse_args(argv)
     if args.command == "stop":
         return stop_local(args.url, runtime_dir=args.runtime_dir)
-    serve_board(args)
+    if serve is None:
+        serve = serve_board
+    should_open = open_browser and not args.no_browser
+    local_url = _loopback_url(args.port)
+    if should_open:
+        try:
+            already_running = probe(local_url)
+        except Exception:
+            already_running = False
+        if already_running:
+            browser_url = local_url + "/"
+            print(f"message board already running at {browser_url}")
+            opener(browser_url)
+            return 0
+
+    stopped = threading.Event()
+
+    def on_start(instance_id: str) -> None:
+        threading.Thread(target=_open_when_ready,
+                         args=(local_url, instance_id, opener, probe, stopped),
+                         daemon=True, name="board-browser-ready").start()
+
+    try:
+        if should_open:
+            serve(args, on_start=on_start)
+        else:
+            serve(args)
+    finally:
+        stopped.set()
     return 0
 
 
