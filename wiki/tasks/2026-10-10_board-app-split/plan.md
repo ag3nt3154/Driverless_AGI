@@ -394,11 +394,11 @@ Connect menu.
 - `test_viewer.py::test_mention_autocomplete_and_reply`
 - `test_api.py::test_user_member_attachment_is_fetchable_by_agent`
 
-- [ ] **Step 1:** Extend the harness and write the failing tests.
-- [ ] **Step 2:** Run `tests/message_board/test_viewer.py`; expect failures.
-- [ ] **Step 3:** Implement the composer, identity, paste/drop, autocomplete and reply.
-- [ ] **Step 4:** Run `tests/message_board`; all pass.
-- [ ] **Step 5:** Return for review.
+- [x] **Step 1:** Extend the harness and write the failing tests.
+- [x] **Step 2:** Run `tests/message_board/test_viewer.py`; expect failures.
+- [x] **Step 3:** Implement the composer, identity, paste/drop, autocomplete and reply.
+- [x] **Step 4:** Run `tests/message_board`; all pass.
+- [x] **Step 5:** Return for review.
 
 ---
 
@@ -437,7 +437,7 @@ shows no stale statements.
 - **Task folder:** `wiki/tasks/2026-10-10_board-app-split/`
 
 ## Overall Status
-In Progress — Subtasks 1-5 passed review; Subtask 6 is next.
+In Progress — Subtasks 1-6 passed review; Subtask 7 is next.
 
 ## Notes
 - Subtask 1 review: PASS. `test_store.py` + `test_api.py`: 49 passed; live
@@ -456,6 +456,11 @@ In Progress — Subtasks 1-5 passed review; Subtask 6 is next.
 - Subtask 5 review: PASS. The read-only view, badge and Connect menu suite passed 61 tests
   unsandboxed in 3.47 s; stale composer/user-handle symbols and descriptions were removed while
   preserving the 80-pixel panel width rule and attachment actions.
+- Subtask 6 review: PASS after locking composer mutations during sends, queuing an unknown-author
+  member refresh, registering names before persistence, and exercising cross-uploader downloads
+  through the real HTTP routes. The complete message-board suite passed 138 tests with 2 skipped
+  and 3 dependency deprecation warnings in 39.70 s. The self-contained page cap was raised from
+  500 to 800 lines for the composer and its browser harness coverage.
 - Today the fallback launches **detached on the central port** and binds `0.0.0.0`
   (`board_runtime.py:292-341`). For a loopback central URL it also leaves `central_url=None`, so
   the GUI never probes for central. Both go away in Subtask 3.
@@ -492,4 +497,4 @@ None.
      GUI start sweeps the folder.
 
 ## Next Action
-Implement and review Subtask 6: web composer, browser identity, attachments, mentions and replies.
+Implement and review Subtask 7: documentation, config comments and durable wiki knowledge.
