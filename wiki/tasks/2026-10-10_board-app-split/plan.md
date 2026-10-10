@@ -437,7 +437,7 @@ shows no stale statements.
 - **Task folder:** `wiki/tasks/2026-10-10_board-app-split/`
 
 ## Overall Status
-In Progress — Subtasks 1-7 passed review; integrated verification is next.
+Complete — Subtasks 1-7 passed review and integrated verification matches the approved baseline.
 
 ## Notes
 - Subtask 1 review: PASS. `test_store.py` + `test_api.py`: 49 passed; live
@@ -464,6 +464,11 @@ In Progress — Subtasks 1-7 passed review; integrated verification is next.
 - Subtask 7 review: PASS after clarifying that temporary posts are discarded both when switching
   away and when closing. README, config examples, TODOs and the durable lifecycle wiki entry were
   fact-checked against the launcher, API and GUI controller; `git diff --check` passed.
+- Integrated verification: 2,200 passed and 6 skipped in 125.16 s. The only failures were the
+  three known `tests/test_workflow_plan_template.py` cases caused by the absent project-local
+  `.dagi/skills/write-plan/references/plan-template.md`. The `dagi` environment was missing the
+  declared MarkItDown DOCX extra; installing `markitdown[docx]` added `mammoth`, after which the
+  DOCX test passed. The HTML injection-sink guard returned no matches.
 - Today the fallback launches **detached on the central port** and binds `0.0.0.0`
   (`board_runtime.py:292-341`). For a loopback central URL it also leaves `central_url=None`, so
   the GUI never probes for central. Both go away in Subtask 3.
@@ -500,4 +505,4 @@ None.
      GUI start sweeps the folder.
 
 ## Next Action
-Run integrated verification, record the result, and prepare the branch for handoff.
+Await Admiral approval to merge `task/board-app-split` into `main`.
