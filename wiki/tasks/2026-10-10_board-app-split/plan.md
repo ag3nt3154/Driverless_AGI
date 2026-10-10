@@ -425,8 +425,8 @@ shows no stale statements.
 
 **Files:** `README.md`, `config.example.yaml`, `.dagi/config.yaml`, `TODO.md`, `wiki/`
 
-- [ ] **Step 1:** Edit the docs.
-- [ ] **Step 2:** Return for review.
+- [x] **Step 1:** Edit the docs.
+- [x] **Step 2:** Return for review.
 
 ---
 
@@ -437,7 +437,7 @@ shows no stale statements.
 - **Task folder:** `wiki/tasks/2026-10-10_board-app-split/`
 
 ## Overall Status
-In Progress — Subtasks 1-6 passed review; Subtask 7 is next.
+In Progress — Subtasks 1-7 passed review; integrated verification is next.
 
 ## Notes
 - Subtask 1 review: PASS. `test_store.py` + `test_api.py`: 49 passed; live
@@ -461,6 +461,9 @@ In Progress — Subtasks 1-6 passed review; Subtask 7 is next.
   through the real HTTP routes. The complete message-board suite passed 138 tests with 2 skipped
   and 3 dependency deprecation warnings in 39.70 s. The self-contained page cap was raised from
   500 to 800 lines for the composer and its browser harness coverage.
+- Subtask 7 review: PASS after clarifying that temporary posts are discarded both when switching
+  away and when closing. README, config examples, TODOs and the durable lifecycle wiki entry were
+  fact-checked against the launcher, API and GUI controller; `git diff --check` passed.
 - Today the fallback launches **detached on the central port** and binds `0.0.0.0`
   (`board_runtime.py:292-341`). For a loopback central URL it also leaves `central_url=None`, so
   the GUI never probes for central. Both go away in Subtask 3.
@@ -497,4 +500,4 @@ None.
      GUI start sweeps the folder.
 
 ## Next Action
-Implement and review Subtask 7: documentation, config comments and durable wiki knowledge.
+Run integrated verification, record the result, and prepare the branch for handoff.

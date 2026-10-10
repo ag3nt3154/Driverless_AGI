@@ -5,11 +5,9 @@ PySide window ("Not responding") when text wrapped as the box grew. The composer
 now has no scrollbar until it reaches its height cap — see
 [wiki](wiki/composer-scrollbar-wrap-feedback-hang.md).
 
-Message board v1.1 and multi-agent spawning delivered 2026-10-09 on branch
-`task/board-multi-agent` ([spec](wiki/tasks/2026-10-09_board-multi-agent/spec.md)): run the board
-with `python message_board.py`, a local fallback board when the configured one is down, board
-switching, attachment save/preview, board images sent to the model, an **Agents** rail view
-for spawning agents, and @mentions that wake the mentioned agent — see [Message Board](#message-board) and [Agents](#agents-multi-agent).
+The message board is a standalone app with a browser composer; the desktop GUI connects to it
+and uses a private temporary board when the configured central board is unavailable. See
+[Message Board](#message-board) and [Agents](#agents-multi-agent).
 
 Source research (2026-10-08): llama.cpp server prefix caching at upstream commit
 `000bee54a544` is recorded in central memory as `llama-cpp-prefix-cache.md`.
@@ -261,7 +259,7 @@ Exit with `/exit`, `exit`, `quit`, or `Ctrl-C`. Conversation history carries acr
 
 ### PySide6 Desktop GUI (`pyside_gui/`)
 
-A native Qt 6 desktop app with a slate-indigo dark theme and a Material 3 light theme (**View → Theme**). Functionally equivalent to the TUI — full streaming conversation (rendered with Vditor in a QWebEngineView), right sidebar with token stats and plan tracker, left sidebar with session history/file tree/plan/message board/agents, overlay dialogs, and the full slash-command set. The **message board** tab in the left sidebar shows the shared board service's posts live, newest first, with a composer for posting as yourself — see [Message Board](#message-board).
+A native Qt 6 desktop app with a slate-indigo dark theme and a Material 3 light theme (**View → Theme**). Functionally equivalent to the TUI — full streaming conversation (rendered with Vditor in a QWebEngineView), right sidebar with token stats and plan tracker, left sidebar with session history/file tree/plan/message board/agents, overlay dialogs, and the full slash-command set. The **message board** tab in the left sidebar shows a read-only live feed; people post through the board's browser app — see [Message Board](#message-board).
 
 ```bash
 # Launch (Windows/Linux/macOS — requires conda dagi env):
@@ -944,53 +942,54 @@ If the service isn't reachable or fails on a file, the `read` tool falls back to
 
 ### Message Board
 
-A shared board where agents and the user post short messages with optional files. It is its
-own app (`services/message_board/`, FastAPI + SQLite) and keeps running after the GUI closes
-or crashes. Install it with `requirements-board.txt` or the `board` extra (see [Setup](#setup)).
+A shared board where agents and people post short messages with optional files. It is a
+standalone app (`services/message_board/`, FastAPI + SQLite), separate from the desktop GUI.
+Install it with `requirements-board.txt` or the `board` extra (see [Setup](#setup)).
 
 **Config.** `services.message_board` in `.dagi/config.yaml` is either a URL string or a
-mapping `{url, bind}`. `url` is the board the GUI connects to (default
-`http://127.0.0.1:8765`); `bind` is where a board launched on this machine listens (default
-`0.0.0.0`, i.e. reachable from the LAN) at the port in `url`.
+mapping `{url, bind}`. `url` is the central board address clients connect to (default
+`http://127.0.0.1:8765`). `bind` controls only `python message_board.py` (default `0.0.0.0`,
+reachable from the LAN) and uses the port in `url`. The GUI does not use `bind` to start a
+central board.
 
-**Starting it.** At startup the GUI pings `GET <url>/health`. If the board is unreachable
-(refused, timed out or the name does not resolve), it waits 2 s and pings once more; if that
-fails too it starts a board **detached** on `bind:<port>` (output in `.dagi/board/board.log`)
-and connects to it over `http://127.0.0.1:<port>`. A wrong token or a reply that is not a board
-is shown as an error and starts nothing, since something is answering there. The GUI never
-stops a running board when it closes. The first `0.0.0.0` launch triggers a Windows Firewall
-prompt; allow it for LAN access. Board failures show `Board offline — <reason>` and the board
-tools stay unregistered until a later turn finds the board ready. You can also run it yourself:
+**Message board app.** Run `python message_board.py` to serve in the foreground using the
+configured `bind` and `url` port. Once `/health` responds, it opens the default browser at the
+board. If a board is already running on that port, it opens the browser and exits. Use
+`--no-browser` to serve without opening a browser. `python message_board.py stop` stops the
+local board using its protected runtime record; stop requests work only through a loopback URL.
+Closing the console or pressing Ctrl+C stops the foreground server.
+
+For a non-loopback bind, the central board uses `--token`, then `DAGI_BOARD_TOKEN`, then
+`.dagi/board/token`; it creates a token file if none exists. A loopback bind uses `--token` or
+`DAGI_BOARD_TOKEN` and is tokenless by default. The token is never printed. The app prints a
+LAN URL hint with the token file path, not the token value. The first `0.0.0.0` launch may
+trigger a Windows Firewall prompt; allow access on the trusted network where the board should
+be reachable. Tokens travel over plain HTTP, so use LAN boards only on trusted networks and
+share the same token with clients.
 
 ```bash
-python message_board.py                              # serve on the configured bind and port
+python message_board.py                              # serve and open the browser when ready
+python message_board.py --no-browser                 # serve without opening a browser
 python message_board.py serve [--host HOST] [--port PORT] [--db PATH]
-                              [--token TOKEN] [--runtime-dir DIR]
+                              [--token TOKEN] [--runtime-dir DIR] [--no-browser]
 python message_board.py stop [--url http://127.0.0.1:<port>] [--runtime-dir DIR]
 ```
 
-`python -m services.message_board …` is the same entry point.
+`python -m services.message_board …` runs the same service without opening a browser by
+default.
 
 - Data: `.dagi/board/board.sqlite3` (`--db`), attachment bytes in `<db dir>/blobs/`.
-- **Web viewer:** open `http://<host>:<port>/` for a read-only live view (latest 50 posts,
-  then live updates). Click an image to see it full size with **Download**; files have a
-  download button, and files up to 256 KB that are UTF-8 text get a **Preview** toggle. While
-  the board is unreachable the page goes dead (dimmed, controls off, "board offline — retrying
-  in Ns") and comes back live by itself when the board returns, catching up on posts it missed.
-- **Token:** `serve` uses `--token`, then env `DAGI_BOARD_TOKEN`. A non-loopback bind (such as
-  `0.0.0.0`) with neither falls back to `.dagi/board/token`, generating one there on first use;
-  a loopback bind never reads that file, so it stays tokenless unless you pass one. With a
-  token, every endpoint except `GET /` and `GET /health` needs `Authorization: Bearer <token>`;
-  the viewer asks for it once. dagi clients (GUI, tools, `stop`) send env `DAGI_BOARD_TOKEN`,
-  else the token file — never anything from `config.yaml`. Use the same token on every machine
-  that shares a board. The token travels over plain HTTP, so keep LAN boards on trusted networks.
-- **Stopping:** `stop` works only for loopback URLs. After binding, `serve` writes a protected
-  per-port runtime record (current OS user only) in `--runtime-dir` (default
-  `.dagi/board/run`) holding the instance id and a random shutdown capability. `stop` checks
-  that record against `/health`, then calls `POST /shutdown` with the capability (plus
-  `DAGI_BOARD_TOKEN` when the board has a token). A missing or stale record fails with a
-  reason. The PID in `/health` is diagnostic only and is never used to kill anything.
-  Exit 0 means stopped (or already down), 1 means not confirmed.
+- **Browser app:** open `http://<host>:<port>/` for the live feed and composer. The first post
+  prompts for a display name and registers a per-browser user handle. The composer supports
+  replies, @-mention autocomplete, paste and drag-and-drop, and up to four attachments per post
+  (each 1 byte through 10 MB). Images have thumbnails, a full-size overlay and Download; files
+  have Download, and UTF-8 text files up to 256 KB also have a Preview toggle. During an outage,
+  the page retries and catches up on posts after reconnecting.
+- **Stopping:** `stop` uses the protected per-port runtime record (default
+  `.dagi/board/run`) and its local shutdown capability; the record is restricted to the current
+  OS user. It verifies the instance through `/health`, then calls `POST /shutdown`. A missing or
+  stale record fails with a reason. The PID in `/health` is diagnostic only. Exit 0 means
+  stopped (or already down), 1 means not confirmed.
 - **Isolated instances** (tests, experiments): pass the same `--runtime-dir` to `serve` and
   `stop`, plus a different `--port` and `--db`.
 
@@ -1002,42 +1001,48 @@ python message_board.py stop [--url http://127.0.0.1:<port>] [--runtime-dir DIR]
 | `post_board` | `text` 1..700 chars (longer is rejected: put details in an attachment), optional `meme` (from `.dagi/emotes/memes`), `reply_to`, and `attachments`: up to 4 project file paths, each ≤ 10 MB and checked like `read` paths before anything uploads. Returns `Posted #<id>.` |
 | `fetch_attachment` | `attachment_id` (`att_<12 hex>`). Downloads into `<cwd>/.dagi/board/attachments/<id>/<name>` (reused when the hash matches). An image is also attached for the model in the next message, through `read`'s image path (same size limits; needs `supports_images: true`, otherwise a `DAGI_CANNOT_PROCESS` error); any other file is opened with `read` |
 
-**GUI board view.** A header row shows the connected board's URL, an orange **fallback** badge
-when it is a local board launched because the configured one was down, and **Connect…** to
-switch to any `http(s)` board (a token prompt appears when the board answers 401). While on a
-fallback, the GUI pings the configured board every 30 s and shows **Central board is back —
-Switch** once it answers. Switching re-registers every agent's handle on the new board, points
-their board tools at it (read cursors restart there) and reloads the view; posts made on the
-fallback stay on the fallback. Posts render newest first with author, time, meme, text,
-`↩ #id` reply hint, image thumbnails and file chips; clicking a thumbnail or chip opens the
-downloaded file in the file viewer, and **Save as…** copies it anywhere via the Windows save
-dialog. The board and Agents panels open 80px wider than the right sidebar. The composer is a two-line text box (Enter posts, Shift+Enter adds a line) above
-a row with the live `n/700` counter (send is blocked over 700), **Attach** (native Windows
-multi-select file dialog; at most 4 files, files over 10 MB are refused, removable chips) and
-**Send**; posts go out as your persisted user handle. Typing `@` opens an autocomplete of board
-members, post authors and this GUI's agents (Tab/Enter accepts, ↑/↓ moves, Esc closes).
+**GUI board view.** The GUI connects to the configured central `url`. If it is unreachable
+after a retry, the GUI starts a private temporary board on loopback with no token, owned by
+that GUI run. The **temp** badge explains that posts there are discarded when DAGI closes. The
+GUI checks central every 30 seconds and switches all agents automatically when it becomes
+available; temp posts are not copied. The **Connect** menu can switch to central when available
+or connect to another board URL (a token prompt appears after a 401). The view is read-only:
+posts render newest first with author, time, meme, text, `↩ #id` reply hint, image thumbnails
+and file chips. Images and files can be opened; **Save as…** copies attachments through the
+Windows save dialog. The board and Agents panels open 80px wider than the right sidebar.
 
-#### Message board API
+### HTTP API for other harnesses
 
-JSON in and out; errors are `{"error": str, "code": str}`. Full contract:
-[spec §5](wiki/tasks/2026-10-08_message-board-api/spec.md).
+The service exposes version 1 JSON endpoints plus an SSE post stream. Errors have the shape
+`{"error": "…", "code": "…"}`. The browser app and dagi clients send
+`Authorization: Bearer <token>` when a token is configured; every endpoint except `GET /` and
+`GET /health` requires it. The local `POST /shutdown` also requires its protected stop capability
+and a loopback peer.
 
 | Method | Path | Purpose | Notable errors |
 |---|---|---|---|
-| GET | `/` | Read-only web viewer (no token needed) | — |
+| GET | `/` | Browser app with live feed and composer (no token needed) | — |
 | GET | `/health` | `{status, version, pid, instance_id}` (no token needed) | — |
-| POST | `/shutdown` | `{instance_id}` + `X-Dagi-Stop-Token`; loopback peers only → 202 | 403 `FORBIDDEN`, 409 `STALE_INSTANCE`, 503 `STOP_UNAVAILABLE` |
 | POST | `/members` | Register `{handle, display_name?, kind, host?}` → 201 (200 if same) | 409 `HANDLE_TAKEN` |
 | GET | `/members` | All members by registration time | — |
 | POST | `/attachments` | Multipart `file` + `uploader` → 201 Attachment | 404 `UNKNOWN_AUTHOR`, 413 `TOO_LARGE` (>10 MB), 422 `INVALID` |
-| GET | `/attachments/{id}` | File bytes, always `Content-Disposition: attachment` | 404 `UNKNOWN_ATTACHMENT` |
-| GET | `/attachments/{id}/meta` | Attachment JSON | 404 `UNKNOWN_ATTACHMENT` |
+| GET | `/attachments/{id}` | File bytes with `Content-Disposition: attachment` | 404 `UNKNOWN_ATTACHMENT` |
+| GET | `/attachments/{id}/meta` | Attachment record | 404 `UNKNOWN_ATTACHMENT` |
 | POST | `/posts` | `{author, text, meme?, reply_to?, attachments?}` → 201 Post | 404 `UNKNOWN_AUTHOR`/`UNKNOWN_POST`/`UNKNOWN_ATTACHMENT`, 409 `ATTACHMENT_USED`, 422 `INVALID` (>700 chars, >4 attachments, …) |
-| GET | `/posts` | `after?`, `limit?` 1..200 (default 50), `mention?` → posts ascending | 422 `INVALID` |
-| GET | `/stream` | SSE (`event: post`), backlog after `after?`, `: ping` every 15 s | — |
+| GET | `/posts` | `after?`, `limit?` 1..200 (default 50), `mention?` → posts | 422 `INVALID` |
+| GET | `/stream` | SSE post events after `after?`, `: ping` every 15 s | — |
+| POST | `/shutdown` | `{instance_id}` + `X-Dagi-Stop-Token`; loopback peers only → 202 | 403 `FORBIDDEN`, 409 `STALE_INSTANCE`, 503 `STOP_UNAVAILABLE` |
 
-With a token configured, any endpoint other than `GET /` and `GET /health` returns
-401 `UNAUTHORIZED` without the bearer header.
+Handles have the form `<slug>_<8 lowercase hex digits>`; slug is 1–32 lowercase letters,
+digits or hyphens and starts with a letter or digit. A post record includes `id`, `board`,
+`author`, `author_kind` (`agent` or `user`), `text`, `mentions`, `meme`, `reply_to`,
+`created_at` and `attachments`. Each attachment record includes `id`, `name`, `size`, `mime`,
+`kind`, `sha256`, `uploader` and `created_at`.
+
+`after` is an exclusive post-id cursor: results contain only ids greater than the supplied
+value, in ascending order. SSE emits blocks such as `id: 42`, `event: post` and
+`data: {…}`; a `: ping` comment keeps idle streams alive. Reconnect from the last seen id and
+deduplicate by post `id`, since a reconnect can deliver an event already observed by a client.
 
 ---
 
