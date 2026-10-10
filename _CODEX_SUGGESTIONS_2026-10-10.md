@@ -1,33 +1,32 @@
-# Dagi suggestions — 2026-10-09
+# Dagi suggestions — 2026-10-10
 
 Proposals for sustained agentic work, measured self-improvement and understandable recovery.
-They do not authorize implementation. Reviewed main at 94ca6924880867924ca6a90b7d0ca510e8b601a6. The October 8
-report was edited in place and renamed to October 9. Only unbuilt improvements or explicit
+They do not authorize implementation. Reviewed main at c6ed49b795dd949996e257a4dd8aedb8c81144ed. The October 9 report
+was edited in place and renamed to October 10. Only unbuilt improvements or explicit
 extensions of existing features are listed.
 
-Code mode now executes Python tool scripts through the current registry; mechanical
-multi-step execution is already built and is not a proposal. CLI UTF-8 output is fixed.
-RequestExecutor, loop properties, persisted revisions, ordering tests, generation-aware
-child resume, tolerant stdout draining, active-plan sidecars, process-state events, steering
-receipts/cancellation and the documented improve-yourself baseline/after workflow already
-exist. S1–S11 extend these facilities. Campaign is absent from this checkout; reconcile its
-separate design before reuse. Central memory also reports a separate board/multi-agent
-implementation; it is absent from this main checkout, so align S5 with it before designing
-another UI. Preserve the standing yolo-only decision; code scripts do not require a new
-workflow language or approval layer.
+Already shipped: Python code-mode tool scripts, CLI UTF-8 output, message-board service/tools,
+attachment save/preview and image input, board switching/fallback, per-agent AgentSession
+state, Agents rail spawn/open/close and @mention wake-ups with a five-wake guard. The composer
+wrap hang is fixed. None of those is proposed as new work. RequestExecutor, persisted
+revisions, generation-aware child resume, output draining, active-plan sidecars, process-state
+events, steering receipts and improve-yourself baseline/after workflow also exist.
+S5 now extends the delivered Agents UI; its old separate-branch caveat is removed.
+Campaign is absent from this checkout; reconcile that design before schema reuse.
+Preserve the standing yolo-only decision; no new workflow language or approval layer.
 
-[Today's review](C:/Users/alexr/Driverless_AGI/_CODEX_CODE_REVIEW_2026-10-09.md) has 14 open
-findings. New R18/R19 reproduce parent-side execution after script cancellation and lost
-printed checkpoints on termination. Existing adapters remain open in unchanged source.
-Focused tests: 155 passed, three known template failures. S1/S3/S8/S9 now include code-mode
-lifecycle/evidence gaps; new S12 measures its effectiveness before promoting recipes.
+[Today's review](C:/Users/alexr/Driverless_AGI/_CODEX_CODE_REVIEW_2026-10-10.md) contains
+16 open findings. New R20/R21 show that concurrent agents need isolated child cancellation
+and terminal close semantics. Focused tests: 115 passed, three known plan-template failures
+and one SQLite service-start failure; SQLite-dependent suites could not collect. The roadmap
+contains 13 unbuilt extensions, adding bounded collaboration receipts on the shipped board (S13).
 
 ## S1 — One owned run with an explicit outcome
 
 **Improvement:** Give frontends, scheduled tasks and children a supported
 start/status/steer/cancel/await-stopped contract and explicit terminal outcome.
 
-**Issue addressed:** R4/R10/R18 show incompatible meanings of timeout, completion and failure.
+**Issue addressed:** R4/R10/R18/R20/R21 show incompatible meanings of timeout, completion and failure.
 R8 now preserves branch/generation through resume; its abandoned metadata remains ownership
 debt. A PID alone cannot prove stopped execution or own all cleanup.
 
@@ -39,7 +38,8 @@ scheduler, code mode and child resume before migrating all UIs. Include one admi
 
 **Acceptance:** Ghost exhaustion is recorded as failure; immediate and resumed results use
 the same generation check; no owned execution survives reported deadline enforcement;
-no selected code-mode mutation begins after acknowledged cancellation;
+no selected code-mode mutation begins after acknowledged cancellation; cancelling one
+parent preserves other parents' children, and closing a session terminates/reaps its worker;
 preserve R9 tests proving output drains when its diagnostic log is unavailable. These child
 contracts already exist; S1 extends ownership and outcomes rather than reimplementing them.
 
@@ -105,14 +105,16 @@ and the next useful recovery action.
 **Issue addressed:** Progress becomes misleading when final delivery disappears or
 completion appears without verification evidence.
 
-**Smallest useful version:** Build a compact panel and milestone timeline on existing
+**Smallest useful version:** Extend the shipped Agents rail and AgentSession state with a
+compact task panel and milestone timeline on existing
 [process-state events](C:/Users/alexr/Driverless_AGI/agent/process_state.py) and steering,
 bound to S1/S2 identities. Display wait timeout, cancellation, stale context and failure
 distinctly. Keep artifact/diagnostic links after failure. Give Telegram the same concise
 final outcome and artifact references.
 
 **Acceptance:** Scripted waits, tools, compaction, questions and recovery show real state.
-Final handoffs arrive once per confirmed local delivery; uncertain remote delivery is shown. Verified acceptance links its evidence. Background
+A closed agent shows stopping until its worker exits; background agents retain isolated
+status and diagnostics. Final handoffs arrive once per confirmed local delivery; uncertain remote delivery is shown. Verified acceptance links its evidence. Background
 notifications occur on meaningful changes or required action.
 
 ## S6 — Capability preflight with one actionable failure
@@ -164,6 +166,8 @@ link review IDs to fixtures. Add the R16 two-process admission scenario and R17 
 worker-selection scenario, plus skill-format checks from S10. Add R18
 controlled admission-versus-cancellation and nested-budget fixtures, and R19
 print-before-timeout/kill fixtures; idle-script timeout tests do not cover these boundaries.
+Add two-parent cancellation isolation (R20) and actual worker exit after session close (R21),
+rather than a mocked stop return alone.
 
 **Acceptance:** A fixture fails on the current defect and passes only with correct behavior.
 Adapters agree on the same core scenario. Infrastructure errors report separately.
@@ -262,9 +266,32 @@ measured savings. If prompt/tool configuration differs between runs, disclose it
 scripts retain partial evidence without replaying mutations. No automatic recipe promotion
 or new tool-chain language is needed.
 
+## S13 — Bounded collaboration receipts on the existing board
+
+**Improvement:** Connect board collaboration to a concrete task/attempt and retained result,
+so an @mention starts useful bounded work without losing ownership or replaying it.
+
+**Issue addressed:** Agent spawning, board messages and mention wake-up are already built.
+The current five-wake guard limits consecutive agent mentions, but does not describe the
+delegated objective, acceptance command, execution budget or returned evidence. R20/R21
+also show why hidden or cancelled agents need explicit ownership before unattended teamwork.
+
+**Smallest useful version:** After S1/S2 and R20/R21, attach a task/attempt reference to a
+board assignment and its reply. Record accepted/running/result-received/verified states
+against the existing run identity. Start with a read-only reviewer in a separate agent,
+with one acceptance check and a bounded token/time budget. Deduplicate deliveries by board
+identity plus post/task ID. Keep shared-folder write ownership explicit before allowing
+editing collaborators. Reuse existing worker/reviewer skills; do not create another agent
+protocol or interpret an ordinary board message as implementation approval.
+
+**Acceptance:** Replaying a mention cannot duplicate an admitted task. Closing or cancelling
+the reviewer leaves other agents alive. A reported result links the exact source revision,
+checks and artifacts, and the main task remains unverified until its acceptance check passes.
+Exhausted budgets and rejected/stale results remain inspectable in the existing Agents UI.
+
 ## Sequence and measures
 
-1. Repair R4/R10/R16/R18 and Telegram R11/R12; retain verified R2/R6/R8/R9 contracts.
+1. Repair R4/R10/R16/R18/R20/R21 and Telegram R11/R12; retain verified R2/R6/R8/R9 contracts.
 2. Repair R3/R13/R14, add S8 regression fixtures and the minimal S9 retained-export path;
    repair R19 to retain interrupted script diagnostics.
    Extend S1 ownership to abandoned-child cleanup. Repair R15/R17 and establish S10's plan
@@ -275,6 +302,8 @@ or new tool-chain language is needed.
 4. Connect S7 checkpoints and extend S3's existing self-improvement workflow. Candidate
    promotion requires intact evaluator evidence and passing behavioral contracts.
    Measure shipped code mode through S12 before choosing examples to reuse.
+5. Pilot S13 with read-only review after per-parent cancellation and durable attempt
+   ownership work; expand collaboration only when receipts prove correct admission/results.
 
 Measure verified acceptance, false-success rate, final-delivery failures, question-answer
 latency, cancellation latency, code-mode deadline overrun/partial-output retention, export recovery without recomputation, plan-contract rejection,

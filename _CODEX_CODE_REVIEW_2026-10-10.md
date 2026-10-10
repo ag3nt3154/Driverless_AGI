@@ -1,17 +1,19 @@
-# Dagi code review — 2026-10-09
+# Dagi code review — 2026-10-10
 
 ## Scope and priorities
 
-Reviewed **main** at **94ca6924880867924ca6a90b7d0ca510e8b601a6**, starting from a clean checkout.
-Code mode and CLI UTF-8 output are the application changes since the previous run; the
-scheduler, Telegram, child cleanup, plan parser and benchmark outcome paths are unchanged.
-The October 8 reports were edited in place and renamed to October 9. This report contains
-**14 open findings only**, retaining stable IDs.
+Reviewed **main** at **c6ed49b795dd949996e257a4dd8aedb8c81144ed**, starting from a clean checkout.
+Since the previous reviewed HEAD, message-board services/tools, multi-agent GUI sessions,
+board switching and @mention wake-ups have landed, and the composer wrap hang is fixed.
+The October 9 reports were edited in place and renamed to October 10. This report contains
+**16 open findings only**, retaining stable IDs. No full finding was verified closed;
+R7 drops the now-compliant GUI app module from its remaining size violations.
 
-Prioritize execution ownership and truthful outcomes (R4/R10/R16/R18), Telegram delivery
-and answer routing (R11/R12), then publication, plan assignment and retained diagnostics
-(R14/R15/R17/R19). R18/R19 are newly reproduced. Existing findings were rechecked against
-current source; prior runtime evidence is dated explicitly rather than presented as a new run.
+Prioritize execution ownership and truthful outcomes (R4/R10/R16/R18/R20/R21), then Telegram
+delivery/routing (R11/R12), publication, plan assignment and retained diagnostics
+(R14/R15/R17/R19). New offline probes confirm cross-agent child cancellation (R20) and
+retained paused workers after agent closure (R21). Earlier runtime evidence is dated
+explicitly; unchanged defects were not re-probed indiscriminately.
 
 ## R3 — P2: Record scheduler startup failures
 
@@ -43,22 +45,23 @@ providers, long tools and descendants; a thread join timeout cannot enforce a de
 
 ## R7 — P2: Reduce remaining orchestration complexity behind supported seams
 
-**Finding:** Several production modules and callback builders exceed the project's size limits.
+**Finding:** Four production modules and three callback/config builders exceed size limits.
 
-**Issue:** AST inventory of 226 tracked Python files in agent/tools/scheduler/tg/tui/
-pyside_gui/providers/services and root entry points found five above 500 lines:
-agent/loop.py (1,082), tools/subagent_main.py (744), tools/read/_reader_controller.py (525),
-pyside_gui/app.py (518) and pyside_gui/prompt_input.py (628). Three functions exceed 100:
-config_loader._build_config_from_entry (106), PySide bridge.build_callbacks (107), and TUI
-callbacks.build_callbacks (178). Counts include comments/docstrings; this inventory uses a
-broader explicit file set than the previous run, so totals are not a growth measurement.
-Size alone is not a bug; adapter defects show where lifecycle contracts are missing.
-Cyclomatic complexity was not measured.
+**Issue:** Today's AST inventory selects 219 tracked Python files under agent/tools/
+scheduler/tg/tui/pyside_gui/providers/services plus root entry points, excluding nested
+tests. Four exceed 500 lines: agent/loop.py (1,082), tools/subagent_main.py (744),
+tools/read/_reader_controller.py (525) and pyside_gui/prompt_input.py (635). The GUI app
+module is now within the cap after AgentSession extraction. Three functions exceed 100:
+config_loader._build_config_from_entry (106), PySide bridge.build_callbacks (105) and TUI
+callbacks.build_callbacks (178). Counts include comments/docstrings; the explicit exclusion
+of nested tests differs from yesterday's inventory, so file totals are not a growth measure.
+Cyclomatic complexity was not measured. R20/R21 show that extraction alone does not
+establish ownership across concurrent sessions.
 
-**Suggested solution:** Define explicit run outcomes and stop/wait semantics with one state
-owner before further extraction. Reduce large files along supported public API boundaries.
-Preserve registration, construction, dispatch and child argv ordering tests. Avoid splitting
-files solely to improve counts.
+**Suggested solution:** Define per-run child ownership, terminal outcomes and stop/wait
+contracts before further extraction. Reduce remaining large modules along supported public
+API boundaries and preserve registry/construction/dispatch/argv ordering tests. Avoid
+splitting files solely to improve counts.
 
 ## R8 — P2 residual: Release abandoned child metadata
 
@@ -151,7 +154,7 @@ Test unwritable destinations, replace failure and successful publication with re
 **Finding:** Plan-format tests still target an intentionally removed template.
 
 **Issue:** Three [contract tests](C:/Users/alexr/Driverless_AGI/tests/test_workflow_plan_template.py:15)
-again fail with FileNotFoundError for .dagi/skills/write-plan/references/plan-template.md.
+still target a missing file and fail with FileNotFoundError for .dagi/skills/write-plan/references/plan-template.md.
 The [inline writer format](C:/Users/alexr/Driverless_AGI/.dagi/skills/write-plan/SKILL.md:48)
 omits status markers; the parser reports unmarked headings as unknown. The writer/parser
 contract is inconsistent. No live generated plan or delivery run was tested.
@@ -188,8 +191,8 @@ finished-only JSONL record cannot coordinate independent launches.
 the first case-insensitive substring match in any level-three heading. The real
 [worker composer](C:/Users/alexr/Driverless_AGI/.dagi/subagents/worker/plan_utils.py:37),
 given Subtask 1: Validate input and Subtask 2: Validate, assigned the first task's body/tests
-when asked for Validate on October 8. Today's direct parser probe again selected the
-wrong block. The requested second task's content was absent. Existing tests allow
+when asked for Validate on October 8. October 9's direct parser probe again selected the
+wrong block; the parser and worker composer remain unchanged today. The requested second task's content was absent. Existing tests allow
 partial-name lookup but do not protect an exact match later in the plan. No model call is needed
 to reproduce incorrect delegation.
 
@@ -204,7 +207,7 @@ names that are substrings of earlier titles, ambiguous fragments and unrelated l
 
 **Issue:** [_serve](C:/Users/alexr/Driverless_AGI/tools/code/_code.py:192) runs each
 proxied call synchronously in the parent and checks its deadline only when waiting for an
-RPC line. A real nested bash sleeping two seconds kept a one-second code call alive for
+RPC line. On October 9, a real nested bash sleeping two seconds kept a one-second code call alive for
 2.18 seconds. This overrun is documented in the design, but the execution budget remains
 unenforced during nested tools. More seriously,
 [force_kill](C:/Users/alexr/Driverless_AGI/tools/code/_code.py:157)
@@ -226,7 +229,7 @@ tool tests alongside the existing idle-script timeout/kill tests.
 **Finding:** Script progress is held only in child memory until normal completion.
 
 **Issue:** [Capture](C:/Users/alexr/Driverless_AGI/tools/code/_runner.py:108) replaces
-stdout/stderr with StringIO and sends their contents only in the final done message. Real
+stdout/stderr with StringIO and sends their contents only in the final done message. October 9
 scripts printed a flushed checkpoint before an infinite loop or sleep. Timeout and force-kill
 both returned [no output], losing that checkpoint. The mutation ledger survives in the parent,
 but printed observations and diagnostics do not. The existing exception test passes because
@@ -239,30 +242,76 @@ timeout, kill and crash; apply size limits while capturing, before final formatt
 ordering with tool replies and avoid replaying mutations to recover lost output. Add real
 print-then-timeout/kill/crash fixtures and a bounded-output check.
 
+## R20 — P1: Scope subagent cancellation to the interrupted agent
+
+**Finding:** Interrupting one GUI agent kills children owned by other concurrent agents.
+
+**Issue:** [AgentLoop.interrupt](C:/Users/alexr/Driverless_AGI/agent/loop.py:306) invokes
+[force_kill_active_subagents](C:/Users/alexr/Driverless_AGI/tools/_subagent_runner.py:227),
+which iterates the process-global `_active` table without an owner filter. Each
+[GUI session](C:/Users/alexr/Driverless_AGI/pyside_gui/agent_session.py:37) can run its own
+loop concurrently. Today's offline probe created two independent parent loops and two
+synthetic registered child states: interrupting A targeted both child PIDs and cleaned
+both states, while B itself remained unpaused. The kill primitive was mocked; this proves
+target selection, not real process-tree termination. Esc or closing one agent can therefore
+terminate another agent's delegated work and invalidate its expected handoff.
+
+**Suggested solution:** Carry a stable parent/run identity through the public subagent API,
+runner state and resume lifetime. Interrupt only that owner's children. Reserve a separate
+all-owner shutdown operation for application exit. Test two concurrent parents, including
+timed-out children and PID reuse; cancelling A must preserve B's execution and metadata.
+
+## R21 — P2: Terminate and release closed GUI agent sessions
+
+**Finding:** Closing a running agent removes its UI but retains a live paused worker.
+
+**Issue:** [close_agent](C:/Users/alexr/Driverless_AGI/pyside_gui/agents_controller.py:89)
+calls [stop](C:/Users/alexr/Driverless_AGI/pyside_gui/agent_session.py:216), removes the session
+and appends it to `_retired`. Stop calls interrupt, which pauses rather than terminates;
+the loop blocks on its pause event. `_retired` has no reap/release path. Today's real-loop
+probe called the actual controller/stop methods with stub GUI/provider sinks: at the pause
+checkpoint the agent was absent from visible sessions, its worker was alive, and the retired
+list retained it. The probe explicitly resumed and joined its worker afterward. Repeated
+closure retains threads, loop/session state and conversation objects for the GUI lifetime.
+Central memory already acknowledges this workaround; it does not provide cancellation.
+If stop returns false before loop publication, closure still removes the live session by
+source inspection; that startup interleaving was not separately reproduced.
+
+**Suggested solution:** Add terminal cancellation distinct from resumable pause. Handle
+cancellation requested before loop construction, wake paused workers to exit through cleanup,
+and release session/widgets only after confirmed worker termination. Show stopping until
+acknowledgment. Reap completed retired sessions; do not resume hidden work just to close it.
+Test running, already-paused and starting agents, repeated closes, and application shutdown
+with background sessions. Apply R20's owner isolation to this path.
+
 ## Verification and limits
 
-- Focused suite: **155 passed, 3 failed in 9.46s**, using the dagi interpreter outside the
-  Windows sandbox. Covers code runner/tool, registry ordering, interrupt, bash, config,
-  CLI encoding and plan parsing/format. All failures are R15's missing-template tests.
-- First attempt: 158 setup errors from sandbox temp-directory permissions. With explicit
-  writable basetemp: 152 passed, 6 failed; the interpreter warning and two process-kill
-  timing failures disappeared outside the sandbox. These are not counted as dagi findings.
-- New offline probes reproduced R18's nested deadline and cancellation interleaving, plus
-  R19's output loss, both inside and outside the sandbox. R17 direct parsing remains wrong.
-  Controlled threads were released/joined; subprocesses were reaped; writes used temporary
-  workspaces. A forced-kill pipe finalizer emitted an ignored OSError; no cleanup repair was
-  attempted. Assertions reproduce defects rather than validate proposed fixes.
-- Earlier R3/R4/R10–R14/R16 adapter/process reproductions are retained as **October 8**
-  evidence. Their owning source files are unchanged. They were not rerun today. R8 remains
-  source-inspected cleanup debt. No resolved finding was reopened without contrary evidence.
-- [Today's probe source](C:/Users/alexr/.codex/visualizations/2026/10/09/01a12093-68e8-7b40-98a4-9682ae3fc5c0/review_probes.py)
-  and [results](C:/Users/alexr/.codex/visualizations/2026/10/09/01a12093-68e8-7b40-98a4-9682ae3fc5c0/review_probe_results.json)
-  retain the reproductions/inventory. [Prior probes](C:/Users/alexr/.codex/visualizations/2026/10/08/01a11b73-16a4-7810-b1e8-4e890c34d652/)
-  retain unchanged-path evidence. Python: C:/Users/alexr/miniconda3/envs/dagi/python.exe -u;
-  pytest-qt/cache disabled. Test commands are retained in today's refresh script.
-- No full/GUI/live-provider/Telegram/campaign/converter/power-loss suite. Actual script and
-  nested shell execution were tested; descendant containment under failed termination was
-  not. Review is documentation-only: no application repairs or Git mutations.
+- Today's focused suites: **115 passed, 4 failed in 12.22s**. Three failures are R15's
+  deleted-template contract tests; the detached-board service test fails because its child
+  cannot import SQLite. Board runtime/download/helper, interrupt, registry and
+  plan-parser suites ran with the dagi interpreter outside the Windows sandbox, pytest-qt
+  and pytest cache disabled. The command and outcome summary are retained in
+  [verification.json](C:/Users/alexr/.codex/visualizations/2026/10/10/01a1236a-9530-7a20-9210-07bdb703de16/verification.json).
+- Four board/client/tool/store/upload modules could not collect because `_sqlite3` raises
+  `ImportError: DLL load failed while importing _sqlite3: The specified module could not be found.`
+  The error persists outside the sandbox and after process-local conda DLL registration.
+  These suites are unverified; this host setup failure is not counted as an application defect.
+- New offline R20/R21 assertions passed. R20 uses the real interrupt/global runner functions
+  with mocked kills and cleanup over synthetic child states. R21 uses a real loop and real
+  controller/stop methods with stub GUI/provider sinks; its paused worker was resumed/joined.
+  No provider requests, board messages or actual subprocess termination occurred.
+- Existing R3/R4/R10–R14/R16 runtime evidence is from **October 8**, and R17–R19 evidence
+  from **October 8/9**. Owning source paths are unchanged relative to the last reviewed HEAD.
+  R8 remains source-inspected abandoned-metadata debt. R15 failures are fresh. R7 inventory
+  is fresh, explicitly excluding nested tests. Resolved R2/R6/R8-generation/R9 defects stay removed.
+- [Today's probe source](C:/Users/alexr/.codex/visualizations/2026/10/10/01a1236a-9530-7a20-9210-07bdb703de16/review_probes.py) and
+  [results](C:/Users/alexr/.codex/visualizations/2026/10/10/01a1236a-9530-7a20-9210-07bdb703de16/review_probe_results.json) retain new reproductions and inventory.
+  [October 9 evidence](C:/Users/alexr/.codex/visualizations/2026/10/09/01a12093-68e8-7b40-98a4-9682ae3fc5c0/review_probe_results.json)
+  and [October 8 evidence](C:/Users/alexr/.codex/visualizations/2026/10/08/01a11b73-16a4-7810-b1e8-4e890c34d652/)
+  support the unchanged-path findings. Python: C:/Users/alexr/miniconda3/envs/dagi/python.exe -u.
+- No full suite, actual rendered GUI interaction, live provider/Telegram, campaign,
+  converter, power-loss, or actual multi-parent process-tree termination test. Campaign
+  remains outside this checkout. Documentation-only review; no application repairs or Git mutations.
 
-See the [improvement roadmap](C:/Users/alexr/Driverless_AGI/_CODEX_SUGGESTIONS_2026-10-09.md).
+See the [improvement roadmap](C:/Users/alexr/Driverless_AGI/_CODEX_SUGGESTIONS_2026-10-10.md).
 

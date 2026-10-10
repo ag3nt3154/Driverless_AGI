@@ -49,27 +49,23 @@
     Add any future user-question tool (e.g. a revived `show_plan`) to `SOLO_TOOLS`.
   - `edit` takes an `edits` list for one file: in order, all-or-nothing, placeholder-tolerant.
 
-- **2026-10-09 review refresh on main.** See
-  [_CODEX_CODE_REVIEW_2026-10-09.md](_CODEX_CODE_REVIEW_2026-10-09.md) and
-  [_CODEX_SUGGESTIONS_2026-10-09.md](_CODEX_SUGGESTIONS_2026-10-09.md).
-  Main now includes code mode and CLI UTF-8 output. The review retains 12 prior open findings
-  in unchanged owning paths and adds R18/R19, for 14 open findings total.
-  - **P1 R18:** code-mode timeout waits for parent-side tools; a controlled cancellation
-    interleaving writes after force_kill returns. Coordinate tool admission, active-operation
-    cancellation and the remaining deadline under one owner.
-  - **P2 R19:** printed code-mode checkpoints disappear on kill/timeout. Stream or spool
-    partial output with bounded capture and retained artifact references.
-  - R3/R4/R10–R14/R16 retain October 8 runtime evidence, rechecked against unchanged source.
-    R8 is still source-inspected cleanup debt. R17 direct parsing again picks Validate input
-    when Validate is requested. R15 remains three missing-template failures.
-  - R7 inventory: 226 tracked files under explicit production roots/root entry points;
-    five oversized files, three long functions. Broader file set than October 8; no growth
-    claim or cyclomatic-complexity measurement.
-  Roadmap S1–S11 remains unbuilt extensions; S12 measures shipped code-mode effectiveness
-  per verified task. Reconcile the separate board/multi-agent implementation before S5.
-  Focused tests outside sandbox: 155 passed, 3 known failures (9.46s). New probes also pass
-  outside sandbox; sandbox setup/interpreter/kill restrictions are recorded separately.
-  No full/GUI/live-provider suite, application changes or Git mutations.
+- **2026-10-10 review refresh on main.** See
+  [_CODEX_CODE_REVIEW_2026-10-10.md](_CODEX_CODE_REVIEW_2026-10-10.md) and
+  [_CODEX_SUGGESTIONS_2026-10-10.md](_CODEX_SUGGESTIONS_2026-10-10.md).
+  Retains 14 prior open findings and adds R20/R21, for 16 total. R7 removes app.py's resolved
+  size violation; four oversized production modules and three long functions remain.
+  - **P1 R20:** AgentLoop.interrupt kills the process-global subagent set. Carry parent/run
+    ownership through public API/runner/resume and stop only the interrupted parent's children.
+  - **P2 R21:** closing an agent hides it and retains a paused worker in `_retired`.
+    Add terminal cancellation, confirmed exit and release/reap; cover pre-construction close.
+  - Existing scheduler/Telegram/plan/code-mode paths remain unchanged. Their October 8/9
+    reproductions are clearly dated; fresh tests reconfirm the three R15 template failures.
+  Roadmap recognizes shipped board/multi-agent features, extends their UI in S5, and adds
+  S13 task/attempt receipts and bounded review collaboration. No duplicate spawn/mention feature.
+  Focused available tests: 115 passed, 4 failures (three plan-template; one SQLite setup). Four SQLite-dependent test modules
+  failed collection inside/outside sandbox and with DLL bootstrap; no application defect
+  inferred from that setup failure. New offline lifecycle probes pass and release workers.
+  No full/rendered-GUI/live-provider suite, application changes or Git mutations.
 
 - **2026-10-02 automation review follow-ups.** The review covered `task/iteration-engine`
   at `6917b131`. The running reports have since been renamed to the current October 9

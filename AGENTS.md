@@ -1,6 +1,6 @@
 # AGENTS.md
 
-> Last updated: 2026-10-09 (composer wrap/scrollbar hang fixed; Qt probe gotchas) | [README](README.md) | [TODO](TODO.md) | [Task specs & plans](wiki/tasks/)
+> Last updated: 2026-10-10 (review refreshed; composer fix and Qt probe guidance retained) | [README](README.md) | [TODO](TODO.md) | [Task specs & plans](wiki/tasks/)
 
 ## Overview
 
@@ -9,29 +9,7 @@ session persistence, and multi-UI support (TUI, PySide desktop, Telegram).
 
 ## Rules
 
-- Always update `AGENTS.md`, `README.md` and `TODO.md` after completing a task.
-- Knowledge (architecture, decisions, errors, notes, todos) goes to the central memory wiki
-  via memory-add — not AGENTS.md. The repo's `wiki/` holds only `tasks/` (specs and plans).
-- Codex skills live in `~/.codex/skills` (the old `integrations/codex/` package was removed).
-- Subagent API: import `tools/subagent_api.py`; never the private `_subagent_runner.py`.
-- White-box tests of `agent/_*` loop modules must patch the owning module
-  (e.g. `agent._compaction`), not `agent.loop`.
-- Tool filtering: `.dagi/config.yaml` `tools:` restricts the main agent and `disabled_tools:`
-  always removes (currently `memory_refresh`); `write_handoff` is always injected.
-- Ordering contracts are pinned by tests; when a change is meant to alter them, update the
-  expected sequence in the same commit: tool registration order
-  (`tests/test_tool_registry_contract.py`), `AgentLoop` construction
-  (`tests/test_loop_construction.py`), per-call dispatch events
-  (`tests/test_end_turn_batch.py::TestDispatchEventTrace`), subagent argv
-  (`tests/test_subagent_api.py::TestChildArgvContract`).
-- Board HTTP lives only in `agent/board_client.py`; posts never carry local paths.
-- GUI per-agent state lives in `AgentSession` (`pyside_gui/agent_session.py`); window chrome
-  (prompt, right sidebar, file viewer) only follows the active session.
-
-### Coding standards
-
-- Functions: ≤ 100 lines | Cyclomatic complexity: ≤ 8 | Positional parameters: ≤ 5
-- Line length: 100 characters | Files: ≤ 500 lines
+- Knowledge (architecture, decisions, errors, notes, todos) goes to `wiki`, including `tasks/` (specs and plans).
 
 ### Behavioral guidelines
 
@@ -53,17 +31,6 @@ session persistence, and multi-UI support (TUI, PySide desktop, Telegram).
   security issues, or significant complexity debt.
 - **Errors:** fail fast with clear, actionable messages; never swallow exceptions silently.
 
-### Git workflow
-
-- Start with `git status --short` and `git branch --show-current`; never discard existing work.
-- Implementation: after grilling, get branch approval and create `dagi/<task-name>` (Claude
-  Code sessions use `task/<task>`); write spec + plan in `wiki/tasks/YYYY-MM-DD_<task>/`, get
-  joint approval, commit both, then implement and commit reviewed subtasks.
-- The main agent owns task commits under that scoped approval; workers do not stage or commit.
-- Ask separately before merging a completed task branch into its recorded parent.
-- Conventional Commit prefixes. Never commit, merge, push, stash, switch or create a branch
-  without user approval.
-
 ## Commands & Environment
 
 - Python env `dagi` (`DEFAULT_PYTHON_ENV`) for all scripts and installs.
@@ -78,7 +45,5 @@ session persistence, and multi-UI support (TUI, PySide desktop, Telegram).
 
 ## Memory
 
-- Project wiki: `G:\My Drive\black_grimoire\wiki\projects\driverless-agi\` (architecture,
-  errors log, notes and terms, todos, reviews).
-- Required checkpoints (see `enter-workflow`): memory-query at task start; memory-add at task
-  end. Grep the exact error text before debugging. Memory is inline — no subagents.
+- Project wiki: `wiki` (architecture, errors log, notes and terms, todos, reviews).
+- Required checkpoints (see `enter-workflow`)
