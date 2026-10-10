@@ -6,4 +6,4 @@ in .dagi/config.yaml (``url`` gives the port, ``bind`` the listen address); flag
 from services.message_board.__main__ import main
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    raise SystemExit(main(open_browser=True))

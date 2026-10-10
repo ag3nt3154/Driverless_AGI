@@ -75,20 +75,19 @@ async def _health(client, url: str) -> dict:
     if response.status_code != 200:
         raise RecordError("board health request failed or redirected")
     body = response.json()
-    if not isinstance(body, dict):
-        raise RecordError("foreign or malformed board health response")
-    expected = {"status": "ok", "version": 1}
-    if any(body.get(key) != value for key, value in expected.items()):
-        raise RecordError("foreign or malformed board health response")
-    _validate_health_identity(body)
+    validate_health_identity(body)
     return body
 
 
-def _validate_health_identity(body: dict) -> None:
+def validate_health_identity(body: object) -> None:
+    """Validate the public identity fields in a v1 board health response."""
+    if (not isinstance(body, dict) or body.get("status") != "ok"
+            or type(body.get("version")) is not int or body["version"] != 1):
+        raise RecordError("foreign or malformed board health response")
     valid_pid = type(body.get("pid")) is int and body["pid"] > 0
     instance = body.get("instance_id")
     valid_instance = isinstance(instance, str) and re.fullmatch(r"[0-9a-f]{32}", instance)
-    if type(body["version"]) is not int or not valid_pid or not valid_instance:
+    if not valid_pid or not valid_instance:
         raise RecordError("foreign or malformed board health response")
 
 

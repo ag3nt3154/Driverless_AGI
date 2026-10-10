@@ -114,11 +114,11 @@ class AgentsController(QObject):
                 session._board_session = controller.add_session(session.handle)
         self.refresh()
 
-    def on_board_mention(self, post: dict, user_handle: str) -> None:
+    def on_board_mention(self, post: dict) -> None:
         """Deliver a live post to every agent it @mentions (never to its own author)."""
         mentions = post.get("mentions") or []
         author = post.get("author")
-        from_user = author == user_handle
+        from_user = post.get("author_kind") == "user"
         for session in list(self.window._sessions):
             board = session._board_session
             if board is None or board.handle not in mentions or board.handle == author:
@@ -145,6 +145,3 @@ class AgentsController(QObject):
         ])
         if len(win._sessions) > 1:
             win._refresh_title()
-        controller = getattr(win, "_board_controller", None)
-        if controller is not None and hasattr(controller, "refresh_mentions"):
-            controller.refresh_mentions()

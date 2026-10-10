@@ -1,10 +1,15 @@
 """HTTP and streaming contract of the board service."""
 import asyncio
 import json
+import socket
+import threading
+import time
 
 import pytest
+import uvicorn
 from fastapi.testclient import TestClient
 
+from agent.board_client import BoardClient
 from services.message_board.app import PostHub, create_app, post_events
 from services.message_board.store import BoardStore
 
@@ -85,6 +90,86 @@ def test_sse_backlog_notify_ping_and_race(board, monkeypatch):
         assert await anext(latest) == ": ping\n\n"
         await latest.aclose()
     asyncio.run(run())
+
+
+def test_posts_and_stream_include_author_kind(board):
+    user = "web_12345678"
+    with TestClient(create_app(board)) as client:
+        assert client.post("/members", json={"handle": A, "kind": "agent"}).status_code == 201
+        assert client.post("/members", json={"handle": user, "kind": "user",
+                                             "host": "web"}).status_code == 201
+        agent_post_response = client.post("/posts", json={"author": A, "text": "agent"})
+        user_post_response = client.post("/posts", json={"author": user, "text": "user"})
+        assert agent_post_response.status_code == 201
+        assert user_post_response.status_code == 201
+        agent_post = agent_post_response.json()
+        user_post = user_post_response.json()
+        assert agent_post["author_kind"] == "agent"
+        assert user_post["author_kind"] == "user"
+
+        posts = client.get("/posts", params={"after": 0}).json()
+        assert [post["author_kind"] for post in posts] == ["agent", "user"]
+
+    async def backlog():
+        events = post_events(board, PostHub(), 0)
+        try:
+            received = [json.loads((await anext(events)).split("data: ", 1)[1])
+                        for _ in range(2)]
+            assert [post["author_kind"] for post in received] == ["agent", "user"]
+            assert [post["id"] for post in received] == [agent_post["id"], user_post["id"]]
+        finally:
+            await events.aclose()
+
+    asyncio.run(backlog())
+
+
+def test_user_member_attachment_is_fetchable_by_agent(board, tmp_path):
+    user = "web_12345678"
+    app = create_app(board)
+    listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    listener.bind(("127.0.0.1", 0))
+    listener.listen(128)
+    host, port = listener.getsockname()
+    base_url = f"http://{host}:{port}"
+    server = uvicorn.Server(uvicorn.Config(app, host=host, port=port, log_level="critical"))
+    server_errors = []
+
+    def run_server():
+        try:
+            server.run(sockets=[listener])
+        except BaseException as error:
+            server_errors.append(error)
+
+    thread = threading.Thread(target=run_server, name="message-board-test-server", daemon=True)
+    thread.start()
+    user_client = BoardClient(base_url)
+    agent_client = BoardClient(base_url)
+    try:
+        deadline = time.monotonic() + 10
+        while not server.started and thread.is_alive() and time.monotonic() < deadline:
+            time.sleep(0.01)
+        assert server.started, f"uvicorn did not start: {server_errors!r}"
+
+        user_client.register(user, "user", host="web")
+        agent_client.register(A, "agent")
+        uploaded_bytes = b"from the web"
+        source = tmp_path / "note.txt"
+        source.write_bytes(uploaded_bytes)
+        attachment = user_client.upload(user, source)
+        user_client.post(user, "from web", attachments=[attachment["id"]])
+
+        meta, path = agent_client.fetch_attachment(attachment["id"],
+                                                   project_root=tmp_path / "agent")
+        assert meta == attachment
+        assert path.read_bytes() == uploaded_bytes
+    finally:
+        user_client.close()
+        agent_client.close()
+        server.should_exit = True
+        thread.join(timeout=5)
+        listener.close()
+    assert not thread.is_alive(), "uvicorn test server did not stop"
 
 
 def test_store_errors_and_latest_reads(board):

@@ -262,11 +262,13 @@ models:
 # URLs for standalone dagi microservices. Omit a service to use its built-in default.
 services:
   doc_converter: "http://localhost:8100"  # Document converter service URL (start with: python -m services.doc_converter)
-  # Message board service (python message_board.py). Either a URL string or {url, bind}.
-  # The GUI pings `url`; if it is still unreachable after one retry, the GUI launches a local
-  # board on `bind` (default 0.0.0.0, i.e. reachable on the LAN) at the URL's port.
-  # The bearer token is never set here: env DAGI_BOARD_TOKEN, else .dagi/board/token (generated
-  # on first non-loopback launch). Use the same token on every machine that shares a board.
+  # Message board service. Either a URL string or {url, bind}.
+  # `url` is the central board address used by clients. `bind` is used only by
+  # `python message_board.py` (default 0.0.0.0, reachable on the LAN) at the URL's port.
+  # If central is unreachable, the GUI starts its own private loopback temp board;
+  # temp posts are discarded when the GUI switches away or closes; it switches to central when ready.
+  # The central board token is not set here: env DAGI_BOARD_TOKEN, else .dagi/board/token
+  # (generated on first non-loopback launch). Use the same token on each client machine.
   message_board:
     url: "http://127.0.0.1:8765"
     bind: "0.0.0.0"

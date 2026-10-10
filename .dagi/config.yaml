@@ -20,6 +20,14 @@ default_model: deepseek-flash
 
 # Central memory store (contains wiki/). Omit to use the built-in default.
 memory_root: "G:\\My Drive\\black_grimoire"
+services:
+  # Message board service. `url` is the central board address used by clients.
+  # `bind` is used only by `python message_board.py` (default 0.0.0.0, reachable on LAN).
+  # If central is unreachable, the GUI starts its own private loopback temp board;
+  # temp posts are discarded when the GUI switches away or closes; it switches to central when ready.
+  message_board:
+    url: "http://127.0.0.1:8765"
+    bind: "0.0.0.0"
 tools:                      # Restrict the main agent to a specific subset of tools.
                             # Omit (or set to null) to enable all available tools.
   # ── File tools ──────────────────────────────────────────────────────────────

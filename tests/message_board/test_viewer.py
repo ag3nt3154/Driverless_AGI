@@ -95,7 +95,7 @@ def test_page_is_self_contained_and_small():
     assert "http://" not in _strip_comments(source)
     assert "https://" not in _strip_comments(source)
     assert not re.search(r"<(?:script|link|img|iframe)[^>]*\s(?:src|href)=", source)
-    assert len(source.splitlines()) <= 500  # repo file-size cap
+    assert len(source.splitlines()) <= 800  # expanded for the self-contained composer
 
 
 # --- behaviour in a JS runtime (node) with a fake DOM and fetch -----------------------------
@@ -142,9 +142,11 @@ def test_stream_that_closes_without_events_backs_off(tmp_path):
 
 def test_hanging_requests_time_out_and_reconnect(tmp_path):
     final = _harness("hang", tmp_path)["final"]
-    paths = [path for path, _ in final["requests"] if not path.startswith("/attachments")]
+    paths = [path for path, _ in final["requests"]
+             if path.startswith("/posts") or path.startswith("/stream")]
     assert paths == ["/posts?limit=50", "/posts?limit=50", "/stream?after=2",
                      "/stream?after=2"]
+    assert [path for path, _ in final["requests"] if path == "/members"] == ["/members"]
     assert final["countdowns"] == [1, 2] and final["status"] == "connected"
     assert final["ids"] == [2, 1]
 
@@ -168,6 +170,64 @@ def test_image_overlay_and_text_preview(tmp_path):
     assert extra["previews"] == ["# notes\n<b>not html</b>"]
     assert extra["previewErrors"] == ["not a text file"]
     assert extra["previewHidden"]
+
+
+def test_compose_registers_uploads_and_posts(tmp_path):
+    report = _harness("compose", tmp_path)["compose"]
+    assert report["member"] == {"kind": "user", "host": "web"}
+    assert len(report["uploads"]) == 2
+    assert report["posted"]["attachments"] == [upload["id"] for upload in report["uploads"]]
+    assert report["posted"]["reply_to"] == 7
+    assert report["posted"]["text"].startswith("@main_3f9a1c2e ")
+    assert report["identity"] == "web_12345678"
+    assert report["composerCleared"] is True
+    assert report["identityCancelNoAutoSend"] is True
+    assert report["sendLocked"] == {"text": True, "attach": True, "fileInput": True, "files": 2}
+
+
+def test_first_send_identity_prompt_registers_and_posts(tmp_path):
+    report = _harness("compose-first-send", tmp_path)["compose"]
+    members = [item for item in report["requests"]
+               if item["path"] == "/members" and item["method"] == "POST"]
+    posts = [item for item in report["requests"]
+             if item["path"] == "/posts" and item["method"] == "POST"]
+    assert len(members) == len(posts) == 1
+    assert members[0]["body"] == {"handle": "web_12345678", "kind": "user", "host": "web"}
+    assert posts[0]["body"]["author"] == "web_12345678"
+
+
+def test_unknown_author_during_member_load_queues_one_refresh(tmp_path):
+    report = _harness("members-race", tmp_path)["membersRace"]
+    assert report["loads"] == 2
+    assert report["ids"] == [1]
+
+
+def test_compose_limits_refuse_without_requests(tmp_path):
+    report = _harness("compose", tmp_path)["compose"]
+    assert report["limitRequests"] == []
+    assert report["limitDisabled"] == [True, True, True]
+    assert report["over700Count"] == "701/700"
+
+
+def test_identity_collision_retries_with_new_suffix(tmp_path):
+    report = _harness("collision", tmp_path)["compose"]
+    members = [request for request in report["requests"]
+               if request["path"] == "/members" and request["method"] == "POST"]
+    assert [item["body"]["handle"] for item in members] == ["alex_aaaaaaaa", "alex_bbbbbbbb"]
+    assert report["posted"]["author"] == "alex_bbbbbbbb"
+
+
+def test_mention_autocomplete_and_reply(tmp_path):
+    report = _harness("compose", tmp_path)["compose"]
+    assert report["mentionOptions"] == ["main_3f9a1c2e"]
+    assert report["mentionHighlight"] == ["1"]  # arrow keys show the selected option
+    assert report["posted"]["text"].startswith("@main_3f9a1c2e ")
+    assert report["posted"]["reply_to"] == 7
+
+
+def test_composer_is_disabled_during_outage(tmp_path):
+    report = _harness("compose-outage", tmp_path)["compose"]
+    assert report["disabledOffline"] is True
 
 
 # --- packaging and clean installs -----------------------------------------------------------

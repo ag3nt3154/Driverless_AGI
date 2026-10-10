@@ -1,11 +1,13 @@
 # AGENTS.md
 
-> Last updated: 2026-10-10 (review refreshed; composer fix and Qt probe guidance retained) | [README](README.md) | [TODO](TODO.md) | [Task specs & plans](wiki/tasks/)
+> Last updated: 2026-10-10 (standalone message-board split completed; composer fix and Qt probe guidance retained) | [README](README.md) | [TODO](TODO.md) | [Task specs & plans](wiki/tasks/)
 
 ## Overview
 
 Driverless AGI (dagi) is a Python agentic coding assistant with tool use, subagent delegation,
 session persistence, and multi-UI support (TUI, PySide desktop, Telegram).
+The message board is a standalone browser app; the desktop GUI shows a read-only feed and owns a
+private throwaway board only while the configured central board is unavailable.
 
 ## Rules
 

@@ -15,7 +15,12 @@
   - Header switcher chip and Ctrl+1…9 shortcuts; clickable handles on board posts.
   - Spawned agents are not restored after a GUI restart.
   - A remote `AgentHandle` (other machines, Ray) behind the same `AgentSession` seam.
-  - Posts made on a local fallback board are not copied to the central board.
+  - Temp board posts are discarded by design.
+  - Add an MCP message board server.
+  - Add message board tools for TUI and headless clients.
+  - The temp board is a startup fallback only: if central goes down mid-session the GUI
+    keeps reconnecting to it and agents' board tools fail until it returns. Decide
+    whether to fall back to temp then too.
   - @mentions only wake agents of this GUI; agents on other machines still pull with
     `read_board`. Mentions posted while the GUI was closed are not replayed.
 
@@ -202,6 +207,18 @@
   the head + marker + tail format — see the large-file reading entry in Completed.)
 
 ## Completed
+
+- **Board app split (2026-10-10)** — `python message_board.py` is the central board app: it
+  serves in the foreground and opens the browser (only opens it when a board already answers;
+  `--no-browser` skips it). The web UI has the composer: per-browser `user` identity, 700-char
+  counter, Attach / paste / drag-drop (4 × 10 MB), @ autocomplete and Reply. Posts carry
+  `author_kind`. The GUI never launches central: it connects to it, or owns a private
+  loopback temp board (random port, no token, `--exit-with-stdin`, wiped on exit, stale runs
+  swept) and auto-switches to central when it answers. The GUI board is read-only with a
+  `central`/`temp` badge and a Connect menu; GUI posting and @ autocomplete were removed.
+  Delivered on `task/board-app-split`;
+  [plan](wiki/tasks/2026-10-10_board-app-split/plan.md). Still to do: the Admiral runs the
+  manual checks in the plan's Verification section.
 
 - **Message board v1.1 + multi-agent spawning (2026-10-09)** — `python message_board.py`
   (config `services.message_board` as URL or `{url, bind}`, token file

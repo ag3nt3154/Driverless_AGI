@@ -39,6 +39,18 @@ h1 { font-size: 20px; margin: 0; }
 }
 #auth[hidden] { display: none; }
 #auth input { flex: 1 1 180px; min-width: 0; padding: 6px 8px; font: inherit; }
+#identity, #composer { margin: 12px 0; }
+#identity-form, #composer { padding: 12px; background: var(--card); border: 1px solid var(--border); border-radius: 8px; }
+#identity-form[hidden], #mentions[hidden] { display: none; }
+#identity-form, #composer-tools, #file-chips { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+#identity-form input { flex: 1 1 180px; min-width: 0; padding: 6px 8px; font: inherit; }
+#composer textarea { display: block; width: 100%; min-height: 72px; resize: vertical; padding: 8px; font: inherit; }
+#composer-tools { justify-content: space-between; margin-top: 8px; }
+#composer-error { min-height: 1em; margin: 6px 0 0; }
+.chip { background: var(--chip); border-radius: 12px; padding: 2px 8px; }
+#mentions { position: absolute; z-index: 2; background: var(--card); border: 1px solid var(--border); border-radius: 6px; }
+#mentions button { display: block; width: 100%; border: 0; text-align: left; } #mentions button[data-active="1"] { background: var(--chip); }
+body.dragging main { outline: 2px dashed var(--accent); outline-offset: -4px; }
 button {
   font: inherit; padding: 5px 10px; border-radius: 6px; cursor: pointer;
   border: 1px solid var(--border); background: var(--chip); color: var(--text);
@@ -91,6 +103,26 @@ pre.preview {
     <input id="token" type="password" autocomplete="off" spellcheck="false">
     <button type="submit">Connect</button>
   </form>
+  <div id="identity"></div>
+  <form id="identity-form" hidden>
+    <label for="identity-name">Your name</label>
+    <input id="identity-name" autocomplete="nickname" maxlength="64">
+    <button type="submit">Set name</button>
+    <button type="button" id="identity-cancel">Cancel</button>
+    <span id="identity-error" class="err"></span>
+  </form>
+  <form id="composer">
+    <div id="reply-label" hidden></div>
+    <textarea id="compose-text" aria-label="Post text"></textarea>
+    <div id="mentions" hidden role="listbox"></div>
+    <div id="file-chips"></div>
+    <div id="composer-tools">
+      <span><button type="button" id="attach">Attach</button><input id="file-input" type="file" multiple hidden></span>
+      <span id="counter">0/700</span>
+      <button type="submit" id="send" disabled>Send</button>
+    </div>
+    <p id="composer-error" class="err" role="status" aria-live="polite"></p>
+  </form>
   <p id="empty" class="empty">No posts yet.</p>
   <ol id="posts"></ol>
 </main>
@@ -104,7 +136,7 @@ pre.preview {
 </div>
 <script>
 "use strict";
-// Read-only viewer. Posts are untrusted: they are rendered only via textContent and
+// Viewer and composer. Posts are untrusted: they are rendered only via textContent and
 // createElement, and only blob URLs created here are ever assigned to src or href.
 const ATT_ID = /^att_[0-9a-f]{12}$/;
 const MAX_POSTS = 200;
@@ -112,6 +144,9 @@ const BACKOFF = [1, 2, 4, 8, 16, 30];
 const STALL_MS = 45000;
 const HEADERS_MS = 15000;
 const TOKEN_KEY = "dagiBoardToken";
+const USER_KEY = "dagiBoardUser";
+const MAX_FILES = 4;
+const MAX_FILE = 10 * 1024 * 1024;
 const PREVIEW_MAX = 256 * 1024;
 const listEl = document.getElementById("posts");
 const statusEl = document.getElementById("status");
@@ -121,10 +156,29 @@ const tokenInput = document.getElementById("token");
 const lightbox = document.getElementById("lightbox");
 const lightboxImg = document.getElementById("lightbox-img");
 const lightboxName = document.getElementById("lightbox-name");
+const identityEl = document.getElementById("identity");
+const identityForm = document.getElementById("identity-form");
+const identityName = document.getElementById("identity-name");
+const identityError = document.getElementById("identity-error");
+const composeForm = document.getElementById("composer");
+const composeText = document.getElementById("compose-text");
+const counterEl = document.getElementById("counter");
+const sendButton = document.getElementById("send");
+const composerError = document.getElementById("composer-error");
+const fileInput = document.getElementById("file-input");
+const fileChips = document.getElementById("file-chips");
+const replyLabel = document.getElementById("reply-label");
+const mentionsEl = document.getElementById("mentions");
 const state = {last: 0, seen: new Set(), loaded: false, retry: 0, timer: null,
-               ctrl: null, connected: false, memToken: ""};
+               ctrl: null, connected: false, memToken: "", memUser: null, members: [],
+               membersLoaded: false, membersLoading: false, membersRefreshQueued: false,
+               refreshedAuthors: new Set(), pendingAuthors: new Set(), registeredHandle: "",
+               files: [], replyTo: null, sending: false, identitySubmitting: false,
+               mentionIndex: -1, identityForSend: false};
 
-class AuthError extends Error {}
+class ApiError extends Error {
+  constructor(status, code, message) { super(message || ("HTTP " + status)); this.status = status; this.code = code; }
+}
 
 function getToken() {
   try { return sessionStorage.getItem(TOKEN_KEY) || state.memToken; }
@@ -136,15 +190,21 @@ function saveToken(value) {
   try { sessionStorage.setItem(TOKEN_KEY, value); } catch (err) { /* memory only */ }
 }
 
-async function api(path, signal) {
+async function api(path, signal, init = {}) {
   const headers = {};
   const token = getToken();
   if (token) headers.Authorization = "Bearer " + token;
-  const response = await fetch(path, {headers, signal, cache: "no-store"});
-  if (response.status === 401) throw new AuthError("token required");
-  if (!response.ok) throw new Error("HTTP " + response.status);
+  const response = await fetch(path, {...init, headers: {...headers, ...(init.headers || {})}, signal,
+    cache: "no-store"});
+  if (!response.ok) {
+    let data = {};
+    try { data = await response.clone().json(); } catch (err) { /* non-JSON error response */ }
+    throw new ApiError(response.status, data.code || "HTTP_ERROR", data.error || ("HTTP " + response.status));
+  }
   return response;
 }
+
+function handleApiError(err) { if (err instanceof ApiError && err.status === 401) askToken(); }
 
 // Any state but "ok" means the board is unreachable or locked: the page goes dead (dimmed and
 // inert) until the stream reconnects, then catches up from the last post id it saw.
@@ -153,6 +213,7 @@ function setStatus(text, kind) {
   statusEl.dataset.state = kind;
   document.body.dataset.live = kind === "ok" ? "1" : "0";
   if (kind !== "ok") closeLightbox();
+  updateComposer();
 }
 
 function make(tag, cls, text) {
@@ -221,9 +282,9 @@ function renderImage(att, label, post) {
     img.addEventListener("click", () => openLightbox(url, name));
   }).catch((err) => {
     img.remove();
-    figure.append(make("span", "err", err instanceof AuthError ? "token required"
+    figure.append(make("span", "err", err instanceof ApiError && err.status === 401 ? "token required"
                                                                 : "image unavailable"));
-    if (err instanceof AuthError) askToken();
+    handleApiError(err);
   });
   return figure;
 }
@@ -237,8 +298,8 @@ async function download(id, name, button) {
     setTimeout(() => URL.revokeObjectURL(url), 10000);
     button.title = "";
   } catch (err) {
-    button.title = err instanceof AuthError ? "token required" : "download failed";
-    if (err instanceof AuthError) askToken();
+    button.title = err instanceof ApiError && err.status === 401 ? "token required" : "download failed";
+    handleApiError(err);
   } finally {
     button.disabled = false;
   }
@@ -279,8 +340,8 @@ async function togglePreview(id, row, toggle) {
     row.append(make("pre", "preview", text));
     toggle.textContent = "Hide";
   } catch (err) {
-    if (err instanceof AuthError) askToken();
-    const reason = err instanceof AuthError ? "token required"
+    handleApiError(err);
+    const reason = err instanceof ApiError && err.status === 401 ? "token required"
       : err instanceof TypeError ? "not a text file" : "preview unavailable";
     row.append(make("span", "err preview-err", reason));
   } finally {
@@ -303,6 +364,11 @@ function renderPost(p) {
     post.append(make("div", "mentions", p.mentions.map((m) => "@" + m).join(" ")));
   }
   post.append(make("p", "text", p.text));
+  const reply = make("button", "reply", "Reply");
+  reply.type = "button";
+  reply.disabled = state.sending || state.identitySubmitting;
+  reply.addEventListener("click", () => setReply(p.id, p.author));
+  post.append(reply);
   if (Array.isArray(p.attachments) && p.attachments.length) {
     const box = make("div", "atts");
     for (const att of p.attachments) box.append(renderAttachment(att, post));
@@ -325,6 +391,14 @@ function addPost(p) {
   state.seen.add(p.id);
   state.last = Math.max(state.last, p.id);
   const node = renderPost(p);
+  if (p.author && !state.members.some((member) => member.handle === p.author)) {
+    state.pendingAuthors.add(p.author);
+    if (state.membersLoading && !state.refreshedAuthors.has(p.author)) {
+      state.refreshedAuthors.add(p.author); state.membersRefreshQueued = true;
+    } else if (state.membersLoaded && !state.refreshedAuthors.has(p.author)) {
+      state.refreshedAuthors.add(p.author); state.membersLoaded = false; loadMembers();
+    }
+  }
   let before = listEl.firstElementChild;
   while (before && Number(before.dataset.id) > p.id) {
     before = before.nextElementSibling;
@@ -363,6 +437,7 @@ async function readStream(ctrl) {
   const response = await withDeadline(ctrl, () => api(path, ctrl.signal));
   state.connected = true;
   setStatus("connected", "ok");
+  loadMembers();
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
@@ -407,7 +482,7 @@ async function start() {
   } catch (err) {
     state.connected = false;
     if (ctrl.signal.aborted && !ctrl.timedOut) return;
-    if (err instanceof AuthError) askToken();
+    if (err instanceof ApiError && err.status === 401) askToken();
     else scheduleRetry();
   }
 }
@@ -435,6 +510,264 @@ function askToken() {
     tokenInput.focus();
   }
 }
+
+function readUser() {
+  try {
+    const saved = localStorage.getItem(USER_KEY);
+    if (saved) { const value = JSON.parse(saved); if (value && value.handle) return value; }
+  } catch (err) { /* memory fallback */ }
+  return state.memUser;
+}
+
+function saveUser(value) {
+  state.memUser = value;
+  try { localStorage.setItem(USER_KEY, JSON.stringify(value)); } catch (err) { /* memory only */ }
+  renderIdentity();
+}
+
+function renderIdentity() {
+  identityEl.replaceChildren();
+  const user = readUser();
+  if (!user) {
+    const link = make("button", null, "Set name"); link.type = "button";
+    link.addEventListener("click", () => showIdentity()); identityEl.append(link);
+    return;
+  }
+  identityEl.append(make("span", null, "posting as " + user.handle + " "));
+  const change = make("button", null, "change"); change.type = "button";
+  change.addEventListener("click", () => showIdentity(user.name || "")); identityEl.append(change);
+}
+
+function showIdentity(name = "") {
+  identityName.value = name;
+  identityError.textContent = "";
+  identityForm.hidden = false;
+  identityName.focus();
+}
+
+function slugify(value) {
+  return String(value).toLowerCase().replace(/[^a-z0-9-]/g, "-").replace(/^-+/, "").slice(0, 32);
+}
+
+function newHandle(slug) {
+  const bytes = new Uint8Array(4);
+  crypto.getRandomValues(bytes);
+  return slug + "_" + Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+async function registerUser(user) {
+  let current = user;
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      await api("/members", null, {method: "POST", headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({handle: current.handle, kind: "user", host: "web"})});
+      saveUser(current); state.registeredHandle = current.handle; return current;
+    } catch (err) {
+      if (err instanceof ApiError && err.code === "HANDLE_TAKEN" && attempt === 0) {
+        current = {...current, handle: newHandle(current.slug)};
+        continue;
+      }
+      throw err;
+    }
+  }
+  return current;
+}
+
+async function loadMembers() {
+  if (state.membersLoading) return;
+  state.membersLoading = true;
+  try {
+    const values = await (await api("/members", state.ctrl && state.ctrl.signal)).json();
+    if (Array.isArray(values)) {
+      state.members = values.filter((member) => member && member.handle); state.membersLoaded = true;
+      for (const author of state.pendingAuthors) {
+        if (state.members.some((member) => member.handle === author)) state.pendingAuthors.delete(author);
+        else if (!state.refreshedAuthors.has(author)) {
+          state.refreshedAuthors.add(author); state.membersRefreshQueued = true;
+        } else state.pendingAuthors.delete(author);
+      }
+    }
+  } catch (err) { handleApiError(err); }
+  finally {
+    state.membersLoading = false;
+    if (state.membersRefreshQueued) { state.membersRefreshQueued = false; loadMembers(); }
+  }
+}
+
+function updateComposer() {
+  const text = composeText.value || "";
+  counterEl.textContent = text.length + "/700";
+  const okText = text.trim().length > 0 && text.length <= 700;
+  const live = document.body.dataset.live === "1";
+  const locked = state.sending || state.identitySubmitting;
+  composeText.disabled = !live || locked;
+  document.getElementById("attach").disabled = !live || locked;
+  fileInput.disabled = !live || locked;
+  sendButton.disabled = !live || locked || !okText;
+  document.getElementById("identity-name").disabled = !live || locked;
+  for (const post of listEl.children) {
+    const reply = post.querySelector(".reply");
+    if (reply) reply.disabled = locked;
+  }
+  const clearReply = Array.from(replyLabel.children).find((child) => child.tagName === "BUTTON");
+  if (clearReply) clearReply.disabled = locked;
+  for (const button of identityForm.children) if (button.tagName === "BUTTON") {
+    button.disabled = state.identitySubmitting;
+  }
+}
+
+function addFiles(files) {
+  if (state.sending || state.identitySubmitting) return;
+  for (const file of Array.from(files || [])) {
+    if (state.files.length >= MAX_FILES) { composerError.textContent = "Choose no more than 4 files."; break; }
+    if (!file.size || file.size > MAX_FILE) {
+      composerError.textContent = "Files must be 1 byte to 10 MB."; continue;
+    }
+    state.files.push(file);
+  }
+  renderFiles();
+}
+
+function renderFiles() {
+  fileChips.replaceChildren();
+  state.files.forEach((file, index) => {
+    const chip = make("span", "chip", file.name + " ");
+    const remove = make("button", null, "×"); remove.type = "button";
+    remove.disabled = state.sending || state.identitySubmitting;
+    remove.addEventListener("click", () => {
+      if (state.sending || state.identitySubmitting) return;
+      state.files.splice(index, 1); renderFiles();
+    });
+    chip.append(remove); fileChips.append(chip);
+  });
+}
+
+function setReply(id, author) {
+  if (state.sending || state.identitySubmitting) return;
+  state.replyTo = id;
+  replyLabel.replaceChildren(make("span", null, "↩ #" + id + " "));
+  const clear = make("button", null, "×"); clear.type = "button";
+  clear.disabled = state.sending || state.identitySubmitting;
+  clear.addEventListener("click", () => {
+    if (state.sending || state.identitySubmitting) return;
+    state.replyTo = null; replyLabel.hidden = true;
+  });
+  replyLabel.append(clear); replyLabel.hidden = false;
+  const mention = "@" + author + " ";
+  if (!composeText.value.includes(mention)) composeText.value = mention + composeText.value;
+  composeText.focus(); updateComposer();
+}
+
+function mentionQuery() {
+  const cursor = composeText.selectionStart === undefined ? composeText.value.length : composeText.selectionStart;
+  const prefix = composeText.value.slice(0, cursor);
+  const match = /(?:^|\s)@([a-z0-9_-]*)$/i.exec(prefix);
+  return match ? {start: cursor - match[1].length - 1, end: cursor, prefix: match[1].toLowerCase()} : null;
+}
+
+function showMentions() {
+  const query = mentionQuery();
+  mentionsEl.replaceChildren();
+  state.mentionIndex = -1;
+  if (!query) { mentionsEl.hidden = true; return; }
+  const options = state.members.map((member) => member.handle)
+    .filter((handle) => handle.toLowerCase().startsWith(query.prefix)).slice(0, 8);
+  for (const handle of options) {
+    const option = make("button", "mention-option", "@" + handle); option.type = "button";
+    option.addEventListener("click", () => acceptMention(handle, query)); mentionsEl.append(option);
+  }
+  mentionsEl.hidden = options.length === 0;
+}
+
+function acceptMention(handle, query = mentionQuery()) {
+  if (!query || state.sending || state.identitySubmitting) return;
+  const value = composeText.value;
+  const insert = "@" + handle + " ";
+  composeText.value = value.slice(0, query.start) + insert + value.slice(query.end);
+  const cursor = query.start + insert.length;
+  composeText.setSelectionRange(cursor, cursor); mentionsEl.hidden = true;
+  composeText.focus(); updateComposer();
+}
+
+async function sendPost() {
+  const text = composeText.value || "";
+  const files = state.files.slice();
+  const replyTo = state.replyTo;
+  if (state.sending || state.identitySubmitting) return;
+  if (!text.trim() || text.length > 700) {
+    composerError.textContent = "Text must be 1 to 700 characters."; return;
+  }
+  if (files.length > MAX_FILES) { composerError.textContent = "Choose no more than 4 files."; return; }
+  let user = readUser();
+  if (!user) { state.identityForSend = true; showIdentity(); return; }
+  state.sending = true; composerError.textContent = ""; updateComposer();
+  try {
+    if (state.registeredHandle !== user.handle) user = await registerUser(user);
+    const attachments = [];
+    for (const file of files) {
+      const form = new FormData(); form.append("file", file); form.append("uploader", user.handle);
+      const result = await (await api("/attachments", null, {method: "POST", body: form})).json();
+      attachments.push(result.id);
+    }
+    await api("/posts", null, {method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({author: user.handle, text, attachments, reply_to: replyTo})});
+    composeText.value = ""; state.files = []; state.replyTo = null;
+    replyLabel.hidden = true; renderFiles(); updateComposer();
+  } catch (err) {
+    composerError.textContent = err instanceof ApiError ? err.message : "Could not send post.";
+    handleApiError(err);
+  } finally { state.sending = false; updateComposer(); }
+}
+
+document.getElementById("attach").addEventListener("click", () => fileInput.click());
+fileInput.addEventListener("change", () => { addFiles(fileInput.files); fileInput.value = ""; });
+composeText.addEventListener("input", () => { composerError.textContent = ""; updateComposer(); showMentions(); });
+composeText.addEventListener("paste", (event) => {
+  if (state.sending || state.identitySubmitting) return;
+  if (event.clipboardData && event.clipboardData.files.length) { event.preventDefault(); addFiles(event.clipboardData.files); }
+});
+composeText.addEventListener("keydown", (event) => {
+  if (!mentionsEl.hidden && ["ArrowDown", "ArrowUp"].includes(event.key)) {
+    event.preventDefault(); const options = mentionsEl.children;
+    state.mentionIndex = (state.mentionIndex + (event.key === "ArrowDown" ? 1 : -1) + options.length) % options.length;
+    Array.from(options).forEach((option, i) => { option.dataset.active = i === state.mentionIndex ? "1" : "0"; });
+  } else if (!mentionsEl.hidden && (event.key === "Enter" || event.key === "Tab")) {
+    const option = mentionsEl.children[state.mentionIndex < 0 ? 0 : state.mentionIndex];
+    if (option) { event.preventDefault(); acceptMention(option.textContent.slice(1)); }
+  } else if (event.key === "Escape") mentionsEl.hidden = true;
+  else if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); if (!sendButton.disabled) sendPost(); }
+});
+composeForm.addEventListener("submit", (event) => { event.preventDefault(); if (!sendButton.disabled) sendPost(); });
+identityForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  if (state.identitySubmitting) return;
+  const slug = slugify(identityName.value.trim());
+  if (!/^[a-z0-9][a-z0-9-]{0,31}$/.test(slug)) { identityError.textContent = "Use a name with letters or numbers."; return; }
+  state.identitySubmitting = true; identityError.textContent = "";
+  updateComposer();
+  try {
+    await registerUser({name: identityName.value.trim(), slug, handle: newHandle(slug)});
+    const sendAfterRegistration = state.identityForSend && document.body.dataset.live === "1";
+    state.identityForSend = false;
+    identityForm.hidden = true;
+    if (sendAfterRegistration) { state.identitySubmitting = false; sendPost(); }
+  } catch (err) {
+    identityError.textContent = err instanceof ApiError ? err.message : "Could not register name.";
+    handleApiError(err);
+  } finally {
+    state.identitySubmitting = false; updateComposer();
+  }
+});
+document.getElementById("identity-cancel").addEventListener("click", () => {
+  state.identityForSend = false; identityForm.hidden = true;
+});
+document.addEventListener("dragover", (event) => { event.preventDefault(); document.body.className = "dragging"; });
+document.addEventListener("dragleave", (event) => { if (!event.relatedTarget) document.body.className = ""; });
+document.addEventListener("drop", (event) => {
+  event.preventDefault(); document.body.className = "";
+  if (!state.sending && !state.identitySubmitting && event.dataTransfer && event.dataTransfer.files.length) addFiles(event.dataTransfer.files);
+});
+renderIdentity(); updateComposer();
 
 authForm.addEventListener("submit", (event) => {
   event.preventDefault();
