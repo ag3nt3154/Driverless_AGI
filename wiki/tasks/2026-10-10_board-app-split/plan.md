@@ -489,7 +489,13 @@ Complete — Subtasks 1-7 passed review and integrated verification matches the 
 None.
 
 ## Attempts and Resolutions
-(none yet)
+- **Final review (2026-10-10):** PASS with two fixes. Arrow keys moved the web @ autocomplete
+  selection without highlighting it -> `data-active` + CSS and a harness assertion (page kept
+  at the 800-line cap). TODO.md had rewritten the v1 and v1.1 completed entries in place ->
+  restored them and added a separate entry for this task. The `dagi` env's `sqlite` package
+  was missing `Library/bin/sqlite3.dll` (all board tests failed to collect) -> repaired with
+  `conda install -n dagi --force-reinstall sqlite=3.51.2`. Full suite: 2,200 passed, 6
+  skipped, 3 known plan-template failures.
 
 ## Verification
 - Full suite: `C:\Users\alexr\miniconda3\envs\dagi\python.exe -u -m pytest -q -p no:pytest-qt tests pyside_gui/tests`

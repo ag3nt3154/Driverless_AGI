@@ -18,6 +18,9 @@
   - Temp board posts are discarded by design.
   - Add an MCP message board server.
   - Add message board tools for TUI and headless clients.
+  - The temp board is a startup fallback only: if central goes down mid-session the GUI
+    keeps reconnecting to it and agents' board tools fail until it returns. Decide
+    whether to fall back to temp then too.
   - @mentions only wake agents of this GUI; agents on other machines still pull with
     `read_board`. Mentions posted while the GUI was closed are not replayed.
 
@@ -205,24 +208,35 @@
 
 ## Completed
 
+- **Board app split (2026-10-10)** — `python message_board.py` is the central board app: it
+  serves in the foreground and opens the browser (only opens it when a board already answers;
+  `--no-browser` skips it). The web UI has the composer: per-browser `user` identity, 700-char
+  counter, Attach / paste / drag-drop (4 × 10 MB), @ autocomplete and Reply. Posts carry
+  `author_kind`. The GUI never launches central: it connects to it, or owns a private
+  loopback temp board (random port, no token, `--exit-with-stdin`, wiped on exit, stale runs
+  swept) and auto-switches to central when it answers. The GUI board is read-only with a
+  `central`/`temp` badge and a Connect menu; GUI posting and @ autocomplete were removed.
+  Delivered on `task/board-app-split`;
+  [plan](wiki/tasks/2026-10-10_board-app-split/plan.md). Still to do: the Admiral runs the
+  manual checks in the plan's Verification section.
+
 - **Message board v1.1 + multi-agent spawning (2026-10-09)** — `python message_board.py`
   (config `services.message_board` as URL or `{url, bind}`, token file
-  `.dagi/board/token`); the standalone app serves in the foreground and opens the browser;
-  the GUI connects to central or owns a private temporary board that is removed on exit, then
-  switches to central when it answers. The GUI board is read-only with a Connect menu and
-  Save as… for attachments; browser app has the composer, identity, image overlay, text preview
-  and dead/live offline state; `fetch_attachment` shows images to the model; per-agent
-  `AgentSession`s with an **Agents** rail view to spawn, open and close agents; the main board
-  handle persists; live @mentions wake agents (new turn or steer, 5-in-a-row cap for
-  agent-to-agent mentions); wider board panel. Delivered on `task/board-multi-agent`;
+  `.dagi/board/token`); the GUI retries an unreachable board once, then launches a local one
+  on `bind:<port>` (default `0.0.0.0`); board tab shows the URL, a fallback badge, Connect…,
+  and a "central board is back" switch; GUI Save as… for attachments; web viewer image overlay,
+  text preview and a dead/live offline state; `fetch_attachment` shows images to the model;
+  per-agent `AgentSession`s with an **Agents** rail view to spawn, open and close agents; the
+  main board handle persists; live @mentions wake agents (new turn or steer, 5-in-a-row cap
+  for agent-to-agent mentions); two-line board composer with @ autocomplete; wider board panel. Delivered on `task/board-multi-agent`;
   [spec](wiki/tasks/2026-10-09_board-multi-agent/spec.md),
   [plan](wiki/tasks/2026-10-09_board-multi-agent/plan.md). Still to do: the user runs the
-  manual checks in spec §7 (firewall/LAN, temp and switch to central, viewer outage, spawn).
+  manual checks in spec §7 (firewall/LAN, fallback and switch back, viewer outage, spawn).
 
 - **Message board API (2026-10-09)** — standalone board service (`services/message_board/`,
   SQLite + attachments, web viewer, protected local `stop`), `agent/board_client.py`, the
-  `read_board`/`post_board`/`fetch_attachment` tools (replacing `emote`) and the GUI read-only
-  board view with its SSE listener. Delivered on `task/message-board-api`;
+  `read_board`/`post_board`/`fetch_attachment` tools (replacing `emote`) and the GUI board
+  view with composer, auto-start and SSE listener. Delivered on `task/message-board-api`;
   [spec](wiki/tasks/2026-10-08_message-board-api/spec.md),
   [plan](wiki/tasks/2026-10-08_message-board-api/plan.md). Still to do: the Admiral runs the
   manual A5 GUI checklist (spec §7).

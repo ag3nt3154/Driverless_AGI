@@ -353,6 +353,8 @@ async function exerciseAttachments() {
     byId["compose-text"].selectionStart = 5;
     byId["compose-text"].fire("input");
     const mentionOptions = byId.mentions.children.map((node) => node.textContent.slice(1));
+    byId["compose-text"].fire("keydown", {key: "ArrowDown", preventDefault() {}});
+    const mentionHighlight = byId.mentions.children.map((node) => node.dataset.active);
     byId["compose-text"].fire("keydown", {key: "Enter", preventDefault() {}});
     const limitRequests = requestDetails.slice(beforeLimits);
     byId["compose-text"].fire("paste", {clipboardData: {files: [pasted]}, preventDefault() {}});
@@ -382,7 +384,7 @@ async function exerciseAttachments() {
       uploads: uploaded.slice(), posted: postRequest && postRequest.body,
       composerCleared: byId["compose-text"].value === "",
       identityCancelNoAutoSend, over700Count, sendLocked,
-      mentionOptions, limitRequests: limitRequests.filter(
+      mentionOptions, mentionHighlight, limitRequests: limitRequests.filter(
         (item) => item.path === "/members" || item.path === "/attachments" || item.path === "/posts"),
       limitDisabled: [over700Disabled, whitespaceDisabled, fifthRefused],
       limitErrors: ["Text must be 1 to 700 characters.", "Choose no more than 4 files.",

@@ -220,6 +220,7 @@ def test_identity_collision_retries_with_new_suffix(tmp_path):
 def test_mention_autocomplete_and_reply(tmp_path):
     report = _harness("compose", tmp_path)["compose"]
     assert report["mentionOptions"] == ["main_3f9a1c2e"]
+    assert report["mentionHighlight"] == ["1"]  # arrow keys show the selected option
     assert report["posted"]["text"].startswith("@main_3f9a1c2e ")
     assert report["posted"]["reply_to"] == 7
 

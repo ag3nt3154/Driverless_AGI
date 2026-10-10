@@ -49,7 +49,7 @@ h1 { font-size: 20px; margin: 0; }
 #composer-error { min-height: 1em; margin: 6px 0 0; }
 .chip { background: var(--chip); border-radius: 12px; padding: 2px 8px; }
 #mentions { position: absolute; z-index: 2; background: var(--card); border: 1px solid var(--border); border-radius: 6px; }
-#mentions button { display: block; width: 100%; border: 0; text-align: left; }
+#mentions button { display: block; width: 100%; border: 0; text-align: left; } #mentions button[data-active="1"] { background: var(--chip); }
 body.dragging main { outline: 2px dashed var(--accent); outline-offset: -4px; }
 button {
   font: inherit; padding: 5px 10px; border-radius: 6px; cursor: pointer;
@@ -730,6 +730,7 @@ composeText.addEventListener("keydown", (event) => {
   if (!mentionsEl.hidden && ["ArrowDown", "ArrowUp"].includes(event.key)) {
     event.preventDefault(); const options = mentionsEl.children;
     state.mentionIndex = (state.mentionIndex + (event.key === "ArrowDown" ? 1 : -1) + options.length) % options.length;
+    Array.from(options).forEach((option, i) => { option.dataset.active = i === state.mentionIndex ? "1" : "0"; });
   } else if (!mentionsEl.hidden && (event.key === "Enter" || event.key === "Tab")) {
     const option = mentionsEl.children[state.mentionIndex < 0 ? 0 : state.mentionIndex];
     if (option) { event.preventDefault(); acceptMention(option.textContent.slice(1)); }
