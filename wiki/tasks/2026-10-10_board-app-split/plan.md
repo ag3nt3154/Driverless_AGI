@@ -280,11 +280,11 @@ stops the temp board when it leaves it, and wakes agents based on `author_kind`.
 - Delete: the `test_post_*` tests and `test_central_probe_offers_switch_only_when_reachable`
   (replaced by the auto-switch test).
 
-- [ ] **Step 1:** Write and adjust the failing tests (fake runtime with a `temp` that records `close` calls).
-- [ ] **Step 2:** Run them (unsandboxed); expect failures.
-- [ ] **Step 3:** Implement the controller, agents-controller and app changes.
-- [ ] **Step 4:** Run `pyside_gui/tests/test_board_controller.py test_board_mentions.py test_agents.py`; all pass.
-- [ ] **Step 5:** Return for review.
+- [x] **Step 1:** Write and adjust the failing tests (fake runtime with a `temp` that records `close` calls).
+- [x] **Step 2:** Run them (unsandboxed); expect failures.
+- [x] **Step 3:** Implement the controller, agents-controller and app changes.
+- [x] **Step 4:** Run `pyside_gui/tests/test_board_controller.py test_board_mentions.py test_agents.py`; all pass.
+- [x] **Step 5:** Return for review.
 
 ---
 
@@ -437,7 +437,7 @@ shows no stale statements.
 - **Task folder:** `wiki/tasks/2026-10-10_board-app-split/`
 
 ## Overall Status
-In Progress — Subtasks 1-3 passed review; Subtask 4 is next.
+In Progress — Subtasks 1-4 passed review; Subtask 5 is next.
 
 ## Notes
 - Subtask 1 review: PASS. `test_store.py` + `test_api.py`: 49 passed; live
@@ -450,6 +450,9 @@ In Progress — Subtasks 1-3 passed review; Subtask 4 is next.
 - Subtask 3 review: PASS after hardening partial-start cleanup and UUID-collision ownership.
   Runtime + message-board suites: 157 passed, 2 skipped (one existing warning) in 26.24 s,
   including all three unsandboxed live ownership/concurrency tests.
+- Subtask 4 review: PASS after serializing and tagging switch attempts so overlapping manual and
+  automatic completions cannot double-prompt or replace newer state. Planned Qt suites: 37 passed
+  unsandboxed in 3.09 s.
 - Today the fallback launches **detached on the central port** and binds `0.0.0.0`
   (`board_runtime.py:292-341`). For a loopback central URL it also leaves `central_url=None`, so
   the GUI never probes for central. Both go away in Subtask 3.
@@ -486,4 +489,4 @@ None.
      GUI start sweeps the folder.
 
 ## Next Action
-Implement and review Subtask 4: controller auto-switch, temp ownership and kind-based wakes.
+Implement and review Subtask 5: the read-only GUI board view and Connect menu.

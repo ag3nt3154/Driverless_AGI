@@ -43,10 +43,16 @@ def test_late_readiness_after_close_only_closes_client(qtbot):
     window = _window(qtbot)
     controller = BoardController(window)
     client = FakeClient()
-    runtime = SimpleNamespace(client=client, session=object(), user_handle="user_12345678")
+    class Temp:
+        closed = 0
+        def close(self):
+            self.closed += 1
+    temp = Temp()
+    runtime = SimpleNamespace(client=client, session=object(), temp=temp)
     controller.close()
     window._bridge.board_ready.emit(runtime)
     qtbot.waitUntil(client.closed.is_set)
+    qtbot.waitUntil(lambda: temp.closed == 1)
     assert window._board_runtime is None
     assert window._board_listener is None
 
@@ -203,37 +209,6 @@ def test_close_during_snapshot_backoff_stops_retry(qtbot, monkeypatch):
     assert controller.listener is None
 
 
-def test_post_success_clears_previous_error(qtbot):
-    window = _window(qtbot)
-    controller = BoardController(window)
-    posted = []
-    client = SimpleNamespace(
-        upload=lambda handle, path: {"id": "att_123456789abc"},
-        post=lambda handle, text, attachments: posted.append((handle, text, attachments)),
-        close=lambda: None,
-    )
-    controller.runtime = SimpleNamespace(client=client, user_handle="user_12345678")
-    view = window._left_sidebar.board_view
-    controller._on_status_error("previous failure")
-    assert controller.post("hi", []) is True
-    qtbot.waitUntil(lambda: view._status.text() == "")
-    assert posted == [("user_12345678", "hi", [])]
-    window._bridge.board_status.emit("connected")
-    assert controller.post("again", []) is True
-    qtbot.waitUntil(lambda: len(posted) == 2)
-    qtbot.wait(20)
-    assert view._status.text() == "connected"
-
-
-def test_post_refusal_returns_false_and_shows_error(qtbot, tmp_path):
-    window = _window(qtbot)
-    controller = BoardController(window)
-    controller.runtime = SimpleNamespace(client=None, user_handle="user_12345678")
-    missing = tmp_path / "missing.txt"
-    assert controller.post("hi", [missing]) is False
-    assert "unavailable" in window._left_sidebar.board_view._status.text()
-
-
 def _snapshot_post(post_id):
     return {
         "id": post_id, "author": "main_12345678", "text": "x", "meme": None,
@@ -282,20 +257,6 @@ def test_non_dict_post_signal_is_ignored(qtbot):
     controller._on_post(None)
     assert emotes == []
     assert window._left_sidebar.board_view._cards == {}
-
-
-def test_post_failure_routes_error_to_status(qtbot):
-    window = _window(qtbot)
-    controller = BoardController(window)
-
-    def fail(*_args, **_kwargs):
-        raise BoardError("INVALID", "text too long")
-
-    client = SimpleNamespace(post=fail, close=lambda: None)
-    controller.runtime = SimpleNamespace(client=client, user_handle="user_12345678")
-    view = window._left_sidebar.board_view
-    assert controller.post("hi", []) is True
-    qtbot.waitUntil(lambda: view._status.text() == "text too long")
 
 
 def test_main_agent_meme_uses_view_meme_map_without_rescanning(qtbot, monkeypatch, tmp_path):
@@ -363,6 +324,7 @@ def _switchable(qtbot, monkeypatch, tmp_path, client_factory):
         def __init__(self, client, after, on_post, on_status):
             self.client, self.after = client, after
             self.stopped = False
+            self.joined = False
             listeners.append(self)
 
         def start(self):
@@ -372,7 +334,7 @@ def _switchable(qtbot, monkeypatch, tmp_path, client_factory):
             self.stopped = True
 
         def join(self):
-            pass
+            self.joined = True
 
     monkeypatch.setattr("pyside_gui.board_controller.StreamListener", Listener)
     window = _window(qtbot)
@@ -426,21 +388,138 @@ def test_switch_auth_failure_asks_for_token_and_keeps_board(qtbot, monkeypatch, 
     qtbot.waitUntil(SwitchClient.instances[0].closed.is_set)
 
 
-def test_central_probe_offers_switch_only_when_reachable(qtbot, monkeypatch, tmp_path):
-    outcomes = [BoardError("UNREACHABLE", "down"), {"version": 1}]
+def test_central_back_auto_switches_and_closes_temp(qtbot, monkeypatch, tmp_path):
+    SwitchClient.instances = []
+    outcomes = [BoardError("UNREACHABLE", "down"), {"version": 1}, {"version": 1}]
     factory = lambda url, token=None, timeout=10.0: SwitchClient(
         url, token, timeout, health=outcomes.pop(0))
-    window, controller, *_ = _switchable(qtbot, monkeypatch, tmp_path, factory)
+    window, controller, old, old_listener, _ = _switchable(
+        qtbot, monkeypatch, tmp_path, factory)
+    order = []
+    class Temp:
+        def close(self):
+            order.append(("temp-close", old_listener.stopped, old_listener.joined))
+    old_runtime = controller.runtime
+    old_runtime.temp = Temp()
+    old_runtime.central_url = "http://central:8765"
+    old_listener = controller.listener
+    old_close = old.close
+    old.close = lambda: (order.append(("client-close", old_listener.stopped)), old_close())
+    monkeypatch.setattr("pyside_gui.board_controller.resolve_token", lambda: "central-token")
     view = window._left_sidebar.board_view
     controller._probe_central()
     qtbot.wait(100)
     assert view._central_back.isHidden()
     controller._probe_central()
-    qtbot.waitUntil(lambda: not view._central_back.isHidden())
-    emitted = []
-    view.connect_requested.connect(lambda url, token: emitted.append((url, token)))
-    view._central_back.click()
-    assert emitted == [("http://central:8765", None)]
+    qtbot.waitUntil(lambda: controller.runtime.url == "http://central:8765")
+    qtbot.waitUntil(lambda: any(entry[0] == "temp-close" for entry in order))
+    assert SwitchClient.instances[-1].token == "central-token"
+    assert order == [("client-close", True), ("temp-close", True, True)]
+    assert view._status.text() == (
+        "Switched to central board http://central:8765; temp board posts were discarded."
+    )
+    assert old_runtime.temp is not None
+    controller.close()
+
+
+def test_central_auth_failure_asks_token_once_and_keeps_temp(qtbot, monkeypatch, tmp_path):
+    SwitchClient.instances = []
+    factory = lambda url, token=None, timeout=10.0: SwitchClient(
+        url, token, timeout, health=BoardError("UNAUTHORIZED", "token required"))
+    window, controller, old, old_listener, _ = _switchable(
+        qtbot, monkeypatch, tmp_path, factory)
+    asks = []
+    monkeypatch.setattr(window._left_sidebar.board_view, "ask_token", asks.append)
+    class Temp:
+        closed = 0
+        def close(self):
+            self.closed += 1
+    temp = Temp()
+    controller.runtime.temp = temp
+    monkeypatch.setattr("pyside_gui.board_controller.resolve_token", lambda: None)
+    controller._on_central_state(("http://central:8765", True))
+    qtbot.waitUntil(lambda: asks == ["http://central:8765"])
+    controller._on_central_state(("http://central:8765", True))
+    qtbot.wait(50)
+    assert len(SwitchClient.instances) == 1
+    assert controller.runtime.client is old and not old_listener.stopped
+    assert temp.closed == 0
+    controller.close()
+
+
+def test_overlapping_switches_are_serialized_and_manual_retry_still_works(
+    qtbot, monkeypatch, tmp_path,
+):
+    from threading import Event
+
+    SwitchClient.instances = []
+    entered, release = Event(), Event()
+    checks = []
+
+    class DeferredClient(SwitchClient):
+        def health(self):
+            checks.append(self)
+            if len(SwitchClient.instances) == 1:
+                entered.set()
+                assert release.wait(2)
+                raise BoardError("UNAUTHORIZED", "token required")
+            return {"version": 1}
+
+    def factory(url, token=None, timeout=10.0):
+        return DeferredClient(url, token, timeout)
+
+    window, controller, old, old_listener, _ = _switchable(
+        qtbot, monkeypatch, tmp_path, factory)
+    class Temp:
+        closed = 0
+        def close(self):
+            self.closed += 1
+    temp = Temp()
+    old_runtime = controller.runtime
+    old_runtime.temp = temp
+    old_runtime.central_url = "http://central:8765"
+    asks = []
+    monkeypatch.setattr(window._left_sidebar.board_view, "ask_token", asks.append)
+    monkeypatch.setattr("pyside_gui.board_controller.resolve_token", lambda: None)
+
+    controller._on_central_state(("http://central:8765", True))
+    assert entered.wait(1)
+    controller.switch("http://manual:8765", "manual-token")
+    controller._on_central_state(("http://central:8765", True))
+    assert len(SwitchClient.instances) == 1
+    assert checks == [SwitchClient.instances[0]]
+    assert controller.runtime is old_runtime
+
+    release.set()
+    qtbot.waitUntil(lambda: asks == ["http://central:8765"])
+    assert controller.runtime is old_runtime and old_listener.stopped is False
+    assert temp.closed == 0
+
+    controller.switch("http://central:8765", "manual-token")
+    qtbot.waitUntil(lambda: controller.runtime.client is SwitchClient.instances[1])
+    qtbot.waitUntil(lambda: temp.closed == 1)
+    assert len(SwitchClient.instances) == 2
+
+
+def test_close_on_temp_closes_temp_board_after_listener_joins(qtbot):
+    window = _window(qtbot)
+    controller = BoardController(window)
+    order = []
+    class Temp:
+        def close(self):
+            order.append("temp")
+    class Listener:
+        def stop(self):
+            order.append("stop")
+        def join(self):
+            order.append("join")
+    client = FakeClient()
+    runtime = SimpleNamespace(client=client, temp=Temp())
+    controller.runtime = runtime
+    controller.listener = Listener()
+    controller.close()
+    qtbot.waitUntil(lambda: "temp" in order)
+    assert order.index("join") < order.index("temp")
 
 
 def test_board_url_normalisation():

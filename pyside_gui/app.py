@@ -243,11 +243,11 @@ class DagiMainWindow(QMainWindow):
         if agents is not None:
             agents.on_board_ready()
 
-    def _on_board_mention(self, post: dict, user_handle: str) -> None:
+    def _on_board_mention(self, post: dict) -> None:
         """A live board post mentions someone; agents it names get it as a user message."""
         agents = getattr(self, "_agents", None)
         if agents is not None:
-            agents.on_board_mention(post, user_handle)
+            agents.on_board_mention(post)
 
     def _activate(self, session: AgentSession) -> None:
         """Show ``session`` in the main chat and point the shared chrome at it."""
