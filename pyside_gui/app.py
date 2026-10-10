@@ -40,7 +40,7 @@ QLabel#running-label {
 
 _SPINNER = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
 _NARROW_VIEWS = ("board", "agents")  # left panels sized from the right sidebar's width
-_NARROW_EXTRA = 80  # ...plus this much, so the board composer has room
+_NARROW_EXTRA = 80  # ...plus this much, so board post cards have room
 
 
 class DagiMainWindow(QMainWindow):

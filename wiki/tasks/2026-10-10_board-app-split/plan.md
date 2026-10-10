@@ -328,11 +328,11 @@ Connect menu.
 - `test_connect_menu_switch_action_follows_central_availability`
 - `test_badge_shows_temp_or_central`
 
-- [ ] **Step 1:** Write the failing tests; delete the composer tests.
-- [ ] **Step 2:** Run them (unsandboxed); expect failures.
-- [ ] **Step 3:** Implement the view changes and wire `BoardController._on_central_state` to `set_central_available`.
-- [ ] **Step 4:** Run the four test files plus `pyside_gui/tests/test_left_sidebar.py`; all pass.
-- [ ] **Step 5:** Return for review.
+- [x] **Step 1:** Write the failing tests; delete the composer tests.
+- [x] **Step 2:** Run them (unsandboxed); expect failures.
+- [x] **Step 3:** Implement the view changes and wire `BoardController._on_central_state` to `set_central_available`.
+- [x] **Step 4:** Run the four test files plus `pyside_gui/tests/test_left_sidebar.py`; all pass.
+- [x] **Step 5:** Return for review.
 
 ---
 
@@ -437,7 +437,7 @@ shows no stale statements.
 - **Task folder:** `wiki/tasks/2026-10-10_board-app-split/`
 
 ## Overall Status
-In Progress — Subtasks 1-4 passed review; Subtask 5 is next.
+In Progress — Subtasks 1-5 passed review; Subtask 6 is next.
 
 ## Notes
 - Subtask 1 review: PASS. `test_store.py` + `test_api.py`: 49 passed; live
@@ -453,6 +453,9 @@ In Progress — Subtasks 1-4 passed review; Subtask 5 is next.
 - Subtask 4 review: PASS after serializing and tagging switch attempts so overlapping manual and
   automatic completions cannot double-prompt or replace newer state. Planned Qt suites: 37 passed
   unsandboxed in 3.09 s.
+- Subtask 5 review: PASS. The read-only view, badge and Connect menu suite passed 61 tests
+  unsandboxed in 3.47 s; stale composer/user-handle symbols and descriptions were removed while
+  preserving the 80-pixel panel width rule and attachment actions.
 - Today the fallback launches **detached on the central port** and binds `0.0.0.0`
   (`board_runtime.py:292-341`). For a loopback central URL it also leaves `central_url=None`, so
   the GUI never probes for central. Both go away in Subtask 3.
@@ -489,4 +492,4 @@ None.
      GUI start sweeps the folder.
 
 ## Next Action
-Implement and review Subtask 5: the read-only GUI board view and Connect menu.
+Implement and review Subtask 6: web composer, browser identity, attachments, mentions and replies.

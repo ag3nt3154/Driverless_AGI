@@ -17,7 +17,6 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 from agent import DAGI_ROOT
-from agent._board_files import MAX_ATTACHMENT
 from agent.board_client import BoardClient, BoardError, BoardSession
 from services.message_board.lifecycle import DEFAULT_URL
 from services.message_board.runtime_records import (
@@ -34,32 +33,6 @@ def error_text(error: BaseException) -> str:
     if isinstance(error, BoardError):
         return error.message
     return str(error) or type(error).__name__
-
-
-def check_user_file(path: Path) -> str | None:
-    """Return why one composer file cannot be attached, or None when it is acceptable."""
-    try:
-        size = path.stat().st_size
-    except OSError:
-        return f"Cannot attach {path.name}: file is unavailable."
-    if not path.is_file() or not 1 <= size <= MAX_ATTACHMENT:
-        return f"Cannot attach {path.name}: files must be 1 byte through 10 MB."
-    return None
-
-
-def validate_user_files(paths) -> tuple[list[Path], list[str]]:
-    """Validate composer files before any upload starts."""
-    candidates = [Path(path) for path in paths]
-    if len(candidates) > 4:
-        return [], ["Attach at most 4 files."]
-    accepted, errors = [], []
-    for path in candidates:
-        error = check_user_file(path)
-        if error is None:
-            accepted.append(path)
-        else:
-            errors.append(error)
-    return accepted, errors
 
 
 def should_render_inline(post: dict, main_handle: str, meme_map: dict[str, Path]) -> Path | None:

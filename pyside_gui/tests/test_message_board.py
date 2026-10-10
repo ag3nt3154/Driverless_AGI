@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 
 from PySide6.QtCore import QSize
 from PySide6.QtGui import QImage
-from PySide6.QtWidgets import QLabel
+from PySide6.QtWidgets import QLabel, QPlainTextEdit, QPushButton
 from shiboken6 import isValid
 
 from agent.board_client import BoardError
@@ -48,71 +48,51 @@ def _view(qtbot, future=None):
     return view
 
 
-def test_composer_blocks_empty_and_overlong_text(qtbot):
+def test_board_view_is_read_only(qtbot):
     view = _view(qtbot)
-    sent = []
-    view.set_poster(lambda text, paths: sent.append((text, paths)) or True)
-    assert not view._send_button.isEnabled()
-    view._input.setText("x" * 701)
-    assert view._count.text() == "701/700"
-    assert not view._send_button.isEnabled()
-    view._send()
-    assert sent == []
+    assert view.findChildren(QPlainTextEdit) == []
+    assert not any(button.text() == "Send" for button in view.findChildren(QPushButton))
 
 
-def test_composer_ignores_whitespace_only_text(qtbot):
+def test_connect_menu_switch_action_follows_central_availability(qtbot):
+    from PySide6.QtWidgets import QToolButton
+
     view = _view(qtbot)
-    sent = []
-    view.set_poster(lambda text, paths: sent.append((text, paths)) or True)
-    view._input.setText("   \t ")
-    assert view._count.text() == "5/700"
-    assert not view._send_button.isEnabled()
-    view._send()
-    assert sent == []
+    requested = []
+    view.connect_requested.connect(lambda *args: requested.append(args))
+    view.set_connection("http://127.0.0.1:8765", "http://central:8765")
+    action = view._switch_central_action
+    assert action.isVisible()
+    assert not action.isEnabled()
+    view.set_central_available("http://central:8765", True)
+    assert action.isEnabled()
+    action.trigger()
+    assert requested == [("http://central:8765", None)]
+    assert view._connect.popupMode() == QToolButton.ToolButtonPopupMode.InstantPopup
 
 
-def test_composer_sends_and_clears_valid_files(qtbot, tmp_path):
+def test_connect_menu_another_board_uses_url_dialog(qtbot, monkeypatch):
+    from PySide6.QtWidgets import QInputDialog
+
     view = _view(qtbot)
-    path = tmp_path / "note.txt"
-    path.write_text("note", encoding="utf-8")
-    sent = []
-    view.set_poster(lambda text, paths: sent.append((text, paths)) or True)
-    view.add_files([path])
-    view._input.setText("hello")
-    view._send()
-    assert sent == [("hello", [path])]
-    assert view._input.text() == ""
-    assert view._paths == []
+    requested = []
+    view.connect_requested.connect(lambda *args: requested.append(args))
+    monkeypatch.setattr(QInputDialog, "getText", lambda *args, **kwargs: ("other:8765", True))
+    view._connect_another_action.trigger()
+    assert requested == [("http://other:8765", None)]
 
 
-def test_attachment_count_and_size_are_refused(qtbot, tmp_path):
+def test_badge_shows_temp_or_central(qtbot):
     view = _view(qtbot)
-    paths = []
-    for index in range(5):
-        path = tmp_path / str(index)
-        path.write_bytes(b"x")
-        paths.append(path)
-    view.add_files(paths)
-    assert len(view._paths) == 4
-    assert "at most 4" in view._status.text()
-    large = tmp_path / "large"
-    large.write_bytes(b"x" * (10 * 1024 * 1024 + 1))
-    other = _view(qtbot)
-    other.add_files([large])
-    assert other._paths == []
-    assert "10 MB" in other._status.text()
-
-
-def test_add_files_uses_shared_file_checker(qtbot, tmp_path, monkeypatch):
-    path = tmp_path / "ok.txt"
-    path.write_text("x", encoding="utf-8")
-    monkeypatch.setattr(
-        "pyside_gui.sidebars.message_board.check_user_file", lambda _path: "shared refusal",
+    view.set_connection("http://127.0.0.1:8765", "http://central:8765")
+    assert view._fallback.text() == "temp"
+    assert view._fallback.toolTip() == (
+        "Temporary board — http://central:8765 is unreachable; posts here are discarded "
+        "when DAGI closes"
     )
-    view = _view(qtbot)
-    view.add_files([path])
-    assert view._paths == []
-    assert view._status.text() == "shared refusal"
+    view.set_connection("http://central:8765", None)
+    assert view._fallback.text() == "central"
+    assert not view._fallback.isHidden()
 
 
 def test_posts_are_deduped_and_inserted_newest_first(qtbot):
@@ -215,25 +195,6 @@ def test_file_chip_escapes_mnemonic_ampersand(qtbot):
     view.add_post(_post(1, attachments=[_attachment("file", "a&b.txt")]))
     chip = view._cards[1]()._attachments["att_123456789abc"]
     assert chip.text() == "📎 a&&b.txt (10 B)"
-
-
-def test_send_keeps_text_and_chips_when_poster_refuses(qtbot, tmp_path):
-    view = _view(qtbot)
-    path = tmp_path / "note.txt"
-    path.write_text("note", encoding="utf-8")
-    sent = []
-
-    def refuse(text, paths):
-        sent.append((text, paths))
-        return False
-
-    view.set_poster(refuse)
-    view.add_files([path])
-    view._input.setText("hello")
-    view._send()
-    assert sent == [("hello", [path])]
-    assert view._input.text() == "hello"
-    assert view._paths == [path]
 
 
 def _record_card_updates(monkeypatch) -> list:

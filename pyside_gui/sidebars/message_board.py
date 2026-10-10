@@ -1,4 +1,4 @@
-"""Live message board sidebar with a bounded composer and attachment cards."""
+"""Read-only live message board sidebar with attachment cards."""
 from __future__ import annotations
 
 import weakref
@@ -8,16 +8,16 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 from PySide6.QtCore import Qt, Signal, Slot
+from PySide6.QtGui import QAction
 from PySide6.QtWidgets import (
-    QFileDialog, QHBoxLayout, QInputDialog, QLabel, QLineEdit, QPushButton, QScrollArea,
+    QHBoxLayout, QInputDialog, QLabel, QLineEdit, QMenu, QScrollArea,
     QToolButton, QVBoxLayout, QWidget,
 )
 from shiboken6 import isValid
 
 from agent._board_files import validate_attachment
 from agent import DAGI_ROOT
-from pyside_gui.board_runtime import check_user_file, error_text
-from pyside_gui.sidebars.board_composer import MentionEdit
+from pyside_gui.board_runtime import error_text
 from pyside_gui.sidebars.board_widgets import PostCard
 from pyside_gui.theme import qss
 from tools.board._board import _scan_memes
@@ -96,10 +96,8 @@ class MessageBoardView(QWidget):
         super().__init__()
         self._seen: set[int] = set()
         self._cards: dict[int, weakref.ReferenceType] = {}
-        self._poster = None
         self._fetch = None
         self._closing = False
-        self._paths: list[Path] = []
         self._memes = _scan_memes(DAGI_ROOT / ".dagi" / "emotes" / "memes")
         self._build()
         self._download_done.connect(self._on_download_done)
@@ -113,12 +111,6 @@ class MessageBoardView(QWidget):
         header.setStyleSheet(qss("color: @fg_secondary; font-weight: bold; padding: 8px;"))
         outer.addWidget(header)
         outer.addLayout(self._build_connection())
-        self._central_back = QPushButton()
-        self._central_back.hide()
-        self._central_back.clicked.connect(
-            lambda: self.connect_requested.emit(self._central_url, None)
-        )
-        outer.addWidget(self._central_back)
         self._status = _plain_label("")
         self._status.setWordWrap(True)
         self._status.setStyleSheet(qss("color: @fg_secondary; padding: 0 8px;"))
@@ -132,22 +124,30 @@ class MessageBoardView(QWidget):
         self._posts_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
         self._scroll.setWidget(self._container)
         outer.addWidget(self._scroll, 1)
-        outer.addWidget(self._build_composer())
 
     def _build_connection(self) -> QHBoxLayout:
         row = QHBoxLayout()
         row.setContentsMargins(8, 0, 8, 0)
         self._url_label = _plain_label("not connected")
         self._url_label.setStyleSheet(qss("color: @fg_secondary;"))
-        self._fallback = _plain_label("fallback")
+        self._fallback = _plain_label("central")
         self._fallback.setStyleSheet(qss(
-            "color: @popover_bg; background: #c98a1b; border-radius: 6px; padding: 0 6px;"
+            "color: @fg_secondary; border: 1px solid @border; border-radius: 6px; padding: 0 6px;"
         ))
-        self._fallback.hide()
         self._connect = QToolButton()
         self._connect.setText("Connect…")
         self._connect.setToolTip("Connect to another message board")
-        self._connect.clicked.connect(self._ask_url)
+        self._connect_menu = QMenu(self._connect)
+        self._switch_central_action = QAction(self._connect_menu)
+        self._switch_central_action.setVisible(False)
+        self._switch_central_action.setEnabled(False)
+        self._connect_menu.addAction(self._switch_central_action)
+        self._switch_central_action.triggered.connect(self._switch_to_central)
+        self._connect_menu.addSeparator()
+        self._connect_another_action = self._connect_menu.addAction("Connect to another board…")
+        self._connect_another_action.triggered.connect(self._ask_url)
+        self._connect.setMenu(self._connect_menu)
+        self._connect.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
         row.addWidget(self._url_label, 1)
         row.addWidget(self._fallback)
         row.addWidget(self._connect)
@@ -155,18 +155,36 @@ class MessageBoardView(QWidget):
         return row
 
     def set_connection(self, url: str, central_url: str | None) -> None:
-        """Show the connected board; a central URL marks it as a local fallback."""
+        """Show the connected board and whether it is temporary or central."""
         self._url_label.setText(url)
-        self._fallback.setVisible(bool(central_url))
-        tip = f"Local fallback: {central_url} was unreachable" if central_url else url
+        self._central_url = central_url or ""
+        is_temp = bool(central_url)
+        self._fallback.setText("temp" if is_temp else "central")
+        self._fallback.setToolTip(
+            f"Temporary board — {central_url} is unreachable; posts here are discarded "
+            "when DAGI closes" if is_temp else "Central board"
+        )
+        self._fallback.setStyleSheet(qss(
+            "color: @popover_bg; background: #c98a1b; border-radius: 6px; padding: 0 6px;"
+            if is_temp else
+            "color: @fg_secondary; border: 1px solid @border; border-radius: 6px; padding: 0 6px;"
+        ))
+        self._switch_central_action.setText(f"Switch to central ({central_url})" if is_temp else "")
+        self._switch_central_action.setVisible(is_temp)
+        self._switch_central_action.setEnabled(False)
+        tip = self._fallback.toolTip() if is_temp else url
         self._url_label.setToolTip(tip)
-        self._fallback.setToolTip(tip)
 
-    def set_central_back(self, url: str | None) -> None:
-        """Offer a one-click switch back when the central board answers again."""
-        self._central_url = url or ""
-        self._central_back.setText(f"Central board is back — Switch to {url}" if url else "")
-        self._central_back.setVisible(bool(url))
+    def set_central_available(self, url: str, available: bool) -> None:
+        """Enable switching only when the currently configured central URL is reachable."""
+        self._switch_central_action.setEnabled(
+            bool(available) and bool(self._central_url) and url == self._central_url
+        )
+
+    @Slot()
+    def _switch_to_central(self) -> None:
+        if self._central_url:
+            self.connect_requested.emit(self._central_url, None)
 
     def _ask_url(self) -> None:
         text, ok = QInputDialog.getText(
@@ -196,44 +214,8 @@ class MessageBoardView(QWidget):
         self._seen.clear()
         self._cards.clear()
 
-    def _build_composer(self) -> QWidget:
-        box = QWidget()
-        layout = QVBoxLayout(box)
-        layout.setContentsMargins(8, 4, 8, 8)
-        self._chips = QHBoxLayout()
-        layout.addLayout(self._chips)
-        self._input = MentionEdit()
-        self._input.setPlaceholderText("Post to the board… (@ mentions an agent)")
-        self._input.textChanged.connect(lambda: self._update_count(self._input.text()))
-        self._input.submitted.connect(self._send)
-        layout.addWidget(self._input)
-        row = QHBoxLayout()
-        self._count = _plain_label("0/700")
-        self._attach = QToolButton()
-        self._attach.setText("Attach")
-        self._attach.clicked.connect(self._choose_files)
-        self._send_button = QPushButton("Send")
-        self._send_button.clicked.connect(self._send)
-        row.addWidget(self._count)
-        row.addStretch(1)
-        row.addWidget(self._attach)
-        row.addWidget(self._send_button)
-        layout.addLayout(row)
-        box.setEnabled(False)
-        self._composer = box
-        return box
-
-    def set_mention_candidates(self, handles) -> None:
-        """Handles offered by @ autocomplete (board members and this GUI's agents)."""
-        self._input.set_mentions(sorted(set(handles)))
-
     def set_status(self, text: str) -> None:
         self._status.setText(str(text))
-
-    def set_poster(self, poster) -> None:
-        self._poster = poster
-        self._composer.setEnabled(poster is not None)
-        self._update_count(self._input.text())
 
     @property
     def meme_map(self) -> dict[str, Path]:
@@ -291,54 +273,3 @@ class MessageBoardView(QWidget):
             card.attachment_failed(attachment["id"], error_text(result))
         elif isinstance(result, (str, Path)):
             card.attachment_ready(attachment["id"], Path(result))
-
-    def _choose_files(self) -> None:
-        names, _ = QFileDialog.getOpenFileNames(self, "Attach files")
-        self.add_files(names)
-
-    def add_files(self, paths) -> None:
-        for raw in paths:
-            path = Path(raw)
-            if path in self._paths:
-                continue
-            if len(self._paths) >= 4:
-                self.set_status("Attach at most 4 files.")
-                break
-            error = check_user_file(path)
-            if error is not None:
-                self.set_status(error)
-                continue
-            self._paths.append(path)
-            self._add_chip(path)
-
-    def _add_chip(self, path: Path) -> None:
-        button = QToolButton()
-        button.setText(f"{path.name}  ×")
-        button.setProperty("attachment_path", str(path))
-        button.clicked.connect(lambda: self._remove_path(path, button))
-        self._chips.addWidget(button)
-
-    def _remove_path(self, path: Path, button: QWidget) -> None:
-        if path in self._paths:
-            self._paths.remove(path)
-        button.deleteLater()
-
-    def _update_count(self, text: str) -> None:
-        self._count.setText(f"{len(text)}/700")
-        invalid = len(text) > 700
-        self._count.setStyleSheet("color: #d55;" if invalid else "")
-        ready = bool(text.strip()) and not invalid and self._poster is not None
-        self._send_button.setEnabled(ready)
-
-    def _send(self) -> None:
-        text = self._input.text()
-        if self._poster is None or not text.strip() or len(text) > 700:
-            return
-        if not self._poster(text, list(self._paths)):
-            return
-        self._input.clear()
-        self._paths.clear()
-        while self._chips.count():
-            item = self._chips.takeAt(0)
-            if item.widget() is not None:
-                item.widget().deleteLater()

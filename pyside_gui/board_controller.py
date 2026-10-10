@@ -98,7 +98,7 @@ class BoardController(QObject):
         view = self.window._left_sidebar.board_view
         view.set_fetcher(self.downloads.submit)
         view.set_connection(runtime.url, runtime.central_url)
-        view.set_central_back(None)
+        view.set_central_available(runtime.central_url or "", False)
         if runtime.temp is not None:
             self._central_timer.start()
         else:
@@ -247,7 +247,7 @@ class BoardController(QObject):
         if (self.closing or self.runtime is None or self.runtime.temp is None
                 or self.runtime.central_url != url):
             return
-        self.window._left_sidebar.board_view.set_central_back(url if reachable else None)
+        self.window._left_sidebar.board_view.set_central_available(url, reachable)
         if reachable and not self._switch_in_flight and url not in self._auto_switch_blocked_urls:
             self.switch(url, resolve_token(), _automatic=True)
 

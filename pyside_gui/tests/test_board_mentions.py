@@ -1,49 +1,13 @@
-"""Board composer @ autocomplete and @mention delivery into agent loops."""
+"""Board @mention delivery into agent loops."""
 from __future__ import annotations
 
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
-from PySide6.QtCore import Qt
-
 from pyside_gui.agents_controller import MAX_AGENT_WAKES, AgentsController, mention_message
-from pyside_gui.sidebars.board_composer import MentionEdit, mention_prefix
 from pyside_gui.tests.session_stub import StubSession
 
 HELPER = "helper_abcdef12"
-
-
-def test_mention_prefix_only_at_a_word_start():
-    assert mention_prefix("hi @he") == "@he"
-    assert mention_prefix("@") == "@"
-    assert mention_prefix("(@main_1") == "@main_1"
-    assert mention_prefix("mail@he") is None
-    assert mention_prefix("hi @he there") is None
-
-
-def test_autocomplete_inserts_the_selected_handle(qtbot):
-    edit = MentionEdit()
-    qtbot.addWidget(edit)
-    edit.show()
-    edit.set_mentions([HELPER, "main_11112222"])
-    qtbot.keyClicks(edit, "ping @he")
-    assert edit.completer.visible_count() == 1
-    assert edit.completer.selected_command() == f"@{HELPER}"
-    qtbot.keyClick(edit, Qt.Key.Key_Tab)
-    assert edit.text() == f"ping @{HELPER} "
-    assert edit.completer.isHidden()
-
-
-def test_enter_submits_and_shift_enter_breaks_the_line(qtbot):
-    edit = MentionEdit()
-    qtbot.addWidget(edit)
-    sent = []
-    edit.submitted.connect(lambda: sent.append(edit.text()))
-    qtbot.keyClicks(edit, "one")
-    qtbot.keyClick(edit, Qt.Key.Key_Return, Qt.KeyboardModifier.ShiftModifier)
-    qtbot.keyClicks(edit, "two")
-    qtbot.keyClick(edit, Qt.Key.Key_Return)
-    assert sent == ["one\ntwo"]
 
 
 def _post(post_id, author, mentions, text="hey", author_kind="agent"):

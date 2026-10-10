@@ -370,7 +370,8 @@ def test_switch_repoints_every_session_listener_and_view(qtbot, monkeypatch, tmp
     assert listeners[-1].client is new and listeners[-1].after == 1
     qtbot.waitUntil(lambda: 1 in view._seen)
     assert 99 not in view._seen
-    assert view._url_label.text() == "http://central:8765" and view._fallback.isHidden()
+    assert view._url_label.text() == "http://central:8765"
+    assert view._fallback.text() == "central"
     assert not controller._central_timer.isActive()
 
 
@@ -388,7 +389,7 @@ def test_switch_auth_failure_asks_for_token_and_keeps_board(qtbot, monkeypatch, 
     qtbot.waitUntil(SwitchClient.instances[0].closed.is_set)
 
 
-def test_central_back_auto_switches_and_closes_temp(qtbot, monkeypatch, tmp_path):
+def test_central_reachability_auto_switches_and_closes_temp(qtbot, monkeypatch, tmp_path):
     SwitchClient.instances = []
     outcomes = [BoardError("UNREACHABLE", "down"), {"version": 1}, {"version": 1}]
     factory = lambda url, token=None, timeout=10.0: SwitchClient(
@@ -409,7 +410,7 @@ def test_central_back_auto_switches_and_closes_temp(qtbot, monkeypatch, tmp_path
     view = window._left_sidebar.board_view
     controller._probe_central()
     qtbot.wait(100)
-    assert view._central_back.isHidden()
+    assert not view._switch_central_action.isEnabled()
     controller._probe_central()
     qtbot.waitUntil(lambda: controller.runtime.url == "http://central:8765")
     qtbot.waitUntil(lambda: any(entry[0] == "temp-close" for entry in order))
@@ -444,6 +445,30 @@ def test_central_auth_failure_asks_token_once_and_keeps_temp(qtbot, monkeypatch,
     assert len(SwitchClient.instances) == 1
     assert controller.runtime.client is old and not old_listener.stopped
     assert temp.closed == 0
+    controller.close()
+
+
+def test_central_availability_updates_connect_menu(qtbot, monkeypatch, tmp_path):
+    window, controller, _old, _listener, _ = _switchable(
+        qtbot, monkeypatch, tmp_path, lambda *_args, **_kwargs: None,
+    )
+    class Temp:
+        def close(self):
+            pass
+
+    controller.runtime.temp = Temp()
+    controller.runtime.central_url = "http://central:8765"
+    view = window._left_sidebar.board_view
+    view.set_connection(controller.runtime.url, controller.runtime.central_url)
+    attempted = []
+    monkeypatch.setattr(controller, "switch", lambda *args, **kwargs: attempted.append((args, kwargs)))
+    monkeypatch.setattr("pyside_gui.board_controller.resolve_token", lambda: None)
+
+    controller._on_central_state(("http://central:8765", False))
+    assert not view._switch_central_action.isEnabled()
+    controller._on_central_state(("http://central:8765", True))
+    assert view._switch_central_action.isEnabled()
+    assert attempted == [(("http://central:8765", None), {"_automatic": True})]
     controller.close()
 
 
@@ -538,9 +563,10 @@ def test_fallback_badge_shows_central_address(qtbot):
     qtbot.addWidget(view)
     view.set_connection("http://127.0.0.1:8765", "http://central:8765")
     assert not view._fallback.isHidden()
-    assert "central:8765" in view._url_label.toolTip()
+    assert "central:8765" in view._fallback.toolTip()
     view.set_connection("http://central:8765", None)
-    assert view._fallback.isHidden()
+    assert view._fallback.text() == "central"
+    assert not view._fallback.isHidden()
 
 
 def test_each_agent_meme_renders_in_its_own_conversation(qtbot, tmp_path):
