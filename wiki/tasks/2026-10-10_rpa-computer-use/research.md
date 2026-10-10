@@ -304,6 +304,26 @@ dagi's compaction assumes 1,024 tokens/image (`_ESTIMATED_TOKENS_PER_IMAGE`) —
 - Overlay lessons: draw marks only on interactive leaves (skip `nav`/`form`/heading containers);
   place labels so they don't cover the control's text; skip zero-area boxes.
 
+**Live vision check — deepseek-flash through dagi's `AgentLoop` + `read` tool** (2026-10-11).
+`deepseek-flash.yaml` has no `supports_images`, so `_attach_image` refuses images by default; the
+test set `supports_images=True` in memory only. The image reached the model in both runs.
+
+| Image | Marks read correctly | Failure mode |
+|---|---|---|
+| v1: full 1024×530, marks on every role incl. containers, labels at top-left | ~6 / 15 | stacked labels; invented text ("From: / Now", "FX", "Approved table") |
+| v2: cropped to content (996×134), interactive leaves only, labels alternating above/below | 7 / 11 | every miss = a label sitting in the gap between two adjacent controls (3↔5, 13↔14 swapped); it also invented entries for absent numbers (1, 4, 12) |
+
+Conclusions:
+- Screenshots are **context, not the source of truth**. The model picks targets from the text
+  outline (exact role/name/id); the screenshot only disambiguates layout. Confirms D3 text-first.
+- Overlay rule: the label must be unambiguous — **inside the box's top-left corner** (or attached
+  with a leader line), never in the gap between controls; never label containers.
+- Send a crop of the region of interest rather than the full window: add `region` (or a target
+  index to zoom on) to `ui_observe(mode=screenshot)`. The model itself asked for a zoom.
+- The model flags its own uncertainty and over-reports ("list every number") — the outline, not
+  the image, must define which indices exist.
+- Before S1, `supports_images: true` must be set on the default model's config.
+
 ## Closing summary (grill, 2026-10-11)
 
 - Shared understanding reached on D1–D15.
