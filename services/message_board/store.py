@@ -207,6 +207,9 @@ class BoardStore:
     def _post_row(self, row: sqlite3.Row) -> dict:
         post = dict(row)
         post["mentions"] = json.loads(post["mentions"])
+        member = self._conn.execute("SELECT kind FROM members WHERE handle=?",
+                                    (post["author"],)).fetchone()
+        post["author_kind"] = member["kind"] if member else "agent"
         rows = self._conn.execute("SELECT * FROM attachments WHERE post_id=? ORDER BY rowid",
                                   (post["id"],))
         post["attachments"] = [_attachment_record(item) for item in rows]

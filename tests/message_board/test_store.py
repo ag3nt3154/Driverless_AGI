@@ -65,10 +65,19 @@ def test_mentions_and_post_shape(store, monkeypatch):
     monkeypatch.setattr("services.message_board.store._now", lambda: "2026-10-09T00:00:00Z")
     post = store.create_post(author=A, text="x" * 700, meme="m" * 64)
     assert post == dict(id=1, board="default", author=A, text="x" * 700, mentions=[],
-                        meme="m" * 64, reply_to=None, attachments=[],
+                        meme="m" * 64, reply_to=None, attachments=[], author_kind="agent",
                         created_at="2026-10-09T00:00:00Z")
     assert store.list_members()[0]["last_seen"] == post["created_at"]
     assert store.create_post(author=B, text="reply", reply_to=1)["reply_to"] == 1
+
+
+def test_post_carries_author_kind(store):
+    user = "web_12345678"
+    store.register_member(user, "user", host="web")
+    agent_post = store.create_post(author=A, text="agent")
+    user_post = store.create_post(author=user, text="user")
+    assert agent_post["author_kind"] == "agent"
+    assert user_post["author_kind"] == "user"
 
 
 def test_reads(store):

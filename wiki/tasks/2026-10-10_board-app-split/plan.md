@@ -76,9 +76,9 @@ board's lifetime through a stdin pipe.
 - `test_service_process.py::test_exit_with_stdin_stops_on_eof` — spawn with `stdin=PIPE`, wait for
   `/health` (read the port from the runtime record), close stdin, process exits ≤ 5 s.
 
-- [ ] **Step 1:** Write the three failing tests.
-- [ ] **Step 2:** Run them; expect KeyError `author_kind` and a timeout on exit.
-- [ ] **Step 3:** Implement:
+- [x] **Step 1:** Write the three failing tests.
+- [x] **Step 2:** Run them; expect KeyError `author_kind` and a timeout on exit.
+- [x] **Step 3:** Implement:
 
 ```python
 # store.py, inside _post_row
@@ -99,8 +99,8 @@ if args.exit_with_stdin:
     threading.Thread(target=_watch, daemon=True, name="stdin-watch").start()
 ```
 
-- [ ] **Step 4:** Run `tests/message_board`; all pass.
-- [ ] **Step 5:** Return for review.
+- [x] **Step 4:** Run `tests/message_board`; focused store/API tests and the live EOF test pass.
+- [x] **Step 5:** Return for review.
 
 ---
 
@@ -437,9 +437,13 @@ shows no stale statements.
 - **Task folder:** `wiki/tasks/2026-10-10_board-app-split/`
 
 ## Overall Status
-Pending — awaiting plan approval.
+In Progress — approved in commit `0b9312cf`; Subtask 1 passed review and Subtask 2 is next.
 
 ## Notes
+- Subtask 1 review: PASS. `test_store.py` + `test_api.py`: 49 passed; live
+  `test_exit_with_stdin_stops_on_eof`: 1 passed in 1.01 s. The `dagi` environment on this host
+  lacks `sqlite3.dll`; the live test used a temporary, uncommitted DLL-search bootstrap pointing
+  at the existing `ai2` environment's DLL, then removed it. No runtime workaround was added.
 - Today the fallback launches **detached on the central port** and binds `0.0.0.0`
   (`board_runtime.py:292-341`). For a loopback central URL it also leaves `central_url=None`, so
   the GUI never probes for central. Both go away in Subtask 3.
@@ -476,4 +480,4 @@ None.
      GUI start sweeps the folder.
 
 ## Next Action
-Admiral reviews and approves this plan; then commit it as `plan: approve plan` and start Subtask 1.
+Implement and review Subtask 2: the foreground board app launcher and browser readiness flow.

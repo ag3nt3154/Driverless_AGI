@@ -66,6 +66,42 @@ def test_real_cli_stop_with_open_sse_and_wildcard(tmp_path, monkeypatch, host, t
                 process.wait(timeout=5)
 
 
+def test_exit_with_stdin_stops_on_eof(tmp_path):
+    runtime = tmp_path / "run"
+    args = [sys.executable, "-m", "services.message_board", "serve", "--host", "127.0.0.1",
+            "--port", "0", "--db", str(tmp_path / "board.sqlite3"),
+            "--runtime-dir", str(runtime), "--exit-with-stdin"]
+    with (tmp_path / "service.log").open("wb") as log:
+        process = subprocess.Popen(args, stdin=subprocess.PIPE, stdout=log, stderr=log,
+                                   creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+        try:
+            deadline = time.monotonic() + 10
+            record = None
+            while time.monotonic() < deadline:
+                if process.poll() is not None:
+                    raise AssertionError("board exited before readiness")
+                records = list(runtime.glob("board-*.json"))
+                if records:
+                    port = int(records[0].stem.removeprefix("board-"))
+                    record = read_record(runtime, port)
+                    try:
+                        with httpx.Client(trust_env=False, timeout=.2) as client:
+                            if client.get(record["url"] + "/health").status_code == 200:
+                                break
+                    except (httpx.ConnectError, httpx.TimeoutException):
+                        pass
+                time.sleep(.05)
+            else:
+                raise AssertionError("board did not become ready")
+
+            process.stdin.close()
+            assert process.wait(timeout=5) == 0
+        finally:
+            if process.poll() is None:
+                process.terminate()
+                process.wait(timeout=5)
+
+
 def test_bind_failure_never_publishes_record(tmp_path):
     with socket.socket() as occupied:
         occupied.bind(("127.0.0.1", 0))

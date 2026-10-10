@@ -8,6 +8,7 @@ import argparse
 import os
 import secrets
 import sys
+import threading
 import uuid
 from pathlib import Path
 
@@ -75,6 +76,8 @@ def parse_args(argv=None, settings: BoardSettings | None = None):
     serve.add_argument("--token", default=None,
                        help="bearer token (default: env DAGI_BOARD_TOKEN, then the token file)")
     serve.add_argument("--runtime-dir", type=Path, default=DEFAULT_ROOT / "run")
+    serve.add_argument("--exit-with-stdin", action="store_true",
+                       help="stop when stdin reaches EOF (used by a parent that owns this board)")
     stop = commands.add_parser("stop", help="stop a local board using its protected capability")
     stop.add_argument("--url", default=f"http://127.0.0.1:{settings.port}")
     stop.add_argument("--runtime-dir", type=Path, default=DEFAULT_ROOT / "run")
@@ -111,6 +114,14 @@ def serve_board(args) -> None:
                             timeout_graceful_shutdown=1, log_level="warning")
     server = RecordServer(config, runtime_dir=args.runtime_dir, control=control)
     control.callback = lambda: setattr(server, "should_exit", True)
+    if args.exit_with_stdin:
+        def _watch_stdin() -> None:
+            try:
+                sys.stdin.buffer.read()
+            finally:
+                server.should_exit = True
+
+        threading.Thread(target=_watch_stdin, daemon=True, name="stdin-watch").start()
     try:
         server.run()
     finally:

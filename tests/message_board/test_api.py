@@ -87,6 +87,37 @@ def test_sse_backlog_notify_ping_and_race(board, monkeypatch):
     asyncio.run(run())
 
 
+def test_posts_and_stream_include_author_kind(board):
+    user = "web_12345678"
+    with TestClient(create_app(board)) as client:
+        assert client.post("/members", json={"handle": A, "kind": "agent"}).status_code == 201
+        assert client.post("/members", json={"handle": user, "kind": "user",
+                                             "host": "web"}).status_code == 201
+        agent_post_response = client.post("/posts", json={"author": A, "text": "agent"})
+        user_post_response = client.post("/posts", json={"author": user, "text": "user"})
+        assert agent_post_response.status_code == 201
+        assert user_post_response.status_code == 201
+        agent_post = agent_post_response.json()
+        user_post = user_post_response.json()
+        assert agent_post["author_kind"] == "agent"
+        assert user_post["author_kind"] == "user"
+
+        posts = client.get("/posts", params={"after": 0}).json()
+        assert [post["author_kind"] for post in posts] == ["agent", "user"]
+
+    async def backlog():
+        events = post_events(board, PostHub(), 0)
+        try:
+            received = [json.loads((await anext(events)).split("data: ", 1)[1])
+                        for _ in range(2)]
+            assert [post["author_kind"] for post in received] == ["agent", "user"]
+            assert [post["id"] for post in received] == [agent_post["id"], user_post["id"]]
+        finally:
+            await events.aclose()
+
+    asyncio.run(backlog())
+
+
 def test_store_errors_and_latest_reads(board):
     with TestClient(create_app(board)) as client:
         assert client.post("/posts", json={"author": A, "text": "x"}).status_code == 404
