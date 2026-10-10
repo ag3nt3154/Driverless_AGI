@@ -1,9 +1,7 @@
-"""Board address settings from config.yaml and the shared bearer-token file."""
+"""Board address settings from config.yaml and the bearer token from .env."""
 from __future__ import annotations
 
 import os
-import secrets
-import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -13,7 +11,8 @@ from agent import DAGI_ROOT
 from .lifecycle import DEFAULT_URL
 
 STATE_ROOT = DAGI_ROOT / ".dagi" / "board"
-TOKEN_PATH = STATE_ROOT / "token"
+ENV_PATH = DAGI_ROOT / ".env"
+DEFAULT_TOKEN = "dagi"
 CONFIG_PATH = DAGI_ROOT / ".dagi" / "config.yaml"
 DEFAULT_BIND = "0.0.0.0"
 
@@ -58,40 +57,22 @@ def load_settings(path: Path = CONFIG_PATH) -> BoardSettings:
     return board_settings(raw.get("services") if isinstance(raw, dict) else None)
 
 
-def read_token(path: Path = TOKEN_PATH) -> str | None:
-    """Return the stored token, or None when the file is absent, empty or a link."""
-    path = Path(path)
-    if path.is_symlink():
-        return None
+def _dotenv_token(path: Path) -> str | None:
+    """``DAGI_BOARD_TOKEN`` from a .env file, read without touching ``os.environ``."""
+    from dotenv import dotenv_values
+
     try:
-        value = path.read_text(encoding="utf-8").strip()
-    except (FileNotFoundError, NotADirectoryError):
+        return dotenv_values(path).get("DAGI_BOARD_TOKEN")
+    except OSError:
         return None
-    return value or None
 
 
-def resolve_token(explicit: str | None = None, path: Path = TOKEN_PATH) -> str | None:
-    """Token precedence: explicit value, then env DAGI_BOARD_TOKEN, then the token file."""
-    return explicit or os.environ.get("DAGI_BOARD_TOKEN") or read_token(path)
+def resolve_token(explicit: str | None = None, env_path: Path = ENV_PATH) -> str:
+    """Token precedence: explicit value, env DAGI_BOARD_TOKEN, .env, then ``"dagi"``.
 
-
-def ensure_token(path: Path = TOKEN_PATH) -> str:
-    """Return the resolved token, generating and storing one when none exists."""
-    existing = resolve_token(None, path)
-    if existing:
-        return existing
-    path = Path(path)
-    if path.is_symlink():
-        raise OSError(f"board token path must not be a link: {path}")
-    path.parent.mkdir(parents=True, exist_ok=True)
-    value = secrets.token_urlsafe(32)
-    with tempfile.NamedTemporaryFile(
-        "w", encoding="utf-8", dir=path.parent, delete=False,
-    ) as stream:
-        temporary = Path(stream.name)
-        stream.write(value + "\n")
-    try:
-        os.replace(temporary, path)
-    finally:
-        temporary.unlink(missing_ok=True)
-    return value
+    Blank values fall through, so a board always has a token.
+    """
+    for value in (explicit, os.environ.get("DAGI_BOARD_TOKEN"), _dotenv_token(env_path)):
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return DEFAULT_TOKEN

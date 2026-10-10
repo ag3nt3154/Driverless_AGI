@@ -10,7 +10,7 @@ import pytest
 from services.message_board import __main__ as board_main
 from services.message_board.__main__ import main, parse_args, resolve_serve_token
 from services.message_board.settings import (
-    BoardSettings, board_settings, ensure_token, read_token, resolve_token,
+    DEFAULT_TOKEN, BoardSettings, board_settings, resolve_token,
 )
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -38,41 +38,65 @@ def test_defaults_come_from_config_and_flags_override():
     assert (override.host, override.port) == ("127.0.0.1", 9200)
 
 
-def test_serve_token_precedence_for_wildcard_bind(tmp_path, monkeypatch):
-    path = tmp_path / "token"
-    path.write_text("from-file\n", encoding="utf-8")
+def _env_file(tmp_path, text):
+    path = tmp_path / ".env"
+    path.write_text(text, encoding="utf-8")
+    return path
+
+
+def test_token_precedence_explicit_then_env_then_dotenv_then_default(tmp_path, monkeypatch):
+    env_file = _env_file(tmp_path, "OTHER=1\nDAGI_BOARD_TOKEN=from-dotenv\n")
     monkeypatch.setenv("DAGI_BOARD_TOKEN", "from-env")
-    assert resolve_serve_token("0.0.0.0", "explicit", path) == "explicit"
-    assert resolve_serve_token("0.0.0.0", None, path) == "from-env"
+    assert resolve_token("explicit", env_file) == "explicit"
+    assert resolve_token(None, env_file) == "from-env"
     monkeypatch.delenv("DAGI_BOARD_TOKEN")
-    assert resolve_serve_token("0.0.0.0", None, path) == "from-file"
+    assert resolve_token(None, env_file) == "from-dotenv"
+    assert resolve_token(None, tmp_path / "missing.env") == DEFAULT_TOKEN == "dagi"
 
 
-def test_wildcard_bind_without_token_generates_and_stores_one(tmp_path, monkeypatch):
+def test_blank_values_fall_through_to_the_default(tmp_path, monkeypatch):
+    monkeypatch.setenv("DAGI_BOARD_TOKEN", "  ")
+    env_file = _env_file(tmp_path, "DAGI_BOARD_TOKEN=\n")
+    assert resolve_token("", env_file) == "dagi"
+
+
+def test_reading_dotenv_does_not_change_the_process_environment(tmp_path, monkeypatch):
     monkeypatch.delenv("DAGI_BOARD_TOKEN", raising=False)
-    path = tmp_path / "state" / "token"
-    token = resolve_serve_token("0.0.0.0", None, path)
-    assert token and len(token) >= 32
-    assert read_token(path) == token
-    assert resolve_serve_token("0.0.0.0", None, path) == token
+    env_file = _env_file(tmp_path, "DAGI_BOARD_TOKEN=from-dotenv\n")
+    assert resolve_token(None, env_file) == "from-dotenv"
+    assert "DAGI_BOARD_TOKEN" not in __import__("os").environ
 
 
-def test_loopback_bind_ignores_token_file(tmp_path, monkeypatch):
+@pytest.mark.parametrize("host", ["127.0.0.1", "0.0.0.0"])
+def test_every_serve_bind_gets_a_token(tmp_path, monkeypatch, host):
     monkeypatch.delenv("DAGI_BOARD_TOKEN", raising=False)
-    path = tmp_path / "token"
-    path.write_text("from-file\n", encoding="utf-8")
-    assert resolve_serve_token("127.0.0.1", None, path) is None
-    assert not (tmp_path / "other").exists()
+    missing = tmp_path / "missing.env"
+    assert resolve_serve_token(host, None, env_path=missing) == "dagi"
+    assert resolve_serve_token(host, "secret", env_path=missing) == "secret"
 
 
-def test_client_token_resolution_and_ensure(tmp_path, monkeypatch):
+def test_default_token_warns_only_on_a_network_bind(tmp_path, monkeypatch, capsys):
     monkeypatch.delenv("DAGI_BOARD_TOKEN", raising=False)
-    path = tmp_path / "token"
-    assert resolve_token(None, path) is None
-    created = ensure_token(path)
-    assert resolve_token(None, path) == created and ensure_token(path) == created
-    monkeypatch.setenv("DAGI_BOARD_TOKEN", "env")
-    assert resolve_token(None, path) == "env" and ensure_token(path) == "env"
+    missing = tmp_path / "missing.env"
+    resolve_serve_token("127.0.0.1", None, env_path=missing)
+    resolve_serve_token("0.0.0.0", "custom-secret", env_path=missing)
+    assert capsys.readouterr().err == ""
+    resolve_serve_token("0.0.0.0", None, env_path=missing)
+    err = capsys.readouterr().err
+    assert 'default token "dagi"' in err and "DAGI_BOARD_TOKEN" in err and ".env" in err
+
+
+def test_no_token_is_loopback_only(tmp_path, monkeypatch):
+    monkeypatch.setenv("DAGI_BOARD_TOKEN", "from-env")
+    assert resolve_serve_token("127.0.0.1", None, no_token=True) is None
+    with pytest.raises(SystemExit, match="loopback"):
+        resolve_serve_token("0.0.0.0", None, no_token=True)
+
+
+def test_no_token_and_token_flags_are_exclusive(capsys):
+    assert parse_args(["serve", "--no-token"]).no_token is True
+    with pytest.raises(SystemExit):
+        parse_args(["serve", "--no-token", "--token", "x"])
 
 
 def test_entry_script_runs():
@@ -226,7 +250,7 @@ def test_health_probe_disables_environment_proxies(monkeypatch):
     assert seen["trust_env"] is False
 
 
-def test_lan_hint_uses_hostname_port_and_token_path_without_token(tmp_path, monkeypatch, capsys):
+def test_lan_hint_points_at_dotenv_without_printing_the_token(tmp_path, monkeypatch, capsys):
     class Store:
         def __init__(self, path):
             pass
@@ -241,17 +265,17 @@ def test_lan_hint_uses_hostname_port_and_token_path_without_token(tmp_path, monk
         def run(self):
             pass
 
-    token_path = tmp_path / "private-token"
-    monkeypatch.setattr(board_main, "TOKEN_PATH", token_path)
+    env_path = tmp_path / ".env"
+    monkeypatch.setattr(board_main, "ENV_PATH", env_path)
     monkeypatch.setattr(board_main.socket, "gethostname", lambda: "ship-host")
     monkeypatch.setattr(board_main, "BoardStore", Store)
     monkeypatch.setattr(board_main, "RecordServer", Server)
-    monkeypatch.setattr(board_main, "resolve_serve_token", lambda *args: "do-not-print-this")
+    monkeypatch.setattr(board_main, "resolve_serve_token", lambda *a, **k: "do-not-print-this")
 
     board_main.serve_board(board_main.parse_args(["--host", "192.168.1.20", "--port", "9123"]))
 
     output = capsys.readouterr().out
-    assert output == f"LAN: http://ship-host:9123/ (token in {token_path})\n"
+    assert output == f"LAN: http://ship-host:9123/ (token: DAGI_BOARD_TOKEN in {env_path})\n"
     assert "do-not-print-this" not in output
 
 

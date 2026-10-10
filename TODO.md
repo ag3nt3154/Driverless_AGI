@@ -208,6 +208,12 @@
 
 ## Completed
 
+- **Board token from .env (2026-10-10)** — the central board always has a bearer token:
+  `--token`, env `DAGI_BOARD_TOKEN`, `DAGI_BOARD_TOKEN` in `.env`, else the public default `dagi`
+  (warned on a network bind). The generated `.dagi/board/token` file is gone. `serve --no-token`
+  (loopback only) keeps the GUI's temp board tokenless, which also fixes the temp board rejecting
+  the GUI when a token was set in `.env`.
+
 - **Board app split (2026-10-10)** — `python message_board.py` is the central board app: it
   serves in the foreground and opens the browser (only opens it when a board already answers;
   `--no-browser` skips it). The web UI has the composer: per-browser `user` identity, 700-char

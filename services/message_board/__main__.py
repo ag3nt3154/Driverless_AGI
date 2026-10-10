@@ -5,7 +5,6 @@ Defaults come from ``services.message_board`` in .dagi/config.yaml; flags overri
 from __future__ import annotations
 
 import argparse
-import os
 import secrets
 import socket
 import sys
@@ -24,7 +23,7 @@ from .app import create_app
 from .lifecycle import ShutdownControl, check_bind, stop_local, validate_health_identity
 from .lifecycle import is_loopback_host as is_loopback_host
 from .runtime_records import RecordError, remove_record, write_record
-from .settings import TOKEN_PATH, BoardSettings, ensure_token, load_settings, read_token
+from .settings import DEFAULT_TOKEN, ENV_PATH, BoardSettings, load_settings, resolve_token
 from .store import BoardStore
 
 DEFAULT_ROOT = DAGI_ROOT / ".dagi" / "board"
@@ -77,8 +76,11 @@ def parse_args(argv=None, settings: BoardSettings | None = None):
     serve.add_argument("--host", default=settings.bind)
     serve.add_argument("--port", type=int, default=settings.port)
     serve.add_argument("--db", type=Path, default=DEFAULT_ROOT / "board.sqlite3")
-    serve.add_argument("--token", default=None,
-                       help="bearer token (default: env DAGI_BOARD_TOKEN, then the token file)")
+    token = serve.add_mutually_exclusive_group()
+    token.add_argument("--token", default=None,
+                       help='bearer token (default: env DAGI_BOARD_TOKEN, then .env, then "dagi")')
+    token.add_argument("--no-token", action="store_true",
+                       help="serve without a token; loopback only (the GUI's private temp board)")
     serve.add_argument("--runtime-dir", type=Path, default=DEFAULT_ROOT / "run")
     serve.add_argument("--exit-with-stdin", action="store_true",
                        help="stop when stdin reaches EOF (used by a parent that owns this board)")
@@ -93,20 +95,20 @@ def parse_args(argv=None, settings: BoardSettings | None = None):
     return parser.parse_args(arguments)
 
 
-def resolve_serve_token(host: str, explicit: str | None, path: Path = TOKEN_PATH) -> str | None:
-    """Resolve the serve token: ``--token``, then env DAGI_BOARD_TOKEN.
+def resolve_serve_token(host: str, explicit: str | None, *, no_token: bool = False,
+                        env_path: Path = ENV_PATH) -> str | None:
+    """The serve token: ``--token``, env DAGI_BOARD_TOKEN, .env, then ``"dagi"``.
 
-    Only a non-loopback bind falls back to the token file, generating one when absent, so a
-    loopback board stays tokenless unless a token is given explicitly.
+    Every bind gets a token unless ``no_token`` asks for a tokenless loopback board.
     """
-    token = explicit or os.environ.get("DAGI_BOARD_TOKEN")
-    if token or is_loopback_host(host):
-        return token
-    existing = read_token(path)
-    if existing:
-        return existing
-    token = ensure_token(path)
-    print(f"message board: generated a bearer token in {path}", file=sys.stderr)
+    if no_token:
+        if not is_loopback_host(host):
+            raise SystemExit("--no-token is only allowed on a loopback bind")
+        return None
+    token = resolve_token(explicit, env_path)
+    if token == DEFAULT_TOKEN and not is_loopback_host(host):
+        print(f'message board: using the default token "{DEFAULT_TOKEN}" — set '
+              f"DAGI_BOARD_TOKEN in {env_path} to secure this board", file=sys.stderr)
     return token
 
 
@@ -146,10 +148,11 @@ def _open_when_ready(url: str, instance_id: str, opener, probe,
 
 
 def serve_board(args, *, on_start=None) -> None:
-    args.token = resolve_serve_token(args.host, args.token)
+    args.token = resolve_serve_token(args.host, args.token, no_token=args.no_token)
     check_bind(args.host, args.token)
     if not is_loopback_host(args.host):
-        print(f"LAN: http://{socket.gethostname()}:{args.port}/ (token in {TOKEN_PATH})")
+        print(f"LAN: http://{socket.gethostname()}:{args.port}/ "
+              f"(token: DAGI_BOARD_TOKEN in {ENV_PATH})")
     store = BoardStore(args.db)
     control = ShutdownControl(uuid.uuid4().hex, secrets.token_hex(32), lambda: None)
     config = uvicorn.Config(create_app(store, args.token, shutdown=control),

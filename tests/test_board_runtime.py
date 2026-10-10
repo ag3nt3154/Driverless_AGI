@@ -279,14 +279,17 @@ def test_failure_after_temp_start_closes_temp(tmp_path):
     assert temp.closed == 1 and local.closed
 
 
-def test_temp_board_lifecycle_live(tmp_path):
+def test_temp_board_lifecycle_live(tmp_path, monkeypatch):
     from pyside_gui.board_runtime import TempBoard
 
+    # The GUI loads .env, so the child inherits a board token; the temp board must ignore it.
+    monkeypatch.setenv("DAGI_BOARD_TOKEN", "central-token")
     temp = TempBoard.start(root=tmp_path / "temp", wait_s=10)
     run_dir, url, process = temp.run_dir, temp.url, temp.process
     client = BoardClient(url, timeout=1)
     try:
         assert client.health()["version"] == 1
+        assert client.members() == []  # authenticated endpoint, no token sent
         record = json.loads(next((run_dir / "run").glob("board-*.json")).read_text())
         assert url.endswith(f":{record['port']}") and record["port"] != 0
     finally:

@@ -43,7 +43,8 @@ def test_real_cli_stop_with_open_sse_and_wildcard(tmp_path, monkeypatch, host, t
     if token:
         args.extend(["--token", token])
         monkeypatch.setenv("DAGI_BOARD_TOKEN", token)
-    else:
+    else:  # tokenless only by explicit --no-token, as the GUI's temp board runs
+        args.append("--no-token")
         monkeypatch.delenv("DAGI_BOARD_TOKEN", raising=False)
     with (tmp_path / "service.log").open("wb") as log:
         process = subprocess.Popen(args, stdout=log, stderr=log,

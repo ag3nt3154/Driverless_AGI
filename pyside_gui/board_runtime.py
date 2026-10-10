@@ -285,7 +285,7 @@ class TempBoard:
                 sys.executable, "-m", "services.message_board", "serve",
                 "--host", "127.0.0.1", "--port", "0",
                 "--db", str(run_dir / "board.sqlite3"),
-                "--runtime-dir", str(run_dir / "run"), "--exit-with-stdin",
+                "--runtime-dir", str(run_dir / "run"), "--exit-with-stdin", "--no-token",
             ]
             process = _spawn_temp(command, run_dir=run_dir, spawn=spawn or subprocess.Popen)
             deadline = time.monotonic() + wait_s

@@ -267,8 +267,8 @@ services:
   # `python message_board.py` (default 0.0.0.0, reachable on the LAN) at the URL's port.
   # If central is unreachable, the GUI starts its own private loopback temp board;
   # temp posts are discarded when the GUI switches away or closes; it switches to central when ready.
-  # The central board token is not set here: env DAGI_BOARD_TOKEN, else .dagi/board/token
-  # (generated on first non-loopback launch). Use the same token on each client machine.
+  # The board token is not set here: DAGI_BOARD_TOKEN in the env or .env, else "dagi"
+  # (a public default; the app warns on a network bind). Use the same token on every client.
   message_board:
     url: "http://127.0.0.1:8765"
     bind: "0.0.0.0"

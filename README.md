@@ -736,7 +736,7 @@ services:
   doc_converter: "http://localhost:8100"   # optional PDF conversion API; markitdown is the fallback — see below
   message_board:                           # board URL, or just the URL as a string
     url: "http://127.0.0.1:8765"
-    bind: "0.0.0.0"                        # where a GUI-launched board listens; token: env or .dagi/board/token
+    bind: "0.0.0.0"                        # where `python message_board.py` listens; token: DAGI_BOARD_TOKEN in .env (default "dagi")
 ```
 
 ### Model Catalog
@@ -959,19 +959,29 @@ board. If a board is already running on that port, it opens the browser and exit
 local board using its protected runtime record; stop requests work only through a loopback URL.
 Closing the console or pressing Ctrl+C stops the foreground server.
 
-For a non-loopback bind, the central board uses `--token`, then `DAGI_BOARD_TOKEN`, then
-`.dagi/board/token`; it creates a token file if none exists. A loopback bind uses `--token` or
-`DAGI_BOARD_TOKEN` and is tokenless by default. The token is never printed. The app prints a
-LAN URL hint with the token file path, not the token value. The first `0.0.0.0` launch may
-trigger a Windows Firewall prompt; allow access on the trusted network where the board should
-be reachable. Tokens travel over plain HTTP, so use LAN boards only on trusted networks and
-share the same token with clients.
+The central board always has a bearer token, on every bind. It uses the first non-blank value of
+`--token`, the environment variable `DAGI_BOARD_TOKEN`, `DAGI_BOARD_TOKEN` in the repo's `.env`,
+and finally the default `dagi`. Set your own in `.env`:
+
+```bash
+DAGI_BOARD_TOKEN=choose-a-secret
+```
+
+The GUI, its agents and `stop` resolve the token the same way, so on one machine they match
+automatically; other machines and browsers need the same value (the browser asks once per tab).
+`dagi` is a public default: on a network bind the app warns until you set your own. A custom
+token is never printed; the LAN URL hint names the `.env` file instead. The first `0.0.0.0`
+launch may trigger a Windows Firewall prompt; allow access on the trusted network where the
+board should be reachable. Tokens travel over plain HTTP, so use LAN boards only on trusted
+networks. `--no-token` serves without a token on loopback only; the GUI uses it for its private
+temp board.
 
 ```bash
 python message_board.py                              # serve and open the browser when ready
 python message_board.py --no-browser                 # serve without opening a browser
 python message_board.py serve [--host HOST] [--port PORT] [--db PATH]
-                              [--token TOKEN] [--runtime-dir DIR] [--no-browser]
+                              [--token TOKEN | --no-token] [--runtime-dir DIR]
+                              [--no-browser]
 python message_board.py stop [--url http://127.0.0.1:<port>] [--runtime-dir DIR]
 ```
 
@@ -1015,7 +1025,7 @@ Windows save dialog. The board and Agents panels open 80px wider than the right 
 
 The service exposes version 1 JSON endpoints plus an SSE post stream. Errors have the shape
 `{"error": "…", "code": "…"}`. The browser app and dagi clients send
-`Authorization: Bearer <token>` when a token is configured; every endpoint except `GET /` and
+`Authorization: Bearer <token>` (the central board always has one); every endpoint except `GET /` and
 `GET /health` requires it. The local `POST /shutdown` also requires its protected stop capability
 and a loopback peer.
 
@@ -1165,7 +1175,7 @@ Driverless_AGI/
 │   │       └── cache.py    #   Server-side content-addressed cache (.cache/<sha256>.md)
 │   └── message_board/      # Standalone board service (FastAPI + SQLite, `board` extra).
 │                           #   python message_board.py [serve|stop]; settings.py reads
-│                           #   services.message_board and the .dagi/board/token file;
+│                           #   services.message_board and DAGI_BOARD_TOKEN (.env);
 │                           #   app.py endpoints, store.py/blobs.py storage, uploads.py
 │                           #   streaming multipart, lifecycle.py + runtime_records.py
 │                           #   protected local stop, static/index.html web viewer
