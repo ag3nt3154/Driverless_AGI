@@ -4,6 +4,7 @@ from __future__ import annotations
 import ipaddress
 import json
 import os
+import shutil
 import socket
 import subprocess
 import sys
@@ -19,7 +20,10 @@ from agent import DAGI_ROOT
 from agent._board_files import MAX_ATTACHMENT
 from agent.board_client import BoardClient, BoardError, BoardSession
 from services.message_board.lifecycle import DEFAULT_URL
-from services.message_board.settings import DEFAULT_BIND, ensure_token
+from services.message_board.runtime_records import (
+    RecordError, discover_record, lock_file, open_lock, protect,
+)
+from services.message_board.settings import DEFAULT_BIND
 
 DEFAULT_BOARD_URL = DEFAULT_URL
 _BACKOFF = (1.0, 2.0, 4.0, 8.0, 16.0, 30.0)
@@ -89,10 +93,6 @@ def _valid_handle(value: str, slug: str) -> bool:
     )
 
 
-def load_or_create_user_handle(path: Path) -> str:
-    return load_or_create_handle(path, "user")
-
-
 def load_or_create_handle(path: Path, slug: str) -> str:
     """Return the persisted ``<slug>_<uuid8>`` at ``path``, creating it when absent or invalid."""
     path = Path(path)
@@ -128,52 +128,9 @@ def load_or_create_handle(path: Path, slug: str) -> str:
 class BoardRuntime:
     client: BoardClient
     session: BoardSession
-    user_handle: str
-    spawned_pid: int | None
     url: str = DEFAULT_URL
-    central_url: str | None = None  # the configured board, when running on a local fallback
-
-
-class SpawnedService:
-    """Owned child handle during startup; release transfers it to the operating system."""
-
-    def __init__(self, process) -> None:
-        self._process = process
-        self.pid = process.pid
-        self._released = False
-
-    def terminate(self) -> None:
-        if not self._released and self._process.poll() is None:
-            self._process.terminate()
-
-    def wait(self, timeout: float | None = None):
-        return self._process.wait(timeout=timeout)
-
-    def release(self) -> int:
-        self._released = True
-        return self.pid
-
-
-def spawn_service(host: str, port: int, log_path: Path, *, db_path: Path | None = None,
-                  runtime_dir: Path | None = None) -> SpawnedService:
-    command = [sys.executable, "-m", "services.message_board", "serve",
-               "--host", host, "--port", str(port)]
-    if db_path is not None:
-        command.extend(("--db", str(db_path)))
-    if runtime_dir is not None:
-        command.extend(("--runtime-dir", str(runtime_dir)))
-    log_path = Path(log_path)
-    log_path.parent.mkdir(parents=True, exist_ok=True)
-    options = {"cwd": DAGI_ROOT, "stdin": subprocess.DEVNULL, "close_fds": True}
-    if os.name == "nt":
-        options["creationflags"] = sum(getattr(subprocess, name) for name in (
-            "DETACHED_PROCESS", "CREATE_NEW_PROCESS_GROUP", "CREATE_NO_WINDOW",
-        ))
-    else:
-        options["start_new_session"] = True
-    with log_path.open("ab") as output:
-        process = subprocess.Popen(command, stdout=output, stderr=output, **options)
-    return SpawnedService(process)
+    central_url: str | None = None
+    temp: TempBoard | None = None
 
 
 def _health(client, remaining: float) -> dict:
@@ -194,29 +151,16 @@ def _health(client, remaining: float) -> dict:
     return health
 
 
-def _cleanup_child(child) -> None:
-    child.terminate()
-    try:
-        child.wait(timeout=5)
-    except subprocess.TimeoutExpired:
-        process = getattr(child, "_process", None)
-        if process is not None:
-            process.kill()
-            process.wait(timeout=5)
-
-
 def _cancelled(cancel) -> bool:
     return cancel is not None and cancel.is_set()
 
 
-def register_runtime(client, state_dir: Path, spawned_pid: int | None = None) -> BoardRuntime:
-    """Register the persistent main-agent and user handles on ``client``'s board."""
+def register_runtime(client, state_dir: Path) -> BoardRuntime:
+    """Register the persistent main-agent handle on ``client``'s board."""
     agent_handle = load_or_create_handle(state_dir / "main_handle", "main")
-    user_handle = load_or_create_user_handle(state_dir / "user_handle")
     host = socket.gethostname()
     client.register(agent_handle, "agent", host=host)
-    client.register(user_handle, "user", host=host)
-    return BoardRuntime(client, BoardSession(client, agent_handle), user_handle, spawned_pid)
+    return BoardRuntime(client, BoardSession(client, agent_handle))
 
 
 def local_url(bind: str, port: int) -> str:
@@ -264,89 +208,233 @@ def _reachable_with_retry(client, probe_s: float, retry_s: float, sleep, cancel)
     return probe(client, probe_s)
 
 
-def _await_ready(client, deadline: float, clock, sleep, cancel) -> None:
-    while True:
-        if _cancelled(cancel):
-            raise BoardError("CANCELLED", "message board startup cancelled")
-        remaining = deadline - clock()
-        if remaining <= 0:
-            raise BoardError("SPAWN_FAILED", "message board did not become ready")
-        try:
-            _health(client, remaining)
-            return
-        except BoardError as error:
-            if error.code not in ("UNREACHABLE", "TIMEOUT"):
-                raise BoardError("SPAWN_FAILED", error.message) from error
-        sleep(min(0.25, max(0.0, deadline - clock())))
-
-
-@dataclass
-class _Launch:
-    """How to launch a local board when the configured one is unreachable."""
-    bind: str
-    state_dir: Path
-    spawn: object
-    wait_s: float
-
-
-def _spawn_local(launch: _Launch, port: int, token, client_factory, timing):
-    """Spawn a board on ``launch.bind``; return (client, child) once it is healthy."""
-    clock, sleep, cancel = timing
-    token = token or ensure_token()
-    client = client_factory(local_url(launch.bind, port), token,
-                            timeout=min(10.0, max(0.001, launch.wait_s)))
-    child = None
+def _lock_owned(path: Path, *, blocking: bool):
+    stream = open_lock(path)
     try:
-        child = launch.spawn(
-            launch.bind, port, launch.state_dir / "board.log",
-            db_path=launch.state_dir / "board.sqlite3", runtime_dir=launch.state_dir / "run",
-        )
-        _await_ready(client, clock() + launch.wait_s, clock, sleep, cancel)
+        if lock_file(stream, blocking=blocking):
+            return stream
     except BaseException:
-        client.close()
-        if child is not None:
-            _cleanup_child(child)
+        stream.close()
         raise
-    return client, child
+    stream.close()
+    return None
+
+
+def _sweep_stale_locked(root: Path) -> None:
+    for run in root.iterdir():
+        if not run.is_dir():
+            continue
+        owner = _lock_owned(run / "owner.lock", blocking=False)
+        if owner is not None:
+            lock_file(owner, unlock=True)
+            owner.close()
+            shutil.rmtree(run, ignore_errors=True)
+
+
+def sweep_stale(root: Path) -> None:
+    """Remove run folders whose owner lock is no longer held."""
+    root = Path(root)
+    root.mkdir(parents=True, exist_ok=True)
+    protect(root)
+    lifecycle = _lock_owned(root / ".lifecycle.lock", blocking=True)
+    try:
+        _sweep_stale_locked(root)
+    finally:
+        lock_file(lifecycle, unlock=True)
+        lifecycle.close()
+
+
+def _spawn_temp(command, *, run_dir: Path, spawn=subprocess.Popen):
+    options = {
+        "cwd": DAGI_ROOT,
+        "stdin": subprocess.PIPE,
+        "stdout": None,
+        "stderr": None,
+        "close_fds": True,
+    }
+    log = (run_dir / "board.log").open("ab")
+    options["stdout"] = log
+    options["stderr"] = log
+    if os.name == "nt":
+        options["creationflags"] = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+    try:
+        return spawn(command, **options)
+    finally:
+        log.close()
+
+
+class TempBoard:
+    """A private board process whose lifetime and temporary data belong to this GUI run."""
+
+    def __init__(self, run_dir: Path, process, owner_lock, url: str) -> None:
+        self.run_dir = Path(run_dir)
+        self.process = process
+        self.url = url
+        self._owner_lock = owner_lock
+        self._closed = False
+        self._close_lock = threading.Lock()
+
+    @classmethod
+    def start(cls, root=DAGI_ROOT / ".dagi" / "board" / "temp", *,
+              spawn=None, wait_s: float = 10.0, cancel=None) -> TempBoard:
+        root = Path(root)
+        root.mkdir(parents=True, exist_ok=True)
+        protect(root)
+        lifecycle = _lock_owned(root / ".lifecycle.lock", blocking=True)
+        run_dir = None
+        created = False
+        owner = None
+        process = None
+        try:
+            _sweep_stale_locked(root)
+            run_dir = root / uuid.uuid4().hex[:8]
+            try:
+                run_dir.mkdir()
+                created = True
+                protect(run_dir)
+                owner = _lock_owned(run_dir / "owner.lock", blocking=False)
+                if owner is None:
+                    raise BoardError("SPAWN_FAILED", "cannot claim temporary board run folder")
+            except BaseException:
+                if owner is not None:
+                    lock_file(owner, unlock=True)
+                    owner.close()
+                    owner = None
+                if created:
+                    shutil.rmtree(run_dir, ignore_errors=True)
+                raise
+        finally:
+            lock_file(lifecycle, unlock=True)
+            lifecycle.close()
+
+        try:
+            command = [
+                sys.executable, "-m", "services.message_board", "serve",
+                "--host", "127.0.0.1", "--port", "0",
+                "--db", str(run_dir / "board.sqlite3"),
+                "--runtime-dir", str(run_dir / "run"), "--exit-with-stdin",
+            ]
+            process = _spawn_temp(command, run_dir=run_dir, spawn=spawn or subprocess.Popen)
+            deadline = time.monotonic() + wait_s
+            record = None
+            record_error = None
+            while time.monotonic() < deadline:
+                if _cancelled(cancel):
+                    raise BoardError("CANCELLED", "message board startup cancelled")
+                if process.poll() is not None:
+                    detail = (run_dir / "board.log").read_text(errors="replace")
+                    raise BoardError("SPAWN_FAILED", detail.strip() or
+                                     "temporary message board exited during startup")
+                try:
+                    record = discover_record(run_dir / "run")
+                    break
+                except (OSError, RecordError, ValueError) as error:
+                    record_error = str(error)
+                    time.sleep(min(0.1, max(0.0, deadline - time.monotonic())))
+            if record is None:
+                detail = (run_dir / "board.log").read_text(errors="replace")
+                parts = [part for part in (record_error, detail.strip()) if part]
+                reason = "; ".join(parts) or "no protected runtime record found"
+                raise BoardError("SPAWN_FAILED", f"temporary message board did not publish its runtime record: {reason}")
+            port = record["port"]
+            url = record["url"]
+            expected = f"http://127.0.0.1:{port}"
+            if url != expected:
+                raise BoardError("SPAWN_FAILED", "temporary message board published an invalid URL")
+            client = BoardClient(url, None, timeout=min(1.0, max(0.1, wait_s)))
+            try:
+                while time.monotonic() < deadline:
+                    if _cancelled(cancel):
+                        raise BoardError("CANCELLED", "message board startup cancelled")
+                    if process.poll() is not None:
+                        raise BoardError("SPAWN_FAILED", "temporary message board exited during startup")
+                    try:
+                        _health(client, max(0.1, deadline - time.monotonic()))
+                        return cls(run_dir, process, owner, url)
+                    except BoardError as error:
+                        if error.code not in ("UNREACHABLE", "TIMEOUT"):
+                            raise BoardError("SPAWN_FAILED", error.message) from error
+                    time.sleep(min(0.1, max(0.0, deadline - time.monotonic())))
+            finally:
+                client.close()
+            raise BoardError("SPAWN_FAILED", "temporary message board did not become ready")
+        except BaseException as error:
+            if process is not None:
+                _stop_process(process)
+            if owner is not None:
+                lock_file(owner, unlock=True)
+                owner.close()
+            if run_dir is not None:
+                shutil.rmtree(run_dir, ignore_errors=True)
+            if isinstance(error, BoardError):
+                raise
+            raise BoardError("SPAWN_FAILED", "cannot start the temporary message board") from error
+
+    def close(self) -> None:
+        with self._close_lock:
+            if self._closed:
+                return
+            self._closed = True
+            _stop_process(self.process)
+            lock_file(self._owner_lock, unlock=True)
+            self._owner_lock.close()
+            shutil.rmtree(self.run_dir, ignore_errors=True)
+
+
+def _stop_process(process) -> None:
+    stdin = getattr(process, "stdin", None)
+    if stdin is not None and not stdin.closed:
+        stdin.close()
+    try:
+        process.wait(timeout=5)
+        return
+    except subprocess.TimeoutExpired:
+        pass
+    process.terminate()
+    try:
+        process.wait(timeout=5)
+    except subprocess.TimeoutExpired:
+        process.kill()
+        process.wait(timeout=5)
 
 
 def start_board(url: str, token: str | None, *, state_dir: Path, bind: str = DEFAULT_BIND,
-                client_factory=BoardClient, spawn=spawn_service, wait_s: float = 10.0,
+                client_factory=BoardClient, temp_factory=TempBoard.start, spawn=None,
+                wait_s: float = 10.0,
                 probe_s: float = 3.0, retry_s: float = 2.0,
                 sleep=time.sleep, clock=time.monotonic, cancel=None) -> BoardRuntime:
-    """Connect to the board at ``url``; after one failed retry, launch a local board instead.
+    """Connect to the configured board or create a private, GUI-owned temporary board.
 
     Only an unreachable board (refused, timed out, DNS failure) triggers the fallback. An auth
     failure or a non-board reply raises, because something is answering at ``url``.
     """
     state_dir = Path(state_dir)
-    _, port = _service_address(url)
+    _service_address(url)
     client = client_factory(url, token, timeout=probe_s)
-    child = runtime = None
+    runtime = None
+    temp = None
     try:
         if not _reachable_with_retry(client, probe_s, retry_s, sleep, cancel):
             client.close()
-            launch = _Launch(bind, state_dir, spawn, wait_s)
-            client, child = _spawn_local(
-                launch, port, token, client_factory, (clock, sleep, cancel),
-            )
+            options = {"root": state_dir / "temp", "wait_s": wait_s, "cancel": cancel}
+            if spawn is not None:
+                options["spawn"] = spawn
+            temp = temp_factory(**options)
+            client = client_factory(temp.url, None, timeout=probe_s)
         if _cancelled(cancel):
             raise BoardError("CANCELLED", "message board startup cancelled")
-        runtime = register_runtime(client, state_dir, getattr(child, "pid", None))
-        runtime.url = local_url(bind, port) if child is not None else url
-        if child is not None and not is_loopback_url(url):
-            runtime.central_url = url
-        if child is not None:
-            child.release()
-            child = None
+        runtime = register_runtime(client, state_dir)
+        runtime.url = temp.url if temp is not None else url
+        runtime.central_url = url if temp is not None else None
+        runtime.temp = temp
         return runtime
     except (OSError, ValueError) as error:
         raise BoardError("SPAWN_FAILED", "cannot start the message board service") from error
     finally:
-        if child is not None:
-            _cleanup_child(child)
         if runtime is None:
             client.close()
+            if temp is not None:
+                temp.close()
 
 
 def _decode_event(event: str | None, data: list[str]) -> dict | None:

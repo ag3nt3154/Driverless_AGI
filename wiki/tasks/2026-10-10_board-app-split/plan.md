@@ -221,11 +221,11 @@ the web UI.
 - `test_sweep_stale_removes_only_unlocked_runs`
 - `test_concurrent_start_cannot_sweep_new_owned_run`
 
-- [ ] **Step 1:** Write the failing tests; delete the obsolete detached-spawn and user-handle tests.
-- [ ] **Step 2:** Run `tests/test_board_runtime.py`; expect failures on the missing `TempBoard` and `temp`.
-- [ ] **Step 3:** Implement `TempBoard`, `sweep_stale` and the new `start_board`; delete the dead code.
-- [ ] **Step 4:** Run `tests/test_board_runtime.py tests/message_board`; all pass.
-- [ ] **Step 5:** Return for review.
+- [x] **Step 1:** Write the failing tests; delete the obsolete detached-spawn and user-handle tests.
+- [x] **Step 2:** Run `tests/test_board_runtime.py`; expect failures on the missing `TempBoard` and `temp`.
+- [x] **Step 3:** Implement `TempBoard`, `sweep_stale` and the new `start_board`; delete the dead code.
+- [x] **Step 4:** Run `tests/test_board_runtime.py tests/message_board`; all pass.
+- [x] **Step 5:** Return for review.
 
 ---
 
@@ -437,7 +437,7 @@ shows no stale statements.
 - **Task folder:** `wiki/tasks/2026-10-10_board-app-split/`
 
 ## Overall Status
-In Progress — Subtasks 1-2 passed review; Subtask 3 is next.
+In Progress — Subtasks 1-3 passed review; Subtask 4 is next.
 
 ## Notes
 - Subtask 1 review: PASS. `test_store.py` + `test_api.py`: 49 passed; live
@@ -447,6 +447,9 @@ In Progress — Subtasks 1-2 passed review; Subtask 3 is next.
 - Subtask 2 review: PASS after keying browser readiness to this server's validated instance ID,
   disabling proxy inheritance for loopback probes, and covering LAN hint secrecy. Entry +
   lifecycle suites: 46 passed (one existing Starlette deprecation warning) in 2.74 s.
+- Subtask 3 review: PASS after hardening partial-start cleanup and UUID-collision ownership.
+  Runtime + message-board suites: 157 passed, 2 skipped (one existing warning) in 26.24 s,
+  including all three unsandboxed live ownership/concurrency tests.
 - Today the fallback launches **detached on the central port** and binds `0.0.0.0`
   (`board_runtime.py:292-341`). For a loopback central URL it also leaves `central_url=None`, so
   the GUI never probes for central. Both go away in Subtask 3.
@@ -483,4 +486,4 @@ None.
      GUI start sweeps the folder.
 
 ## Next Action
-Implement and review Subtask 3: the Qt-free, GUI-owned temporary board runtime.
+Implement and review Subtask 4: controller auto-switch, temp ownership and kind-based wakes.

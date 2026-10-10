@@ -142,23 +142,78 @@ def _record_lock(runtime_dir: Path, port: int):
             stream.write(b"\0")
             stream.flush()
         stream.seek(0)
-        _lock_file(stream, unlock=False)
+        lock_file(stream)
         try:
             yield
         finally:
             stream.seek(0)
-            _lock_file(stream, unlock=True)
+            lock_file(stream, unlock=True)
 
 
-def _lock_file(stream, *, unlock: bool) -> None:
+def lock_file(stream, *, unlock: bool = False, blocking: bool = True) -> bool:
+    """Lock one byte of an open file; return False when a nonblocking lock is busy."""
     if os.name == "nt":
         import msvcrt
-        mode = msvcrt.LK_UNLCK if unlock else msvcrt.LK_LOCK
-        msvcrt.locking(stream.fileno(), mode, 1)
+        mode = msvcrt.LK_UNLCK if unlock else (
+            msvcrt.LK_LOCK if blocking else msvcrt.LK_NBLCK
+        )
+        try:
+            msvcrt.locking(stream.fileno(), mode, 1)
+        except OSError:
+            if not blocking and not unlock:
+                return False
+            raise
     else:
         import fcntl
         mode = fcntl.LOCK_UN if unlock else fcntl.LOCK_EX
-        fcntl.flock(stream.fileno(), mode)
+        if not blocking and not unlock:
+            mode |= fcntl.LOCK_NB
+        try:
+            fcntl.flock(stream.fileno(), mode)
+        except BlockingIOError:
+            if not blocking and not unlock:
+                return False
+            raise
+    return True
+
+
+def open_lock(path: Path):
+    """Open a protected, initialized lock file for a caller-managed lock lifetime."""
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    _reject_link(path)
+    stream = path.open("a+b")
+    try:
+        protect(path)
+        check_protected(path)
+        if path.stat().st_size == 0:
+            stream.write(b"\0")
+            stream.flush()
+        stream.seek(0)
+    except BaseException:
+        stream.close()
+        raise
+    return stream
+
+
+def discover_record(runtime_dir: Path) -> dict:
+    """Read the sole protected v1 runtime record in an isolated runtime directory."""
+    runtime_dir = Path(runtime_dir)
+    _reject_link(runtime_dir)
+    check_protected(runtime_dir)
+    records = sorted(runtime_dir.glob("board-*.json"))
+    if len(records) != 1:
+        raise RecordError("expected exactly one local runtime record")
+    name = records[0].name
+    suffix = name.removeprefix("board-").removesuffix(".json")
+    if not suffix.isdecimal():
+        raise RecordError("runtime record has an invalid port name")
+    record = read_record(runtime_dir, int(suffix))
+    if (record.get("port") != int(suffix) or not isinstance(record.get("url"), str)
+            or not isinstance(record.get("instance_id"), str)
+            or not isinstance(record.get("capability"), str)):
+        raise RecordError("malformed runtime record")
+    return record
 
 
 def write_record(runtime_dir: Path, record: dict) -> Path:
