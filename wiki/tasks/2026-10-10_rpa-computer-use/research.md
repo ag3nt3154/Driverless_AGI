@@ -248,6 +248,62 @@ when they appear.
   change notice → double confirm, Approve and re-run / Edit YAML / Reject).
 - GUI is a view over CLI + `rpa_*` tools; delivered as stage S4 after S1–S3.
 
+## S0 spike results — 2026-10-11
+
+Installed into `dagi`: pip `uiautomation` 2.0.29, `selenium` 4.51.0, `mss` 10.2.0; conda-forge
+`firefox` 157.0.1 (`Library/bin/firefox.exe`), `geckodriver` 0.37.1 (`Scripts/geckodriver.exe`).
+Probe scripts were throwaway (session scratchpad); only aggregates recorded here.
+
+**UIA (desktop)** — nodes / walk time / interactive controls with AutomationId / with Name:
+
+| Surface | Nodes | Walk | Inter. id | Inter. name | Note |
+|---|---|---|---|---|---|
+| Calculator (UWP) | 89 | 0.07 s | 97% | 100% | ids **52/52 identical across relaunch** |
+| Notepad (WinUI) | 70 | 0.07 s | 60% | 96% | menu items carry ids (`File`, `Edit`) |
+| Common Save dialog (Win32) | 144 | 0.19 s | 58% | 100% | "File name:" id `1001`, "Save" id `1` |
+| Windows Terminal | 38 | 0.03 s | 71% | 82% | (minimized when probed) |
+| Chrome (browser chrome) | 291 | 0.16 s | 42% | 75% | |
+| VS Code (Electron), default | 19 | 0.03 s | 17% | 67% | thin tree |
+| VS Code + `--force-renderer-accessibility` | 403 | 0.28 s | **2%** | **98%** | full tree; ids absent |
+| Claude desktop (Electron, maximized) | 24 | 0.02 s | — | — | thin; a UIA "nudge" did not help |
+| File Explorer (minimized) | 8 | 0.01 s | — | — | minimized windows expose ~nothing |
+
+Walk cost ≈ 0.7–1.3 ms/node, so a 400-node tree is ~0.3 s.
+
+Consequences for the design:
+- **Minimized windows** expose almost nothing → the UIA driver must restore a window (takes focus,
+  so takes the desktop lock) before observing it.
+- **Electron apps** need `--force-renderer-accessibility` at launch (workflow `launch:` should
+  support extra args; `ui_roots(launch=…)` adds it for known Electron apps). With it, ids are ~absent,
+  so Electron targets resolve on rung 2 (role + name) — the ladder holds.
+- Win32/UWP/WinUI ids are stable across relaunch → rung 1 is reliable there.
+- `uiautomation` is fast enough without caching for v1 (D14 confirmed).
+
+**Browser (Firefox 157 via geckodriver + Selenium, headless)** — all checks passed:
+start 3.7–5.2 s; persistent `-profile` dir kept localStorage across restarts; outline JS 14 nodes in
+5 ms; two identical "OK" buttons both matched (ambiguity is detectable); explicit wait caught a late
+element (1.5 s); upload via `send_keys(path)` on `input[type=file]` with no native dialog; canary
+password never appeared in the outline (`[secure]`).
+- WebDriver-computed `aria_role` is **empty for date and password inputs** in Firefox → dagi's own
+  outline JS is required (D9 confirmed); use computed name only as a cross-check.
+- Outline JS gap: file inputs got no name → fall back to `name` attr / "Browse…" text.
+
+**Set-of-marks screenshot cost** (1920×1080 viewport; primary monitor is 2560×1440):
+
+| Sent width | PNG | ≈ tokens (Claude w·h/750) | ≈ tokens (512-tile models) |
+|---|---|---|---|
+| 1920 | 19 KB | ~1,530 (provider downscales) | ~1,100 |
+| 1280 | 26 KB | ~1,130 | ~1,100 |
+| 1024 | 19 KB | ~720 | ~770 |
+| 800 | 13 KB | ~440 | ~430 |
+
+Estimates from documented formulas, not measured on the (not yet chosen) multimodal default model.
+dagi's compaction assumes 1,024 tokens/image (`_ESTIMATED_TOKENS_PER_IMAGE`) — consistent.
+- Marks are legible at 1024 px wide. Default screenshot width **1280** (≈1.1k tokens); with D4's
+  last-3 retention ≈ 3.3k tokens of images in context.
+- Overlay lessons: draw marks only on interactive leaves (skip `nav`/`form`/heading containers);
+  place labels so they don't cover the control's text; skip zero-area boxes.
+
 ## Closing summary (grill, 2026-10-11)
 
 - Shared understanding reached on D1–D15.
