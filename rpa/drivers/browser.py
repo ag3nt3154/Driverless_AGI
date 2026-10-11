@@ -215,6 +215,9 @@ class FirefoxDriver:
     def needs_desktop_lock(self, action: str) -> bool:
         return False  # browser-only (WebDriver) acts never take the desktop lock (D4)
 
+    def needs_desktop_lock_to_observe(self, root: Root) -> bool:
+        return False
+
     def launch(self, target: str) -> Root:
         self._ensure_started()
         self._driver.switch_to.new_window("tab")
