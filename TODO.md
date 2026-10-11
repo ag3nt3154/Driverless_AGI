@@ -11,6 +11,12 @@
 
 ## In progress
 
+- **code mode: positional tool args fail** (seen 2026-10-11 in an RPA S1 test session):
+  `tools.bash("dir")` inside a `code` script raises `TypeError: _Tools.__getattr__.<locals>.<lambda>() takes 0
+  positional arguments but 1 was given`; only keyword calls work. The `code` tool description shows
+  positional usage (`tools.bash(command: str, ...)`). Accept positional args or fix the description
+  (`tools/code/_runner.py`, `tools/code/_stubs.py`).
+
 - **Multi-agent follow-ups** (from the 2026-10-09 board + multi-agent task):
   - Closing an agent mid-turn pauses its loop (`AgentLoop.interrupt`); there is no cancel, so
     the paused daemon worker thread stays blocked until the GUI exits. Add a loop cancel.

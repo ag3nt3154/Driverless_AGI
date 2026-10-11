@@ -520,7 +520,7 @@ In Progress — S1 code complete; S1 manual checkpoint pending
 - Halt notifications outside chat are deferred with the scheduler (D6).
 
 ## Attempts and Resolutions
-_(none yet)_
+- **S1 manual check, attempt 1 (2026-10-11, session `session_2026-10-11_08-32-16`):** the `ui_*` tools were absent (`computer_use` unset, and the `tools:` allowlist would drop them), so the agent scripted the rpa drivers through `bash` and bypassed the safety gates; `key` sent `^+s` literally (uiautomation notation is `{Ctrl}{Shift}s`); a launched GUI app inherited the caller's stdout pipe so `bash` returned "[no output]". -> Fixed: driver-neutral chord syntax (`rpa/keys.py`, e.g. `ctrl+shift+s`) in both drivers and the tool description; `type` escapes uiautomation braces; `launch()` uses DEVNULL handles + `close_fds`; `computer_use: true` lets the four `ui_*` tools pass a `tools:` allowlist. Residual risk: an agent can always script the drivers via `bash` and skip the gates.
 
 ## Verification
 1. `C:\Users\alexr\miniconda3\envs\dagi\python.exe -u -m pytest -q -p no:pytest-qt tests` → all pass except the known `tests/test_workflow_plan_template.py` failures (R15).
