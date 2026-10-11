@@ -259,7 +259,7 @@ def pytest_collection_modifyitems(config, items):
 
 - [ ] Steps 1–5.
 
-### Subtask 10: `computer_use` config flag and the four `ui_*` tools
+### Subtask 10: `computer_use` config flag and the four `ui_*` tools — ✅ `df90601b`
 
 **Goal:** Expose computer use to the agent behind the global flag.
 **Requirements:**
@@ -497,7 +497,7 @@ def pytest_collection_modifyitems(config, items):
 - **Task folder:** `wiki/tasks/2026-10-10_rpa-computer-use/`
 
 ## Overall Status
-In Progress — Subtask 10
+In Progress — S1 code complete; S1 manual checkpoint pending
 
 ## Notes
 - R20 prerequisite merged to `main` (`467ad01b`) and into this branch (`b71bbb8b`).
@@ -513,6 +513,7 @@ In Progress — Subtask 10
 - Subtask 8: `outline.js` tags nodes with `data-dagi-i`; `act()` re-outlines and raises `drivers.base.WrongElement` unless the live node's role/name/automation_id equal the given Element (review fix). No iframe/shadow DOM traversal; `aria-hidden` not checked; `depth` ignored (v1).
 - Subtask 7: every real mouse/keyboard event goes through `_before_real_input` (failsafe corner, `SetActive`, foreground must be root or a window it owns, else `WrongElement`); `key` focuses the control first; `click` always needs the desktop lock (pattern-less fallback); new protocol method `needs_desktop_lock_to_observe(root)` (UIA: True when minimized) — Subtask 10 must take the lock before observing such a root. Qt AutomationIds are dotted paths (`...QWidget.btnExport`); a Qt modal dialog is nested in the parent's UIA tree, so `close_window` closes the nearest window ancestor. Process is made per-monitor DPI aware (best effort). `act`/`find` re-walk the whole tree (≈1–2 s worst case). `tk_fixture.py` has no test yet (poor-a11y case).
 - Subtask 11: `elide_old_ui_screenshots` runs in `_build_request_messages`; UI screenshots are recognised by the preceding text `[Image from read: ui_observe obs_N]`, so Subtask 10 must pass `path=f"ui_observe {obs_id}"`. Cost: each new screenshot elides an older one, which changes an earlier message and breaks the prompt-cache prefix from there (accepted by D4).
+- Subtask 10: root ids `w:<hwnd>` / `b:<handle>`; `ui_observe` uses `driver.screenshot(root, region)`; desktop lock released in `AgentLoop.run()`'s `finally` and in `interrupt()` via `registry._tools["ui_act"].release_lock()`. Review fix (D5): `ui_act` `value` may be `${env:NAME}` (read inside the tool, so the session log holds only the reference); password fields refuse literal values. A post-act outline failure (root closed itself) reports ok. Limitation: a literal non-secret value is still logged verbatim in tool-call args.
 
 ## Open Issues
 - `code:` escape-hatch steps (D1) need dagi's tool registry, which conflicts with "rpa/ must not import agent" for CLI runs. v1 rejects them with a clear error. Decide later: run them only from `rpa_run` (in-agent), or drop.
