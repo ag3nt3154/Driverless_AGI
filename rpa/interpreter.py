@@ -13,7 +13,7 @@ import os
 import re
 import time
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -56,6 +56,7 @@ class RunResult:
     reason: str | None
     steps: list[StepLog]
     run_dir: Path
+    launched: list[Root] = field(default_factory=list)  # windows/tabs this run opened
 
 
 class _Halt(RpaError):
@@ -228,7 +229,9 @@ def run_workflow(
             except Exception:
                 pass
 
-    return RunResult(status=status, halted_step=halted_step, reason=reason, steps=logs, run_dir=run_dir)
+    launched = list({r.id: r for key, r in extra_roots.items() if key.startswith("@")}.values())
+    return RunResult(status=status, halted_step=halted_step, reason=reason, steps=logs, run_dir=run_dir,
+                     launched=launched)
 
 
 # -- context / templating ---------------------------------------------------

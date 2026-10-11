@@ -106,6 +106,10 @@ class RpaRunTool(BaseTool):
 
         drivers = {"window": session.uia(), "browser": session.browser()}
         try:
+            session.note_existing_windows()
+        except RpaError:
+            pass
+        try:
             result = run_workflow(
                 store, name, drivers=drivers, params=params or {}, confirm=_confirm_for(session),
                 start_at=from_step, verify=verify, lock=session.lock, agent=session.agent_name,
@@ -113,6 +117,12 @@ class RpaRunTool(BaseTool):
             )
         except RpaError as exc:
             return _error(exc)
+
+        # Windows/tabs the replay opened are dagi's: listed by ui_roots, closable later.
+        for root in result.launched:
+            session.adopt(root)
+            driver = drivers["window" if root.kind == "window" else "browser"]
+            lines.append(f"opened: {session.remember(driver, root)} | {root.app} | {root.title}")
 
         lines.append(f"status: {result.status}")
         lines.append(f"steps: {len(result.steps)}")

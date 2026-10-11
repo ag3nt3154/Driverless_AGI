@@ -351,3 +351,24 @@ def test_a_recorded_root_close_compiles_to_a_step_without_target(tmp_path):
     UiActTool(session).run(root="w:r1", action="close_window")
     out = RpaSaveTool(session).run()
     assert "act: close_window" in out and "target" not in out.split("act: close_window")[1].split("- id:")[0]
+
+
+def test_windows_a_replay_opened_are_dagis_afterwards(tmp_path):
+    """Close them later: a replay's launched windows must show up in ui_roots."""
+    session, driver = _make_session(tmp_path)
+    store = WorkflowStore(tmp_path / ".dagi" / "rpa")
+    from rpa.workflow import parse_workflow
+    store.save(parse_workflow({"name": "opener", "steps": [{"id": "step_01", "launch": "r1"}]}))
+    from tools.rpa import RpaRunTool
+    out = RpaRunTool(session).run(name="opener")
+    assert "opened: w:r1" in out
+    assert "w:r1 | window" in UiRootsTool(session).run()
+
+
+def test_listing_roots_never_starts_firefox():
+    class _LazyBrowser:
+        started = False
+        def roots(self):
+            raise AssertionError("listing started Firefox")
+    session = UiSession(_Cfg(None), _AskSpy(), uia_driver=FakeDriver({}, {}), browser_driver=_LazyBrowser())
+    UiRootsTool(session).run()

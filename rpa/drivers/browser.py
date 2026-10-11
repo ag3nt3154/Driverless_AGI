@@ -121,6 +121,11 @@ class FirefoxDriver:
         except psutil.Error:
             return {pid}
 
+    @property
+    def started(self) -> bool:
+        """True while a Firefox session is running (the driver starts it lazily)."""
+        return self._driver is not None
+
     def quit(self) -> None:
         """Close the browser and release the underlying geckodriver session."""
         if self._driver is not None:

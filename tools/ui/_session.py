@@ -122,8 +122,9 @@ class UiSession:
         return self._shared.browser_driver
 
     def browser_started(self) -> bool:
-        """True if the browser driver has been used at least once this session."""
-        return self._shared.browser_driver is not None
+        """True if dagi's Firefox is actually running — listing roots must never start it."""
+        driver = self._shared.browser_driver
+        return driver is not None and bool(getattr(driver, "started", True))
 
     # -- root bookkeeping -----------------------------------------------------
 
@@ -147,6 +148,17 @@ class UiSession:
         if root.pid:
             shared.owned_pids.add(root.pid)
         return root
+
+    def note_existing_windows(self) -> None:
+        """Snapshot current windows as not-dagi's, before something (a replay) launches more."""
+        self._shared.preexisting |= {r.id for r in self.uia().roots()}
+
+    def adopt(self, root: Root) -> None:
+        """Mark a window/tab that dagi launched outside ui_roots (e.g. a replay) as dagi's."""
+        if root.kind == "window":
+            self._shared.owned_handles.add(root.id)
+            if root.pid:
+                self._shared.owned_pids.add(root.pid)
 
     def opened_by_dagi(self, root: Root) -> bool:
         shared = self._shared
