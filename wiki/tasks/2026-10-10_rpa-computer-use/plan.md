@@ -497,7 +497,7 @@ def pytest_collection_modifyitems(config, items):
 - **Task folder:** `wiki/tasks/2026-10-10_rpa-computer-use/`
 
 ## Overall Status
-In Progress — S2 code complete; S2 manual check in progress (record, verify and approve done; run + ESC and break + repair pending)
+In Progress — S1 and S2 complete (manual checks passed 2026-10-12); S3 (Subtask 17) next
 
 ## Notes
 - R20 prerequisite merged to `main` (`467ad01b`) and into this branch (`b71bbb8b`).
@@ -534,6 +534,7 @@ In Progress — S2 code complete; S2 manual check in progress (record, verify an
 - **S2 manual check, attempt 5 (2026-10-11, session `session_2026-10-11_11-12-29`):** verify **ok** (6 steps, 15 s, `Verified`); dagi closed its Notepad and tab with target-less `close_window` and saw both via `opened:`. Remaining: Firefox window stayed on an about:blank start tab (-> first launch reuses it); dagi clicked Notepad's "Don't save" unasked (-> don't save / do not save / discard are sensitive). Approve, run + ESC, and break not yet exercised.
 - **S2 manual check, attempt 6 (2026-10-11, session `session_2026-10-11_12-51-35`):** approve OK. Esc did not work while Notepad had focus (GUI-only key filter); switching to dagi made the foreground guard halt step_03 (fail-closed). A later run died on a raw UIA COM error in `find` with no evidence. -> Fixed: `rpa/hotkey.py` EscWatcher (WH_KEYBOARD_LL, physical Esc only, swallowed) around `rpa_run` and the CLI run; read-only UIA calls retry the transient COM error once; driver RpaErrors halt with evidence. Hook tests are `desktop`-marked (installing a global hook needs consent). Esc during live `ui_*` acts (model-driven) still needs the dagi window — follow-up.
 - **S2 check, attempt 7 (2026-10-11):** Esc watcher works; the model could not tell a deliberate Esc from a false trigger and was told to offer a repair. -> Esc stops are run status `cancelled` (CLI exit 4; `last_run` cancelled; `display_status` not halted) and `rpa_run` says "deliberate stop, not a failure — no repair or re-run unless asked" (`0cf57289`). Side bug reported by the Admiral: grep tool's rg output decoded as cp1252 crashed the reader thread (UnicodeDecodeError 0x90) -> `0825898a` (rg/git utf-8 + replace; bash/skill scripts errors=replace). Break test still pending.
+- **S2 check, attempt 8 (2026-10-12):** break test passed (not-approved warning, halt with evidence, repair offered but not started). Side fix: code-mode positional tool args (`f4935e67`).
   -> Approved 2026-10-11 (session `session_2026-10-11_12-08-27`): `rpa_approve s2-check-3` -> state `approved`; `approved_hash` = `verified_hash` (`1aaab7e9…`), i.e. the approved content is exactly the verified one. Remaining for S2: a non-verify run, the ESC check during a run, and break-a-locator + repair (exit 2, then patch + approve + run 0).
 
 ## Verification
@@ -543,4 +544,4 @@ In Progress — S2 code complete; S2 manual check in progress (record, verify an
 4. Must-fail checks (D12) all present: ambiguous halt (`test_resolver`, `test_interpreter`), stale observation (`test_observe`, `test_ui_tools`), unapproved changed confirm (`test_interpreter`, `test_repair`), secret canary (`test_observe`, `test_trace`, `test_interpreter`, `test_browser_driver`), import isolation (`test_isolation`).
 
 ## Next Action
-Admiral reviews and approves this plan; then `deliver` starts with Subtask 1.
+`deliver` Subtask 17 (S3 repair: rpa_repair / rpa_patch / operator subagent).
