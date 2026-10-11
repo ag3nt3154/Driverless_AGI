@@ -9,7 +9,7 @@ import pytest
 
 from tools.code import _runner
 from tools.code._runner import format_error, render_return, wrap_script
-from tools.code._stubs import tool_stub
+from tools.code._stubs import param_order, tool_stub
 
 
 def _run(src: str):
@@ -92,3 +92,29 @@ def test_runner_round_trip_over_pipes():
     done = json.loads(proc.stdout.readline())
     proc.communicate(timeout=10)
     assert done == {"type": "done", "output": "hi ✓\n", "return": "héllo ✓", "error": None}
+
+
+def test_param_order_matches_stub():
+    schema = _schema(
+        "read", {"offset": {"type": "integer"}, "path": {"type": "string"}}, ["path"],
+    )
+    assert param_order(schema) == ["path", "offset"]
+
+
+def _first_call(script: str) -> dict:
+    proc = subprocess.Popen(
+        [sys.executable, "-u", _runner.__file__],
+        stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        encoding="utf-8",
+    )
+    proc.stdin.write(json.dumps({"script": script}) + "\n")
+    proc.stdin.flush()
+    call = json.loads(proc.stdout.readline())
+    proc.kill()
+    proc.communicate(timeout=10)
+    return call
+
+
+def test_runner_sends_positional_args():
+    call = _first_call("tools.read('a.txt', limit=5)")
+    assert call == {"type": "call", "name": "read", "args": {"limit": 5}, "posargs": ["a.txt"]}

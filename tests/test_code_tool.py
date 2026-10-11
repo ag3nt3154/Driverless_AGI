@@ -193,3 +193,45 @@ def test_description_warns_read_lines_are_numbered(tmp_path):
     code, _ = _tool(tmp_path)
     assert "numbered lines" in code.description
     assert "split('\\t', 1)[1]" in code.description
+
+
+def test_positional_args_follow_the_stub_order(tmp_path):
+    code, _ = _tool(tmp_path)
+    (tmp_path / "lines.txt").write_text("one\ntwo\nthree\n", encoding="utf-8")
+    out = code.run(
+        "r = tools.bash('echo hi')\n"
+        "tools.write('a.txt', 'written')\n"
+        "page = tools.read('lines.txt', 2, limit=1)\n"
+        "print(r['exit_code'], 'hi' in r['output'])\n"
+        "print([l.split('\\t', 1)[1] for l in page.splitlines() if '\\t' in l])"
+    )
+    assert out.startswith("[code: completed"), out
+    assert "0 True" in out
+    assert "['two']" in out
+    assert (tmp_path / "a.txt").read_text(encoding="utf-8") == "written"
+
+
+def test_too_many_positional_args_raise(tmp_path):
+    code, _ = _tool(tmp_path)
+    out = code.run("tools.write('a.txt', 'x', 'extra')")
+    assert out.startswith("[code: failed")
+    assert "tools.write() takes at most 2 positional arguments (3 given)" in out
+    assert not (tmp_path / "a.txt").exists()
+
+
+def test_positional_and_keyword_for_one_param_raise(tmp_path):
+    code, _ = _tool(tmp_path)
+    out = code.run("tools.write('a.txt', path='b.txt', content='x')")
+    assert out.startswith("[code: failed")
+    assert "tools.write() got multiple values for argument 'path'" in out
+
+
+def test_positional_mutation_is_named_in_the_ledger(tmp_path):
+    code, _ = _tool(tmp_path)
+    out = code.run("tools.write('a.txt', 'x')\nraise RuntimeError('boom')")
+    assert "[already applied] write(path=a.txt)" in out
+
+
+def test_description_says_positional_calls_work(tmp_path):
+    code, _ = _tool(tmp_path)
+    assert "positional" in code.description

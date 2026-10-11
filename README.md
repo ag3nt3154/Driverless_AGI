@@ -876,8 +876,9 @@ for f in sorted({h.split(":")[0] for h in hits.splitlines()}):
 ```
 
 - The script runs in a child process with dagi's own Python, in the project directory.
-  Each `tools.<name>(**args)` call is sent back to the parent and runs through the normal
-  tool registry, so path roots and tool behaviour match a direct call.
+  Each `tools.<name>(...)` call (positional args in the stub order, or keyword args) is
+  sent back to the parent and runs through the normal tool registry, so path roots and
+  tool behaviour match a direct call.
 - Callable: `read`, `grep`, `find`, `write`, `edit`, `copy`, `bash` (minus any filtered out
   by `tools`/`disabled_tools`). `bash` returns `{output, exit_code, timed_out, killed}`; the
   others return their text. A failed call raises `ToolError`, which the script can catch.
@@ -1222,7 +1223,7 @@ Driverless_AGI/
 | `write` | Overwrite a file. Creates parent dirs. Takes `path` + `content` |
 | `edit` | Edit a file by replacing exact text (`oldText` → `newText`). The match must be unique; CRLF-safe. For several changes to one file, pass `edits` (a list of `{oldText, newText}`): applied in order in one call, all-or-nothing, errors name the failing edit (`edit 2 of 3`). Empty placeholder arguments and a JSON-string `edits` are tolerated |
 | `bash` | Run a shell command. Returns stdout + stderr + exit code. Pass `command` + optional `timeout`. Its description names the real OS, version and shell (`%COMSPEC%`/cmd.exe on Windows, `/bin/sh` on POSIX), so the model uses valid syntax from its first command. A piped command's result ends with a note that the exit status belongs to the last command only (`pytest | findstr` can otherwise hide a failure) |
-| `code` | Run one Python script that chains `read`/`grep`/`find`/`write`/`edit`/`copy`/`bash` calls as `tools.<name>(**args)`; only what the script prints or returns comes back. Registered when `code_mode` is on (the default). See [Code mode](#code-mode) |
+| `code` | Run one Python script that chains `read`/`grep`/`find`/`write`/`edit`/`copy`/`bash` calls as `tools.<name>(...)`; only what the script prints or returns comes back. Registered when `code_mode` is on (the default). See [Code mode](#code-mode) |
 | `grep` | Regex search across files using ripgrep (rg). Returns `file:line:match` format. Automatically excludes binary files (`.pyc`, `.pyo`, `.bin`), `__pycache__`, `.git`, `.dagi`, and other non-source directories. `path` must be a specific subdirectory or file (not `.` / project root). No result cap: very large results go through the shared head + marker + tail filter, with the full list saved |
 | `find` | Find files by glob pattern (e.g. `**/*.py`). Searches all allowed roots when no path given. No result cap: very large results go through the shared head + marker + tail filter, with the full list saved |
 | `skill` | Load a `.dagi/skills/<name>/SKILL.md` guidance document and return it for execution |

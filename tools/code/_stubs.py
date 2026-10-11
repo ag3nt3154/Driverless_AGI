@@ -13,13 +13,20 @@ def _param(name: str, prop: dict, optional: bool) -> str:
     return f"{text} = None" if optional else text
 
 
+def param_order(schema: dict) -> list[str]:
+    """Parameter names in stub order (required first); positional script args map onto it."""
+    params = schema["function"].get("parameters", {})
+    required = set(params.get("required", []))
+    props = params.get("properties", {})
+    return [n for n in props if n in required] + [n for n in props if n not in required]
+
+
 def tool_stub(schema: dict) -> str:
     """``tools.read(path: str, offset: int = None) -> str`` from a provider tool schema."""
     fn = schema["function"]
     params = fn.get("parameters", {})
     required = set(params.get("required", []))
     props = params.get("properties", {})
-    parts = [_param(n, p, False) for n, p in props.items() if n in required]
-    parts += [_param(n, p, True) for n, p in props.items() if n not in required]
+    parts = [_param(n, props[n], n not in required) for n in param_order(schema)]
     returns = BASH_RETURN if fn["name"] == "bash" else "str"
     return f"tools.{fn['name']}({', '.join(parts)}) -> {returns}"

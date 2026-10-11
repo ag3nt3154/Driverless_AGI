@@ -1,7 +1,7 @@
 """tools/code/_code.py — the `code` tool: run one script that chains dagi tool calls.
 
 The script runs in a child process (``_runner.py``, dagi's own interpreter). Each
-``tools.<name>(**args)`` call comes back here over JSON lines and runs through the parent
+``tools.<name>(...)`` call comes back here over JSON lines and runs through the parent
 ToolRegistry, so path guards and tool behaviour match a direct call. Only the script's
 printed output and return value are returned to the model.
 """
@@ -22,7 +22,7 @@ from agent.base_tool import BaseTool
 from agent.protocol import ToolResult
 from agent.registry import ToolRegistry
 from tools.bash._bash import _process_group_kwargs
-from tools.code._stubs import tool_stub
+from tools.code._stubs import param_order, tool_stub
 
 CODE_TOOLS = ("read", "grep", "find", "write", "edit", "copy", "bash")
 MUTATING = frozenset({"write", "edit", "copy", "bash"})
@@ -36,8 +36,9 @@ _DESCRIPTION = (
     "steps whose intermediate results you do not need to read (search then read the matches, "
     "the same edit across files, run tests and extract the failures). Only what the script "
     "prints or returns comes back, so filter large results inside the script. Call tools as "
-    "tools.<name>(**args); a failed call raises ToolError (catch it to continue). Calls are "
-    "real and are not undone if the script fails later. Use tools.* for files and commands, "
+    "tools.<name>(...) with positional args in the order shown or keyword args; a failed "
+    "call raises ToolError (catch it to continue). Calls are real and are not undone if the "
+    "script fails later. Use tools.* for files and commands, "
     "not open()/subprocess. No input(). Top-level `return` is allowed. Runs in the project "
     "directory with dagi's Python. tools.read returns numbered lines ('{n:6d}\\t{text}'; "
     "take line.split('\\t', 1)[1] for the text) and cuts very large files in the middle, so "
@@ -212,7 +213,9 @@ class CodeTool(BaseTool):
                 run.done = message
                 run.status = "failed" if message["error"] else "completed"
                 return
-            reply = self._dispatch(message["name"], message["args"], run)
+            reply = self._dispatch(
+                message["name"], message["args"], run, message.get("posargs") or [],
+            )
             if not self._send(proc, reply):
                 run.status = "killed" if self._killed else "crashed"
                 return
@@ -233,7 +236,7 @@ class CodeTool(BaseTool):
 
     # ── tool calls ──────────────────────────────────────────────────────
 
-    def _dispatch(self, name: str, args: dict, run: _Run) -> dict:
+    def _dispatch(self, name: str, args: dict, run: _Run, posargs: list = ()) -> dict:
         """Run one proxied call; returns the reply sent back to the script."""
         if name not in CODE_TOOLS or not self._registry.is_available(name):
             available = ", ".join(sorted(
@@ -242,12 +245,30 @@ class CodeTool(BaseTool):
             return {"ok": False, "error": (
                 f"tool {name!r} is not available in code mode; available: {available}"
             )}
+        if posargs:
+            args, error = self._name_posargs(name, args, posargs)
+            if error is not None:
+                return {"ok": False, "error": error}
         error, result = self._call(name, args)
         if error is not None:
             return {"ok": False, "error": error}
         if name in MUTATING:
             run.ledger.append(_ledger_entry(name, args))
         return {"ok": True, "result": result}
+
+    def _name_posargs(self, name: str, args: dict, posargs: list) -> tuple[dict, str | None]:
+        """Map positional values onto the stub's parameter order; (args, error text)."""
+        order = param_order(self._registry.get(name).schema())
+        if len(posargs) > len(order):
+            return args, (
+                f"tools.{name}() takes at most {len(order)} positional arguments "
+                f"({len(posargs)} given)"
+            )
+        named = dict(zip(order, posargs))
+        clash = next((k for k in named if k in args), None)
+        if clash is not None:
+            return args, f"tools.{name}() got multiple values for argument {clash!r}"
+        return {**named, **args}, None
 
     def _call(self, name: str, args: dict) -> tuple[str | None, object]:
         """Run the tool; returns (error text, None) on failure, else (None, result)."""
