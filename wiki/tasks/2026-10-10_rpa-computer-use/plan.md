@@ -417,7 +417,7 @@ def pytest_collection_modifyitems(config, items):
 
 ## Stage S3 — Repair
 
-### Subtask 17: Repair context and patch tool (main agent)
+### Subtask 17: Repair context and patch tool (main agent) — ✅ `e8e54e7e`
 
 **Goal:** Fix a halted workflow with a small, reviewed YAML patch.
 **Requirements:**
@@ -497,7 +497,7 @@ def pytest_collection_modifyitems(config, items):
 - **Task folder:** `wiki/tasks/2026-10-10_rpa-computer-use/`
 
 ## Overall Status
-In Progress — S1 and S2 complete (manual checks passed 2026-10-12); S3 (Subtask 17) next
+In Progress — S1–S3 complete; S4 (Subtasks 18–19) and docs (20) in progress. Admiral (2026-10-12): finish all subtasks, he reviews everything together.
 
 ## Notes
 - R20 prerequisite merged to `main` (`467ad01b`) and into this branch (`b71bbb8b`).
@@ -517,6 +517,7 @@ In Progress — S1 and S2 complete (manual checks passed 2026-10-12); S3 (Subtas
 - Subtask 12: `expect` keys are not validated by the schema (the interpreter owns the condition vocabulary). Review fix: verify/approve use `workflow_hash` (content), not file mtimes; `state()` reports "draft" whenever the workflow differs from the approved content, so any edit (incl. non-confirm steps) needs a new verify + approve.
 - Subtasks 13–14: one worker built both (rpa_save calls the compiler). Review fixes: `Recorder.prepare()` generates locators + crop BEFORE the act (they were generated after it, against a changed UI); acts whose root closes are recorded with no expect candidates; `title_re`/`url_re` anchored (`^…$`; url query/fragment optional); negative tests for rename collision and `param` on non-value fields. Secret names derive from env (`PORTAL_PW` → `secrets.portal_pw`); `flag.expect_file` replaces `expect`. `.dagi/rpa/` is gitignored (Firefox profile with logins, workflows, crops).
 - Subtask 15: store change — `status` is approval only (draft|approved); run health in `last_run` (`record_run`), `display_status()` for lists/GUI (a never-approved workflow that halts shows halted). Review fixes: desktop lock taken before the first observe of a root that `needs_desktop_lock_to_observe` (UIA restore of minimized windows); roots launched by this run win over lookalikes; secrets < 4 chars withhold outline.txt. `if_present` Ambiguous counts as present. Residual: replay root matching is not limited to dagi-opened windows (hand-written unanchored patterns could match a user window; ambiguity still halts).
+- Subtask 17: `rpa/repair.py` = `repair_context` + pure `preview_patch` (ops on an in-memory copy, full parse round-trip, unified diff, changed confirm steps, `base_hash`) + `write_patch` (refuses if the YAML changed since the preview; `WorkflowStore.clear_confirm_approvals`). `rpa_patch` re-runs as a verify run, so every confirm step asks live once more. Review fixes: literal locators could enter through `expect.present`/`expect.gone` and `if_present` — now every locator-bearing field takes only `{root, obs, index}` (best rung for single-locator fields); a patch cannot change a step's `root` (a widened title/url pattern could match any window; re-record instead); an empty diff does not ask. Deviation: no "Edit YAML" path in the patch ask — editing by hand changes the content hash, so verify + approve covers it.
 - Subtask 16: `rpa.safety.is_allow_answer` shared by SafetyGate, CLI and tools. Found in main-agent review: ESC did not stop a running `rpa_run` (interrupt only released the lock) -> `UiSession.cancel_event`, set by `UiActTool.cancel()` from `AgentLoop.interrupt()`; `run_workflow(cancelled=...)` checks it before each step and in every poll/backoff; `rpa_run` clears it at start. CLI cancel = Ctrl+C / mouse-corner failsafe.
 
 ## Open Issues
@@ -544,4 +545,4 @@ In Progress — S1 and S2 complete (manual checks passed 2026-10-12); S3 (Subtas
 4. Must-fail checks (D12) all present: ambiguous halt (`test_resolver`, `test_interpreter`), stale observation (`test_observe`, `test_ui_tools`), unapproved changed confirm (`test_interpreter`, `test_repair`), secret canary (`test_observe`, `test_trace`, `test_interpreter`, `test_browser_driver`), import isolation (`test_isolation`).
 
 ## Next Action
-`deliver` Subtask 17 (S3 repair: rpa_repair / rpa_patch / operator subagent).
+`deliver` Subtask 18 (Workflows rail view), then 19, 20, integrated verification.
