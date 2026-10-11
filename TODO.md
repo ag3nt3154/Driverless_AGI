@@ -1,5 +1,7 @@
 # TODO
 
+- [x] 2026-10-11: Fix R20 — interrupting one agent killed every agent's subagents;
+  cancellation is now scoped to the interrupted loop (`tests/test_subagent_owner.py`).
 - [x] 2026-10-09: Fix GUI freeze while typing long drafts in the composer
   (`e7601d9c`): AsNeeded scrollbar + wrap + auto-grow hung Qt; `_fit_editor` now owns the
   scrollbar policy. See `wiki/composer-scrollbar-wrap-feedback-hang.md`.
@@ -61,8 +63,11 @@
   - **P1 R22:** old-board posts queued before a switch lack generation at GUI delivery;
     they can display and wake agents after rebind. Carry board/generation in the signal and
     reject obsolete events in the slot; commit snapshot state on the GUI thread.
-  - R20 parent-scoped cancellation and R21 terminal close remain prerequisites for teamwork;
-    R20 is also an explicit prerequisite of the planned RPA task.
+  - ~~R20 parent-scoped cancellation~~ — fixed 2026-10-11 (`fix/r20-subagent-owner`): each
+    `AgentLoop` has an `_owner_id`; `run`/`compact`/`run_wtf` record spawned subagents under it
+    (`owner_scope` ContextVar) and `interrupt()` kills only those. Residual (R8): a killed
+    child's `_pending_children` entry in `subagent_api` stays until a terminal resume.
+  - R21 terminal close remains a prerequisite for teamwork.
   - R7 now includes board_runtime.py: five oversized modules and three long functions.
   - Focused suites: 336 passed, three known missing-template failures, two opt-in
     clean-install skips; another 55 Qt tests passed. SQLite setup now works.
