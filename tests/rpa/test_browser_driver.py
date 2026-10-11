@@ -203,3 +203,15 @@ def test_close_root_closes_tabs_and_the_last_close_restarts_cleanly(site_url, dr
     assert again.url.startswith("http://127.0.0.1")
     with pytest.raises(RpaError):
         driver.outline(first)  # closed tab: a clear RpaError, not a raw Selenium error
+
+
+@pytest.mark.desktop
+def test_first_launch_reuses_the_start_tab_so_closing_it_closes_the_window(site_url, driver_factory):
+    import time
+    driver = driver_factory()
+    root = driver.launch(site_url)
+    assert [r.id for r in driver.roots()] == [root.id]  # no leftover about:blank tab
+    t0 = time.monotonic()
+    driver.close_root(root)
+    assert not driver.started  # the window (and session) is gone
+    assert time.monotonic() - t0 < 10

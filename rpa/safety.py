@@ -34,6 +34,11 @@ _SENSITIVE_KEYWORDS = (
     "confirm",
     "sign out",
     "log out",
+    # Throwing away unsaved work (e.g. Notepad's close prompt).
+    "don't save",
+    "don’t save",
+    "do not save",
+    "discard",
 )
 
 _SENSITIVE_PATTERNS = tuple(

@@ -292,8 +292,12 @@ class FirefoxDriver:
 
     @_wd_guard
     def launch(self, target: str) -> Root:
+        """Open `target` in a new tab — or in Firefox's empty start tab, so that closing
+        dagi's last tab closes the window instead of leaving an about:blank one."""
         self._ensure_started()
-        self._driver.switch_to.new_window("tab")
+        handles = self._driver.window_handles
+        if not (len(handles) == 1 and self._driver.current_url == "about:blank"):
+            self._driver.switch_to.new_window("tab")
         self._driver.get(target)
         url = self._driver.current_url
         return Root(

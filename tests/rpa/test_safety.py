@@ -240,3 +240,10 @@ def test_other_free_text_still_denies(answer):
     gate = SafetyGate(ask=lambda q, o: answer, autonomous=False)
     with pytest.raises(SafetyDenied):
         gate.check_app(Root(id="w", kind="window", title="T", pid=1, url=None, app="a.exe"))
+
+
+@pytest.mark.parametrize("name", ["Don't save", "Don’t save", "Do not save", "Discard changes"])
+def test_discarding_unsaved_work_is_sensitive(name):
+    el = Element(index=0, role="Button", name=name, automation_id=None, bbox=(0, 0, 1, 1),
+                 value=None, secure=False, interactive=True)
+    assert is_sensitive(el)
