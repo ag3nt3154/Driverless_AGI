@@ -364,3 +364,11 @@ def test_ui_observe_bad_region_is_an_error():
     result = UiObserveTool(session).run(root=root_id, mode="screenshot", region=[1, 2])
     text = result.output if isinstance(result, ToolResult) else result
     assert text.startswith("Error")
+
+
+def test_real_sessions_share_opened_windows_and_drivers_across_turns():
+    """The GUI builds a new registry per turn; dagi's windows and Firefox must survive it."""
+    a, b = UiSession(_Cfg(), _AskSpy()), UiSession(_Cfg(), _AskSpy())
+    assert a._shared is b._shared
+    injected = UiSession(_Cfg(), _AskSpy(), uia_driver=object())
+    assert injected._shared is not a._shared

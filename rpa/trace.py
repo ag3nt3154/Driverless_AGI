@@ -131,6 +131,7 @@ class Recorder:
         self._n = 0
         self._entries: list[dict] = []
         self._path: "Path | None" = None
+        self._launch_ids: dict[str, int] = {}  # root id -> launch_id
 
     def start(self) -> None:
         """Refuse if a workflow or an unfinished recording already exists for `name`."""
@@ -151,7 +152,11 @@ class Recorder:
             fh.write(json.dumps(entry, sort_keys=True) + "\n")
 
     def record_launch(self, root: Root, target: str) -> None:
-        self._write({**_root_descriptor(root), "kind": "launch", "target": target})
+        """A launch gets a `launch_id`; later acts on that window/tab carry it, so the
+        compiled step can bind to the launched root instead of its (changing) title."""
+        self._launch_ids[root.id] = len(self._launch_ids) + 1
+        self._write({**_root_descriptor(root), "kind": "launch", "target": target,
+                     "launch_id": self._launch_ids[root.id]})
 
     def prepare(self, root: Root, element: Element) -> dict:
         """Locators and crop for `element` as the UI is NOW — call before acting.
@@ -184,7 +189,9 @@ class Recorder:
         self._write({
             "kind": "act",
             "n": n,
-            "root": _root_descriptor(root),
+            "root": {**_root_descriptor(root), **(
+                {"launch_id": self._launch_ids[root.id]} if root.id in self._launch_ids else {}
+            )},
             "action": action,
             "value": _value_for_trace(element, value),
             "locators": locators,

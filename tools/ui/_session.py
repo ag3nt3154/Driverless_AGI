@@ -46,6 +46,23 @@ def _ask_wrapper(callbacks) -> "Callable[[str, list[dict]], str] | None":
     return ask
 
 
+class _ProcessUiState:
+    """What must outlive one registry: the GUI builds a new registry (and UiSession)
+    per turn, but the windows dagi opened, its drivers and its one Firefox belong to
+    the dagi process. Without this, each turn forgot its windows and started another
+    Firefox."""
+
+    def __init__(self) -> None:
+        self.uia_driver: Driver | None = None
+        self.browser_driver: Driver | None = None
+        self.owned_handles: set[str] = set()
+        self.owned_pids: set[int] = set()
+        self.preexisting: set[str] = set()
+
+
+_PROCESS_STATE = _ProcessUiState()
+
+
 class UiSession:
     """Per-registry state shared by ui_roots / ui_observe / ui_act / ui_wait."""
 
@@ -60,8 +77,13 @@ class UiSession:
     ) -> None:
         self.config = config
         self.callbacks = callbacks
-        self._uia_driver = uia_driver
-        self._browser_driver = browser_driver
+        # Injected drivers (tests) get private state; real sessions share the process state.
+        injected = uia_driver is not None or browser_driver is not None
+        self._shared = _ProcessUiState() if injected else _PROCESS_STATE
+        if uia_driver is not None:
+            self._shared.uia_driver = uia_driver
+        if browser_driver is not None:
+            self._shared.browser_driver = browser_driver
         self.lock = lock if lock is not None else DesktopLock()
         self.store = ObservationStore()
         self.safety = SafetyGate(
@@ -74,38 +96,34 @@ class UiSession:
         # Set by ESC (AgentLoop.interrupt -> UiActTool.cancel); a running replay stops at
         # its next step or wait. Cleared when the next rpa_run starts.
         self.cancel_event = threading.Event()
-        # root_id (prefixed, e.g. "w:1234") -> (driver, Root)
+        # root_id (prefixed, e.g. "w:1234") -> (driver, Root); per session (re-list with ui_roots)
         self._roots: dict[str, tuple[Driver, Root]] = {}
-        # Windows dagi opened: launched handles, launched pids, and every handle
-        # that already existed before a launch (never "opened by dagi").
-        self._owned_handles: set[str] = set()
-        self._owned_pids: set[int] = set()
-        self._preexisting: set[str] = set()
 
     # -- lazy drivers --------------------------------------------------------
 
     def uia(self) -> Driver:
-        if self._uia_driver is None:
+        shared = self._shared
+        if shared.uia_driver is None:
             from rpa.drivers.uia import UiaDriver
 
             # dagi's own Firefox is driven through the browser driver (b: roots), never as a window.
-            self._uia_driver = UiaDriver(
+            shared.uia_driver = UiaDriver(
                 exclude_pids={os.getpid()},
-                exclude=lambda: self._browser_driver.pids() if self._browser_driver is not None else set(),
+                exclude=lambda: shared.browser_driver.pids() if shared.browser_driver is not None else set(),
             )
-        return self._uia_driver
+        return shared.uia_driver
 
     def browser(self) -> Driver:
-        if self._browser_driver is None:
+        if self._shared.browser_driver is None:
             from agent import DAGI_ROOT
             from rpa.drivers.browser import FirefoxDriver
 
-            self._browser_driver = FirefoxDriver(profile_dir=DAGI_ROOT / _FIREFOX_PROFILE_SUBPATH)
-        return self._browser_driver
+            self._shared.browser_driver = FirefoxDriver(profile_dir=DAGI_ROOT / _FIREFOX_PROFILE_SUBPATH)
+        return self._shared.browser_driver
 
     def browser_started(self) -> bool:
         """True if the browser driver has been used at least once this session."""
-        return self._browser_driver is not None
+        return self._shared.browser_driver is not None
 
     # -- root bookkeeping -----------------------------------------------------
 
@@ -122,16 +140,18 @@ class UiSession:
     def launch_window(self, target: str) -> Root:
         """Launch a desktop app and mark its window (and later new windows of its process) as dagi's."""
         driver = self.uia()
-        self._preexisting |= {r.id for r in driver.roots()}
+        shared = self._shared
+        shared.preexisting |= {r.id for r in driver.roots()}
         root = driver.launch(target)
-        self._owned_handles.add(root.id)
+        shared.owned_handles.add(root.id)
         if root.pid:
-            self._owned_pids.add(root.pid)
+            shared.owned_pids.add(root.pid)
         return root
 
     def opened_by_dagi(self, root: Root) -> bool:
-        return root.id in self._owned_handles or (
-            root.pid in self._owned_pids and root.id not in self._preexisting
+        shared = self._shared
+        return root.id in shared.owned_handles or (
+            root.pid in shared.owned_pids and root.id not in shared.preexisting
         )
 
     def lookup(self, root_id: str) -> "tuple[Driver, Root] | None":

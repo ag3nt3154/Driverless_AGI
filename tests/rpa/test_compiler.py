@@ -208,3 +208,13 @@ def test_param_on_any_field_but_value_is_rejected(field):
         apply_cleanup(_base_workflow(), [
             {"op": "param", "step": "step_01", "field": field, "name": "p", "default": "x"},
         ])
+
+
+def test_acts_on_a_launched_window_bind_to_their_launch_step():
+    launch = {"kind": "launch", "target": "notepad.exe", "app": "Notepad.exe", "title_re": "^Untitled$",
+              "launch_id": 1}
+    on_launched = {**_OK_ENTRY, "root": {**_OK_ENTRY["root"], "launch_id": 1}}
+    wf = compile_trace([launch, on_launched, _OK_ENTRY], "demo", "g")
+    assert wf.steps[1].root == {"window": {"title_re": "MyApp", "launched_by": "step_01"}}
+    assert wf.steps[2].root == {"window": {"title_re": "MyApp"}}
+    assert "launched_by: step_01" in dump_workflow(wf)

@@ -615,3 +615,37 @@ def test_cancel_halts_before_the_next_step_and_inside_waits(tmp_path):
                           sleep=_no_sleep, cancelled=lambda: flag["stop"])
     assert result.status == "halted" and result.halted_step == "second"
     assert "cancelled" in result.reason and len(driver.acts) == 1
+
+
+def test_launched_by_binds_to_the_launched_window_whatever_its_title(tmp_path):
+    """Win11 Notepad restored an old tab, so the title no longer matched the recording."""
+    store = _store(tmp_path)
+    _save(store, {"name": "wf24", "steps": [
+        {"id": "step_01", "launch": "notepad.exe"},
+        {"id": "step_02", "act": "click",
+         "root": {"window": {"title_re": "^Untitled - Notepad$", "launched_by": "step_01"}},
+         "target": {"locators": [{"uia": {"automation_id": "doc"}}]}},
+    ]})
+    restored = Root(id="w:7", kind="window", title="*old notes - Notepad", pid=7, url=None, app="Notepad.exe")
+    driver = _driver({"w:7": [{"role": "Document", "name": "Text editor", "automation_id": "doc"}]},
+                     roots={"notepad.exe": restored})
+    result = run_workflow(store, "wf24", drivers={"window": driver, "browser": driver}, sleep=_no_sleep)
+    assert result.status == "ok" and [a[0] for a in driver.acts] == ["w:7"]
+
+
+def test_launched_window_gone_halts(tmp_path):
+    store = _store(tmp_path)
+    _save(store, {"name": "wf25", "steps": [
+        {"id": "step_01", "launch": "notepad.exe"},
+        {"id": "step_02", "act": "click",
+         "root": {"window": {"title_re": "x", "launched_by": "step_01"}},
+         "target": {"locators": [{"uia": {"automation_id": "doc"}}]}},
+    ]})
+    gone = Root(id="w:8", kind="window", title="Notepad", pid=8, url=None, app="Notepad.exe")
+    driver = _driver({"w:8": []}, roots={"notepad.exe": gone})
+    driver._roots.pop("notepad.exe")  # launch returns it, then it is no longer listed
+    real_launch = driver.launch
+    driver.launch = lambda target: gone
+    result = run_workflow(store, "wf25", drivers={"window": driver, "browser": driver},
+                          sleep=_no_sleep, clock=iter(range(0, 10_000, 5)).__next__)
+    assert result.status == "halted" and "gone" in result.reason and driver.acts == []

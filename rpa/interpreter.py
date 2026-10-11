@@ -299,6 +299,7 @@ def _run_launch_step(step, drivers, ctx, today, extra_roots, sleep, clock) -> tu
     except RpaError as exc:
         raise _Halt(str(exc)) from exc
     extra_roots[new_root.id] = new_root
+    extra_roots["@" + step.id] = new_root  # for root.*.launched_by
     try:
         _check_expect(step, driver, drivers, new_root, [], ctx, today, sleep, clock)
     except _ExpectTimeout as exc:
@@ -395,6 +396,18 @@ def _find_root(root_spec: dict, drivers: dict[str, Driver], extra_roots: dict[st
     pattern = sub.get("title_re") if kind == "window" else sub.get("url_re")
     driver = drivers[kind]
     deadline = clock() + _ROOT_WAIT_S
+
+    launched_by = sub.get("launched_by")
+    if launched_by is not None and ("@" + launched_by) in extra_roots:
+        # Bound to the window/tab its launch step opened: titles change, it does not.
+        mine = extra_roots["@" + launched_by]
+        while True:
+            if any(r.id == mine.id for r in driver.roots()):
+                return mine
+            if clock() >= deadline:
+                raise _Halt(f"the {kind} opened by {launched_by!r} is gone")
+            sleep(_ROOT_POLL_S)
+    # No launched_by, or its launch step was skipped (start_at): match by pattern.
 
     while True:
         candidates: dict[str, Root] = {r.id: r for r in driver.roots()}

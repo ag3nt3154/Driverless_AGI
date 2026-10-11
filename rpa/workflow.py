@@ -148,6 +148,7 @@ def parse_workflow(data: dict) -> Workflow:
 
     steps: list[Step] = []
     seen_ids: set[str] = set()
+    launch_ids_so_far: set[str] = set()  # for root.*.launched_by
     for i, sdata in enumerate(data.get("steps") or []):
         ctx = f"steps[{i}]."
         if not isinstance(sdata, dict):
@@ -169,6 +170,8 @@ def parse_workflow(data: dict) -> Workflow:
             raise RpaError(f"{ctx}: exactly one of 'act' or 'launch' is required")
         if act is not None and act not in ACTIONS:
             raise RpaError(f"{ctx}act: unknown action {act!r}")
+        if launch is not None:
+            launch_ids_so_far.add(step_id)
 
         root = sdata.get("root")
         if root is not None:
@@ -178,9 +181,12 @@ def parse_workflow(data: dict) -> Workflow:
             if len(root) != 1:
                 raise RpaError(f"{ctx}root: exactly one of 'window' or 'browser' is required")
             if "window" in root:
-                _check_unknown(root["window"] or {}, {"title_re"}, f"{ctx}root.window.")
+                _check_unknown(root["window"] or {}, {"title_re", "launched_by"}, f"{ctx}root.window.")
             else:
-                _check_unknown(root["browser"] or {}, {"url_re"}, f"{ctx}root.browser.")
+                _check_unknown(root["browser"] or {}, {"url_re", "launched_by"}, f"{ctx}root.browser.")
+            launched_by = (root.get("window") or root.get("browser") or {}).get("launched_by")
+            if launched_by is not None and launched_by not in launch_ids_so_far:
+                raise RpaError(f"{ctx}root.launched_by: {launched_by!r} is not an earlier launch step")
 
         target = sdata.get("target")
         if target is not None:

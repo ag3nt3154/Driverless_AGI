@@ -332,3 +332,13 @@ def test_interrupt_cancel_sets_the_session_flag_and_rpa_run_clears_it(tmp_path):
     from tools.rpa import RpaRunTool
     RpaRunTool(session).run(name="does-not-exist")
     assert not session.cancel_event.is_set()
+
+
+def test_recorded_acts_on_a_launched_window_compile_with_launched_by(tmp_path):
+    session, _driver = _make_session(tmp_path)
+    RpaRecordTool(session).run(name="demo", goal="launch and click")
+    UiRootsTool(session).run(launch="r1")
+    obs = _observe(session, "w:r1")
+    UiActTool(session).run(root="w:r1", target=0, action="click", obs=obs)
+    out = RpaSaveTool(session).run()
+    assert "launched_by: step_01" in out, out

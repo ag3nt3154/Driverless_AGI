@@ -209,3 +209,18 @@ def test_step_hash_changes_on_any_field_change(field_name, value):
     base = Step(id="s1", act="click")
     changed = Step(**{**base.__dict__, field_name: value})
     assert step_hash(base) != step_hash(changed)
+
+
+@pytest.mark.parametrize("launched_by", ["step_02", "nope", "step_click"])
+def test_launched_by_must_name_an_earlier_launch_step(launched_by):
+    data = {"name": "w", "steps": [
+        {"id": "step_click", "act": "click", "target": {"locators": [{"uia": {"name": "A"}}]}},
+        {"id": "step_02", "launch": "notepad.exe"},
+        {"id": "step_03", "act": "click", "root": {"window": {"title_re": "x", "launched_by": launched_by}},
+         "target": {"locators": [{"uia": {"name": "A"}}]}},
+    ]}
+    if launched_by == "step_02":
+        parse_workflow(data)  # valid: an earlier launch step
+    else:
+        with pytest.raises(RpaError):
+            parse_workflow(data)

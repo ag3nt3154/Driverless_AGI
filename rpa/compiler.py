@@ -46,10 +46,14 @@ def _collapse_duplicate_focus(entries: list[dict]) -> list[dict]:
     return out
 
 
-def _compile_root(desc: dict) -> dict:
-    if desc["kind"] == "window":
-        return {"window": {"title_re": desc["title_re"]}}
-    return {"browser": {"url_re": desc["url_re"]}}
+def _compile_root(desc: dict, launch_steps: dict[int, str]) -> dict:
+    """Title/url pattern, plus `launched_by` when the root was opened by a launch step
+    of this recording (titles change with the document; the launched window does not)."""
+    kind = desc["kind"]
+    spec = {"title_re": desc["title_re"]} if kind == "window" else {"url_re": desc["url_re"]}
+    if desc.get("launch_id") in launch_steps:
+        spec["launched_by"] = launch_steps[desc["launch_id"]]
+    return {kind: spec}
 
 
 def _compile_value(value: Any, secrets: dict[str, SecretRef]) -> Any:
@@ -98,16 +102,19 @@ def compile_trace(entries: list[dict], name: str, goal: str) -> Workflow:
 
     secrets: dict[str, SecretRef] = {}
     steps: list[Step] = []
+    launch_steps: dict[int, str] = {}  # launch_id -> step id
     for i, entry in enumerate(entries, start=1):
         step_id = f"step_{i:02d}"
         kind = entry.get("kind")
         if kind == "launch":
             steps.append(Step(id=step_id, launch=entry["target"]))
+            if entry.get("launch_id") is not None:
+                launch_steps[entry["launch_id"]] = step_id
         elif kind == "act":
             steps.append(Step(
                 id=step_id,
                 act=entry["action"],
-                root=_compile_root(entry["root"]),
+                root=_compile_root(entry["root"], launch_steps),
                 target={"locators": entry["locators"]},
                 value=_compile_value(entry["value"], secrets),
                 expect=_compile_expect(entry.get("expect_candidates") or []),
