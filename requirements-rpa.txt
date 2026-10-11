@@ -1,0 +1,9 @@
+# Computer use / RPA: Windows desktop automation, browser automation and
+# screen capture for the rpa/ package. Install with: pip install -e .[rpa]
+#
+# Firefox + geckodriver are conda packages, not pip (install into the dagi env):
+#   conda install -n dagi -c conda-forge firefox=157.0.1 geckodriver=0.37.1
+uiautomation==2.0.29
+selenium==4.51.0
+mss==10.2.0
+psutil==7.2.2
