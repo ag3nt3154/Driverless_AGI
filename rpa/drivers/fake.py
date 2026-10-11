@@ -147,7 +147,7 @@ class FakeDriver:
     def _match_css(self, root: Root, element: Element, css: str) -> bool:
         node = self._nodes_by_index.get(root.id, {}).get(element.index, {})
         target = css[1:] if css.startswith("#") else css
-        return node.get("css") == css or element.automation_id == target
+        return node.get("css") == css or element.automation_id in (css, target)
 
     @staticmethod
     def _match_aria(element: Element, spec: dict[str, Any]) -> bool:
