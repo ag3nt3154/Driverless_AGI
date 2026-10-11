@@ -10,6 +10,7 @@ import re
 from typing import Any
 
 from rpa import RpaError
+from rpa.drivers.base import WrongElement
 from rpa.model import Element, Locator, Outline, Root, validate_locator
 
 # Default window size used by `screenshot` when none was given for a root.
@@ -97,6 +98,11 @@ class FakeDriver:
         return []
 
     def act(self, root: Root, element: Element, action: str, value: str | None = None) -> None:
+        live = next((e for e in self.outline(root).elements if e.index == element.index), None)
+        if live is None or (live.role, live.name, live.automation_id, live.path) != (
+            element.role, element.name, element.automation_id, element.path,
+        ):
+            raise WrongElement(f"FakeDriver.act: {element.role} {element.name!r} is no longer at index {element.index}")
         node = self._nodes_by_index.get(root.id, {}).get(element.index)
         secure = element.secure or bool(node and node.get("secure"))
         self.acts.append((root.id, element.index, action, "[secure]" if secure and value is not None else value))
@@ -114,6 +120,9 @@ class FakeDriver:
 
     def needs_desktop_lock(self, action: str) -> bool:
         return action in self._lock_actions
+
+    def needs_desktop_lock_to_observe(self, root: Root) -> bool:
+        return False
 
     def launch(self, target: str) -> Root:
         if target in self._roots:

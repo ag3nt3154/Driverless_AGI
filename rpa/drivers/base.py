@@ -33,7 +33,10 @@ class Driver(Protocol):
         ...
 
     def act(self, root: Root, element: Element, action: str, value: str | None = None) -> None:
-        """Perform `action` (one of ACTIONS) on `element`, with an optional `value`."""
+        """Perform `action` (one of ACTIONS) on `element`, with an optional `value`.
+
+        Must raise `WrongElement` rather than act if the live element at
+        `element.index` is no longer the same element."""
         ...
 
     def screenshot(self, root: Root, region: tuple[int, int, int, int] | None = None) -> "Image.Image":
@@ -42,6 +45,10 @@ class Driver(Protocol):
 
     def needs_desktop_lock(self, action: str) -> bool:
         """True if `action` drives the real mouse/keyboard and needs the desktop lock."""
+        ...
+
+    def needs_desktop_lock_to_observe(self, root: Root) -> bool:
+        """True if observing `root` changes the desktop (e.g. restoring a minimized window)."""
         ...
 
     def launch(self, target: str) -> Root:
