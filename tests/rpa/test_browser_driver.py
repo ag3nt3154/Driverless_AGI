@@ -179,3 +179,11 @@ def test_key_chords_work_in_the_browser(site_url, driver_factory):
     driver.act(root, comment, "key", "ctrl+a")
     driver.act(root, comment, "key", "backspace")
     assert driver._driver.find_element("name", "comment").get_attribute("value") == ""
+
+
+@pytest.mark.desktop
+def test_pids_cover_the_running_firefox(site_url, driver_factory):
+    driver = driver_factory()
+    assert driver.pids() == set()
+    driver.launch(site_url)
+    assert driver.pids()

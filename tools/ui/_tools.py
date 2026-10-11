@@ -49,14 +49,32 @@ def _resolve_region(
         return None
     if isinstance(region, bool):  # bool is an int subclass; never a valid index
         raise RpaError(f"ui_observe: invalid region {region!r}")
+    if isinstance(region, (list, tuple)) and len(region) == 1:
+        region = region[0]
+    if isinstance(region, str):
+        region = _element_index(region)
     if isinstance(region, int):
         element = next((e for e in outline.elements if e.index == region), None)
         if element is None:
             raise RpaError(f"ui_observe: region index {region} is not in this outline")
         left, top, right, bottom = element.bbox
         return (max(0, left - 40), max(0, top - 40), right + 40, bottom + 40)
+    if not isinstance(region, (list, tuple)) or len(region) != 4:
+        raise RpaError(f"ui_observe: region must be an element index or [left, top, right, bottom], got {region!r}")
     left, top, right, bottom = region
     return (int(left), int(top), int(right), int(bottom))
+
+
+def _element_index(target) -> int:
+    """An element index given as 12, "12" or "[12]" (models copy the outline's brackets)."""
+    if isinstance(target, int) and not isinstance(target, bool):
+        return target
+    text = str(target).strip()
+    if text.startswith("[") and text.endswith("]"):
+        text = text[1:-1].strip()
+    if not text.isdigit():
+        raise RpaError(f"target must be an element index like 12 or [12], or a locator dict; got {target!r}")
+    return int(text)
 
 
 def _check_condition(driver, root_obj, condition: dict) -> "tuple[bool, str]":
@@ -288,7 +306,7 @@ class UiActTool(BaseTool):
                 validate_locator(target)
                 element = resolve(driver, root_obj, [target], allow_coords=allow_coords).element
             else:
-                element = rebind(session.store, obs, int(target), driver, root_obj)
+                element = rebind(session.store, obs, _element_index(target), driver, root_obj)
 
             session.safety.check_app(root_obj)
             session.safety.check_action(root_obj, element, action, sensitive_flag=sensitive)

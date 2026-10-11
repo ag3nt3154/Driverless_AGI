@@ -308,3 +308,36 @@ def test_ui_wait_present_times_out_when_absent():
         root=root_id, condition={"present": {"uia": {"role": "Button", "name": "Nope"}}}, timeout=0.2,
     )
     assert result.startswith("timeout:")
+
+
+@pytest.mark.parametrize("target", [1, "1", "[1]", " [1] "])
+def test_ui_act_accepts_an_index_with_or_without_brackets(target):
+    session, driver, _ = _make_session(_BIG_TREE)
+    root_id = _observed_root_id(session)
+    obs_id = _observe(session, root_id)
+    result = UiActTool(session).run(root=root_id, target=target, action="focus", obs=obs_id)
+    assert result.startswith("ok: focus [1]")
+
+
+def test_ui_act_rejects_a_non_index_target_without_acting():
+    session, driver, _ = _make_session(_BIG_TREE)
+    root_id = _observed_root_id(session)
+    obs_id = _observe(session, root_id)
+    result = UiActTool(session).run(root=root_id, target="[one]", action="focus", obs=obs_id)
+    assert result.startswith("Error") and driver.acts == []
+
+
+@pytest.mark.parametrize("region", [[0], 0, "[0]"])
+def test_ui_observe_region_accepts_a_single_index(region):
+    session, _, _ = _make_session(_BIG_TREE)
+    root_id = _observed_root_id(session)
+    result = UiObserveTool(session).run(root=root_id, mode="screenshot", region=region)
+    assert isinstance(result, ToolResult)
+
+
+def test_ui_observe_bad_region_is_an_error():
+    session, _, _ = _make_session(_BIG_TREE)
+    root_id = _observed_root_id(session)
+    result = UiObserveTool(session).run(root=root_id, mode="screenshot", region=[1, 2])
+    text = result.output if isinstance(result, ToolResult) else result
+    assert text.startswith("Error")

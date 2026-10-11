@@ -369,3 +369,22 @@ def test_type_and_key_reach_the_fixture_literally(qt_fixture_proc):
     driver.act(root, comment, "key", "backspace")
     comment = next(e for e in driver.outline(root).elements if e.name == "Comment" and e.role == "Edit")
     assert comment.value == ""
+
+
+def test_roots_skip_pids_from_the_exclude_callable(monkeypatch):
+    """dagi's own Firefox (started after the driver) must not appear as a window root."""
+    from rpa.drivers import uia
+
+    class _Win:
+        ControlTypeName = "WindowControl"
+        def __init__(self, pid, handle):
+            self.ProcessId, self.NativeWindowHandle, self.Name = pid, handle, f"w{pid}"
+
+    wins = [_Win(111, 1), _Win(222, 2)]
+    monkeypatch.setattr(uia.auto, "GetRootControl", lambda: type("R", (), {"GetChildren": lambda self: wins})())
+    monkeypatch.setattr(uia, "_process_name", lambda pid: f"p{pid}.exe")
+    later: set = set()
+    driver = uia.UiaDriver(exclude=lambda: later)
+    assert {r.pid for r in driver.roots()} == {111, 222}
+    later.add(222)
+    assert {r.pid for r in driver.roots()} == {111}

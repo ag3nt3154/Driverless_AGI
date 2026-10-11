@@ -74,7 +74,11 @@ class UiSession:
         if self._uia_driver is None:
             from rpa.drivers.uia import UiaDriver
 
-            self._uia_driver = UiaDriver(exclude_pids={os.getpid()})
+            # dagi's own Firefox is driven through the browser driver (b: roots), never as a window.
+            self._uia_driver = UiaDriver(
+                exclude_pids={os.getpid()},
+                exclude=lambda: self._browser_driver.pids() if self._browser_driver is not None else set(),
+            )
         return self._uia_driver
 
     def browser(self) -> Driver:

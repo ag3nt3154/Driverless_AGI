@@ -28,6 +28,7 @@ import sys
 from pathlib import Path
 from urllib.parse import urlsplit
 
+import psutil
 from selenium import webdriver
 from selenium.webdriver.common.action_chains import ActionChains
 from selenium.webdriver.common.by import By
@@ -92,6 +93,19 @@ class FirefoxDriver:
         if self.headless:
             options.add_argument("-headless")
         self._driver = webdriver.Firefox(options=options, service=Service(str(gecko_path)))
+
+    def pids(self) -> set[int]:
+        """PIDs of this driver's Firefox (main + content processes); empty if not started."""
+        if self._driver is None:
+            return set()
+        pid = self._driver.capabilities.get("moz:processID")
+        if not pid:
+            return set()
+        try:
+            main = psutil.Process(pid)
+            return {pid, *(child.pid for child in main.children(recursive=True))}
+        except psutil.Error:
+            return {pid}
 
     def quit(self) -> None:
         """Close the browser and release the underlying geckodriver session."""

@@ -23,6 +23,7 @@ import os
 import subprocess
 import time
 from pathlib import Path
+from typing import Callable
 
 import psutil
 import uiautomation as auto
@@ -180,13 +181,18 @@ def _read_value(ctrl: auto.Control) -> str | None:
 class UiaDriver:
     """Driver for Windows desktop windows, via `uiautomation`."""
 
-    def __init__(self, exclude_pids: set[int] | None = None) -> None:
+    def __init__(
+        self, exclude_pids: set[int] | None = None, *, exclude: "Callable[[], set[int]] | None" = None,
+    ) -> None:
+        """`exclude` is re-read on every roots() call (e.g. dagi's own Firefox, started later)."""
         _make_dpi_aware()
         self._exclude_pids = set(exclude_pids or set()) | {os.getpid()}
+        self._exclude = exclude
 
     # -- Driver protocol -------------------------------------------------
 
     def roots(self) -> list[Root]:
+        excluded = self._exclude_pids | (self._exclude() if self._exclude else set())
         out: list[Root] = []
         for ctrl in auto.GetRootControl().GetChildren():
             if ctrl.ControlTypeName != "WindowControl":
@@ -196,7 +202,7 @@ class UiaDriver:
                 handle = ctrl.NativeWindowHandle
             except Exception:
                 continue
-            if pid in self._exclude_pids or not handle:
+            if pid in excluded or not handle:
                 continue
             out.append(
                 Root(id=str(handle), kind="window", title=ctrl.Name or "", pid=pid, url=None, app=_process_name(pid))
