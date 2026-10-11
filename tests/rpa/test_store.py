@@ -137,3 +137,22 @@ def test_edit_one_confirm_step_breaks_only_that_step(tmp_path):
 
     assert store.confirm_ok("demo", edited.steps[0]) is False
     assert store.confirm_ok("demo", edited.steps[2]) is True
+
+
+def test_a_draft_that_halts_shows_halted(tmp_path):
+    """Approval and run health are separate: a never-approved workflow's failed
+    verify run must still be visible."""
+    store = WorkflowStore(tmp_path)
+    store.save(_wf())
+    store.record_run("demo", "halted", reason="target not found", run_dir=tmp_path / "r", verify=True)
+    state = store.state("demo")
+    assert state["status"] == "draft"
+    assert state["last_run"]["status"] == "halted" and state["last_run"]["reason"] == "target not found"
+    assert store.display_status("demo") == "halted"
+
+
+def test_run_health_cannot_be_written_as_approval(tmp_path):
+    store = WorkflowStore(tmp_path)
+    store.save(_wf())
+    with pytest.raises(RpaError):
+        store.set_status("demo", "halted")

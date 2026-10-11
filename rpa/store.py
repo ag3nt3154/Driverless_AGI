@@ -8,6 +8,11 @@ Verify and approve are tied to content, not file times: a verify run records the
 `workflow_hash` it ran, approve needs that hash to equal the current workflow,
 and any later edit (a repair patch, a hand edit) makes `state()` report "draft"
 until it is verified and approved again.
+
+`status` is approval only (draft / approved). The health of the latest run
+(ok / degraded / halted) is kept separately in `last_run`, so a draft that
+halts during its verify run still shows that it halted; `display_status`
+combines the two for lists and GUI chips.
 """
 from __future__ import annotations
 
@@ -22,7 +27,8 @@ from rpa.workflow import Step, Workflow, dump_workflow, load_workflow, step_hash
 __all__ = ["WorkflowStore"]
 
 _NAME_RE = re.compile(r"^[a-z0-9][a-z0-9_-]*$")
-_STATUSES = ("draft", "approved", "degraded", "halted")
+_STATUSES = ("draft", "approved")  # approval only; run health lives in last_run
+_RUN_STATUSES = ("ok", "degraded", "halted")
 _EMPTY_STATE = {
     "status": "draft",
     "approved_hash_by_step": {},
@@ -91,6 +97,24 @@ class WorkflowStore:
         state = self.state(name)
         state["status"] = status
         self._write_state(name, state)
+
+    def record_run(self, name: str, status: str, *, reason: str | None, run_dir: Path,
+                   verify: bool, when: float | None = None) -> None:
+        """Store the latest run's outcome (never its secrets: `reason` is already redacted)."""
+        if status not in _RUN_STATUSES:
+            raise RpaError(f"invalid run status: {status!r}")
+        state = self.state(name)
+        state["last_run"] = {
+            "status": status, "reason": reason, "run_dir": str(run_dir), "verify": verify,
+            "at": when if when is not None else time.time(),
+        }
+        self._write_state(name, state)
+
+    def display_status(self, name: str) -> str:
+        """`halted` / `degraded` when the latest run says so, else the approval status."""
+        state = self.state(name)
+        last = state.get("last_run") or {}
+        return last.get("status") if last.get("status") in ("halted", "degraded") else state["status"]
 
     def mark_verified(self, name: str, when: float | None = None) -> None:
         """Record a clean verify run of the workflow as it is now."""
