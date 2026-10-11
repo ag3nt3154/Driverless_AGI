@@ -29,6 +29,7 @@ import uiautomation as auto
 
 from rpa import RpaError
 from rpa.drivers.base import WrongElement
+from rpa.keys import escape_uia_text, to_uia
 from rpa.model import ACTIONS, Element, Locator, Outline, Root, validate_locator
 
 MAX_DEPTH = 30
@@ -265,7 +266,12 @@ class UiaDriver:
         exe_name = os.path.basename(target)
         args = electron_launch_args(exe_name)
         before_handles = {r.id for r in self.roots()}
-        proc = subprocess.Popen([target, *args])
+        # No inherited console handles: a GUI app that keeps them open would hold the
+        # caller's stdout pipe (e.g. dagi's bash tool) and swallow its output.
+        proc = subprocess.Popen(
+            [target, *args], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL, close_fds=True,
+        )
         stem = Path(target).stem.lower()
 
         deadline = time.time() + 20
@@ -373,10 +379,12 @@ class UiaDriver:
                 raise RpaError("UiaDriver.act: set_value requires a ValuePattern")
             vp.SetValue(value or "")
         elif action in ("type", "key"):
+            # `type` is literal text; `key` is a chord (rpa/keys.py). Parse before any input.
+            keys = escape_uia_text(value or "") if action == "type" else to_uia(value or "")
             _before_real_input(root)
             ctrl.SetFocus()
             _before_real_input(root)  # SetFocus must not have moved focus out of root
-            ctrl.SendKeys(value or "")
+            ctrl.SendKeys(keys)
         elif action == "scroll":
             self._scroll(ctrl, value)
         elif action == "select":

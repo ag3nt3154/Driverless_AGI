@@ -282,10 +282,90 @@ def test_real_input_is_refused_when_another_window_is_in_front(monkeypatch):
     root = Root(id="42", kind="window", title="Fixture", pid=1, url=None, app="a.exe")
     ctrl = _Ctrl()
     with pytest.raises(WrongElement):
-        uia.UiaDriver()._dispatch(ctrl, "key", "{Enter}", root)
+        uia.UiaDriver()._dispatch(ctrl, "key", "enter", root)
     assert ctrl.sent == []
 
 
 def test_electron_flag_matches_full_paths_case_insensitively():
     from rpa.drivers.uia import electron_launch_args
     assert electron_launch_args(r"C:\Program Files\Microsoft VS Code\code.EXE") == ["--force-renderer-accessibility"]
+
+
+def _patched_dispatch_driver(monkeypatch):
+    from rpa.drivers import uia
+
+    class _Ctrl:
+        def __init__(self):
+            self.sent = []
+        def SetFocus(self):
+            return True
+        def SendKeys(self, keys):
+            self.sent.append(keys)
+
+    guards = []
+    monkeypatch.setattr(uia, "_before_real_input", lambda root: guards.append(root))
+    return uia.UiaDriver(), _Ctrl(), guards
+
+
+def test_key_chord_is_translated_to_uiautomation_notation(monkeypatch):
+    from rpa.model import Root
+    driver, ctrl, _ = _patched_dispatch_driver(monkeypatch)
+    root = Root(id="1", kind="window", title="T", pid=1, url=None, app="a.exe")
+    driver._dispatch(ctrl, "key", "ctrl+shift+s", root)
+    assert ctrl.sent == ["{Ctrl}{Shift}s"]
+
+
+def test_type_sends_braces_literally(monkeypatch):
+    from rpa.model import Root
+    driver, ctrl, _ = _patched_dispatch_driver(monkeypatch)
+    root = Root(id="1", kind="window", title="T", pid=1, url=None, app="a.exe")
+    driver._dispatch(ctrl, "type", "a{b}^+s", root)
+    assert ctrl.sent == ["a{{}b{}}^+s"]
+
+
+def test_bad_key_chord_fails_before_any_input(monkeypatch):
+    from rpa import RpaError
+    from rpa.model import Root
+    driver, ctrl, guards = _patched_dispatch_driver(monkeypatch)
+    root = Root(id="1", kind="window", title="T", pid=1, url=None, app="a.exe")
+    with pytest.raises(RpaError):
+        driver._dispatch(ctrl, "key", "^+s", root)
+    assert ctrl.sent == [] and guards == []
+
+
+def test_launch_does_not_hand_console_handles_to_the_app(monkeypatch):
+    import subprocess as sp
+    from rpa import RpaError
+    from rpa.drivers import uia
+    seen = {}
+
+    class _Proc:
+        pid = 0
+        def kill(self):
+            pass
+
+    monkeypatch.setattr(uia.subprocess, "Popen", lambda argv, **kw: (seen.update(kw), _Proc())[1])
+    driver = uia.UiaDriver()
+    monkeypatch.setattr(driver, "roots", lambda: [])
+    monkeypatch.setattr(uia.auto, "GetRootControl", lambda: type("R", (), {"GetChildren": lambda self: []})())
+    monkeypatch.setattr(uia.time, "time", iter([0, 0, 100]).__next__)
+    monkeypatch.setattr(uia.time, "sleep", lambda s: None)
+    with pytest.raises(RpaError):
+        driver.launch("notepad.exe")
+    assert seen["stdout"] is sp.DEVNULL and seen["stderr"] is sp.DEVNULL and seen["close_fds"]
+
+
+@pytest.mark.desktop
+def test_type_and_key_reach_the_fixture_literally(qt_fixture_proc):
+    from rpa.drivers.uia import UiaDriver
+
+    driver = UiaDriver()
+    root = _find_root(driver, FIXTURE_TITLE, qt_fixture_proc.pid)
+    comment = next(e for e in driver.outline(root).elements if e.name == "Comment" and e.role == "Edit")
+    driver.act(root, comment, "type", "x{y}^+s")
+    comment = next(e for e in driver.outline(root).elements if e.name == "Comment" and e.role == "Edit")
+    assert comment.value == "x{y}^+s"
+    driver.act(root, comment, "key", "ctrl+a")
+    driver.act(root, comment, "key", "backspace")
+    comment = next(e for e in driver.outline(root).elements if e.name == "Comment" and e.role == "Edit")
+    assert comment.value == ""

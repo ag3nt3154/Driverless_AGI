@@ -168,3 +168,14 @@ def test_act_refuses_when_the_page_changed_under_the_element(site_url, driver_fa
     with pytest.raises(WrongElement):
         driver.act(root, first_ok, "click")
     assert driver._driver.title != "clicked-inserted"
+
+
+@pytest.mark.desktop
+def test_key_chords_work_in_the_browser(site_url, driver_factory):
+    driver = driver_factory()
+    root = driver.launch(site_url)
+    comment = next(e for e in driver.outline(root).elements if e.name == "Comment")
+    driver.act(root, comment, "type", "abc")
+    driver.act(root, comment, "key", "ctrl+a")
+    driver.act(root, comment, "key", "backspace")
+    assert driver._driver.find_element("name", "comment").get_attribute("value") == ""

@@ -317,7 +317,11 @@ def _register_fallback_tools(
 def _apply_filters_and_handoff(reg: ToolRegistry, config: "AgentConfig | None") -> None:
     """Apply config allow/deny lists, then inject the canonical write_handoff."""
     if config is not None and config.tools is not None:
-        reg.filter_to(config.tools)
+        allowed = list(config.tools)
+        if config.computer_use:  # an explicit opt-in: the ui_* tools pass the allowlist
+            from tools.ui import UI_TOOL_NAMES
+            allowed += [name for name in UI_TOOL_NAMES if name not in allowed]
+        reg.filter_to(allowed)
     if config is not None and config.disabled_tools:
         reg.filter_out(config.disabled_tools)
     # write_handoff is a lifecycle tool, not a general file-write capability.

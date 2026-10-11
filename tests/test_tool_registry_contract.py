@@ -171,3 +171,14 @@ def test_board_tools_take_emote_slot_before_show_file(tmp_path):
         "read_notepad", "spawn_alpha", "spawn_beta", "extend_subagent_timeout", "project_x",
         "schedule_task", "list_scheduled_tasks", "remove_scheduled_task", "write_handoff",
     ]
+
+
+def test_computer_use_tools_pass_a_tools_allowlist(tmp_path):
+    """`computer_use: true` is an explicit opt-in; a `tools:` allowlist written before
+    the ui_* tools existed must not silently drop them."""
+    kwargs = dict(callbacks=AgentCallbacks(), skill_roots=[tmp_path])
+    on = _names(_config(tmp_path, tools=["read", "bash"], computer_use=True), tmp_path, **kwargs)
+    off = _names(_config(tmp_path, tools=["read", "bash"]), tmp_path, **kwargs)
+
+    assert {"ui_roots", "ui_observe", "ui_act", "ui_wait"} <= set(on)
+    assert not {"ui_roots", "ui_observe", "ui_act", "ui_wait"} & set(off)

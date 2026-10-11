@@ -232,6 +232,8 @@ class UiActTool(BaseTool):
         "named `obs` (its observation id), or a locator dict ({\"uia\":...}/{\"css\":...}/"
         "{\"aria\":...}/{\"coords\":...} — coords only with allow_coords=true). New apps and "
         "sensitive actions (send, delete, pay, publish, ...) ask the user to confirm first. "
+        "For key, `value` is a chord: enter, tab, esc, ctrl+s, ctrl+shift+s, alt+f4 "
+        "(modifiers ctrl/shift/alt/win joined with +); for type, `value` is typed literally. "
         "Never put a real password or secret in `value`: pass `${env:NAME}` and the tool reads "
         "environment variable NAME (password fields accept only this form). "
         "Returns the new observation id to use for the next ui_act."

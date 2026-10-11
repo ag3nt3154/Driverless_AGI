@@ -31,25 +31,33 @@ from urllib.parse import urlsplit
 from selenium import webdriver
 from selenium.webdriver.common.action_chains import ActionChains
 from selenium.webdriver.common.by import By
+from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.firefox.options import Options
 from selenium.webdriver.firefox.service import Service
 from selenium.webdriver.support.ui import Select
 
 from rpa import RpaError
 from rpa.drivers.base import WrongElement
+from rpa.keys import parse_chord
 from rpa.model import Element, Locator, Outline, Root, validate_locator
 
 _OUTLINE_JS = (Path(__file__).parent / "outline.js").read_text(encoding="utf-8")
 
 _CONDA_INSTALL_LINE = "conda install -n dagi -c conda-forge firefox=157.0.1 geckodriver=0.37.1"
 
-# selenium Keys names for the `key` action's common cases (D3's ui_act `key`).
-_KEY_MAP = {
-    "enter": "", "tab": "", "escape": "", "esc": "",
-    "backspace": "", "delete": "", "space": "",
-    "arrowdown": "", "arrowup": "", "arrowleft": "", "arrowright": "",
-    "home": "", "end": "", "pageup": "", "pagedown": "",
+# rpa/keys.py chord names -> selenium Keys (D3's ui_act `key`).
+_NAMED_KEYS = {
+    "enter": Keys.ENTER, "tab": Keys.TAB, "escape": Keys.ESCAPE, "esc": Keys.ESCAPE,
+    "backspace": Keys.BACKSPACE, "delete": Keys.DELETE, "insert": Keys.INSERT, "space": Keys.SPACE,
+    "home": Keys.HOME, "end": Keys.END, "pageup": Keys.PAGE_UP, "pagedown": Keys.PAGE_DOWN,
+    "up": Keys.ARROW_UP, "down": Keys.ARROW_DOWN, "left": Keys.ARROW_LEFT, "right": Keys.ARROW_RIGHT,
+    **{f"f{n}": getattr(Keys, f"F{n}") for n in range(1, 13)},
 }
+_MODIFIER_KEYS = {"ctrl": Keys.CONTROL, "shift": Keys.SHIFT, "alt": Keys.ALT, "win": Keys.META}
+
+
+def _named_key(key: str) -> str:
+    return _NAMED_KEYS.get(key, key)
 
 
 class FirefoxDriver:
@@ -181,7 +189,17 @@ class FirefoxDriver:
             if value is not None:
                 we.send_keys(value)
         elif action == "key":
-            we.send_keys(_KEY_MAP.get((value or "").lower(), value))
+            mods, key = parse_chord(value)
+            chain = ActionChains(self._driver).click(we) if mods else None
+            if chain is None:
+                we.send_keys(_named_key(key))
+            else:
+                for mod in mods:
+                    chain = chain.key_down(_MODIFIER_KEYS[mod])
+                chain = chain.send_keys(_named_key(key))
+                for mod in reversed(mods):
+                    chain = chain.key_up(_MODIFIER_KEYS[mod])
+                chain.perform()
         elif action == "scroll":
             if value:
                 self._driver.execute_script(
