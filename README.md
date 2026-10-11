@@ -896,6 +896,100 @@ code_mode: false   # global only: the code tool is not registered; nothing else 
 
 Spec and plan: `wiki/tasks/2026-10-07_code-mode/`.
 
+### Computer use and RPA
+
+dagi can operate Windows desktop apps and Firefox pages, record a successful run as a
+declarative workflow, replay it with no model calls, and repair it with your approval.
+Windows only.
+
+**Install** (into the `dagi` env):
+
+```bash
+python -m pip install -r requirements-rpa.txt
+```
+
+```bash
+conda install -n dagi -c conda-forge firefox=157.0.1 geckodriver=0.37.1
+```
+
+**Enable** — global config only (`.dagi/config.yaml`); with it off, no `ui_*` or `rpa_*`
+tool is registered and the Workflows rail icon is hidden:
+
+```yaml
+computer_use: true
+```
+
+dagi's Firefox uses its own persistent profile, `.dagi/rpa/firefox-profile/` (gitignored).
+To use a site that needs a login, let dagi open the page, then log in by hand in that
+window once; later runs reuse the session.
+
+**Live use** — four tools: `ui_roots` (list or launch windows; only windows dagi opened are
+listed), `ui_observe` (numbered outline + optional set-of-marks screenshot), `ui_act`
+(click / type / key / select / close_window …, always on an element from an observation),
+`ui_wait`. Keys use chord syntax: `ctrl+shift+s`.
+
+**Record → verify → approve → run:**
+
+1. Ask dagi to record (`rpa_record`), do the task with `ui_*` tools, then save
+   (`rpa_save`). The compiler writes `.dagi/rpa/<name>/workflow.yaml` (a draft): each
+   step has a root, a target with a locator ladder (UIA automation id / DOM id or testid →
+   role + name → opt-in coordinates), an `expect` check, and optional `confirm`, `retry`,
+   `if_present`, `for_each`.
+2. Verify run: `rpa_run` with `verify=true` (or the **Verify run** button in the
+   Workflows rail view). A clean run records the content hash.
+3. Approve: `rpa_approve` (or **Approve**). Approval pre-approves `confirm: once` steps.
+   Any later edit to the workflow makes it a draft again.
+4. Run: `rpa_run` (or **Run**). Running a workflow that is not approved works, with a
+   warning.
+
+The rail view's buttons send the matching request to the agent as a chat message; they
+do nothing while dagi is busy or waiting for your answer.
+
+**From the shell** (no agent, no model):
+
+```bash
+python -m rpa run <name> --param key=value --verify
+```
+
+```bash
+python -m rpa approve <name>
+```
+
+`python -m rpa list` and `python -m rpa show <name>` also work. Exit codes for `run`:
+0 ok, 1 degraded (a lower locator rung matched), 2 halted, 3 usage/config error,
+4 cancelled.
+
+**Stop** — press **Esc** anywhere during a replay (a keyboard hook catches it even when the
+driven app has focus). The run ends as `cancelled`, not halted. Moving the mouse to a
+screen corner is the failsafe.
+
+**Halt and repair** — when a step finds no unique match, the run halts and saves evidence in
+`.dagi/rpa/<name>/runs/<timestamp>/` (`run.json`, `outline.txt`, `halt.png`). The GUI shows
+a halt card (Screenshot / Repair / Dismiss). dagi offers a repair but never starts one
+unasked. `rpa_repair` shows the evidence; dagi explores with `ui_observe`, then proposes
+`rpa_patch` ops (replace / insert / delete steps). Every new locator comes from an
+observed element — dagi cannot type a locator. You see the diff and choose
+**Approve and re-run** or **Reject**; a changed confirm step needs a second confirmation.
+After a clean verify re-run, approve the workflow again.
+
+**Safety gates**:
+- First action in each app or site asks for permission (`ask_user`, no recommended option).
+- Sensitive actions ask every time: send, submit, delete, remove, pay, purchase, buy,
+  transfer, post, publish, confirm, sign out, log out, don't save / discard, or a step
+  marked `sensitive: true`.
+- Password fields show `[secure]` and never appear in outlines, traces or logs. Secrets
+  are referenced as `${env:NAME}` (live) or `secrets: {name: {env: NAME}}` (workflows).
+- In `autonomous` mode, or with no frontend to ask, every gate denies.
+- Not a sandbox: `bash`/`code` can still script the drivers directly and skip the gates.
+
+**Limitations (v1)**: no scheduler (workflows run on request only); no OCR or image
+matching (recorded for later); no `code:` steps; attaching to a window dagi did not open
+is not possible; a patch cannot change a step's window or page (re-record instead);
+Electron apps (VS Code, Slack, Teams, …) are launched with `--force-renderer-accessibility`
+and expose few stable ids; a minimized window is restored before it is observed.
+
+Spec, decisions and plan: `wiki/tasks/2026-10-10_rpa-computer-use/`.
+
 ### Document Conversion Service
 
 The `read` tool converts documents to markdown:

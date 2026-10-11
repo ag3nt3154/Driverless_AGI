@@ -42,6 +42,8 @@ private throwaway board only while the configured central board is unavailable.
   `conda run` fully buffers stdout when not on a TTY (looks like a hang) — call the env's
   interpreter directly with `-u`. pytest-qt must be disabled as `-p no:pytest-qt` (not `no:qt`).
 - Hooks use `envs/dagi/python.exe` directly (`conda run` drops stdin).
+- RPA desktop tests (`desktop` marker; real UI, global keyboard hook) are skipped unless
+  `DAGI_DESKTOP_TESTS=1`; run them unsandboxed and only with the Admiral's consent.
 - Qt (tests, ad-hoc probes) cannot load in the Claude Code sandbox — run unsandboxed. Ad-hoc
   scripts must `import pyside_gui` before any `PySide6` import (DLL bootstrap).
 
