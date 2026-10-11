@@ -477,7 +477,7 @@ def pytest_collection_modifyitems(config, items):
 
 ---
 
-### Subtask 20: Documentation
+### Subtask 20: Documentation — ✅ `2e9d718d`
 
 **Goal:** Users can install, enable and use the feature.
 **Requirements:**
@@ -497,7 +497,7 @@ def pytest_collection_modifyitems(config, items):
 - **Task folder:** `wiki/tasks/2026-10-10_rpa-computer-use/`
 
 ## Overall Status
-In Progress — S1–S3 complete; S4 (Subtasks 18–19) and docs (20) in progress. Admiral (2026-10-12): finish all subtasks, he reviews everything together.
+Verification — all 20 subtasks committed (2026-10-12). Automated verification done; desktop tests and the manual end-to-end check wait for the Admiral, who reviews everything together.
 
 ## Notes
 - R20 prerequisite merged to `main` (`467ad01b`) and into this branch (`b71bbb8b`).
@@ -523,6 +523,9 @@ In Progress — S1–S3 complete; S4 (Subtasks 18–19) and docs (20) in progres
 - Subtask 16: `rpa.safety.is_allow_answer` shared by SafetyGate, CLI and tools. Found in main-agent review: ESC did not stop a running `rpa_run` (interrupt only released the lock) -> `UiSession.cancel_event`, set by `UiActTool.cancel()` from `AgentLoop.interrupt()`; `run_workflow(cancelled=...)` checks it before each step and in every poll/backoff; `rpa_run` clears it at start. CLI cancel = Ctrl+C / mouse-corner failsafe.
 
 ## Open Issues
+- Operator subagent (dropped from v1): needs an ask_user bridge over the subagent pipe and its own UI state/Firefox profile.
+- Esc during live model-driven `ui_*` acts still needs the dagi window (EscWatcher covers replays only).
+- `tests/test_board_client.py::test_total_deadline_covers_every_network_phase[blob-body]` failed once under full-suite load, passes alone (3/3); not touched by this task.
 - `code:` escape-hatch steps (D1) need dagi's tool registry, which conflicts with "rpa/ must not import agent" for CLI runs. v1 rejects them with a clear error. Decide later: run them only from `rpa_run` (in-agent), or drop.
 - Halt notifications outside chat are deferred with the scheduler (D6).
 
@@ -546,5 +549,7 @@ In Progress — S1–S3 complete; S4 (Subtasks 18–19) and docs (20) in progres
 3. Manual S1, S2 checkpoints above, then: record a workflow that crosses Qt fixture → Firefox fixture page, verify, approve, run (exit 0); break a locator → exit 2 with `runs/<ts>/`; repair via chat → approve patch → run exit 0.
 4. Must-fail checks (D12) all present: ambiguous halt (`test_resolver`, `test_interpreter`), stale observation (`test_observe`, `test_ui_tools`), unapproved changed confirm (`test_interpreter`, `test_repair`), secret canary (`test_observe`, `test_trace`, `test_interpreter`, `test_browser_driver`), import isolation (`test_isolation`).
 
+**Results (2026-10-12):** 1 — `tests`: 2325 passed, 27 skipped; fails: the 3 known R15 template tests + 1 flaky board-client timing test (passes alone). `pyside_gui/tests`: 355 passed; 1 known flaky clipboard test. 2 — not run (needs the Admiral's consent: global keyboard hook, real UI). 3 — S1/S2 manual checks passed; repair via chat and the GUI view/cards not yet checked by hand. 4 — all must-fail checks present.
+
 ## Next Action
-`deliver` Subtask 20 (docs), then integrated verification.
+Admiral: review the branch; run Verification 2 (desktop tests, consent) and 3 (manual cross-app record / break / repair); then decide on merging `task/rpa-computer-use` into `main`.
