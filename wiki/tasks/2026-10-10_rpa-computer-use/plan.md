@@ -497,7 +497,7 @@ def pytest_collection_modifyitems(config, items):
 - **Task folder:** `wiki/tasks/2026-10-10_rpa-computer-use/`
 
 ## Overall Status
-In Progress — S1 code complete; S1 manual checkpoint pending
+In Progress — S1 complete (manual check passed); S2 next
 
 ## Notes
 - R20 prerequisite merged to `main` (`467ad01b`) and into this branch (`b71bbb8b`).
@@ -521,6 +521,7 @@ In Progress — S1 code complete; S1 manual checkpoint pending
 
 ## Attempts and Resolutions
 - **S1 manual check, attempt 1 (2026-10-11, session `session_2026-10-11_08-32-16`):** the `ui_*` tools were absent (`computer_use` unset, and the `tools:` allowlist would drop them), so the agent scripted the rpa drivers through `bash` and bypassed the safety gates; `key` sent `^+s` literally (uiautomation notation is `{Ctrl}{Shift}s`); a launched GUI app inherited the caller's stdout pipe so `bash` returned "[no output]". -> Fixed: driver-neutral chord syntax (`rpa/keys.py`, e.g. `ctrl+shift+s`) in both drivers and the tool description; `type` escapes uiautomation braces; `launch()` uses DEVNULL handles + `close_fds`; `computer_use: true` lets the four `ui_*` tools pass a `tools:` allowlist. Residual risk: an agent can always script the drivers via `bash` and skip the gates.
+- **S1 manual check, attempt 2 (2026-10-11, session `session_2026-10-11_08-53-15`): passed.** Notepad typed + Save As via `ctrl+shift+s`; Firefox fixture Comment = "hi"; all through `ui_*` tools. Rough edges fixed: target `"[1]"` and region `[0]` crashed (now accepted/validated); dagi's own Firefox appeared as a `w:` desktop root (now excluded via `FirefoxDriver.pids()`). Open: first `check_app` for Notepad was denied, the next call allowed (Admiral to confirm the answer given); ESC not exercised in the log; `ui_roots` shows every window title to the model provider (privacy).
 
 ## Verification
 1. `C:\Users\alexr\miniconda3\envs\dagi\python.exe -u -m pytest -q -p no:pytest-qt tests` → all pass except the known `tests/test_workflow_plan_template.py` failures (R15).
