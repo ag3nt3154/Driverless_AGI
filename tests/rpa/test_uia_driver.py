@@ -272,7 +272,7 @@ def test_real_input_is_refused_when_another_window_is_in_front(monkeypatch):
         sent: list = []
         def SetFocus(self):
             return True
-        def SendKeys(self, keys):
+        def SendKeys(self, keys, interval=None):
             self.sent.append(keys)
 
     monkeypatch.setattr(uia, "_failsafe_check", lambda: None)
@@ -299,7 +299,7 @@ def _patched_dispatch_driver(monkeypatch):
             self.sent = []
         def SetFocus(self):
             return True
-        def SendKeys(self, keys):
+        def SendKeys(self, keys, interval=None):
             self.sent.append(keys)
 
     guards = []
@@ -388,3 +388,18 @@ def test_roots_skip_pids_from_the_exclude_callable(monkeypatch):
     assert {r.pid for r in driver.roots()} == {111, 222}
     later.add(222)
     assert {r.pid for r in driver.roots()} == {111}
+
+
+def test_com_errors_become_rpa_errors(monkeypatch):
+    from _ctypes import COMError
+    from rpa import RpaError
+    from rpa.drivers import uia
+    from rpa.model import Root
+
+    def boom(root, depth=None):
+        raise COMError(-2147220991, "An event was unable to invoke any of the subscribers", (None,) * 5)
+
+    driver = uia.UiaDriver()
+    monkeypatch.setattr(driver, "_walk", boom)
+    with pytest.raises(RpaError, match="UI Automation call failed"):
+        driver.outline(Root(id="1", kind="window", title="T", pid=1, url=None, app="a.exe"))

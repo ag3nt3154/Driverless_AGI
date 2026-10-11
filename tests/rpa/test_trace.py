@@ -171,3 +171,23 @@ def test_title_and_url_patterns_are_anchored():
     assert re.search(_title_re("Report 42 - App"), "*Report 7 - App")
     assert re.search(_url_re("http://h/p?q=1"), "http://h/p?q=2")
     assert re.search(_url_re("http://h/p"), "http://h/p/other") is None
+
+
+def test_expect_builds_locators_for_one_new_element_only(monkeypatch):
+    """A dialog adds 100+ elements; building locators for each took minutes on UIA."""
+    from rpa import trace
+    from rpa.model import Element, Outline, Root
+    root = Root(id="w", kind="window", title="App", pid=1, url=None, app="a.exe")
+    target = Element(index=0, role="Edit", name="Doc", automation_id="doc", bbox=(0, 0, 9, 9),
+                     value="x", secure=False, interactive=True)
+    before = Outline(root=root, elements=[target], taken_at=0.0)
+    new = [Element(index=i, role="Button", name=f"b{i}", automation_id=None, bbox=(0, 0, 9, 9),
+                   value=None, secure=False, interactive=True) for i in range(1, 150)]
+    dialog = Element(index=150, role="Window", name="Save as", automation_id=None, bbox=(0, 0, 9, 9),
+                     value=None, secure=False, interactive=False)
+    after = Outline(root=root, elements=[target, *new, dialog], taken_at=1.0)
+    built: list = []
+    monkeypatch.setattr(trace, "generate_locators", lambda d, r, el: (built.append(el), [{"uia": {"name": el.name}}])[1])
+    candidates = trace._expect_candidates(None, root, target, before, after)
+    assert built == [dialog]
+    assert {"present": {"uia": {"name": "Save as"}}} in candidates

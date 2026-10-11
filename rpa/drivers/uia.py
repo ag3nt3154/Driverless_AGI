@@ -19,6 +19,7 @@ wrong for it.
 from __future__ import annotations
 
 import ctypes
+import functools
 import os
 import subprocess
 import time
@@ -27,6 +28,7 @@ from typing import Callable
 
 import psutil
 import uiautomation as auto
+from _ctypes import COMError as _COMError
 
 from rpa import RpaError
 from rpa.drivers.base import WrongElement
@@ -34,6 +36,8 @@ from rpa.keys import escape_uia_text, to_uia
 from rpa.model import ACTIONS, Element, Locator, Outline, Root, validate_locator
 
 MAX_DEPTH = 30
+# Seconds between keystrokes: Win11 Notepad (WinUI) garbled text sent at 0.01 s.
+_KEY_INTERVAL_S = 0.04
 MAX_NODES = 1500
 
 #: Known Electron apps that need `--force-renderer-accessibility` to expose a
@@ -137,6 +141,18 @@ def _make_dpi_aware() -> None:
         pass
 
 
+
+def _com_guard(method):
+    """COM errors from UI Automation (e.g. EVENT_E_ALL_SUBSCRIBERS_FAILED while a modal
+    dialog opens) become RpaError, so callers report them instead of crashing."""
+    @functools.wraps(method)
+    def wrapper(*args, **kwargs):
+        try:
+            return method(*args, **kwargs)
+        except _COMError as exc:
+            raise RpaError(f"UI Automation call failed ({method.__name__}): {exc}") from exc
+    return wrapper
+
 def _identity(element: Element) -> tuple:
     return element.role, element.name, element.automation_id, element.path
 
@@ -191,6 +207,7 @@ class UiaDriver:
 
     # -- Driver protocol -------------------------------------------------
 
+    @_com_guard
     def roots(self) -> list[Root]:
         excluded = self._exclude_pids | (self._exclude() if self._exclude else set())
         out: list[Root] = []
@@ -209,12 +226,14 @@ class UiaDriver:
             )
         return out
 
+    @_com_guard
     def outline(self, root: Root, *, query: str | None = None, depth: int | None = None) -> Outline:
         elements, _controls = self._walk(root, depth=depth)
         if query is not None:
             elements = [e for e in elements if query.lower() in e.name.lower()]
         return Outline(root=root, elements=elements)
 
+    @_com_guard
     def find(self, root: Root, locator: Locator) -> list[Element]:
         validate_locator(locator)
         kind = next(iter(locator))
@@ -228,6 +247,7 @@ class UiaDriver:
         # css/aria/ocr/image: not resolved by the desktop driver.
         return []
 
+    @_com_guard
     def act(self, root: Root, element: Element, action: str, value: str | None = None) -> None:
         if action not in ACTIONS:
             raise RpaError(f"UiaDriver.act: unknown action {action!r}")
@@ -245,6 +265,7 @@ class UiaDriver:
             )
         self._dispatch(ctrl, action, value, root)
 
+    @_com_guard
     def screenshot(self, root: Root, region: tuple[int, int, int, int] | None = None):
         import mss
         from PIL import Image
@@ -263,11 +284,13 @@ class UiaDriver:
     def needs_desktop_lock(self, action: str) -> bool:
         return action in _LOCK_ACTIONS
 
+    @_com_guard
     def needs_desktop_lock_to_observe(self, root: Root) -> bool:
         """Observing a minimized window restores it first, which takes focus."""
         wp = self._get_window(root).GetPattern(auto.PatternId.WindowPattern)
         return wp is not None and wp.WindowVisualState == auto.WindowVisualState.Minimized
 
+    @_com_guard
     def launch(self, target: str) -> Root:
         exe_name = os.path.basename(target)
         args = electron_launch_args(exe_name)
@@ -390,7 +413,7 @@ class UiaDriver:
             _before_real_input(root)
             ctrl.SetFocus()
             _before_real_input(root)  # SetFocus must not have moved focus out of root
-            ctrl.SendKeys(keys)
+            ctrl.SendKeys(keys, interval=_KEY_INTERVAL_S)
         elif action == "scroll":
             self._scroll(ctrl, value)
         elif action == "select":

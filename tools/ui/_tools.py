@@ -343,16 +343,20 @@ class UiActTool(BaseTool):
         except RpaError as exc:  # e.g. close_window closed the root itself
             new_outline = None
             gone = f"{done}\n(root {root} can no longer be observed: {exc})"
+        not_recorded = None
         if session.recorder is not None:
-            session.recorder.record_act(
-                root_obj, element, action, value, before_outline, new_outline, prepared=prepared,
-            )
+            try:
+                session.recorder.record_act(
+                    root_obj, element, action, value, before_outline, new_outline, prepared=prepared,
+                )
+            except Exception as exc:  # noqa: BLE001 — the act already happened; say so
+                not_recorded = f"(warning: this act was NOT recorded: {exc})"
         if new_outline is None:
-            return gone
+            return gone if not_recorded is None else f"{gone}\n{not_recorded}"
         new_obs_id = session.store.record(new_outline)
         diff_lines = diff(before_outline, new_outline)
 
-        lines = [done, *diff_lines, new_obs_id]
+        lines = [done, *diff_lines, *([not_recorded] if not_recorded else []), new_obs_id]
         return "\n".join(lines)
 
 

@@ -85,12 +85,18 @@ def _expect_candidates(
     if before.root.title != after.root.title:
         candidates.append({"window": after.root.title})
 
+    # One "present" candidate only: locator generation walks the whole tree several
+    # times per element, and a dialog adds 100+ elements (a Save As dialog made this
+    # take over a minute and time UIA out). Prefer a new window/dialog, else the
+    # first new interactive element.
     before_keys = {_elem_key(el) for el in before.elements}
-    for el in after.elements:
-        if _elem_key(el) in before_keys:
-            continue
+    new = [el for el in after.elements if _elem_key(el) not in before_keys]
+    pick = next((el for el in new if el.role in ("Window", "Dialog")), None) or next(
+        (el for el in new if el.interactive), None
+    )
+    if pick is not None:
         try:
-            locators = generate_locators(driver, root, el)
+            locators = generate_locators(driver, root, pick)
         except RpaError:
             locators = []
         if locators:
