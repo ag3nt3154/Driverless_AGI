@@ -337,7 +337,20 @@ class AgentLoop:
             code.force_kill()
         _subagent_runner.force_kill_active_subagents(owner=self._owner_id)
         self._close_active_stream()
+        self._release_ui_lock()
         return True
+
+    def _release_ui_lock(self) -> None:
+        """Release the computer-use desktop lock, if ui_act is registered (Subtask 10).
+
+        Looked up by name — same pattern as bash/code above — so this is a no-op
+        when computer_use is off. Called from interrupt() and from the turn-close
+        path in run()'s finally block, which is the narrowest hook that always
+        fires exactly once per turn regardless of how the turn ended.
+        """
+        ui_act = self.registry._tools.get("ui_act")
+        if ui_act is not None:
+            ui_act.release_lock()
 
     def _close_active_stream(self) -> None:
         stream = self._active_stream
@@ -794,6 +807,7 @@ class AgentLoop:
             # Defensive: any exit path added later without an explicit close
             # still leaves the log well-formed rather than half-open.
             self.turns.close_turn(sev.reason_error("turn closed without a reason"))
+            self._release_ui_lock()
 
     def _run_reload(self) -> str:
         added, removed, errors = self._rebuild_for_reload()

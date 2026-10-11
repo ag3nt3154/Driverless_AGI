@@ -33,6 +33,7 @@ def _config(project: Path, **overrides) -> MagicMock:
     cfg.disabled_tools = []
     cfg.sandbox_mode = False
     cfg.code_mode = False  # a bare MagicMock attribute is truthy
+    cfg.computer_use = False  # a bare MagicMock attribute is truthy
     cfg.advanced_config = None
     cfg.worker_config = None
     cfg.autonomous = False
@@ -140,6 +141,27 @@ def test_code_mode_respects_disabled_tools(tmp_path):
     config = _config(tmp_path, code_mode=True, disabled_tools=["code"])
 
     assert "code" not in _names(config, tmp_path)
+
+
+def test_computer_use_inserts_ui_tools_after_file_tools(tmp_path):
+    kwargs = dict(callbacks=AgentCallbacks(), skill_roots=[tmp_path])
+    off = _names(_config(tmp_path), tmp_path, **kwargs)
+    on = _names(_config(tmp_path, computer_use=True), tmp_path, **kwargs)
+
+    ui_tools = ["ui_roots", "ui_observe", "ui_act", "ui_wait"]
+    assert on == _FILE_TOOLS + ui_tools + off[len(_FILE_TOOLS):]
+
+
+def test_computer_use_with_code_mode_puts_ui_tools_after_code(tmp_path):
+    kwargs = dict(callbacks=AgentCallbacks(), skill_roots=[tmp_path])
+    config = _config(tmp_path, code_mode=True, computer_use=True)
+
+    names = _names(config, tmp_path, **kwargs)
+
+    assert names[: len(_FILE_TOOLS) + 1] == _FILE_TOOLS + ["code"]
+    assert names[len(_FILE_TOOLS) + 1 : len(_FILE_TOOLS) + 5] == [
+        "ui_roots", "ui_observe", "ui_act", "ui_wait",
+    ]
 
 
 def test_board_tools_take_emote_slot_before_show_file(tmp_path):

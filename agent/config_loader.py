@@ -307,6 +307,7 @@ def _build_config_from_entry(
     disabled_tools: list[str] | None = raw.get("disabled_tools") or None
     sandbox_mode = bool(raw.get("sandbox_mode", False))
     code_mode = bool(raw.get("code_mode", True))  # global only, never per-model
+    computer_use = bool(raw.get("computer_use", False))  # global only, never per-model
     system_prompt_preamble = str(raw.get("system_prompt_preamble", "") or "")
     provider_order: list[str] | None = entry.get("provider_order") or None
     client_script: str | None = entry.get("client_script") or None
@@ -359,6 +360,7 @@ def _build_config_from_entry(
         disabled_tools=disabled_tools,
         sandbox_mode=sandbox_mode,
         code_mode=code_mode,
+        computer_use=computer_use,
         system_prompt_preamble=system_prompt_preamble,
         provider_order=provider_order,
         client_script=client_script,

@@ -98,6 +98,10 @@ class AgentConfig:
     # defaults the config-file value to True; this dataclass default keeps tests and
     # benchmarks unchanged.
     code_mode: bool = False
+    # Computer use: register the ui_roots/ui_observe/ui_act/ui_wait tools (desktop +
+    # Firefox control via rpa/). config_loader defaults the config-file value to False
+    # (global only, like code_mode) — this dataclass default keeps tests unchanged.
+    computer_use: bool = False
     # Benchmark/sandbox environment preamble injected at the TOP of the system prompt.
     system_prompt_preamble: str = ""
     # OpenRouter provider routing: ordered list of provider slugs to try in sequence

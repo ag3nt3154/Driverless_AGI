@@ -159,6 +159,19 @@ def _register_file_tools(
         reg.register(CodeTool(registry=reg, cwd=cwd))
 
 
+def _register_ui_tools(
+    reg: ToolRegistry, config: "AgentConfig | None", callbacks: "AgentCallbacks | None",
+) -> None:
+    """The four computer-use tools (ui_roots/ui_observe/ui_act/ui_wait), gated on
+    config.computer_use — mirrors how `code` is gated on config.code_mode above."""
+    if config is None or not config.computer_use:
+        return
+    from tools.ui import UiActTool, UiObserveTool, UiRootsTool, UiSession, UiWaitTool
+    session = UiSession(config, callbacks)
+    for tool_cls in (UiRootsTool, UiObserveTool, UiActTool, UiWaitTool):
+        reg.register(tool_cls(session))
+
+
 def _register_frontend_tools(
     reg: ToolRegistry, callbacks: "AgentCallbacks | None", project_path: Path,
     *, cwd: Path, roots: list[Path] | None, image_reader=None,
@@ -350,6 +363,7 @@ def create_tool_registry(
     reg = ToolRegistry()
     roots = _sandbox_roots(cwd, allowed_roots, config)
     _register_file_tools(reg, cwd, roots, config)
+    _register_ui_tools(reg, config, callbacks)
     _register_session_tools(
         reg, cwd=cwd, roots=roots, config=config, callbacks=callbacks,
         tracker=tracker, bash_tool=bash_tool,
