@@ -148,7 +148,7 @@ def test_computer_use_inserts_ui_tools_after_file_tools(tmp_path):
     off = _names(_config(tmp_path), tmp_path, **kwargs)
     on = _names(_config(tmp_path, computer_use=True), tmp_path, **kwargs)
 
-    ui_tools = ["ui_roots", "ui_observe", "ui_act", "ui_wait"]
+    ui_tools = ["ui_roots", "ui_observe", "ui_act", "ui_wait", "rpa_record", "rpa_save"]
     assert on == _FILE_TOOLS + ui_tools + off[len(_FILE_TOOLS):]
 
 
@@ -159,8 +159,8 @@ def test_computer_use_with_code_mode_puts_ui_tools_after_code(tmp_path):
     names = _names(config, tmp_path, **kwargs)
 
     assert names[: len(_FILE_TOOLS) + 1] == _FILE_TOOLS + ["code"]
-    assert names[len(_FILE_TOOLS) + 1 : len(_FILE_TOOLS) + 5] == [
-        "ui_roots", "ui_observe", "ui_act", "ui_wait",
+    assert names[len(_FILE_TOOLS) + 1 : len(_FILE_TOOLS) + 7] == [
+        "ui_roots", "ui_observe", "ui_act", "ui_wait", "rpa_record", "rpa_save",
     ]
 
 
@@ -180,5 +180,6 @@ def test_computer_use_tools_pass_a_tools_allowlist(tmp_path):
     on = _names(_config(tmp_path, tools=["read", "bash"], computer_use=True), tmp_path, **kwargs)
     off = _names(_config(tmp_path, tools=["read", "bash"]), tmp_path, **kwargs)
 
-    assert {"ui_roots", "ui_observe", "ui_act", "ui_wait"} <= set(on)
-    assert not {"ui_roots", "ui_observe", "ui_act", "ui_wait"} & set(off)
+    ui_and_rpa = {"ui_roots", "ui_observe", "ui_act", "ui_wait", "rpa_record", "rpa_save"}
+    assert ui_and_rpa <= set(on)
+    assert not ui_and_rpa & set(off)

@@ -127,9 +127,13 @@ class UiRootsTool(BaseTool):
         try:
             if launch:
                 if launch.startswith("http://") or launch.startswith("https://"):
-                    session.remember(session.browser(), session.browser().launch(launch))
+                    launched_root = session.browser().launch(launch)
+                    session.remember(session.browser(), launched_root)
                 else:
-                    session.remember(session.uia(), session.launch_window(launch))
+                    launched_root = session.launch_window(launch)
+                    session.remember(session.uia(), launched_root)
+                if session.recorder is not None:
+                    session.recorder.record_launch(launched_root, launch)
 
             lines = ["root_id | kind | app | title"]
             hidden = 0
@@ -321,20 +325,27 @@ class UiActTool(BaseTool):
             if driver.needs_desktop_lock(action):
                 session.lock.acquire(session.agent_name)
 
+            # While recording, take locators from the UI as it is before the act.
+            prepared = session.recorder.prepare(root_obj, element) if session.recorder is not None else None
             driver.act(root_obj, element, action, _resolve_value(value, element))
         except RpaError as exc:
             return _error_result(exc)
 
         done = f'ok: {action} [{element.index}] {element.role} "{element.name}"'
+        gone = None
         try:
             new_outline = driver.outline(root_obj)
         except RpaError as exc:  # e.g. close_window closed the root itself
-            return f"{done}\n(root {root} can no longer be observed: {exc})"
+            new_outline = None
+            gone = f"{done}\n(root {root} can no longer be observed: {exc})"
+        if session.recorder is not None:
+            session.recorder.record_act(
+                root_obj, element, action, value, before_outline, new_outline, prepared=prepared,
+            )
+        if new_outline is None:
+            return gone
         new_obs_id = session.store.record(new_outline)
         diff_lines = diff(before_outline, new_outline)
-
-        if session.recorder is not None:
-            session.recorder.record_act(root_obj, element, action, value, before_outline, new_outline)
 
         lines = [done, *diff_lines, new_obs_id]
         return "\n".join(lines)

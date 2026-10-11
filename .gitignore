@@ -200,6 +200,7 @@ snapshots/
 benchmarks/jobs/*
 jobs/*
 .dagi/temp/
+.dagi/rpa/                 # computer use: Firefox profile (logins), workflows, crops (screen content)
 models/docling_models/docling-project--docling-layout-heron/*
 models/docling_models/docling-project--docling-models/*
 

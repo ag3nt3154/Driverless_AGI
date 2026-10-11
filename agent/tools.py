@@ -170,6 +170,9 @@ def _register_ui_tools(
     session = UiSession(config, callbacks)
     for tool_cls in (UiRootsTool, UiObserveTool, UiActTool, UiWaitTool):
         reg.register(tool_cls(session))
+    from tools.rpa import RpaRecordTool, RpaSaveTool
+    reg.register(RpaRecordTool(session))
+    reg.register(RpaSaveTool(session))
 
 
 def _register_frontend_tools(
@@ -318,9 +321,10 @@ def _apply_filters_and_handoff(reg: ToolRegistry, config: "AgentConfig | None") 
     """Apply config allow/deny lists, then inject the canonical write_handoff."""
     if config is not None and config.tools is not None:
         allowed = list(config.tools)
-        if config.computer_use:  # an explicit opt-in: the ui_* tools pass the allowlist
+        if config.computer_use:  # an explicit opt-in: the ui_*/rpa_* tools pass the allowlist
+            from tools.rpa import RPA_TOOL_NAMES
             from tools.ui import UI_TOOL_NAMES
-            allowed += [name for name in UI_TOOL_NAMES if name not in allowed]
+            allowed += [name for name in (*UI_TOOL_NAMES, *RPA_TOOL_NAMES) if name not in allowed]
         reg.filter_to(allowed)
     if config is not None and config.disabled_tools:
         reg.filter_out(config.disabled_tools)
