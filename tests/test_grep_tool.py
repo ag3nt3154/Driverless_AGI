@@ -247,3 +247,21 @@ class TestFallbackTransition:
             result = tool.run(pattern="data", path=str(tmp_path))
 
         assert "data" in result
+
+
+
+def test_rg_output_is_decoded_as_utf8(tmp_path, monkeypatch):
+    """'Ð' is C3 90 in UTF-8; 0x90 is undefined in cp1252, so the default Windows decoding
+    crashed rg's reader thread and lost the result. Run a real child that prints UTF-8
+    bytes with exactly the subprocess.run arguments the tool passes for rg."""
+    import sys
+    real_run = sp.run
+    line = f"{tmp_path / 'f.txt'}:1:needle Ðx\n"
+
+    def fake_rg(cmd, **kwargs):
+        child = [sys.executable, "-c", f"import sys; sys.stdout.buffer.write({line!r}.encode('utf-8'))"]
+        return real_run(child, **kwargs)
+
+    monkeypatch.setattr(grep_module.subprocess, "run", fake_rg)
+    result = _make_tool(tmp_path).run(pattern="needle", path=str(tmp_path))
+    assert "needle Ðx" in result
