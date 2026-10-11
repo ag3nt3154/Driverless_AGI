@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import collections
 import contextlib
+import contextvars
 import json
 import os
 import subprocess
@@ -22,7 +23,7 @@ import tempfile
 import threading
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import IO, Callable
+from typing import IO, Callable, Iterator
 
 from agent import DAGI_ROOT as _DAGI_ROOT
 from agent._process_kill import kill_process_tree
@@ -47,10 +48,32 @@ class _SubagentState:
     total_output_ref: list = field(default_factory=lambda: [0])
     reader_thread: threading.Thread | None = None
     output_log_path: Path | None = None
+    owner: str | None = None
 
 
 _active: dict[int, _SubagentState] = {}
 _active_lock = threading.Lock()
+
+# Who spawns subagents in this context (an AgentLoop's owner id). Per thread, so the
+# GUI's concurrent agent loops each see only their own value.
+_current_owner: contextvars.ContextVar[str | None] = contextvars.ContextVar(
+    "dagi_subagent_owner", default=None,
+)
+
+
+def current_owner() -> str | None:
+    """The owner that a subagent spawned here would be recorded under."""
+    return _current_owner.get()
+
+
+@contextlib.contextmanager
+def owner_scope(owner: str) -> Iterator[None]:
+    """Record subagents spawned inside this block as belonging to ``owner``."""
+    token = _current_owner.set(owner)
+    try:
+        yield
+    finally:
+        _current_owner.reset(token)
 
 
 def owns_fork_context_path(path: Path) -> bool:
@@ -224,14 +247,21 @@ def _poll_until(
         time.sleep(_POLL_INTERVAL)
 
 
-def force_kill_active_subagents() -> int:
-    """Force-kill every currently in-flight subagent's process tree.
+_ALL_OWNERS = object()
 
-    Best-effort. Forced termination is terminal, so it also releases the
-    state-owned task and fork-context files. Returns the number of processes killed.
+
+def force_kill_active_subagents(owner: str | None | object = _ALL_OWNERS) -> int:
+    """Force-kill in-flight subagents' process trees: ``owner``'s only, or every one.
+
+    An interrupted loop passes its own owner id so other loops' children survive.
+    No argument kills all of them (application shutdown). Best-effort. Forced
+    termination is terminal, so it also releases the state-owned task and
+    fork-context files. Returns the number of processes killed.
     """
     with _active_lock:
-        states = list(_active.values())
+        states = [
+            s for s in _active.values() if owner is _ALL_OWNERS or s.owner == owner
+        ]
     killed = 0
     for state in states:
         kill_process_tree(state.proc)
@@ -323,6 +353,7 @@ def run_subagent(
         output_buf=buf,
         total_output_ref=total_ref,
         output_log_path=output_log_path,
+        owner=_current_owner.get(),
     )
 
     t = threading.Thread(
