@@ -3,12 +3,18 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Protocol
 
+from rpa import RpaError
 from rpa.model import ACTIONS, Element, Locator, Outline, Root
 
 if TYPE_CHECKING:
     from PIL import Image
 
-__all__ = ["ACTIONS", "Driver"]
+__all__ = ["ACTIONS", "Driver", "WrongElement"]
+
+
+
+class WrongElement(RpaError):
+    """The live element a driver is about to act on is not the one it was given."""
 
 
 class Driver(Protocol):

@@ -1,0 +1,19 @@
+<!doctype html><html><head><title>S0 fixture</title></head><body>
+<h1>S0 fixture</h1>
+<nav><a href="#a">Home</a> <a href="#b">Reports</a></nav>
+<form id="f">
+  <label for="d">From date</label><input id="d" name="from" type="date">
+  <label>Comment <input name="comment" placeholder="say hi"></label>
+  <input type="password" name="pw" aria-label="Password">
+  <input type="file" name="report" id="up">
+  <button type="button" data-testid="export-btn">Export CSV</button>
+  <button type="button">OK</button><button type="button">OK</button>
+  <div role="button" tabindex="0" aria-label="Upload report"></div>
+  <select name="fmt"><option>CSV</option><option>XLSX</option></select>
+</form>
+<div id="late"></div>
+<p id="upname"></p>
+<script>
+setTimeout(()=>{document.getElementById('late').innerHTML='<button>Appeared late</button>'},1500);
+document.getElementById('up').addEventListener('change',e=>{document.getElementById('upname').textContent='uploaded:'+e.target.files[0].name});
+</script></body></html>
