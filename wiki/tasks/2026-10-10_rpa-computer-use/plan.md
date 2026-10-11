@@ -34,7 +34,7 @@ Spec: decisions D1–D15 and S0 results in [`research.md`](research.md).
 
 ## Stage S1 — Live computer use
 
-### Subtask 1: Package skeleton, dependencies, test harness
+### Subtask 1: Package skeleton, dependencies, test harness — ✅ `9b4ae903`
 
 **Goal:** Create `rpa/` with its isolation rule, the dependency file and the `desktop` test marker.
 **Requirements:**
@@ -82,7 +82,7 @@ def pytest_collection_modifyitems(config, items):
 - [ ] **Step 4: Run tests to verify they pass** — `pytest tests/rpa -v` → PASS.
 - [ ] **Step 5: Return for review.**
 
-### Subtask 2: Driver interface, data model, fake driver
+### Subtask 2: Driver interface, data model, fake driver — ✅ `c08baefa`
 
 **Goal:** One protocol that the UIA, browser and fake drivers implement, plus the shared data types.
 **Requirements:**
@@ -111,7 +111,7 @@ def pytest_collection_modifyitems(config, items):
 - [ ] Step 4: run → PASS.
 - [ ] Step 5: return for review.
 
-### Subtask 3: Resolver
+### Subtask 3: Resolver — ✅ `5ec7ecb4`
 
 **Goal:** Turn a locator list into exactly one element, and generate a ranked, unique locator list for a chosen element.
 **Requirements:**
@@ -131,7 +131,7 @@ def pytest_collection_modifyitems(config, items):
 
 - [ ] Step 1: write failing tests for each criterion. Step 2: run → FAIL. Step 3: implement. Step 4: run → PASS. Step 5: return for review.
 
-### Subtask 4: Observations and diffs
+### Subtask 4: Observations and diffs — ✅ `113b6bd0`
 
 **Goal:** Give each outline an id, keep recent outlines per root, compute a short diff after each act, and format outlines as text for the model.
 **Requirements:**
@@ -150,7 +150,7 @@ def pytest_collection_modifyitems(config, items):
 
 - [ ] Steps 1–5 as above (TDD, then return for review).
 
-### Subtask 5: Desktop lock
+### Subtask 5: Desktop lock — ✅ `53a18d77`
 
 **Goal:** One holder of the real mouse and keyboard at a time across all agents and processes.
 **Requirements:**
@@ -168,7 +168,7 @@ def pytest_collection_modifyitems(config, items):
 
 - [ ] Steps 1–5.
 
-### Subtask 6: Safety gates
+### Subtask 6: Safety gates — ✅ `9397fb8b`
 
 **Goal:** Per-app permission and sensitive-action confirmation, with deny-by-default when nobody can answer.
 **Requirements:**
@@ -188,7 +188,7 @@ def pytest_collection_modifyitems(config, items):
 
 - [ ] Steps 1–5.
 
-### Subtask 7: UIA desktop driver
+### Subtask 7: UIA desktop driver — ✅ `1ac009aa`
 
 **Goal:** Implement `Driver` for Windows desktop apps with `uiautomation`.
 **Requirements:**
@@ -214,7 +214,7 @@ def pytest_collection_modifyitems(config, items):
 
 - [ ] Steps 1–5. Run desktop tests with `DAGI_DESKTOP_TESTS=1` unsandboxed.
 
-### Subtask 8: Browser driver (Firefox)
+### Subtask 8: Browser driver (Firefox) — ✅ `608d0029`
 
 **Goal:** Implement `Driver` for Firefox tabs through geckodriver + Selenium.
 **Requirements:**
@@ -240,7 +240,7 @@ def pytest_collection_modifyitems(config, items):
 
 - [ ] Steps 1–5.
 
-### Subtask 9: Screen capture and set-of-marks overlay
+### Subtask 9: Screen capture and set-of-marks overlay — ✅ `046fd6b8`
 
 **Goal:** Screenshots for the model, and crops for rung 4.
 **Requirements:**
@@ -287,7 +287,7 @@ def pytest_collection_modifyitems(config, items):
 
 - [ ] Steps 1–5.
 
-### Subtask 11: Screenshot retention at request build
+### Subtask 11: Screenshot retention at request build — ✅ `9fe1baa0`
 
 **Goal:** Only the last 3 UI screenshots reach the model.
 **Requirements:**
@@ -497,7 +497,7 @@ def pytest_collection_modifyitems(config, items):
 - **Task folder:** `wiki/tasks/2026-10-10_rpa-computer-use/`
 
 ## Overall Status
-Pending (plan awaiting approval)
+In Progress — Subtask 10
 
 ## Notes
 - R20 prerequisite merged to `main` (`467ad01b`) and into this branch (`b71bbb8b`).
@@ -505,6 +505,14 @@ Pending (plan awaiting approval)
 - S0 data: UIA walk ≈ 0.7–1.3 ms/node; Calculator ids stable across relaunch; Save dialog ids `1001`/`1`; Electron needs `--force-renderer-accessibility` and then has ~no ids; minimized windows expose ~nothing.
 - `ask_user` default handler (`agent/tools.py:_default_ask_user`) returns the recommended option: safety prompts must offer **no** recommended option and treat timeouts / `autonomous` as deny.
 - `scheduler/runner.py` auto-answers `ask_user` — never run `ui_*` tools there (D6).
+- Subtask 2: `Element.bbox` = (left, top, right, bottom), relative to the root window / browser viewport; every driver converts to this frame. `tests/__init__.py` added so `tests/rpa/` does not shadow the real `rpa` package. FakeDriver API: `FakeDriver(roots, trees, sizes=..., lock_actions=...)`; tree nodes are dicts with `role, name, automation_id, value, secure, css, bbox, children`.
+- Subtask 3: browser drivers store `Element.automation_id` as a ready CSS token (`#id`, else `[data-testid="x"]`); the resolver emits `{"css": token}` and checks stability on the raw value inside. `ocr` is omitted for unnamed elements. Review fix: `0x`-prefixed hex ids are unstable.
+- Subtask 5: in-process `threading.Lock` serializes agent threads; an unreadable lock file younger than 2 s is treated as mid-write (busy), not corrupt. Residual: two *processes* taking over the same dead holder at the same instant can both succeed (rare; GUI agents share one process).
+- Subtask 6: keyword gate cannot see that Enter in a message field sends; the per-app permission is the real boundary (D5).
+- Subtask 4: `rebind` trusts the observed index only when the element key is unique in both outlines or the outline is unchanged (review fix: duplicate "OK" buttons shifted silently); otherwise it re-resolves and refuses on ambiguity. No focus tracking in the model, so diffs omit focus changes. `resolver.css_token_value` is public.
+- Subtask 8: `outline.js` tags nodes with `data-dagi-i`; `act()` re-outlines and raises `drivers.base.WrongElement` unless the live node's role/name/automation_id equal the given Element (review fix). No iframe/shadow DOM traversal; `aria-hidden` not checked; `depth` ignored (v1).
+- Subtask 7: every real mouse/keyboard event goes through `_before_real_input` (failsafe corner, `SetActive`, foreground must be root or a window it owns, else `WrongElement`); `key` focuses the control first; `click` always needs the desktop lock (pattern-less fallback); new protocol method `needs_desktop_lock_to_observe(root)` (UIA: True when minimized) — Subtask 10 must take the lock before observing such a root. Qt AutomationIds are dotted paths (`...QWidget.btnExport`); a Qt modal dialog is nested in the parent's UIA tree, so `close_window` closes the nearest window ancestor. Process is made per-monitor DPI aware (best effort). `act`/`find` re-walk the whole tree (≈1–2 s worst case). `tk_fixture.py` has no test yet (poor-a11y case).
+- Subtask 11: `elide_old_ui_screenshots` runs in `_build_request_messages`; UI screenshots are recognised by the preceding text `[Image from read: ui_observe obs_N]`, so Subtask 10 must pass `path=f"ui_observe {obs_id}"`. Cost: each new screenshot elides an older one, which changes an earlier message and breaks the prompt-cache prefix from there (accepted by D4).
 
 ## Open Issues
 - `code:` escape-hatch steps (D1) need dagi's tool registry, which conflicts with "rpa/ must not import agent" for CLI runs. v1 rejects them with a clear error. Decide later: run them only from `rpa_run` (in-agent), or drop.
