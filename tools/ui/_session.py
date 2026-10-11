@@ -80,6 +80,9 @@ class UiSession:
         # Injected drivers (tests) get private state; real sessions share the process state.
         injected = uia_driver is not None or browser_driver is not None
         self._shared = _ProcessUiState() if injected else _PROCESS_STATE
+        # Real sessions watch for a physical Esc during replays (a keyboard hook);
+        # sessions with injected test drivers never install one.
+        self.watch_escape = not injected
         if uia_driver is not None:
             self._shared.uia_driver = uia_driver
         if browser_driver is not None:

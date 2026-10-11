@@ -5,10 +5,12 @@ or a session with no frontend always denies without asking.
 """
 from __future__ import annotations
 
+import contextlib
 from pathlib import Path
 
 from agent.base_tool import BaseTool
 from rpa import RpaError
+from rpa.hotkey import EscWatcher
 from rpa.interpreter import run_workflow
 from rpa.safety import is_allow_answer
 from rpa.store import WorkflowStore
@@ -110,11 +112,14 @@ class RpaRunTool(BaseTool):
         except RpaError:
             pass
         try:
-            result = run_workflow(
-                store, name, drivers=drivers, params=params or {}, confirm=_confirm_for(session),
-                start_at=from_step, verify=verify, lock=session.lock, agent=session.agent_name,
-                cancelled=session.cancel_event.is_set,
-            )
+            # Esc in the driven app (not only in dagi's window) stops the replay.
+            watcher = EscWatcher(session.cancel_event.set) if session.watch_escape else contextlib.nullcontext()
+            with watcher:
+                result = run_workflow(
+                    store, name, drivers=drivers, params=params or {}, confirm=_confirm_for(session),
+                    start_at=from_step, verify=verify, lock=session.lock, agent=session.agent_name,
+                    cancelled=session.cancel_event.is_set,
+                )
         except RpaError as exc:
             return _error(exc)
 

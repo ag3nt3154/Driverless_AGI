@@ -172,6 +172,12 @@ def run_workflow(
                 halt_root = halt.root
                 logs.append(StepLog(step.id, None, 0.0, "halted"))
                 break
+            except RpaError as exc:  # any other driver error (e.g. a COM failure): halt with evidence
+                halted_step = step.id
+                halt_reason = str(exc)
+                halt_root = None
+                logs.append(StepLog(step.id, None, 0.0, "halted"))
+                break
     finally:
         if lock is not None and lock_taken[0]:
             lock.release(agent)

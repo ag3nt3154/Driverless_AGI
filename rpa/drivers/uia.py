@@ -142,14 +142,27 @@ def _make_dpi_aware() -> None:
 
 
 
-def _com_guard(method):
-    """COM errors from UI Automation (e.g. EVENT_E_ALL_SUBSCRIBERS_FAILED while a modal
-    dialog opens) become RpaError, so callers report them instead of crashing."""
+_TRANSIENT_HRESULTS = {-2147220991}  # EVENT_E_ALL_SUBSCRIBERS_FAILED (seen while a dialog opens/closes)
+
+
+def _com_guard(method=None, *, retry: bool = False):
+    """COM errors from UI Automation become RpaError, so callers report them instead of
+    crashing. `retry=True` (read-only calls only — never acts, which could send input
+    twice) retries a transient error once after a short pause."""
+    if method is None:
+        return lambda m: _com_guard(m, retry=retry)
+
     @functools.wraps(method)
     def wrapper(*args, **kwargs):
         try:
             return method(*args, **kwargs)
         except _COMError as exc:
+            if retry and exc.args and exc.args[0] in _TRANSIENT_HRESULTS:
+                time.sleep(0.5)
+                try:
+                    return method(*args, **kwargs)
+                except _COMError as exc2:
+                    exc = exc2
             raise RpaError(f"UI Automation call failed ({method.__name__}): {exc}") from exc
     return wrapper
 
@@ -207,7 +220,7 @@ class UiaDriver:
 
     # -- Driver protocol -------------------------------------------------
 
-    @_com_guard
+    @_com_guard(retry=True)
     def roots(self) -> list[Root]:
         excluded = self._exclude_pids | (self._exclude() if self._exclude else set())
         out: list[Root] = []
@@ -226,14 +239,14 @@ class UiaDriver:
             )
         return out
 
-    @_com_guard
+    @_com_guard(retry=True)
     def outline(self, root: Root, *, query: str | None = None, depth: int | None = None) -> Outline:
         elements, _controls = self._walk(root, depth=depth)
         if query is not None:
             elements = [e for e in elements if query.lower() in e.name.lower()]
         return Outline(root=root, elements=elements)
 
-    @_com_guard
+    @_com_guard(retry=True)
     def find(self, root: Root, locator: Locator) -> list[Element]:
         validate_locator(locator)
         kind = next(iter(locator))
@@ -265,7 +278,7 @@ class UiaDriver:
             )
         self._dispatch(ctrl, action, value, root)
 
-    @_com_guard
+    @_com_guard(retry=True)
     def screenshot(self, root: Root, region: tuple[int, int, int, int] | None = None):
         import mss
         from PIL import Image
@@ -291,7 +304,7 @@ class UiaDriver:
             raise RpaError("UiaDriver.close_root: the window has no WindowPattern")
         wp.Close()
 
-    @_com_guard
+    @_com_guard(retry=True)
     def needs_desktop_lock_to_observe(self, root: Root) -> bool:
         """Observing a minimized window restores it first, which takes focus."""
         wp = self._get_window(root).GetPattern(auto.PatternId.WindowPattern)

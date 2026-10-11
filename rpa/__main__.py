@@ -8,11 +8,14 @@ RpaError or an unknown workflow before/around the run, or a bad `--param`).
 from __future__ import annotations
 
 import argparse
+import contextlib
 import sys
+import threading
 from pathlib import Path
 from typing import Callable
 
 from rpa import RpaError
+from rpa.hotkey import EscWatcher
 from rpa.interpreter import RunResult, run_workflow
 from rpa.lock import DesktopLock
 from rpa.safety import is_allow_answer
@@ -90,6 +93,7 @@ def _print_run_summary(result: RunResult) -> None:
 
 def _run_cmd(
     args, store: WorkflowStore, drivers: dict, input_fn: Callable[[str], str], isatty: Callable[[], bool],
+    watch_escape: bool = True,
 ) -> int:
     try:
         params = _parse_params(args.param)
@@ -116,10 +120,14 @@ def _run_cmd(
         return is_allow_answer(answer, "y")
 
     try:
-        result = run_workflow(
-            store, args.name, drivers=drivers, params=params, confirm=confirm,
-            start_at=args.from_step, verify=args.verify, lock=DesktopLock(), agent="rpa-cli",
-        )
+        stop = threading.Event()
+        # Esc anywhere stops the run (a real keyboard hook: only with real drivers).
+        with EscWatcher(stop.set) if watch_escape else contextlib.nullcontext():
+            result = run_workflow(
+                store, args.name, drivers=drivers, params=params, confirm=confirm,
+                start_at=args.from_step, verify=args.verify, lock=DesktopLock(), agent="rpa-cli",
+                cancelled=stop.is_set,
+            )
     except RpaError as exc:
         print(f"rpa: {exc}", file=sys.stderr)
         return 3
@@ -222,7 +230,7 @@ def main(
     owns_drivers = drivers is None
     run_drivers = drivers if drivers is not None else _default_drivers(project)
     try:
-        return _run_cmd(args, store, run_drivers, input_fn, isatty)
+        return _run_cmd(args, store, run_drivers, input_fn, isatty, watch_escape=owns_drivers)
     finally:
         if owns_drivers:
             _quit_browser(run_drivers)
