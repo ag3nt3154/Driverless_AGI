@@ -51,10 +51,15 @@ class _PageBridge(QObject):
     """Calls from the page to Python, over QWebChannel (``window._dagi``)."""
 
     cancel_queued = Signal(str)
+    rpa_repair = Signal(str)
 
     @Slot(str)
     def cancelQueued(self, queue_id: str) -> None:  # noqa: N802 - called from JS
         self.cancel_queued.emit(queue_id)
+
+    @Slot(str)
+    def rpaRepair(self, name: str) -> None:  # noqa: N802 - called from JS
+        self.rpa_repair.emit(name)
 
 
 class ConversationView(QWebEngineView):
@@ -67,6 +72,7 @@ class ConversationView(QWebEngineView):
     """
 
     queued_cancel_requested = Signal(str)  # ✕ on a queued message
+    rpa_repair_requested = Signal(str)  # Repair button on a halt card
 
     def __init__(self, verbose: bool = False) -> None:
         super().__init__()
@@ -82,6 +88,7 @@ class ConversationView(QWebEngineView):
         self.setPage(_ConversationPage(self))
         self._page_bridge = _PageBridge(self)
         self._page_bridge.cancel_queued.connect(self.queued_cancel_requested)
+        self._page_bridge.rpa_repair.connect(self.rpa_repair_requested)
         self._channel = QWebChannel(self)
         self._channel.registerObject("dagi", self._page_bridge)
         self.page().setWebChannel(self._channel)
@@ -238,6 +245,18 @@ class ConversationView(QWebEngineView):
             f"{self._js_str(_file_url(file_path))}, "
             f"{self._js_str(text)}, "
             f"{self._js_str(timestamp)})"
+        )
+
+    def append_rpa_halt_card(self, info) -> None:
+        """A halted rpa_run/rpa_patch (see ``pyside_gui.rpa_cards.HaltInfo``):
+        Screenshot / Repair / Dismiss. ``info.screenshot`` is ``None`` when
+        the run left no ``halt.png``."""
+        screenshot_url = _file_url(info.screenshot) if info.screenshot else ""
+        self._run_js(
+            f"appendRpaHaltCard({self._js_str(info.name)}, "
+            f"{self._js_str(info.step)}, "
+            f"{self._js_str(info.reason)}, "
+            f"{self._js_str(screenshot_url)})"
         )
 
     def append_subagent_event(

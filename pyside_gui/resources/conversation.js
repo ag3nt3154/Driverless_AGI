@@ -852,6 +852,25 @@ function appendEmoteCard(name, fileUrl, text, timestamp) {
     _insert(div);
 }
 
+function appendRpaHaltCard(name, step, reason, screenshotUrl) {
+    const div = _el('div', 'halt-card');
+    const screenshotHtml = screenshotUrl
+        ? `<a class="halt-btn halt-screenshot" href="${_escapeHtml(screenshotUrl)}">Screenshot</a>`
+        : `<span class="halt-btn halt-screenshot" hidden></span>`;
+    div.innerHTML =
+        `<div class="halt-header">${_icon('tool')}<span>Halted · ${_escapeHtml(name)}</span></div>` +
+        `<div class="halt-step">Step <code>${_escapeHtml(step)}</code></div>` +
+        `<div class="halt-reason">${_escapeHtml(reason)}</div>` +
+        `<div class="halt-actions">${screenshotHtml}` +
+        `<button type="button" class="halt-btn halt-repair">Repair</button>` +
+        `<button type="button" class="halt-btn halt-dismiss">Dismiss</button></div>`;
+    div.querySelector('.halt-repair').addEventListener('click', () => {
+        if (window._dagi) window._dagi.rpaRepair(name);
+    });
+    div.querySelector('.halt-dismiss').addEventListener('click', () => div.remove());
+    _insert(div);
+}
+
 function _subagentBlock(subagentType) {
     let block = document.getElementById(`subagent-${subagentType}`);
     if (!block) {

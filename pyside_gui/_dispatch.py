@@ -148,13 +148,18 @@ def workflow_action_refusal(session) -> str | None:
     return None
 
 
-def dispatch_workflow_action(win, text: str) -> None:
-    """Route a Workflows-view button click to the active session.
+def dispatch_workflow_action(win, text: str, session=None) -> None:
+    """Route a Workflows-view (or a conversation card's) button click to a session.
+
+    ``session`` defaults to the active one (the Workflows view); a card embedded
+    in a specific conversation (e.g. an rpa halt card's Repair button) passes the
+    session that owns it instead, so the message always lands in the right turn.
 
     Busy or mid-``ask_user`` -> a visible error line, nothing sent. Otherwise
     the message is shown and dispatched exactly like typed input.
     """
-    session = win._active
+    if session is None:
+        session = win._active
     refusal = workflow_action_refusal(session)
     if refusal is not None:
         session._conversation.append_error(refusal)

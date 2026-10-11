@@ -533,6 +533,40 @@ body {
 .emote-text { color: var(--fg); font-size: 14px; }
 .emote-time { color: var(--fg-tertiary); font-size: 11.5px; margin-top: 2px; }
 
+.halt-card {
+    background: var(--well-bg);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 12px 16px;
+    max-width: 460px;
+}
+
+.halt-header { display: flex; align-items: center; gap: 8px; font-weight: 600; color: var(--fg); }
+.halt-step { margin-top: 6px; color: var(--fg-secondary); font-size: 13px; }
+.halt-step code { font-family: var(--font-mono); }
+.halt-reason { margin-top: 4px; color: var(--fg); font-size: 14px; }
+
+.halt-actions {
+    display: flex;
+    gap: 8px;
+    margin-top: 10px;
+}
+
+.halt-btn {
+    font: 12.5px var(--font-ui);
+    color: var(--fg);
+    background: var(--chat-bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 5px 12px;
+    cursor: pointer;
+    text-decoration: none;
+}
+.halt-btn:hover { border-color: var(--link); }
+.halt-btn[hidden] { display: none; }
+.halt-repair { color: var(--link); border-color: var(--link); }
+.halt-dismiss:hover { color: var(--danger); border-color: var(--danger); }
+
 .subagent-block {
     border: 1px solid var(--border);
     border-radius: 12px;

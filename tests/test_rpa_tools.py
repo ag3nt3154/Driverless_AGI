@@ -481,6 +481,30 @@ def test_rpa_patch_rejects_literal_locator_without_asking(tmp_path):
     assert ask_spy.calls == []
 
 
+def test_rpa_patch_question_fences_the_diff(tmp_path):
+    session, _driver = _make_session(tmp_path)
+    store = _save_patch_wf(tmp_path)
+    UiRootsTool(session).run(launch="r1")
+    obs = _observe(session, "w:r1")
+    seen = []
+
+    def deny_after_seeing(question, options, timeout):
+        seen.append(question)
+        return "Reject"
+
+    session.callbacks.on_ask_user = deny_after_seeing
+    from tools.rpa import RpaPatchTool
+    ops = [{
+        "op": "replace_step", "step_id": "click_ok",
+        "step": {"target": {"root": "w:r1", "obs": obs, "index": 4}},
+    }]
+    out = RpaPatchTool(session).run(name="demo", ops=ops)
+
+    assert out == "not patched"
+    assert "```diff\n" in seen[0]
+    assert seen[0].rstrip().endswith("```")
+
+
 def test_rpa_patch_reject_leaves_yaml_byte_identical(tmp_path):
     session, _driver = _make_session(tmp_path)
     store = _save_patch_wf(tmp_path)

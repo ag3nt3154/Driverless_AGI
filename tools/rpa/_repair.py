@@ -7,6 +7,8 @@ lookup + observation + rebind, exactly like ui_act) and calls
 """
 from __future__ import annotations
 
+import re
+
 from agent.base_tool import BaseTool
 from rpa import RpaError
 from rpa.observe import rebind
@@ -25,6 +27,15 @@ _TARGET_DESC_KEYS = {"root", "obs", "index"}
 
 def _error(exc: RpaError) -> str:
     return f"Error ({type(exc).__name__}): {exc}"
+
+
+def _fence_diff(diff_text: str) -> str:
+    """Fence `diff_text` as a ```diff block, with a longer fence than any
+    backtick run already inside it (the page renders ask_user questions as
+    markdown, so an unfenced diff mangles)."""
+    longest = max((len(run) for run in re.findall(r"`+", diff_text)), default=0)
+    ticks = "`" * max(3, longest + 1)
+    return f"{ticks}diff\n{diff_text.rstrip(chr(10))}\n{ticks}"
 
 
 def _locators_from(session: UiSession, desc, field: str) -> list:
@@ -216,7 +227,7 @@ class RpaPatchTool(BaseTool):
         if not preview.diff_text:
             return f"no change: these ops leave {name!r} as it is; nothing to approve"
 
-        question = f"Patch workflow {name!r}?\n\n{preview.diff_text}"
+        question = f"Patch workflow {name!r}?\n\n{_fence_diff(preview.diff_text)}"
         options = [
             {"label": "Approve and re-run", "description": "Write this patch and re-run the workflow."},
             {"label": "Reject", "description": "Do not patch."},

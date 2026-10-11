@@ -24,6 +24,7 @@ from pyside_gui.bridge import AgentBridge
 from pyside_gui.commands import SlashCommandHandler, UIWidgets
 from pyside_gui.conversation import ConversationView
 from pyside_gui.overlays import CopyPicker
+from pyside_gui.rpa_cards import parse_rpa_halt
 from pyside_gui.steer_queue import SteerQueue
 from pyside_gui.utils import idle_emote_path
 from agent import DAGI_ROOT
@@ -132,6 +133,8 @@ class AgentSession(QObject):
         b, cv = self._bridge, self._conversation
         b.tool_started.connect(cv.append_tool_start)
         b.tool_ended.connect(cv.append_tool_end)
+        b.tool_ended.connect(self._on_tool_ended_rpa)
+        cv.rpa_repair_requested.connect(self._on_rpa_repair_requested)
         b.assistant_text.connect(self._on_assistant_text)
         b.handoff_text.connect(cv.append_assistant)
         b.stream_started.connect(self._on_stream_started)
@@ -369,6 +372,21 @@ class AgentSession(QObject):
         self._set_status("paused")
         self._conversation.append_info("Server error — session paused. Send a message to retry.")
         self._enable_input()
+
+    @Slot(str, str)
+    def _on_tool_ended_rpa(self, name: str, result: str) -> None:
+        """A halted rpa_run/rpa_patch gets a halt card alongside the tool result."""
+        info = parse_rpa_halt(name, result)
+        if info is not None:
+            self._conversation.append_rpa_halt_card(info)
+
+    @Slot(str)
+    def _on_rpa_repair_requested(self, name: str) -> None:
+        """Repair button on a halt card: the same refusal logic as the Workflows
+        view, routed to the session that owns this card's conversation."""
+        _dispatch.dispatch_workflow_action(
+            self.win, f"Repair workflow `{name}` (rpa_repair).", session=self,
+        )
 
     @Slot(str, object, object)
     def _on_ask_user(self, question: str, data: object, _unused: object) -> None:
