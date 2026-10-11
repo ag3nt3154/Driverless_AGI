@@ -187,3 +187,19 @@ def test_pids_cover_the_running_firefox(site_url, driver_factory):
     assert driver.pids() == set()
     driver.launch(site_url)
     assert driver.pids()
+
+
+@pytest.mark.desktop
+def test_close_root_closes_tabs_and_the_last_close_restarts_cleanly(site_url, driver_factory):
+    from rpa import RpaError
+    driver = driver_factory()
+    first = driver.launch(site_url)
+    second = driver.launch(site_url)
+    driver.close_root(second)
+    assert second.id not in {r.id for r in driver.roots()}
+    for root in driver.roots():
+        driver.close_root(root)
+    again = driver.launch(site_url)  # a dead session would raise here
+    assert again.url.startswith("http://127.0.0.1")
+    with pytest.raises(RpaError):
+        driver.outline(first)  # closed tab: a clear RpaError, not a raw Selenium error

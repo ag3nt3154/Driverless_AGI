@@ -333,6 +333,20 @@ def _run_act_step(
         lock.acquire(agent)
         lock_taken[0] = True
 
+    if step.act == "close_window" and not locators:  # close the root window/tab itself
+        if root is None:
+            raise _Halt("close_window without a target needs a root")
+        try:
+            _confirm_gate(step, store, name, confirm, verify)
+            drivers[root.kind].close_root(root)
+        except _NeedsApproval as exc:
+            raise _Halt(str(exc), root) from exc
+        except RpaError as exc:
+            if step.on_fail == "continue":
+                return StepLog(step.id, None, _ms(t0, clock), "failed"), root
+            raise _Halt(str(exc), root) from exc
+        return StepLog(step.id, 0, _ms(t0, clock), "ok"), root
+
     if is_start_step:
         if root is None:
             raise _Halt("pre-check failed")

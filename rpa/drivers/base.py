@@ -47,6 +47,10 @@ class Driver(Protocol):
         """True if `action` drives the real mouse/keyboard and needs the desktop lock."""
         ...
 
+    def close_root(self, root: Root) -> None:
+        """Close the root window / browser tab itself (no element needed)."""
+        ...
+
     def needs_desktop_lock_to_observe(self, root: Root) -> bool:
         """True if observing `root` changes the desktop (e.g. restoring a minimized window)."""
         ...

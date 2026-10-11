@@ -285,6 +285,13 @@ class UiaDriver:
         return action in _LOCK_ACTIONS
 
     @_com_guard
+    def close_root(self, root: Root) -> None:
+        wp = self._get_window(root).GetPattern(auto.PatternId.WindowPattern)
+        if wp is None:
+            raise RpaError("UiaDriver.close_root: the window has no WindowPattern")
+        wp.Close()
+
+    @_com_guard
     def needs_desktop_lock_to_observe(self, root: Root) -> bool:
         """Observing a minimized window restores it first, which takes focus."""
         wp = self._get_window(root).GetPattern(auto.PatternId.WindowPattern)

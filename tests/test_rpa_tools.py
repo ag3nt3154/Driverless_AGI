@@ -342,3 +342,12 @@ def test_recorded_acts_on_a_launched_window_compile_with_launched_by(tmp_path):
     UiActTool(session).run(root="w:r1", target=0, action="click", obs=obs)
     out = RpaSaveTool(session).run()
     assert "launched_by: step_01" in out, out
+
+
+def test_a_recorded_root_close_compiles_to_a_step_without_target(tmp_path):
+    session, _driver = _make_session(tmp_path)
+    RpaRecordTool(session).run(name="demo", goal="open and close")
+    UiRootsTool(session).run(launch="r1")
+    UiActTool(session).run(root="w:r1", action="close_window")
+    out = RpaSaveTool(session).run()
+    assert "act: close_window" in out and "target" not in out.split("act: close_window")[1].split("- id:")[0]

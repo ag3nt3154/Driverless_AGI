@@ -158,6 +158,17 @@ class Recorder:
         self._write({**_root_descriptor(root), "kind": "launch", "target": target,
                      "launch_id": self._launch_ids[root.id]})
 
+    def record_close(self, root: Root) -> None:
+        """The root window/tab itself was closed (no element, so no locators)."""
+        self._n += 1
+        self._write({
+            "kind": "act", "n": self._n, "action": "close_window", "value": None,
+            "root": {**_root_descriptor(root), **(
+                {"launch_id": self._launch_ids[root.id]} if root.id in self._launch_ids else {}
+            )},
+            "locators": [], "expect_candidates": [], "before": {},
+        })
+
     def prepare(self, root: Root, element: Element) -> dict:
         """Locators and crop for `element` as the UI is NOW — call before acting.
 

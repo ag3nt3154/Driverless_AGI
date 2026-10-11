@@ -154,6 +154,9 @@ class UiSession:
             root.pid in shared.owned_pids and root.id not in shared.preexisting
         )
 
+    def forget(self, root_id: str) -> None:
+        self._roots.pop(root_id, None)
+
     def lookup(self, root_id: str) -> "tuple[Driver, Root] | None":
         return self._roots.get(root_id)
 

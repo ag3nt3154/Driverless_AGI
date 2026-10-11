@@ -115,7 +115,7 @@ def compile_trace(entries: list[dict], name: str, goal: str) -> Workflow:
                 id=step_id,
                 act=entry["action"],
                 root=_compile_root(entry["root"], launch_steps),
-                target={"locators": entry["locators"]},
+                target={"locators": entry["locators"]} if entry["locators"] else None,
                 value=_compile_value(entry["value"], secrets),
                 expect=_compile_expect(entry.get("expect_candidates") or []),
                 confirm="once" if _is_sensitive_before(entry.get("before") or {}) else None,

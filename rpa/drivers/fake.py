@@ -97,6 +97,12 @@ class FakeDriver:
         # ocr/image: not resolved by the fake driver in v1.
         return []
 
+    def close_root(self, root: Root) -> None:
+        self.acts.append((root.id, None, "close_window", None))
+        for key, r in list(self._roots.items()):
+            if r.id == root.id:
+                del self._roots[key]
+
     def act(self, root: Root, element: Element, action: str, value: str | None = None) -> None:
         live = next((e for e in self.outline(root).elements if e.index == element.index), None)
         if live is None or (live.role, live.name, live.automation_id, live.path) != (

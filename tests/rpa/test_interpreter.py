@@ -649,3 +649,16 @@ def test_launched_window_gone_halts(tmp_path):
     result = run_workflow(store, "wf25", drivers={"window": driver, "browser": driver},
                           sleep=_no_sleep, clock=iter(range(0, 10_000, 5)).__next__)
     assert result.status == "halted" and "gone" in result.reason and driver.acts == []
+
+
+def test_close_window_step_without_target_closes_the_root(tmp_path):
+    store = _store(tmp_path)
+    _save(store, {"name": "wf26", "steps": [
+        {"id": "step_01", "launch": "notepad.exe"},
+        {"id": "step_02", "act": "close_window",
+         "root": {"window": {"title_re": "x", "launched_by": "step_01"}}},
+    ]})
+    mine = Root(id="w:3", kind="window", title="Notepad", pid=3, url=None, app="Notepad.exe")
+    driver = _driver({"w:3": []}, roots={"notepad.exe": mine})
+    result = run_workflow(store, "wf26", drivers={"window": driver, "browser": driver}, sleep=_no_sleep)
+    assert result.status == "ok" and ("w:3", None, "close_window", None) in driver.acts

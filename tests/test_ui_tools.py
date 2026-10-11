@@ -372,3 +372,35 @@ def test_real_sessions_share_opened_windows_and_drivers_across_turns():
     assert a._shared is b._shared
     injected = UiSession(_Cfg(), _AskSpy(), uia_driver=object())
     assert injected._shared is not a._shared
+
+
+def test_close_window_without_target_closes_the_root_itself():
+    session, driver, _ = _make_session(_BIG_TREE)
+    root_id = _observed_root_id(session)
+    out = UiActTool(session).run(root=root_id, action="close_window")
+    assert out.startswith("ok: close_window") and ("r1", None, "close_window", None) in driver.acts
+    assert session.lookup(root_id) is None
+
+
+def test_only_close_window_may_omit_the_target():
+    session, driver, _ = _make_session(_BIG_TREE)
+    root_id = _observed_root_id(session)
+    out = UiActTool(session).run(root=root_id, action="click")
+    assert out.startswith("Error") and driver.acts == []
+
+
+def test_closing_via_an_element_does_not_outline_a_closed_root(monkeypatch):
+    """Outlining a closing window blocked 82 s and ended in a COM error."""
+    session, driver, _ = _make_session(_BIG_TREE)
+    root_id = _observed_root_id(session)
+    obs = _observe(session, root_id)
+    real_act = driver.act
+
+    def act_and_close(root, el, action, value=None):
+        real_act(root, el, action, value)
+        driver._roots.clear()
+        monkeypatch.setattr(driver, "outline", lambda *a, **k: pytest.fail("outlined a closed root"))
+
+    monkeypatch.setattr(driver, "act", act_and_close)
+    out = UiActTool(session).run(root=root_id, target=0, action="close_window", obs=obs)
+    assert out.startswith("ok: close_window") and "closed" in out

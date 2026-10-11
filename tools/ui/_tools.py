@@ -253,6 +253,13 @@ def _resolve_value(value: "str | None", element) -> "str | None":
     return secret
 
 
+def _root_alive(driver, root_obj) -> bool:
+    try:
+        return any(r.id == root_obj.id for r in driver.roots())
+    except RpaError:
+        return False
+
+
 class UiActTool(BaseTool):
     name = "ui_act"
     description = (
@@ -265,6 +272,7 @@ class UiActTool(BaseTool):
         "(modifiers ctrl/shift/alt/win joined with +); for type, `value` is typed literally. "
         "Never put a real password or secret in `value`: pass `${env:NAME}` and the tool reads "
         "environment variable NAME (password fields accept only this form). "
+        "To close the root window/tab itself, use action=close_window with no target. "
         "Returns the new observation id to use for the next ui_act."
     )
     _parameters = {
@@ -278,7 +286,7 @@ class UiActTool(BaseTool):
             "sensitive": {"type": "boolean", "description": "Force a confirm even if the name has no keyword."},
             "allow_coords": {"type": "boolean", "description": "Allow a coords locator (last-resort rung)."},
         },
-        "required": ["root", "target", "action", "obs"],
+        "required": ["root", "action"],
     }
 
     def __init__(self, session: UiSession) -> None:
@@ -289,6 +297,25 @@ class UiActTool(BaseTool):
         self.session.cancel_event.set()
         self.session.end_turn()
 
+    def _close_root(self, driver, root_obj, root_id: str) -> str:
+        """close_window without a target: close the root window/tab itself."""
+        session = self.session
+        try:
+            session.safety.check_app(root_obj)
+            if driver.needs_desktop_lock("close_window"):
+                session.lock.acquire(session.agent_name)
+            driver.close_root(root_obj)
+        except RpaError as exc:
+            return _error_result(exc)
+        lines = [f"ok: close_window {root_id} (closed)"]
+        if session.recorder is not None:
+            try:
+                session.recorder.record_close(root_obj)
+            except Exception as exc:  # noqa: BLE001 — the window is already closed; say so
+                lines.append(f"(warning: this act was NOT recorded: {exc})")
+        session.forget(root_id)
+        return "\n".join(lines)
+
     def release_lock(self) -> None:
         """Release the desktop lock. Looked up by name (like `bash.force_kill`) from
         AgentLoop.interrupt() and from the turn-close path in agent/loop.py:run()."""
@@ -297,9 +324,9 @@ class UiActTool(BaseTool):
     def run(
         self,
         root: str,
-        target,
         action: str,
-        obs: str,
+        target=None,
+        obs: "str | None" = None,
         value: "str | None" = None,
         sensitive: bool = False,
         allow_coords: bool = False,
@@ -309,6 +336,12 @@ class UiActTool(BaseTool):
         if found is None:
             return _unknown_root(root)
         driver, root_obj = found
+        if target is None or target == "root":
+            if action != "close_window":
+                return "Error (RpaError): `target` is required (only close_window may omit it to close the root)"
+            return self._close_root(driver, root_obj, root)
+        if obs is None:
+            return "Error (RpaError): `obs` is required when `target` is given"
 
         try:
             before_outline = session.store.get(obs)
@@ -338,11 +371,16 @@ class UiActTool(BaseTool):
 
         done = f'ok: {action} [{element.index}] {element.role} "{element.name}"'
         gone = None
-        try:
-            new_outline = driver.outline(root_obj)
-        except RpaError as exc:  # e.g. close_window closed the root itself
-            new_outline = None
-            gone = f"{done}\n(root {root} can no longer be observed: {exc})"
+        new_outline = None
+        if action == "close_window" and not _root_alive(driver, root_obj):
+            # Listing roots is fast; outlining a window that is closing can block for
+            # a minute and end in a COM error.
+            gone = f"{done}\n(root {root} closed)"
+        else:
+            try:
+                new_outline = driver.outline(root_obj)
+            except RpaError as exc:  # e.g. the act closed the root some other way
+                gone = f"{done}\n(root {root} can no longer be observed: {exc})"
         not_recorded = None
         if session.recorder is not None:
             try:

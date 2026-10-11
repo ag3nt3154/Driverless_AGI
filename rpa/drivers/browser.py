@@ -23,6 +23,7 @@ iframes and shadow DOM are not traversed (v1).
 """
 from __future__ import annotations
 
+import functools
 import io
 import sys
 from pathlib import Path
@@ -32,6 +33,7 @@ import psutil
 from selenium import webdriver
 from selenium.webdriver.common.action_chains import ActionChains
 from selenium.webdriver.common.by import By
+from selenium.common.exceptions import WebDriverException
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.firefox.options import Options
 from selenium.webdriver.firefox.service import Service
@@ -59,6 +61,18 @@ _MODIFIER_KEYS = {"ctrl": Keys.CONTROL, "shift": Keys.SHIFT, "alt": Keys.ALT, "w
 
 def _named_key(key: str) -> str:
     return _NAMED_KEYS.get(key, key)
+
+
+
+def _wd_guard(method):
+    """Selenium/WebDriver errors (e.g. a tab that was closed) become RpaError."""
+    @functools.wraps(method)
+    def wrapper(*args, **kwargs):
+        try:
+            return method(*args, **kwargs)
+        except WebDriverException as exc:
+            raise RpaError(f"Firefox call failed ({method.__name__}): {exc.msg or exc}") from exc
+    return wrapper
 
 
 class FirefoxDriver:
@@ -110,13 +124,18 @@ class FirefoxDriver:
     def quit(self) -> None:
         """Close the browser and release the underlying geckodriver session."""
         if self._driver is not None:
-            self._driver.quit()
-            self._driver = None
+            try:
+                self._driver.quit()
+            except WebDriverException:
+                pass  # the session already ended (e.g. its last tab was closed)
+            finally:
+                self._driver = None
 
     close = quit
 
     # -- Driver protocol ---------------------------------------------------
 
+    @_wd_guard
     def roots(self) -> list[Root]:
         self._ensure_started()
         current = self._driver.current_window_handle
@@ -131,6 +150,7 @@ class FirefoxDriver:
             self._driver.switch_to.window(current)
         return result
 
+    @_wd_guard
     def outline(self, root: Root, *, query: str | None = None, depth: int | None = None) -> Outline:
         # `depth` is accepted for the Driver protocol; the DOM walk is flat (v1).
         self._ensure_started()
@@ -141,6 +161,7 @@ class FirefoxDriver:
             elements = [e for e in elements if query.lower() in e.name.lower()]
         return Outline(root=root, elements=elements)
 
+    @_wd_guard
     def find(self, root: Root, locator: Locator) -> list[Element]:
         validate_locator(locator)
         kind = next(iter(locator))
@@ -179,14 +200,11 @@ class FirefoxDriver:
             return [e for e in outline.elements if e.bbox[0] <= x <= e.bbox[2] and e.bbox[1] <= y <= e.bbox[3]]
         raise RpaError(f"FirefoxDriver.find: unsupported locator kind {kind!r}")
 
+    @_wd_guard
     def act(self, root: Root, element: Element, action: str, value: str | None = None) -> None:
         self._ensure_started()
         if action == "close_window":
-            self._switch_to(root)
-            self._driver.close()
-            remaining = self._driver.window_handles
-            if remaining:
-                self._driver.switch_to.window(remaining[0])
+            self.close_root(root)
             return
         we = self._webelement_for(root, element)
         if action == "click":
@@ -230,6 +248,7 @@ class FirefoxDriver:
         else:
             raise RpaError(f"FirefoxDriver.act: unsupported action {action!r}")
 
+    @_wd_guard
     def screenshot(self, root: Root, region: tuple[int, int, int, int] | None = None):
         from PIL import Image
 
@@ -244,12 +263,29 @@ class FirefoxDriver:
             image = image.crop((left, top, right, bottom))
         return image
 
+    @_wd_guard
+    def close_root(self, root: Root) -> None:
+        """Close the tab; switch to a remaining one, or end the session if it was the last
+        (the next use starts Firefox again instead of failing on a dead session)."""
+        self._ensure_started()
+        self._switch_to(root)
+        self._driver.close()
+        try:
+            remaining = self._driver.window_handles
+        except WebDriverException:  # Firefox ended the session with its last window
+            remaining = []
+        if remaining:
+            self._driver.switch_to.window(remaining[0])
+        else:
+            self.quit()
+
     def needs_desktop_lock(self, action: str) -> bool:
         return False  # browser-only (WebDriver) acts never take the desktop lock (D4)
 
     def needs_desktop_lock_to_observe(self, root: Root) -> bool:
         return False
 
+    @_wd_guard
     def launch(self, target: str) -> Root:
         self._ensure_started()
         self._driver.switch_to.new_window("tab")
