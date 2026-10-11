@@ -28,7 +28,7 @@ __all__ = ["WorkflowStore"]
 
 _NAME_RE = re.compile(r"^[a-z0-9][a-z0-9_-]*$")
 _STATUSES = ("draft", "approved")  # approval only; run health lives in last_run
-_RUN_STATUSES = ("ok", "degraded", "halted")
+_RUN_STATUSES = ("ok", "degraded", "halted", "cancelled")
 _EMPTY_STATE = {
     "status": "draft",
     "approved_hash_by_step": {},

@@ -372,3 +372,20 @@ def test_listing_roots_never_starts_firefox():
             raise AssertionError("listing started Firefox")
     session = UiSession(_Cfg(None), _AskSpy(), uia_driver=FakeDriver({}, {}), browser_driver=_LazyBrowser())
     UiRootsTool(session).run()
+
+
+def test_an_esc_stop_is_reported_as_deliberate_not_as_a_failure(tmp_path):
+    session, driver = _make_session(tmp_path)
+    store = WorkflowStore(tmp_path / ".dagi" / "rpa")
+    from rpa.workflow import parse_workflow
+    store.save(parse_workflow({"name": "stopme", "steps": [{"id": "step_01", "launch": "r1"}]}))
+    from tools.rpa import RpaRunTool
+    tool = RpaRunTool(session)
+    real_launch = driver.launch
+    driver.launch = lambda target: (session.cancel_event.set(), real_launch(target))[1]
+    driver_steps = {"id": "step_02", "act": "close_window", "root": {"window": {"title_re": "x", "launched_by": "step_01"}}}
+    store.save(parse_workflow({"name": "stopme", "steps": [{"id": "step_01", "launch": "r1"}, driver_steps]}))
+    out = tool.run(name="stopme")
+    assert "status: cancelled" in out and "deliberate stop" in out
+    assert "repair" not in out.split("deliberate stop")[0]
+    assert "Offer the Admiral a repair" not in out

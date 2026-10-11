@@ -3,7 +3,8 @@ list and show workflows (Subtask 16). No model calls; `rpa/` stays agent-free so
 this works with no dagi process running.
 
 Exit codes for `run`: 0 ok, 1 degraded, 2 halted, 3 usage/config error (an
-RpaError or an unknown workflow before/around the run, or a bad `--param`).
+RpaError or an unknown workflow before/around the run, or a bad `--param`),
+4 cancelled (the Admiral pressed Esc).
 """
 from __future__ import annotations
 
@@ -133,7 +134,7 @@ def _run_cmd(
         return 3
 
     _print_run_summary(result)
-    return {"ok": 0, "degraded": 1, "halted": 2}[result.status]
+    return {"ok": 0, "degraded": 1, "halted": 2, "cancelled": 4}[result.status]
 
 
 def _approve_cmd(

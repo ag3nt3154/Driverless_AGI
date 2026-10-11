@@ -613,8 +613,10 @@ def test_cancel_halts_before_the_next_step_and_inside_waits(tmp_path):
     driver.act = lambda *a, **k: (real_act(*a, **k), flag.update(stop=True))[0]  # ESC during step 1
     result = run_workflow(store, "wf23", drivers={"window": driver, "browser": driver},
                           sleep=_no_sleep, cancelled=lambda: flag["stop"])
-    assert result.status == "halted" and result.halted_step == "second"
-    assert "cancelled" in result.reason and len(driver.acts) == 1
+    assert result.status == "cancelled" and result.halted_step == "second"
+    assert "Esc" in result.reason and len(driver.acts) == 1
+    assert store.state("wf23")["last_run"]["status"] == "cancelled"
+    assert store.display_status("wf23") == "draft"  # a deliberate stop is not shown as halted
 
 
 def test_launched_by_binds_to_the_launched_window_whatever_its_title(tmp_path):

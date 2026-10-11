@@ -76,7 +76,7 @@ class _ExpectTimeout(RpaError):
     """An `expect` condition never became true within its timeout."""
 
 
-_CANCELLED = "cancelled by the Admiral"
+_CANCELLED = "the Admiral pressed Esc (deliberate stop)"
 _MIN_REDACTABLE = 4  # shorter secrets withhold outline.txt rather than redact it
 
 _RETRYABLE = (Ambiguous, NotFound, WrongElement, _ExpectTimeout)
@@ -182,7 +182,11 @@ def run_workflow(
         if lock is not None and lock_taken[0]:
             lock.release(agent)
 
-    status = "halted" if halted_step is not None else ("degraded" if any_degraded else "ok")
+    if halted_step is not None:
+        # Esc is the Admiral stopping the run on purpose: not a failure, never "halted".
+        status = "cancelled" if halt_reason == _CANCELLED else "halted"
+    else:
+        status = "degraded" if any_degraded else "ok"
 
     if verify and status == "ok":
         store.mark_verified(name)

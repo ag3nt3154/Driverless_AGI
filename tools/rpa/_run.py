@@ -135,7 +135,12 @@ class RpaRunTool(BaseTool):
             rung = f" (rung {log.rung_index})" if log.rung_index else ""
             lines.append(f"  {log.step_id}: {log.status}{rung}")
 
-        if result.status == "halted":
+        if result.status == "cancelled":
+            lines.append(
+                f"Stopped: the Admiral pressed Esc during step `{result.halted_step}`. This was a "
+                "deliberate stop, not a failure — do not offer a repair or re-run unless asked."
+            )
+        elif result.status == "halted":
             lines.append(
                 f"Step `{result.halted_step}` halted: {result.reason}. Evidence: {result.run_dir}. "
                 "Offer the Admiral a repair (rpa_repair) — do not start it unasked."
