@@ -497,7 +497,7 @@ def pytest_collection_modifyitems(config, items):
 - **Task folder:** `wiki/tasks/2026-10-10_rpa-computer-use/`
 
 ## Overall Status
-In Progress — S2 code complete; S2 manual check pending
+In Progress — S2 code complete; S2 manual check in progress (record, verify and approve done; run + ESC and break + repair pending)
 
 ## Notes
 - R20 prerequisite merged to `main` (`467ad01b`) and into this branch (`b71bbb8b`).
@@ -532,6 +532,7 @@ In Progress — S2 code complete; S2 manual check pending
 - **S2 manual check, attempt 3 (2026-10-11, session `session_2026-10-11_10-45-07`):** recording `s2-check-3` OK with `launched_by`. Closing failed: Firefox tabs could not be targeted (no element for the tab; blank tab has none); Notepad close 82 s + COM error (outline of a closing window); tab close 129 s then raw Selenium NoSuchWindow. (Slow first acts = time answering the per-app prompt, not a bug.) -> Fixed: `Driver.close_root()`; `ui_act(action=close_window)` with no target closes the root (recorded/replayed as a target-less step); root presence checked before outlining after a close; `_wd_guard` maps Selenium errors to RpaError; last-tab close ends the session cleanly and the next use restarts Firefox.
 - **S2 manual check, attempt 4 (2026-10-11, session `session_2026-10-11_11-04-35`):** verify halted correctly at step_02 (expect timeout): Win11 Notepad restored the recording's unsaved tab, so the replay typed into it (text doubled). Then dagi could not see/close the replay's Notepad (only `ui_roots` registered ownership) and `ui_roots` started a new Firefox (lazy driver object counted as started). -> Fixed: `RunResult.launched` adopted by `rpa_run` (`opened:` lines); `browser_started` uses `FirefoxDriver.started`. Admiral to disable Notepad session restore for clean runs.
 - **S2 manual check, attempt 5 (2026-10-11, session `session_2026-10-11_11-12-29`):** verify **ok** (6 steps, 15 s, `Verified`); dagi closed its Notepad and tab with target-less `close_window` and saw both via `opened:`. Remaining: Firefox window stayed on an about:blank start tab (-> first launch reuses it); dagi clicked Notepad's "Don't save" unasked (-> don't save / do not save / discard are sensitive). Approve, run + ESC, and break not yet exercised.
+  -> Approved 2026-10-11 (session `session_2026-10-11_12-08-27`): `rpa_approve s2-check-3` -> state `approved`; `approved_hash` = `verified_hash` (`1aaab7e9…`), i.e. the approved content is exactly the verified one. Remaining for S2: a non-verify run, the ESC check during a run, and break-a-locator + repair (exit 2, then patch + approve + run 0).
 
 ## Verification
 1. `C:\Users\alexr\miniconda3\envs\dagi\python.exe -u -m pytest -q -p no:pytest-qt tests` → all pass except the known `tests/test_workflow_plan_template.py` failures (R15).
