@@ -105,7 +105,7 @@ def _matches_exactly(driver: Driver, root: Root, locator: Locator, element: Elem
 _CSS_TOKEN_RE = re.compile(r'^(?:#(?P<id>.+)|\[data-testid="(?P<testid>.*)"\])$')
 
 
-def _css_token_value(token: str) -> str | None:
+def css_token_value(token: str) -> str | None:
     """Raw id inside a browser driver's `#id` / `[data-testid="x"]` token; None if neither."""
     m = _CSS_TOKEN_RE.match(token)
     return (m.group("id") or m.group("testid")) if m else None
@@ -117,7 +117,7 @@ def _rung1(driver: Driver, root: Root, element: Element) -> Locator | None:
     value = element.automation_id
     if not value:
         return None
-    raw = value if root.kind == "window" else _css_token_value(value)
+    raw = value if root.kind == "window" else css_token_value(value)
     if not raw or is_unstable_id(raw):
         return None
     candidate: Locator = {"uia": {"automation_id": value}} if root.kind == "window" else {"css": value}
