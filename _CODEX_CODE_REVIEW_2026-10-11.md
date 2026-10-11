@@ -1,19 +1,20 @@
-# Dagi code review — 2026-10-10
+# Dagi code review — 2026-10-11
 
 ## Scope and priorities
 
-Reviewed **main** at **c6ed49b795dd949996e257a4dd8aedb8c81144ed**, starting from a clean checkout.
-Since the previous reviewed HEAD, message-board services/tools, multi-agent GUI sessions,
-board switching and @mention wake-ups have landed, and the composer wrap hang is fixed.
-The October 9 reports were edited in place and renamed to October 10. This report contains
-**16 open findings only**, retaining stable IDs. No full finding was verified closed;
-R7 drops the now-compliant GUI app module from its remaining size violations.
+Reviewed **main** at **3079386f6cc562e584608d97bed0024dfe0c6d8a**, starting from a clean checkout.
+The October 10 reports were edited in place and renamed to October 11. This report contains
+**17 open findings only**, retaining stable IDs. No existing finding was verified closed.
+The standalone board split, token resolution and GUI switching are the main changed paths;
+the owning scheduler, Telegram, plan, loop and code-mode defect paths are unchanged.
+R7 adds board_runtime.py to the remaining size violations. SQLite now imports successfully;
+yesterday's environment blockage is cleared, rather than retained as an application finding.
 
 Prioritize execution ownership and truthful outcomes (R4/R10/R16/R18/R20/R21), then Telegram
-delivery/routing (R11/R12), publication, plan assignment and retained diagnostics
-(R14/R15/R17/R19). New offline probes confirm cross-agent child cancellation (R20) and
-retained paused workers after agent closure (R21). Earlier runtime evidence is dated
-explicitly; unchanged defects were not re-probed indiscriminately.
+delivery/routing (R11/R12), board event provenance (R22), publication, plan assignment and
+retained diagnostics (R14/R15/R17/R19). A new offline Qt probe confirms that an old-board post
+already queued before a switch can display and wake agents after the switch. Earlier
+reproductions are dated explicitly; unchanged defects were not re-probed indiscriminately.
 
 ## R3 — P2: Record scheduler startup failures
 
@@ -45,18 +46,18 @@ providers, long tools and descendants; a thread join timeout cannot enforce a de
 
 ## R7 — P2: Reduce remaining orchestration complexity behind supported seams
 
-**Finding:** Four production modules and three callback/config builders exceed size limits.
+**Finding:** Five production modules and three callback/config builders exceed size limits.
 
-**Issue:** Today's AST inventory selects 219 tracked Python files under agent/tools/
+**Issue:** Today's AST inventory selects 218 tracked Python files under agent/tools/
 scheduler/tg/tui/pyside_gui/providers/services plus root entry points, excluding nested
-tests. Four exceed 500 lines: agent/loop.py (1,082), tools/subagent_main.py (744),
-tools/read/_reader_controller.py (525) and pyside_gui/prompt_input.py (635). The GUI app
-module is now within the cap after AgentSession extraction. Three functions exceed 100:
+tests. Five exceed 500 lines: agent/loop.py (1,082), tools/subagent_main.py (744),
+tools/read/_reader_controller.py (525), pyside_gui/prompt_input.py (635) and
+pyside_gui/board_runtime.py (513). Three functions exceed 100:
 config_loader._build_config_from_entry (106), PySide bridge.build_callbacks (105) and TUI
-callbacks.build_callbacks (178). Counts include comments/docstrings; the explicit exclusion
-of nested tests differs from yesterday's inventory, so file totals are not a growth measure.
-Cyclomatic complexity was not measured. R20/R21 show that extraction alone does not
-establish ownership across concurrent sessions.
+callbacks.build_callbacks (178). Counts include comments/docstrings. This uses yesterday's
+explicit production selection; the removed board composer explains the file-count change.
+Cyclomatic complexity was not measured. R20–R22 show why ownership and event provenance
+need supported contracts before extracting more orchestration code.
 
 **Suggested solution:** Define per-run child ownership, terminal outcomes and stop/wait
 contracts before further extraction. Reduce remaining large modules along supported public
@@ -250,7 +251,7 @@ print-then-timeout/kill/crash fixtures and a bounded-output check.
 [force_kill_active_subagents](C:/Users/alexr/Driverless_AGI/tools/_subagent_runner.py:227),
 which iterates the process-global `_active` table without an owner filter. Each
 [GUI session](C:/Users/alexr/Driverless_AGI/pyside_gui/agent_session.py:37) can run its own
-loop concurrently. Today's offline probe created two independent parent loops and two
+loop concurrently. October 10's offline probe created two independent parent loops and two
 synthetic registered child states: interrupting A targeted both child PIDs and cleaned
 both states, while B itself remained unpaused. The kill primitive was mocked; this proves
 target selection, not real process-tree termination. Esc or closing one agent can therefore
@@ -268,7 +269,7 @@ timed-out children and PID reuse; cancelling A must preserve B's execution and m
 **Issue:** [close_agent](C:/Users/alexr/Driverless_AGI/pyside_gui/agents_controller.py:89)
 calls [stop](C:/Users/alexr/Driverless_AGI/pyside_gui/agent_session.py:216), removes the session
 and appends it to `_retired`. Stop calls interrupt, which pauses rather than terminates;
-the loop blocks on its pause event. `_retired` has no reap/release path. Today's real-loop
+the loop blocks on its pause event. `_retired` has no reap/release path. October 10's real-loop
 probe called the actual controller/stop methods with stub GUI/provider sinks: at the pause
 checkpoint the agent was absent from visible sessions, its worker was alive, and the retired
 list retained it. The probe explicitly resumed and joined its worker afterward. Repeated
@@ -284,34 +285,58 @@ acknowledgment. Reap completed retired sessions; do not resume hidden work just 
 Test running, already-paused and starting agents, repeated closes, and application shutdown
 with background sessions. Apply R20's owner isolation to this path.
 
+## R22 — P1: Reject queued events from the previous board at GUI delivery
+
+**Finding:** Switching boards can deliver an old board's queued post as live input on the new board.
+
+**Issue:** The [listener callback](C:/Users/alexr/Driverless_AGI/pyside_gui/board_controller.py:289)
+checks its generation before emitting a Qt signal, but the signal carries only the post.
+The [GUI slot](C:/Users/alexr/Driverless_AGI/pyside_gui/board_controller.py:303) does not check
+generation or board identity. The [switch](C:/Users/alexr/Driverless_AGI/pyside_gui/board_controller.py:191)
+increments generation, clears the feed and rebinds sessions; it cannot retract already queued
+signals. Today's controlled probe used the real controller, listener callback and Qt queued
+delivery with fake clients. Old-board post #99 was queued in a worker, a switch completed,
+then GUI events were processed: #99 appeared and triggered the mention hook while the
+session client pointed at the new board. The new snapshot baseline was stubbed at zero.
+No real board request, agent dispatch or provider call occurred. Old requests can therefore
+wake agents with board tools now bound to a different board; old attachment cards likewise
+resolve through the current client by source inspection, not a separate download probe.
+
+**Suggested solution:** Carry generation and board/runtime identity with snapshot, stream
+and status events, and reject obsolete events in the GUI slot immediately before rendering
+or waking an agent. Commit snapshot baseline and posts on the GUI thread under the same
+identity. Preserve attachment provenance or invalidate obsolete cards. Add a deterministic
+test that queues an old post, switches before processing Qt events, and proves no display,
+mention wake-up or new-board attachment fetch. Cover pending old snapshots and status too.
+
 ## Verification and limits
 
-- Today's focused suites: **115 passed, 4 failed in 12.22s**. Three failures are R15's
-  deleted-template contract tests; the detached-board service test fails because its child
-  cannot import SQLite. Board runtime/download/helper, interrupt, registry and
-  plan-parser suites ran with the dagi interpreter outside the Windows sandbox, pytest-qt
-  and pytest cache disabled. The command and outcome summary are retained in
-  [verification.json](C:/Users/alexr/.codex/visualizations/2026/10/10/01a1236a-9530-7a20-9210-07bdb703de16/verification.json).
-- Four board/client/tool/store/upload modules could not collect because `_sqlite3` raises
-  `ImportError: DLL load failed while importing _sqlite3: The specified module could not be found.`
-  The error persists outside the sandbox and after process-local conda DLL registration.
-  These suites are unverified; this host setup failure is not counted as an application defect.
-- New offline R20/R21 assertions passed. R20 uses the real interrupt/global runner functions
-  with mocked kills and cleanup over synthetic child states. R21 uses a real loop and real
-  controller/stop methods with stub GUI/provider sinks; its paused worker was resumed/joined.
-  No provider requests, board messages or actual subprocess termination occurred.
-- Existing R3/R4/R10–R14/R16 runtime evidence is from **October 8**, and R17–R19 evidence
-  from **October 8/9**. Owning source paths are unchanged relative to the last reviewed HEAD.
-  R8 remains source-inspected abandoned-metadata debt. R15 failures are fresh. R7 inventory
-  is fresh, explicitly excluding nested tests. Resolved R2/R6/R8-generation/R9 defects stay removed.
-- [Today's probe source](C:/Users/alexr/.codex/visualizations/2026/10/10/01a1236a-9530-7a20-9210-07bdb703de16/review_probes.py) and
-  [results](C:/Users/alexr/.codex/visualizations/2026/10/10/01a1236a-9530-7a20-9210-07bdb703de16/review_probe_results.json) retain new reproductions and inventory.
-  [October 9 evidence](C:/Users/alexr/.codex/visualizations/2026/10/09/01a12093-68e8-7b40-98a4-9682ae3fc5c0/review_probe_results.json)
-  and [October 8 evidence](C:/Users/alexr/.codex/visualizations/2026/10/08/01a11b73-16a4-7810-b1e8-4e890c34d652/)
-  support the unchanged-path findings. Python: C:/Users/alexr/miniconda3/envs/dagi/python.exe -u.
-- No full suite, actual rendered GUI interaction, live provider/Telegram, campaign,
-  converter, power-loss, or actual multi-parent process-tree termination test. Campaign
-  remains outside this checkout. Documentation-only review; no application repairs or Git mutations.
+- Today's focused board/service/client/tool/runtime/download/helper, parser, interrupt and
+  run-contract suites: **336 passed, 3 failed, 2 skipped in 50.29s**. All failures are R15's
+  missing-template tests. The two clean-install tests require DAGI_RUN_SLOW=1 and network;
+  they were skipped. SQLite-dependent modules collect and pass now; sqlite3 reports 3.51.2.
+- Existing Qt controller/mention/agent/feed suites: **55 passed in 3.56s**. These do not cover
+  R22's queued-before-switch event ordering. Both commands used the dagi interpreter outside
+  the Windows sandbox with pytest-qt and pytest cache disabled; local GUI conftest registers
+  pytestqt after DLL bootstrap. Test services use temporary stores; no live user board posts.
+- R22's new assertion passes using real Qt queued signals and actual controller methods,
+  with fake board clients, a listener stub and a settled-new-snapshot stub. Its emission-to-
+  delivery interleaving is deliberate; frequency in real use was not measured.
+- R3/R4/R10–R14/R16 runtime evidence is from **October 8**, R17–R19 from **October 8/9**,
+  and R20/R21 from **October 10**. Owning defect code is unchanged. R21's close method has
+  nearby board-removal changes but retains the stop/pause/_retired behavior. R8 remains
+  source-inspected metadata debt; retained heap growth was not measured. R15 failures and
+  R7 inventory are fresh. Resolved R2/R6/R8-generation/R9 defects remain removed.
+- [Today's probe source](C:/Users/alexr/.codex/visualizations/2026/10/11/01a128a5-2829-73f1-a28a-648eb65c6cf3/review_probes.py),
+  [results](C:/Users/alexr/.codex/visualizations/2026/10/11/01a128a5-2829-73f1-a28a-648eb65c6cf3/review_probe_results.json) and
+  [verification summary](C:/Users/alexr/.codex/visualizations/2026/10/11/01a128a5-2829-73f1-a28a-648eb65c6cf3/verification.json)
+  retain fresh evidence. [October 10 evidence](C:/Users/alexr/.codex/visualizations/2026/10/10/01a1236a-9530-7a20-9210-07bdb703de16/review_probe_results.json),
+  [October 9 evidence](C:/Users/alexr/.codex/visualizations/2026/10/09/01a12093-68e8-7b40-98a4-9682ae3fc5c0/review_probe_results.json) and
+  [October 8 evidence](C:/Users/alexr/.codex/visualizations/2026/10/08/01a11b73-16a4-7810-b1e8-4e890c34d652/)
+  support unchanged-path findings. Python: C:/Users/alexr/miniconda3/envs/dagi/python.exe -u.
+- No full suite, rendered GUI interaction, live provider/Telegram, campaign, converter,
+  power-loss or actual multi-parent process-tree termination check. Campaign remains absent
+  from this checkout. RPA is research/spike work with implementation still planned; it is
+  not claimed shipped or reproposed here. Documentation-only review; no application repairs.
 
-See the [improvement roadmap](C:/Users/alexr/Driverless_AGI/_CODEX_SUGGESTIONS_2026-10-10.md).
-
+See the [improvement roadmap](C:/Users/alexr/Driverless_AGI/_CODEX_SUGGESTIONS_2026-10-11.md).

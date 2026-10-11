@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import copy
+import functools
 import hashlib
 import json
 import os
 import tempfile
 import threading
+import uuid
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -33,6 +35,7 @@ from agent.session_store import append_event
 from agent.skills import Skill, SkillLoader
 from agent.user_input import UserSubmission
 from agent.image_assets import ImageAssetStore, materialize_messages
+from tools import _subagent_runner
 from tools.subagent_api import build_fork_context, run_subagent
 from tools.compact._tail_boundary import compute_tail_boundary, estimate_tokens
 from tools.output_filter import filter_tool_output
@@ -57,6 +60,15 @@ from agent._loop_config import (  # noqa: F401
     CompactionResult,
     resolve_memory_root,
 )
+
+
+def _owns_subagents(method):
+    """Run ``method`` so the subagents it spawns are recorded under this loop."""
+    @functools.wraps(method)
+    def wrapper(self, *args, **kwargs):
+        with _subagent_runner.owner_scope(self._owner_id):
+            return method(self, *args, **kwargs)
+    return wrapper
 
 
 class AgentLoop:
@@ -255,6 +267,10 @@ class AgentLoop:
         # be dropped, not acted on.
         self._abort_request = threading.Event()
         self._active_stream = None
+        # Owner id of the subagents this loop spawns: interrupt() kills only
+        # these, never another concurrent loop's (GUI agents share a process).
+        # A uuid, not id(self), because id() values are reused after GC.
+        self._owner_id = uuid.uuid4().hex
         # Messages injected while the loop thread is mid-step are logged by
         # that thread at its next checkpoint, so they never land between a
         # tool call and its result.
@@ -304,7 +320,7 @@ class AgentLoop:
         self._lifecycle.pause()
 
     def interrupt(self) -> bool:
-        """Stop now: pause, kill bash, code scripts and subagents, abandon the request.
+        """Stop now: pause, kill bash, code scripts and own subagents, abandon the request.
 
         A streamed request is closed at once; a blocking one is left to finish
         and its response is discarded. Returns False when already paused.
@@ -319,8 +335,7 @@ class AgentLoop:
         code = self.registry._tools.get("code")
         if code is not None:
             code.force_kill()
-        from tools._subagent_runner import force_kill_active_subagents
-        force_kill_active_subagents()
+        _subagent_runner.force_kill_active_subagents(owner=self._owner_id)
         self._close_active_stream()
         return True
 
@@ -517,6 +532,7 @@ class AgentLoop:
             )
             return _NO_COMPACTION
 
+    @_owns_subagents
     def run_wtf(self, description: str | None) -> "WtfResult":
         """Delegate inherited diagnostic orchestration to its focused module."""
         from agent.wtf import run_wtf
@@ -674,6 +690,7 @@ class AgentLoop:
 
         log_compaction(self.log, result, tail_first_step, self._sync_messages)
 
+    @_owns_subagents
     def compact(self, force: bool = False, summarize_all: bool = False) -> CompactionResult:
         """Delegate to agent/_compaction.compact (moved verbatim)."""
         from agent._compaction import compact as _compact
@@ -736,6 +753,7 @@ class AgentLoop:
         self.log.append(sev.TURN_END, {"turn": 0, "reason": sev.reason_completed()})
         self.log.append(sev.END_SEED, {"count": len(messages) - 1})
 
+    @_owns_subagents
     def run(self, task: str | UserSubmission) -> str:
         submission = task if isinstance(task, UserSubmission) else UserSubmission(text=task)
         if submission.text.strip().lower() == "/reload":
