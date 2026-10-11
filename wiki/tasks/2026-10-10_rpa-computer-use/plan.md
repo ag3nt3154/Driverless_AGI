@@ -460,7 +460,7 @@ def pytest_collection_modifyitems(config, items):
 
 - [ ] Steps 1–5.
 
-### Subtask 19: Halt and patch cards in the conversation
+### Subtask 19: Halt and patch cards in the conversation — ✅ `15bd5f3b`
 
 **Goal:** Show a halt card (Screenshot / Repair / Dismiss) and a patch card (diff, Approve and re-run / Edit YAML / Reject).
 **Requirements:**
@@ -519,6 +519,7 @@ In Progress — S1–S3 complete; S4 (Subtasks 18–19) and docs (20) in progres
 - Subtask 15: store change — `status` is approval only (draft|approved); run health in `last_run` (`record_run`), `display_status()` for lists/GUI (a never-approved workflow that halts shows halted). Review fixes: desktop lock taken before the first observe of a root that `needs_desktop_lock_to_observe` (UIA restore of minimized windows); roots launched by this run win over lookalikes; secrets < 4 chars withhold outline.txt. `if_present` Ambiguous counts as present. Residual: replay root matching is not limited to dagi-opened windows (hand-written unanchored patterns could match a user window; ambiguity still halts).
 - Subtask 17: `rpa/repair.py` = `repair_context` + pure `preview_patch` (ops on an in-memory copy, full parse round-trip, unified diff, changed confirm steps, `base_hash`) + `write_patch` (refuses if the YAML changed since the preview; `WorkflowStore.clear_confirm_approvals`). `rpa_patch` re-runs as a verify run, so every confirm step asks live once more. Review fixes: literal locators could enter through `expect.present`/`expect.gone` and `if_present` — now every locator-bearing field takes only `{root, obs, index}` (best rung for single-locator fields); a patch cannot change a step's `root` (a widened title/url pattern could match any window; re-record instead); an empty diff does not ask. Deviation: no "Edit YAML" path in the patch ask — editing by hand changes the content hash, so verify + approve covers it.
 - Subtask 18: deviation — the view's actions do not call CLI functions in a worker thread (a second FirefoxDriver on the same profile would fail, and a direct run skips the agent's ask_user, Esc and window ownership). Each button sends a plain message to the active session ("Verify workflow `X` (rpa_run with verify=true)." / Approve / Run / Repair), which uses its rpa_* tools; a busy session or a pending ask_user refuses the click (`_dispatch.workflow_action_refusal`), so a click never answers a question. `LeftSidebar(computer_use=...)` adds the 7th rail view only when on. Review fix: a corrupt `workflow.yaml` crashed the view on click -> `rpa.api` maps read errors to RpaError / list status `error`; the view shows the reason with no action.
+- Subtask 19: card pattern found — the conversation page draws its own cards (`appendEmoteCard`) and calls Python over QWebChannel (`_PageBridge`). Halt card = page card from `pyside_gui/rpa_cards.parse_rpa_halt` on rpa_run/rpa_patch results (cancelled runs give none); Repair goes to the owning session via `_dispatch.dispatch_workflow_action(..., session=)`. Patch card = the ask_user question with a fenced diff; ask options are typed answers (the question panel has no buttons). Deviation: no "Edit YAML".
 - Subtask 16: `rpa.safety.is_allow_answer` shared by SafetyGate, CLI and tools. Found in main-agent review: ESC did not stop a running `rpa_run` (interrupt only released the lock) -> `UiSession.cancel_event`, set by `UiActTool.cancel()` from `AgentLoop.interrupt()`; `run_workflow(cancelled=...)` checks it before each step and in every poll/backoff; `rpa_run` clears it at start. CLI cancel = Ctrl+C / mouse-corner failsafe.
 
 ## Open Issues
@@ -546,4 +547,4 @@ In Progress — S1–S3 complete; S4 (Subtasks 18–19) and docs (20) in progres
 4. Must-fail checks (D12) all present: ambiguous halt (`test_resolver`, `test_interpreter`), stale observation (`test_observe`, `test_ui_tools`), unapproved changed confirm (`test_interpreter`, `test_repair`), secret canary (`test_observe`, `test_trace`, `test_interpreter`, `test_browser_driver`), import isolation (`test_isolation`).
 
 ## Next Action
-`deliver` Subtask 19 (halt and patch cards), then 20, integrated verification.
+`deliver` Subtask 20 (docs), then integrated verification.
