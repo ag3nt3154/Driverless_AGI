@@ -417,7 +417,7 @@ def pytest_collection_modifyitems(config, items):
 
 ## Stage S3 — Repair
 
-### Subtask 17: Repair context, patch tool, `operator` subagent
+### Subtask 17: Repair context and patch tool (main agent)
 
 **Goal:** Fix a halted workflow with a small, reviewed YAML patch.
 **Requirements:**
@@ -425,15 +425,15 @@ def pytest_collection_modifyitems(config, items):
 - Tools in `tools/rpa/_repair.py`:
   - `rpa_repair(name)` → returns `repair_context` text + instructions to explore with `ui_*` and then call `rpa_patch`.
   - `rpa_patch(name, ops)`: each new target is given as `{root, obs, index}`; the tool resolves it and calls `generate_locators` itself, so the model cannot invent locators. It shows the unified diff via `ask_user` (Approve and re-run / Reject, no timeout). On Approve: write YAML; if any confirm step changed, ask a second, explicit confirmation and clear its approved hash; then run from step 1 (or `from_step` when its pre-check passes) via `rpa_run`.
-- `.dagi/subagents/operator/` (`subagent_config.yaml`: `model_tier: default`, tools `ui_roots, ui_observe, ui_act, ui_wait, rpa_repair, rpa_patch, read`; `prompt.md`: repair-only instructions, never approve, never edit YAML by file tools). Discovery follows `agent/subagent_tools.py` rules.
+- ~~`.dagi/subagents/operator/`~~ — dropped from v1 (Admiral, 2026-10-12): subagents run in a separate process with no `on_ask_user` (every gate would deny, `rpa_patch` could not ask), cannot see the main process's adopted windows (`_ProcessUiState`), and cannot open the Firefox profile the main process holds. The main agent repairs: `rpa_repair` / `rpa_patch` are registered with the `ui_*` tools; the `rpa_repair` text tells the model to explore only, never approve, never edit the YAML with file tools.
 **Acceptance Criteria:**
 - A patch that changes a confirm step clears its hash and needs a second confirmation (fake ask).
 - `rpa_patch` with a locator literal (not `{root, obs, index}`) is rejected.
 - Reject leaves `workflow.yaml` byte-identical.
 
 **Files:**
-- Create: `rpa/repair.py`, `tools/rpa/_repair.py`, `.dagi/subagents/operator/subagent_config.yaml`, `.dagi/subagents/operator/prompt.md`
-- Modify: `agent/tools.py`, `tests/test_tool_registry_contract.py`
+- Create: `rpa/repair.py`, `tools/rpa/_repair.py`
+- Modify: `tools/rpa/__init__.py`, `agent/tools.py`, `tests/test_tool_registry_contract.py`
 - Test: `tests/rpa/test_repair.py`, `tests/test_rpa_tools.py`
 
 - [ ] Steps 1–5.
@@ -534,8 +534,8 @@ In Progress — S1 and S2 complete (manual checks passed 2026-10-12); S3 (Subtas
 - **S2 manual check, attempt 5 (2026-10-11, session `session_2026-10-11_11-12-29`):** verify **ok** (6 steps, 15 s, `Verified`); dagi closed its Notepad and tab with target-less `close_window` and saw both via `opened:`. Remaining: Firefox window stayed on an about:blank start tab (-> first launch reuses it); dagi clicked Notepad's "Don't save" unasked (-> don't save / do not save / discard are sensitive). Approve, run + ESC, and break not yet exercised.
 - **S2 manual check, attempt 6 (2026-10-11, session `session_2026-10-11_12-51-35`):** approve OK. Esc did not work while Notepad had focus (GUI-only key filter); switching to dagi made the foreground guard halt step_03 (fail-closed). A later run died on a raw UIA COM error in `find` with no evidence. -> Fixed: `rpa/hotkey.py` EscWatcher (WH_KEYBOARD_LL, physical Esc only, swallowed) around `rpa_run` and the CLI run; read-only UIA calls retry the transient COM error once; driver RpaErrors halt with evidence. Hook tests are `desktop`-marked (installing a global hook needs consent). Esc during live `ui_*` acts (model-driven) still needs the dagi window — follow-up.
 - **S2 check, attempt 7 (2026-10-11):** Esc watcher works; the model could not tell a deliberate Esc from a false trigger and was told to offer a repair. -> Esc stops are run status `cancelled` (CLI exit 4; `last_run` cancelled; `display_status` not halted) and `rpa_run` says "deliberate stop, not a failure — no repair or re-run unless asked" (`0cf57289`). Side bug reported by the Admiral: grep tool's rg output decoded as cp1252 crashed the reader thread (UnicodeDecodeError 0x90) -> `0825898a` (rg/git utf-8 + replace; bash/skill scripts errors=replace). Break test still pending.
-- **S2 check, attempt 8 (2026-10-12):** break test passed (not-approved warning, halt with evidence, repair offered but not started). Side fix: code-mode positional tool args (`f4935e67`).
   -> Approved 2026-10-11 (session `session_2026-10-11_12-08-27`): `rpa_approve s2-check-3` -> state `approved`; `approved_hash` = `verified_hash` (`1aaab7e9…`), i.e. the approved content is exactly the verified one. Remaining for S2: a non-verify run, the ESC check during a run, and break-a-locator + repair (exit 2, then patch + approve + run 0).
+- **S2 check, attempt 8 (2026-10-12):** break test passed (not-approved warning, halt with evidence, repair offered but not started). Side fix: code-mode positional tool args (`f4935e67`). S2 complete.
 
 ## Verification
 1. `C:\Users\alexr\miniconda3\envs\dagi\python.exe -u -m pytest -q -p no:pytest-qt tests` → all pass except the known `tests/test_workflow_plan_template.py` failures (R15).
