@@ -76,6 +76,27 @@ def test_rail_has_one_button_per_view(sidebar):
     assert sidebar._panel.count() == 6
 
 
+def test_computer_use_false_has_no_workflows_view(sidebar):
+    assert sidebar.workflows_view is None
+    assert "workflows" not in sidebar._view_names
+
+
+def test_computer_use_true_adds_workflows_view_last(qtbot, tmp_path):
+    (tmp_path / ".dagi" / "logs").mkdir(parents=True)
+    w = LeftSidebar(tmp_path, computer_use=True)
+    qtbot.addWidget(w)
+    w.show()
+
+    assert len(w._rail_buttons) == 7
+    assert w._panel.count() == 7
+    assert w._view_names[-1] == "workflows"
+    assert w.workflows_view is not None
+
+    w.activate_view("workflows")
+    assert w.is_expanded()
+    assert w._panel.currentWidget() is w.workflows_view
+
+
 def test_activate_plan_expands_to_plan_view(sidebar):
     sidebar.activate_view("plan")
     assert sidebar.is_expanded()

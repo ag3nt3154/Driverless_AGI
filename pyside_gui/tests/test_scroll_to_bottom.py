@@ -39,7 +39,7 @@ def test_main_window_wires_scroll_request_to_conversation(
         session_selected = Signal(object)
         expansion_changed = Signal(bool)
 
-        def __init__(self, _project_path) -> None:
+        def __init__(self, _project_path, computer_use: bool = False) -> None:
             super().__init__()
 
     class FakeConversation(QWidget):
@@ -67,6 +67,7 @@ def test_main_window_wires_scroll_request_to_conversation(
         context_window=1000,
         reserve_tokens=100,
         memory_root=None,
+        computer_use=False,
     )
     DagiMainWindow._build_ui(window, config, tmp_path)
     first, second = FakeConversation(False), FakeConversation(False)
