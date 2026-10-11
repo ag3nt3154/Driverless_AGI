@@ -34,7 +34,7 @@ from agent.session_log import InvariantError, SessionLog
 from agent.session_store import append_event
 from agent.skills import Skill, SkillLoader
 from agent.user_input import UserSubmission
-from agent.image_assets import ImageAssetStore, materialize_messages
+from agent.image_assets import ImageAssetStore, elide_old_ui_screenshots, materialize_messages
 from tools import _subagent_runner
 from tools.subagent_api import build_fork_context, run_subagent
 from tools.compact._tail_boundary import compute_tail_boundary, estimate_tokens
@@ -672,6 +672,7 @@ class AgentLoop:
         """
         messages = [self._header_message()]
         messages.extend(self._messages[1:])
+        messages = elide_old_ui_screenshots(messages)
         store = ImageAssetStore(self.config.project_path)
         return materialize_messages(messages, store)
 
