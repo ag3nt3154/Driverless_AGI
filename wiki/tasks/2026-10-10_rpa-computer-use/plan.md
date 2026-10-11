@@ -309,7 +309,7 @@ def pytest_collection_modifyitems(config, items):
 
 ## Stage S2 — Record, compile, run
 
-### Subtask 12: Workflow format, templating, approval store
+### Subtask 12: Workflow format, templating, approval store — ✅ `a0078c00`
 
 **Goal:** Load, validate and hash `workflow.yaml` (D1 format).
 **Requirements:**
@@ -330,7 +330,7 @@ def pytest_collection_modifyitems(config, items):
 
 - [ ] Steps 1–5.
 
-### Subtask 13: Trace recorder and `rpa_record` / `rpa_save`
+### Subtask 13: Trace recorder and `rpa_record` / `rpa_save` — ✅ `244028c1`
 
 **Goal:** Record successful acts during an explicit recording session.
 **Requirements:**
@@ -349,7 +349,7 @@ def pytest_collection_modifyitems(config, items):
 
 - [ ] Steps 1–5.
 
-### Subtask 14: Compiler and restricted cleanup
+### Subtask 14: Compiler and restricted cleanup — ✅ `f520ae68`
 
 **Goal:** Trace → draft `workflow.yaml`, deterministically; the model may only delete, rename, parameterize and flag.
 **Requirements:**
@@ -370,7 +370,7 @@ def pytest_collection_modifyitems(config, items):
 
 - [ ] Steps 1–5.
 
-### Subtask 15: Interpreter
+### Subtask 15: Interpreter — ✅ `382b854f`
 
 **Goal:** Run a workflow step by step with no model calls.
 **Requirements:**
@@ -392,7 +392,7 @@ def pytest_collection_modifyitems(config, items):
 
 - [ ] Steps 1–5.
 
-### Subtask 16: CLI, `rpa_run`, verify and approve
+### Subtask 16: CLI, `rpa_run`, verify and approve — ✅ `a1b62192`
 
 **Goal:** Run from the shell and from chat; move workflows through draft → verify → approved.
 **Requirements:**
@@ -497,7 +497,7 @@ def pytest_collection_modifyitems(config, items):
 - **Task folder:** `wiki/tasks/2026-10-10_rpa-computer-use/`
 
 ## Overall Status
-In Progress — S1 complete (manual check passed); S2 next
+In Progress — S2 code complete; S2 manual check pending
 
 ## Notes
 - R20 prerequisite merged to `main` (`467ad01b`) and into this branch (`b71bbb8b`).
@@ -514,6 +514,10 @@ In Progress — S1 complete (manual check passed); S2 next
 - Subtask 7: every real mouse/keyboard event goes through `_before_real_input` (failsafe corner, `SetActive`, foreground must be root or a window it owns, else `WrongElement`); `key` focuses the control first; `click` always needs the desktop lock (pattern-less fallback); new protocol method `needs_desktop_lock_to_observe(root)` (UIA: True when minimized) — Subtask 10 must take the lock before observing such a root. Qt AutomationIds are dotted paths (`...QWidget.btnExport`); a Qt modal dialog is nested in the parent's UIA tree, so `close_window` closes the nearest window ancestor. Process is made per-monitor DPI aware (best effort). `act`/`find` re-walk the whole tree (≈1–2 s worst case). `tk_fixture.py` has no test yet (poor-a11y case).
 - Subtask 11: `elide_old_ui_screenshots` runs in `_build_request_messages`; UI screenshots are recognised by the preceding text `[Image from read: ui_observe obs_N]`, so Subtask 10 must pass `path=f"ui_observe {obs_id}"`. Cost: each new screenshot elides an older one, which changes an earlier message and breaks the prompt-cache prefix from there (accepted by D4).
 - Subtask 10: root ids `w:<hwnd>` / `b:<handle>`; `ui_observe` uses `driver.screenshot(root, region)`; desktop lock released in `AgentLoop.run()`'s `finally` and in `interrupt()` via `registry._tools["ui_act"].release_lock()`. Review fix (D5): `ui_act` `value` may be `${env:NAME}` (read inside the tool, so the session log holds only the reference); password fields refuse literal values. A post-act outline failure (root closed itself) reports ok. Limitation: a literal non-secret value is still logged verbatim in tool-call args.
+- Subtask 12: `expect` keys are not validated by the schema (the interpreter owns the condition vocabulary). Review fix: verify/approve use `workflow_hash` (content), not file mtimes; `state()` reports "draft" whenever the workflow differs from the approved content, so any edit (incl. non-confirm steps) needs a new verify + approve.
+- Subtasks 13–14: one worker built both (rpa_save calls the compiler). Review fixes: `Recorder.prepare()` generates locators + crop BEFORE the act (they were generated after it, against a changed UI); acts whose root closes are recorded with no expect candidates; `title_re`/`url_re` anchored (`^…$`; url query/fragment optional); negative tests for rename collision and `param` on non-value fields. Secret names derive from env (`PORTAL_PW` → `secrets.portal_pw`); `flag.expect_file` replaces `expect`. `.dagi/rpa/` is gitignored (Firefox profile with logins, workflows, crops).
+- Subtask 15: store change — `status` is approval only (draft|approved); run health in `last_run` (`record_run`), `display_status()` for lists/GUI (a never-approved workflow that halts shows halted). Review fixes: desktop lock taken before the first observe of a root that `needs_desktop_lock_to_observe` (UIA restore of minimized windows); roots launched by this run win over lookalikes; secrets < 4 chars withhold outline.txt. `if_present` Ambiguous counts as present. Residual: replay root matching is not limited to dagi-opened windows (hand-written unanchored patterns could match a user window; ambiguity still halts).
+- Subtask 16: `rpa.safety.is_allow_answer` shared by SafetyGate, CLI and tools. Found in main-agent review: ESC did not stop a running `rpa_run` (interrupt only released the lock) -> `UiSession.cancel_event`, set by `UiActTool.cancel()` from `AgentLoop.interrupt()`; `run_workflow(cancelled=...)` checks it before each step and in every poll/backoff; `rpa_run` clears it at start. CLI cancel = Ctrl+C / mouse-corner failsafe.
 
 ## Open Issues
 - `code:` escape-hatch steps (D1) need dagi's tool registry, which conflicts with "rpa/ must not import agent" for CLI runs. v1 rejects them with a clear error. Decide later: run them only from `rpa_run` (in-agent), or drop.
