@@ -20,6 +20,7 @@ look a root up without re-listing every call.
 from __future__ import annotations
 
 import os
+import threading
 import uuid
 from pathlib import Path
 from typing import Callable
@@ -70,6 +71,9 @@ class UiSession:
         self.agent_name = f"{display}#{uuid.uuid4().hex[:8]}"
         # Filled in by Subtask 13 (trace recorder); None here means "not recording".
         self.recorder = None
+        # Set by ESC (AgentLoop.interrupt -> UiActTool.cancel); a running replay stops at
+        # its next step or wait. Cleared when the next rpa_run starts.
+        self.cancel_event = threading.Event()
         # root_id (prefixed, e.g. "w:1234") -> (driver, Root)
         self._roots: dict[str, tuple[Driver, Root]] = {}
         # Windows dagi opened: launched handles, launched pids, and every handle

@@ -597,3 +597,21 @@ def test_short_secret_withholds_the_halt_outline(tmp_path):
     assert result.status == "halted"
     outline = (result.run_dir / "outline.txt").read_text(encoding="utf-8")
     assert "a7" not in outline and "withheld" in outline
+
+
+def test_cancel_halts_before_the_next_step_and_inside_waits(tmp_path):
+    store = _store(tmp_path)
+    _save(store, {"name": "wf23", "steps": [
+        {"id": "first", "act": "click", "root": {"window": {"title_re": "Main"}},
+         "target": {"locators": [{"uia": {"automation_id": "ok"}}]}},
+        {"id": "second", "act": "click", "root": {"window": {"title_re": "Main"}},
+         "target": {"locators": [{"uia": {"automation_id": "ok"}}]}},
+    ]})
+    driver = _driver({"w:1": [{"role": "Button", "name": "OK", "automation_id": "ok"}]})
+    flag = {"stop": False}
+    real_act = driver.act
+    driver.act = lambda *a, **k: (real_act(*a, **k), flag.update(stop=True))[0]  # ESC during step 1
+    result = run_workflow(store, "wf23", drivers={"window": driver, "browser": driver},
+                          sleep=_no_sleep, cancelled=lambda: flag["stop"])
+    assert result.status == "halted" and result.halted_step == "second"
+    assert "cancelled" in result.reason and len(driver.acts) == 1

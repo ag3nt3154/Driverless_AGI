@@ -14,7 +14,7 @@ from typing import Callable
 from rpa import RpaError
 from rpa.model import Element, Root
 
-__all__ = ["SafetyGate", "SafetyDenied", "is_sensitive"]
+__all__ = ["SafetyGate", "SafetyDenied", "is_sensitive", "is_allow_answer"]
 
 GATED_ACTIONS = frozenset(
     {"click", "double_click", "set_value", "type", "key", "select", "upload"}
@@ -64,6 +64,16 @@ def is_sensitive(element: Element) -> bool:
     return any(pattern.search(name) for pattern in _SENSITIVE_PATTERNS)
 
 
+def is_allow_answer(answer: "str | None", allow_label: str) -> bool:
+    """True iff `answer` is `allow_label` or a free-text allow word (case-insensitive,
+    trailing "."/"!" ignored). Shared by `SafetyGate` and the CLI/`rpa_run`/`rpa_approve`
+    confirm prompts so "allow" matching stays in one place."""
+    if not isinstance(answer, str):
+        return False
+    word = answer.strip().strip(".!").strip().lower()
+    return word == allow_label.lower() or word in _ALLOW_WORDS
+
+
 class SafetyGate:
     """Per-session app permission and per-action sensitive-action confirmation.
 
@@ -88,10 +98,7 @@ class SafetyGate:
             answer = self._ask(question, options)
         except Exception:
             return False
-        if not isinstance(answer, str):
-            return False
-        word = answer.strip().strip(".!").strip().lower()
-        return word == allow_label.lower() or word in _ALLOW_WORDS
+        return is_allow_answer(answer, allow_label)
 
     def check_app(self, root: Root) -> None:
         """Ask once per `root.app` for this gate instance; deny is never remembered."""

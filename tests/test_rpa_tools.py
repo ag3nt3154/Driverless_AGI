@@ -7,7 +7,8 @@ import copy
 from rpa.drivers.fake import FakeDriver
 from rpa.model import Root
 from rpa.store import WorkflowStore
-from tools.rpa import RpaRecordTool, RpaSaveTool
+from rpa.workflow import parse_workflow
+from tools.rpa import RpaApproveTool, RpaRecordTool, RpaRunTool, RpaSaveTool
 from tools.ui import UiActTool, UiObserveTool, UiRootsTool, UiSession
 
 _ROOT = Root(id="r1", kind="window", title="MyApp", pid=1, url=None, app="app.exe")
@@ -235,3 +236,99 @@ def test_locators_come_from_the_ui_before_the_act(tmp_path, monkeypatch):
     [act] = _trace_acts(tmp_path)
     assert {"uia": {"automation_id": "btnOK"}} in act["locators"]
     assert {"uia": {"role": "Button", "name": "OK"}} in act["locators"]
+
+
+# -- rpa_run / rpa_approve (Subtask 16) --------------------------------------
+
+
+def _save_workflow(tmp_path, data, *, status: str = "draft") -> WorkflowStore:
+    store = WorkflowStore(tmp_path / ".dagi" / "rpa")
+    store.save(parse_workflow(data), status=status)
+    return store
+
+
+def _ok_wf(name: str = "demo") -> dict:
+    return {
+        "name": name,
+        "steps": [{
+            "id": "click_ok",
+            "act": "click",
+            "root": {"window": {"title_re": "MyApp"}},
+            "target": {"locators": [{"uia": {"automation_id": "btnOK"}}]},
+        }],
+    }
+
+
+def test_rpa_run_happy_path(tmp_path):
+    session, driver = _make_session(tmp_path)
+    _save_workflow(tmp_path, _ok_wf())
+    out = RpaRunTool(session).run(name="demo")
+    assert "status: ok" in out
+    assert [a[2] for a in driver.acts] == ["click"]
+
+
+def test_rpa_run_halt_offers_repair_and_starts_nothing(tmp_path):
+    session, driver = _make_session(tmp_path)
+    _save_workflow(tmp_path, {
+        "name": "demo",
+        "steps": [{
+            "id": "click_missing",
+            "act": "click",
+            "root": {"window": {"title_re": "MyApp"}},
+            "target": {"locators": [{"uia": {"automation_id": "nope"}}]},
+        }],
+    })
+    out = RpaRunTool(session).run(name="demo")
+    assert "`click_missing` halted" in out
+    assert "rpa_repair" in out
+    assert "do not start it unasked" in out
+    assert driver.acts == []
+
+
+def test_rpa_approve_autonomous_records_nothing_and_does_not_ask(tmp_path):
+    session, driver = _make_session(tmp_path)
+    session.config.autonomous = True
+    store = _save_workflow(tmp_path, _ok_wf())
+    store.mark_verified("demo")
+    ask_spy = session.callbacks
+
+    out = RpaApproveTool(session).run(name="demo")
+
+    assert out.startswith("Error")
+    assert ask_spy.calls == []
+    assert store.state("demo")["status"] != "approved"
+
+
+def test_rpa_approve_reject_records_nothing(tmp_path):
+    session, driver = _make_session(tmp_path)
+    session.callbacks.on_ask_user = lambda q, o, t: "Reject"
+    store = _save_workflow(tmp_path, _ok_wf())
+    store.mark_verified("demo")
+
+    out = RpaApproveTool(session).run(name="demo")
+
+    assert "not approved" in out
+    assert store.state("demo")["status"] != "approved"
+
+
+def test_rpa_verify_then_approve_flow(tmp_path):
+    session, driver = _make_session(tmp_path)
+    store = _save_workflow(tmp_path, _ok_wf())
+
+    verify_out = RpaRunTool(session).run(name="demo", verify=True)
+    assert "Verified" in verify_out
+
+    session.callbacks.on_ask_user = lambda q, o, t: "Approve"
+    approve_out = RpaApproveTool(session).run(name="demo")
+
+    assert approve_out.startswith("approved")
+    assert store.state("demo")["status"] == "approved"
+
+
+def test_interrupt_cancel_sets_the_session_flag_and_rpa_run_clears_it(tmp_path):
+    session, _driver = _make_session(tmp_path)
+    UiActTool(session).cancel()
+    assert session.cancel_event.is_set()
+    from tools.rpa import RpaRunTool
+    RpaRunTool(session).run(name="does-not-exist")
+    assert not session.cancel_event.is_set()

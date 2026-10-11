@@ -284,6 +284,11 @@ class UiActTool(BaseTool):
     def __init__(self, session: UiSession) -> None:
         self.session = session
 
+    def cancel(self) -> None:
+        """ESC: stop a running replay at its next cancel point, then release the lock."""
+        self.session.cancel_event.set()
+        self.session.end_turn()
+
     def release_lock(self) -> None:
         """Release the desktop lock. Looked up by name (like `bash.force_kill`) from
         AgentLoop.interrupt() and from the turn-close path in agent/loop.py:run()."""

@@ -75,6 +75,7 @@ class _ExpectTimeout(RpaError):
     """An `expect` condition never became true within its timeout."""
 
 
+_CANCELLED = "cancelled by the Admiral"
 _MIN_REDACTABLE = 4  # shorter secrets withhold outline.txt rather than redact it
 
 _RETRYABLE = (Ambiguous, NotFound, WrongElement, _ExpectTimeout)
@@ -95,13 +96,23 @@ def run_workflow(
     now: Callable[[], datetime] | None = None,
     sleep: Callable[[float], None] = time.sleep,
     clock: Callable[[], float] = time.monotonic,
+    cancelled: Callable[[], bool] = lambda: False,
 ) -> RunResult:
     """Run workflow `name` from `store` step by step; no model calls.
 
     Each step renders its templates, finds its root, is pre-checked, resolved,
     confirmed, locked if the action needs real input, acted on, and `expect`-
     checked. A halt writes evidence to `store.dir(name)/"runs"/<ts>/`.
+    `cancelled()` (ESC) is checked before every step and in every wait/poll,
+    and halts the run with "cancelled by the Admiral".
     """
+    wait = sleep
+
+    def sleep(seconds: float) -> None:  # every poll and backoff is a cancel point
+        if cancelled():
+            raise _Halt(_CANCELLED)
+        wait(seconds)
+
     workflow = store.load(name)
     started_at = now() if now is not None else datetime.now(timezone.utc)
     today = started_at.date()
@@ -136,6 +147,8 @@ def run_workflow(
                 continue
             is_start_step = start_at is not None and i == start_index
             try:
+                if cancelled():
+                    raise _Halt(_CANCELLED)
                 if step.for_each is not None:
                     for item in _for_each_items(step.for_each, ctx):
                         item_ctx = dict(ctx, item=item)

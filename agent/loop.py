@@ -337,16 +337,18 @@ class AgentLoop:
             code.force_kill()
         _subagent_runner.force_kill_active_subagents(owner=self._owner_id)
         self._close_active_stream()
-        self._release_ui_lock()
+        ui_act = self.registry._tools.get("ui_act")
+        if ui_act is not None:
+            ui_act.cancel()  # stops a running rpa_run replay, then releases the lock
         return True
 
     def _release_ui_lock(self) -> None:
         """Release the computer-use desktop lock, if ui_act is registered (Subtask 10).
 
         Looked up by name — same pattern as bash/code above — so this is a no-op
-        when computer_use is off. Called from interrupt() and from the turn-close
-        path in run()'s finally block, which is the narrowest hook that always
-        fires exactly once per turn regardless of how the turn ended.
+        when computer_use is off. Called from the turn-close path in run()'s finally
+        block, which always fires exactly once per turn regardless of how the turn
+        ended; interrupt() calls ui_act.cancel() instead (cancel + release).
         """
         ui_act = self.registry._tools.get("ui_act")
         if ui_act is not None:
