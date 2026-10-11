@@ -7,6 +7,11 @@ Windows-only and slow, and constructing a FirefoxDriver should not spawn a
 real browser process until a tool actually needs one — and holds the
 ObservationStore, DesktopLock and SafetyGate that every ui_* tool call shares.
 
+Only windows dagi opened are listed (privacy: window titles go to the model
+provider): the window `ui_roots(launch=...)` returned, plus later windows of a
+process dagi launched that were not already open before the launch. Browser
+tabs all belong to dagi's own Firefox profile.
+
 Root ids exposed to the model are prefixed so they stay unique across drivers:
 "w:<hwnd>" for UIA windows, "b:<handle>" for Firefox tabs. `_roots` caches the
 (driver, Root) pair behind each prefixed id so ui_observe/ui_act/ui_wait can
@@ -67,6 +72,11 @@ class UiSession:
         self.recorder = None
         # root_id (prefixed, e.g. "w:1234") -> (driver, Root)
         self._roots: dict[str, tuple[Driver, Root]] = {}
+        # Windows dagi opened: launched handles, launched pids, and every handle
+        # that already existed before a launch (never "opened by dagi").
+        self._owned_handles: set[str] = set()
+        self._owned_pids: set[int] = set()
+        self._preexisting: set[str] = set()
 
     # -- lazy drivers --------------------------------------------------------
 
@@ -104,6 +114,21 @@ class UiSession:
         root_id = self.prefixed_id(root)
         self._roots[root_id] = (driver, root)
         return root_id
+
+    def launch_window(self, target: str) -> Root:
+        """Launch a desktop app and mark its window (and later new windows of its process) as dagi's."""
+        driver = self.uia()
+        self._preexisting |= {r.id for r in driver.roots()}
+        root = driver.launch(target)
+        self._owned_handles.add(root.id)
+        if root.pid:
+            self._owned_pids.add(root.pid)
+        return root
+
+    def opened_by_dagi(self, root: Root) -> bool:
+        return root.id in self._owned_handles or (
+            root.pid in self._owned_pids and root.id not in self._preexisting
+        )
 
     def lookup(self, root_id: str) -> "tuple[Driver, Root] | None":
         return self._roots.get(root_id)

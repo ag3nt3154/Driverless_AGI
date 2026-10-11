@@ -42,6 +42,14 @@ _SENSITIVE_PATTERNS = tuple(
 )
 
 
+#: Free-text answers that count as allow (the GUI lets the user type instead of
+#: clicking). Anything else — "deny", a question, "Proceed with your best
+#: judgment" from a headless handler — denies.
+_ALLOW_WORDS = frozenset(
+    {"allow", "allowed", "allow once", "yes", "y", "ok", "okay", "approve", "approved"}
+)
+
+
 class SafetyDenied(RpaError):
     """A safety gate denied the action; `reason` says which gate and why."""
 
@@ -62,10 +70,10 @@ class SafetyGate:
     `ask(question, options) -> str` mirrors dagi's frontend callback: `options`
     is a list of `{"label", "description"}` dicts (never `"recommended"`), and
     the return value is the chosen label (free text is possible from a
-    headless/model caller). Only an answer that equals the allow label exactly
-    (case-insensitive, stripped) counts as allow; anything else — a deny
-    label, free text, an empty string, or an exception raised by `ask` —
-    denies.
+    headless/model caller). Only the allow label or a word in `_ALLOW_WORDS`
+    (case-insensitive, trailing "." / "!" ignored) counts as allow; anything
+    else — a deny label, other free text, an empty string, or an exception
+    raised by `ask` — denies.
     """
 
     def __init__(self, ask: Callable[[str, list[dict]], str] | None, autonomous: bool) -> None:
@@ -80,7 +88,10 @@ class SafetyGate:
             answer = self._ask(question, options)
         except Exception:
             return False
-        return isinstance(answer, str) and answer.strip().lower() == allow_label.strip().lower()
+        if not isinstance(answer, str):
+            return False
+        word = answer.strip().strip(".!").strip().lower()
+        return word == allow_label.lower() or word in _ALLOW_WORDS
 
     def check_app(self, root: Root) -> None:
         """Ask once per `root.app` for this gate instance; deny is never remembered."""

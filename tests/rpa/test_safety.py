@@ -227,3 +227,16 @@ def test_action_options_never_contain_recommended():
     _, options = spy.calls[0]
     assert all("recommended" not in opt for opt in options)
     assert {opt["label"] for opt in options} == {"Allow once", "Deny"}
+
+
+@pytest.mark.parametrize("answer", ["allowed", "Allowed.", "yes", "OK", "approve", " allow once "])
+def test_clear_yes_words_count_as_allow(answer):
+    gate = SafetyGate(ask=lambda q, o: answer, autonomous=False)
+    gate.check_app(Root(id="w", kind="window", title="T", pid=1, url=None, app="a.exe"))
+
+
+@pytest.mark.parametrize("answer", ["Proceed with your best judgment", "deny", "no", "allow?", "maybe"])
+def test_other_free_text_still_denies(answer):
+    gate = SafetyGate(ask=lambda q, o: answer, autonomous=False)
+    with pytest.raises(SafetyDenied):
+        gate.check_app(Root(id="w", kind="window", title="T", pid=1, url=None, app="a.exe"))

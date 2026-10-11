@@ -63,18 +63,41 @@ def _make_session(tree, *, autonomous: bool = False, ask_spy: "_AskSpy | None" =
 
 
 def _observed_root_id(session: UiSession) -> str:
-    """List roots so the session caches "w:r1" the way a real ui_roots call would."""
-    UiRootsTool(session).run()
+    """Launch the fake app so "w:r1" is a dagi-opened, cached root, as with a real ui_roots(launch=...)."""
+    UiRootsTool(session).run(launch="r1")
     return "w:r1"
 
 
 # ── ui_roots ──────────────────────────────────────────────────────────────
 
 
-def test_ui_roots_lists_window_with_prefixed_id():
+def test_ui_roots_lists_a_launched_window_with_prefixed_id():
+    session, _driver, _ = _make_session(_BIG_TREE)
+    out = UiRootsTool(session).run(launch="r1")
+    assert "w:r1 | window | app.exe | MyApp" in out
+
+
+def test_ui_roots_hides_windows_dagi_did_not_open():
+    """Privacy: titles of the user's own windows never reach the model."""
     session, _driver, _ = _make_session(_BIG_TREE)
     out = UiRootsTool(session).run()
-    assert "w:r1 | window | app.exe | MyApp" in out
+    assert "MyApp" not in out and "1 other windows not opened by dagi are hidden" in out
+    observed = UiObserveTool(session).run(root="w:r1")
+    assert (observed.output if isinstance(observed, ToolResult) else observed).startswith("Error")
+
+
+def test_new_window_of_a_launched_process_is_listed_but_its_older_windows_are_not():
+    from rpa.drivers.fake import FakeDriver
+    from rpa.model import Root
+    mine = Root(id="r1", kind="window", title="Mine", pid=7, url=None, app="np.exe")
+    users = Root(id="r0", kind="window", title="User doc", pid=7, url=None, app="np.exe")
+    roots = {"r0": users, "r1": mine}
+    driver = FakeDriver(roots, {"r0": [], "r1": []})
+    session = UiSession(_Cfg(), _AskSpy(), uia_driver=driver)
+    UiRootsTool(session).run(launch="r1")
+    driver._roots["r2"] = Root(id="r2", kind="window", title="Mine 2", pid=7, url=None, app="np.exe")
+    out = UiRootsTool(session).run()
+    assert "w:r1 |" in out and "w:r2 |" in out and "User doc" not in out
 
 
 # ── ui_observe ────────────────────────────────────────────────────────────

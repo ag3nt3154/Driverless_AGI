@@ -104,9 +104,10 @@ def _check_condition(driver, root_obj, condition: dict) -> "tuple[bool, str]":
 class UiRootsTool(BaseTool):
     name = "ui_roots"
     description = (
-        "List desktop windows and already-open Firefox tabs as root ids (needed by "
-        "ui_observe/ui_act/ui_wait). Pass `launch` to open something first: an "
-        "http(s):// URL opens a new Firefox tab, anything else launches that exe."
+        "List the windows and Firefox tabs dagi opened, as root ids (needed by "
+        "ui_observe/ui_act/ui_wait). Other windows are hidden. Pass `launch` to open "
+        "something first: an http(s):// URL opens a new Firefox tab, anything else "
+        "launches that exe."
     )
     _parameters = {
         "type": "object",
@@ -128,10 +129,14 @@ class UiRootsTool(BaseTool):
                 if launch.startswith("http://") or launch.startswith("https://"):
                     session.remember(session.browser(), session.browser().launch(launch))
                 else:
-                    session.remember(session.uia(), session.uia().launch(launch))
+                    session.remember(session.uia(), session.launch_window(launch))
 
             lines = ["root_id | kind | app | title"]
+            hidden = 0
             for root in session.uia().roots():
+                if not session.opened_by_dagi(root):
+                    hidden += 1
+                    continue
                 root_id = session.remember(session.uia(), root)
                 lines.append(f"{root_id} | {root.kind} | {root.app} | {root.title}")
             if session.browser_started():
@@ -140,6 +145,8 @@ class UiRootsTool(BaseTool):
                     lines.append(f"{root_id} | {root.kind} | {root.app} | {root.title}")
         except RpaError as exc:
             return _error_result(exc)
+        if hidden:
+            lines.append(f"({hidden} other windows not opened by dagi are hidden; open an app with launch=)")
         return "\n".join(lines)
 
 
