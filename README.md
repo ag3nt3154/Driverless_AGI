@@ -13,14 +13,14 @@ Source research (2026-10-08): llama.cpp server prefix caching at upstream commit
 `000bee54a544` is recorded in central memory as `llama-cpp-prefix-cache.md`.
 
 Latest architecture/reliability review:
-[_CODEX_CODE_REVIEW_2026-10-10.md](_CODEX_CODE_REVIEW_2026-10-10.md), with the
-[iterative-work and self-improvement roadmap](_CODEX_SUGGESTIONS_2026-10-10.md).
-The review contains 16 open findings. New multi-agent probes confirm that one agent's
-interrupt targets every registered subagent, and closing an agent retains its paused worker.
-Prioritize isolated cancellation and terminal close alongside scheduler outcomes/deadlines.
-Focused unaffected validation: 115 passed, 4 failures (three plan-template; one SQLite setup); SQLite-dependent
-board suites could not collect on this host. The roadmap extends the shipped board/Agents UI
-with verified task progress and bounded collaboration receipts.
+[_CODEX_CODE_REVIEW_2026-10-11.md](_CODEX_CODE_REVIEW_2026-10-11.md), with the
+[iterative-work and self-improvement roadmap](_CODEX_SUGGESTIONS_2026-10-11.md).
+The review contains 17 open findings. New R22 confirms an old-board queued post can display
+and wake an agent after switching boards. Prioritize event provenance alongside isolated
+cancellation, terminal close and scheduler outcomes/deadlines. Focused validation: 336 passed,
+three known plan-template failures, two opt-in clean-install skips; 55 additional Qt tests
+passed. SQLite's previous setup blockage is cleared. The roadmap has 14 unbuilt extensions,
+including task receipts and failure-directed retries; planned RPA work is recognized separately.
 
 A minimal, self-hosted coding agent. Give it a task — it plans, calls tools, reads results, and iterates until done. Ships with a Rich interactive CLI. Supports any OpenAI-compatible API, automatic context compaction for long sessions, extended reasoning, skills-based guidance, and full session logging with auto-named session files and history restore via `/hist`.
 
