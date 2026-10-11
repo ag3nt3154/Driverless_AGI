@@ -170,11 +170,20 @@ def _register_ui_tools(
     session = UiSession(config, callbacks)
     for tool_cls in (UiRootsTool, UiObserveTool, UiActTool, UiWaitTool):
         reg.register(tool_cls(session))
-    from tools.rpa import RpaApproveTool, RpaRecordTool, RpaRunTool, RpaSaveTool
+    from tools.rpa import (
+        RpaApproveTool,
+        RpaPatchTool,
+        RpaRecordTool,
+        RpaRepairTool,
+        RpaRunTool,
+        RpaSaveTool,
+    )
     reg.register(RpaRecordTool(session))
     reg.register(RpaSaveTool(session))
     reg.register(RpaRunTool(session))
     reg.register(RpaApproveTool(session))
+    reg.register(RpaRepairTool(session))
+    reg.register(RpaPatchTool(session))
 
 
 def _register_frontend_tools(

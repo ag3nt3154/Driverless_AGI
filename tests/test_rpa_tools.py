@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import copy
 
+import pytest
+
 from rpa.drivers.fake import FakeDriver
 from rpa.model import Root
 from rpa.store import WorkflowStore
@@ -389,3 +391,282 @@ def test_an_esc_stop_is_reported_as_deliberate_not_as_a_failure(tmp_path):
     assert "status: cancelled" in out and "deliberate stop" in out
     assert "repair" not in out.split("deliberate stop")[0]
     assert "Offer the Admiral a repair" not in out
+
+
+# -- rpa_repair / rpa_patch (Subtask 17) -------------------------------------
+
+
+def _patch_wf(name: str = "demo") -> dict:
+    return {
+        "name": name,
+        "steps": [
+            {
+                "id": "click_ok",
+                "act": "click",
+                "root": {"window": {"title_re": "MyApp"}},
+                "target": {"locators": [{"uia": {"automation_id": "btnOK"}}]},
+            },
+            {
+                "id": "send_it",
+                "act": "click",
+                "confirm": "once",
+                "root": {"window": {"title_re": "MyApp"}},
+                "target": {"locators": [{"uia": {"automation_id": "btnSend"}}]},
+            },
+        ],
+    }
+
+
+def _save_patch_wf(tmp_path) -> WorkflowStore:
+    store = WorkflowStore(tmp_path / ".dagi" / "rpa")
+    store.save(parse_workflow(_patch_wf()), status="draft")
+    return store
+
+
+def _record_halt(store, name, step_id, reason="no locator matched"):
+    import json as _json
+    run_dir = store.dir(name) / "runs" / "20261012T000000Z"
+    run_dir.mkdir(parents=True, exist_ok=True)
+    (run_dir / "run.json").write_text(
+        _json.dumps({"name": name, "status": "halted", "halted_step": step_id, "reason": reason}),
+        encoding="utf-8",
+    )
+    store.record_run(name, "halted", reason=reason, run_dir=run_dir, verify=False)
+
+
+def _ask_router(answers):
+    def on_ask_user(question, options, timeout):
+        for keyword, answer in answers:
+            if keyword in question:
+                return answer
+        return "Deny"
+    return on_ask_user
+
+
+def test_rpa_repair_errors_for_a_non_halted_workflow(tmp_path):
+    session, _driver = _make_session(tmp_path)
+    _save_patch_wf(tmp_path)
+    from tools.rpa import RpaRepairTool
+
+    out = RpaRepairTool(session).run(name="demo")
+    assert out.startswith("Error")
+
+
+def test_rpa_repair_shows_halted_step_and_instructions(tmp_path):
+    session, _driver = _make_session(tmp_path)
+    store = _save_patch_wf(tmp_path)
+    _record_halt(store, "demo", "click_ok")
+    from tools.rpa import RpaRepairTool
+
+    out = RpaRepairTool(session).run(name="demo")
+    assert "halted step: click_ok" in out
+    assert "no locator matched" in out
+    assert "ui_observe" in out
+    assert "never approve" in out
+
+
+def test_rpa_patch_rejects_literal_locator_without_asking(tmp_path):
+    session, _driver = _make_session(tmp_path)
+    _save_patch_wf(tmp_path)
+    ask_spy = session.callbacks  # _AskSpy records every call
+    from tools.rpa import RpaPatchTool
+
+    ops = [{
+        "op": "replace_step", "step_id": "click_ok",
+        "step": {"target": {"locators": [{"uia": {"automation_id": "btnCancel"}}]}},
+    }]
+    out = RpaPatchTool(session).run(name="demo", ops=ops)
+
+    assert out.startswith("Error")
+    assert ask_spy.calls == []
+
+
+def test_rpa_patch_reject_leaves_yaml_byte_identical(tmp_path):
+    session, _driver = _make_session(tmp_path)
+    store = _save_patch_wf(tmp_path)
+    UiRootsTool(session).run(launch="r1")
+    obs = _observe(session, "w:r1")
+    before_yaml = (store.dir("demo") / "workflow.yaml").read_text(encoding="utf-8")
+
+    session.callbacks.on_ask_user = lambda q, o, t: "Reject"
+    from tools.rpa import RpaPatchTool
+    ops = [{
+        "op": "replace_step", "step_id": "click_ok",
+        "step": {"target": {"root": "w:r1", "obs": obs, "index": 4}},
+    }]
+    out = RpaPatchTool(session).run(name="demo", ops=ops)
+
+    after_yaml = (store.dir("demo") / "workflow.yaml").read_text(encoding="utf-8")
+    assert out == "not patched"
+    assert before_yaml == after_yaml
+
+
+def test_rpa_patch_autonomous_refuses_without_asking(tmp_path):
+    session, _driver = _make_session(tmp_path)
+    session.config.autonomous = True
+    store = _save_patch_wf(tmp_path)
+    before_yaml = (store.dir("demo") / "workflow.yaml").read_text(encoding="utf-8")
+    from tools.rpa import RpaPatchTool
+
+    out = RpaPatchTool(session).run(name="demo", ops=[{"op": "delete_step", "step_id": "send_it"}])
+
+    assert out.startswith("Error")
+    after_yaml = (store.dir("demo") / "workflow.yaml").read_text(encoding="utf-8")
+    assert before_yaml == after_yaml
+
+
+def test_rpa_patch_no_frontend_refuses_without_asking(tmp_path):
+    driver = FakeDriver({"r1": _ROOT}, {"r1": copy.deepcopy(_TREE)})
+    session = UiSession(_Cfg(tmp_path), None, uia_driver=driver)
+    store = _save_patch_wf(tmp_path)
+    before_yaml = (store.dir("demo") / "workflow.yaml").read_text(encoding="utf-8")
+    from tools.rpa import RpaPatchTool
+
+    out = RpaPatchTool(session).run(name="demo", ops=[{"op": "delete_step", "step_id": "send_it"}])
+
+    assert out.startswith("Error")
+    after_yaml = (store.dir("demo") / "workflow.yaml").read_text(encoding="utf-8")
+    assert before_yaml == after_yaml
+
+
+def test_rpa_patch_approve_writes_patched_yaml_from_observation_and_reruns(tmp_path):
+    session, _driver = _make_session(tmp_path)
+    store = _save_patch_wf(tmp_path)
+    UiRootsTool(session).run(launch="r1")
+    obs = _observe(session, "w:r1")
+
+    session.callbacks.on_ask_user = _ask_router([
+        ("Patch workflow", "Approve and re-run"),
+        ("Confirm click", "Allow once"),
+    ])
+    from tools.rpa import RpaPatchTool
+    ops = [{
+        "op": "replace_step", "step_id": "click_ok",
+        "step": {"target": {"root": "w:r1", "obs": obs, "index": 4}},
+    }]
+    out = RpaPatchTool(session).run(name="demo", ops=ops)
+
+    workflow = store.load("demo")
+    assert workflow.steps[0].target["locators"][0] == {"uia": {"automation_id": "btnCancel"}}
+    assert out.startswith("patched 'demo':")
+    assert "status: ok" in out
+    assert "Verified" in out
+
+
+def test_rpa_patch_changed_confirm_step_needs_second_confirm_cancel_writes_nothing(tmp_path):
+    session, _driver = _make_session(tmp_path)
+    store = _save_patch_wf(tmp_path)
+    UiRootsTool(session).run(launch="r1")
+    obs = _observe(session, "w:r1")
+    store.mark_verified("demo")
+    store.approve("demo")
+    assert "send_it" in store.state("demo")["approved_hash_by_step"]
+
+    session.callbacks.on_ask_user = _ask_router([
+        ("changes confirm step", "Cancel"),
+        ("Patch workflow", "Approve and re-run"),
+    ])
+    from tools.rpa import RpaPatchTool
+    ops = [{
+        "op": "replace_step", "step_id": "send_it",
+        "step": {"target": {"root": "w:r1", "obs": obs, "index": 4}},
+    }]
+    before_yaml = (store.dir("demo") / "workflow.yaml").read_text(encoding="utf-8")
+    out = RpaPatchTool(session).run(name="demo", ops=ops)
+
+    after_yaml = (store.dir("demo") / "workflow.yaml").read_text(encoding="utf-8")
+    assert out == "not patched"
+    assert before_yaml == after_yaml
+    assert "send_it" in store.state("demo")["approved_hash_by_step"]
+
+
+def test_rpa_patch_changed_confirm_step_approved_clears_hash_and_reruns(tmp_path):
+    session, _driver = _make_session(tmp_path)
+    store = _save_patch_wf(tmp_path)
+    UiRootsTool(session).run(launch="r1")
+    obs = _observe(session, "w:r1")
+    store.mark_verified("demo")
+    store.approve("demo")
+
+    session.callbacks.on_ask_user = _ask_router([
+        ("changes confirm step", "Confirm change"),
+        ("Patch workflow", "Approve and re-run"),
+        ("Confirm click", "Allow once"),
+    ])
+    from tools.rpa import RpaPatchTool
+    ops = [{
+        "op": "replace_step", "step_id": "send_it",
+        "step": {"target": {"root": "w:r1", "obs": obs, "index": 4}},
+    }]
+    out = RpaPatchTool(session).run(name="demo", ops=ops)
+
+    workflow = store.load("demo")
+    assert workflow.steps[1].target["locators"][0] == {"uia": {"automation_id": "btnCancel"}}
+    assert "send_it" not in store.state("demo")["approved_hash_by_step"]
+    assert "status: ok" in out
+
+
+@pytest.mark.parametrize("fields", [
+    {"expect": {"present": {"uia": {"automation_id": "btnDelete"}}}},
+    {"expect": {"gone": {"uia": {"automation_id": "btnDelete"}}, "timeout": 5}},
+    {"if_present": {"uia": {"automation_id": "btnDelete"}}},
+])
+def test_rpa_patch_rejects_literal_locators_in_expect_and_if_present(tmp_path, fields):
+    session, _driver = _make_session(tmp_path)
+    _save_patch_wf(tmp_path)
+    from tools.rpa import RpaPatchTool
+
+    ops = [{"op": "replace_step", "step_id": "click_ok", "step": fields}]
+    out = RpaPatchTool(session).run(name="demo", ops=ops)
+
+    assert out.startswith("Error"), out
+    assert session.callbacks.calls == []
+
+
+def test_rpa_patch_resolves_expect_and_if_present_from_an_observation(tmp_path):
+    session, _driver = _make_session(tmp_path)
+    store = _save_patch_wf(tmp_path)
+    UiRootsTool(session).run(launch="r1")
+    obs = _observe(session, "w:r1")
+    seen = []
+
+    def deny_after_seeing(question, options, timeout):
+        seen.append(question)
+        return "Reject"
+
+    session.callbacks.on_ask_user = deny_after_seeing
+    from tools.rpa import RpaPatchTool
+    descriptor = {"root": "w:r1", "obs": obs, "index": 4}
+    ops = [{"op": "replace_step", "step_id": "click_ok", "step": {
+        "expect": {"present": descriptor, "timeout": 5}, "if_present": descriptor,
+    }}]
+    out = RpaPatchTool(session).run(name="demo", ops=ops)
+
+    assert out == "not patched"
+    assert "btnCancel" in seen[0]  # the diff shows the generated locator
+    assert "timeout: 5" in seen[0]
+
+
+def test_rpa_patch_refuses_root_changes(tmp_path):
+    session, _driver = _make_session(tmp_path)
+    _save_patch_wf(tmp_path)
+    from tools.rpa import RpaPatchTool
+
+    ops = [{"op": "replace_step", "step_id": "click_ok",
+            "step": {"root": {"window": {"title_re": ".*"}}}}]
+    out = RpaPatchTool(session).run(name="demo", ops=ops)
+
+    assert out.startswith("Error") and "root" in out
+    assert session.callbacks.calls == []
+
+
+def test_rpa_patch_with_no_change_does_not_ask(tmp_path):
+    session, _driver = _make_session(tmp_path)
+    _save_patch_wf(tmp_path)
+    from tools.rpa import RpaPatchTool
+
+    ops = [{"op": "replace_step", "step_id": "click_ok", "step": {"act": "click"}}]
+    out = RpaPatchTool(session).run(name="demo", ops=ops)
+
+    assert "no change" in out
+    assert session.callbacks.calls == []

@@ -149,6 +149,13 @@ class WorkflowStore:
         state = self.state(name)
         return state.get("approved_hash_by_step", {}).get(step.id) == step_hash(step)
 
+    def clear_confirm_approvals(self, name: str, step_ids: "list[str]") -> None:
+        """Forget the approve-time hashes of `step_ids` (a repair changed them)."""
+        state = self.state(name)
+        by_step = state.get("approved_hash_by_step", {})
+        state["approved_hash_by_step"] = {k: v for k, v in by_step.items() if k not in step_ids}
+        self._write_state(name, state)
+
     def list(self) -> list[str]:
         if not self.root.exists():
             return []
