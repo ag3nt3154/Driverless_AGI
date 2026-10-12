@@ -5,6 +5,7 @@ Usage:
     conda run --no-capture-output -n dagi python pyside_gui.py
     conda run --no-capture-output -n dagi python pyside_gui.py --project /path/to/project
     conda run --no-capture-output -n dagi python pyside_gui.py --model deepseek-v4-pro-openrouter
+    conda run --no-capture-output -n dagi python pyside_gui.py --no-splash
 """
 import os
 os.environ["NO_PROXY"] = "127.0.0.1, localhost, 172.25.*"
@@ -18,8 +19,10 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+from agent import DAGI_ROOT
 from agent.config_loader import resolve_model_config
 from pyside_gui.app import DagiMainWindow
+from pyside_gui.startup_splash import StartupSplash
 from pyside_gui.theme import apply_to_app
 
 from PySide6.QtGui import QIcon
@@ -33,6 +36,7 @@ def main(
     model: Optional[str] = typer.Option(None, "--model", "-m", help="Model ID from .dagi/config.yaml"),
     verbose: bool = typer.Option(False, "--verbose", "-v"),
     project: Optional[str] = typer.Option(None, "--project", "-p", help="Project directory"),
+    splash: bool = typer.Option(True, "--splash/--no-splash", help="Play the startup animation"),
 ) -> None:
     project_path = Path(project).resolve() if project else Path.cwd()
     config = resolve_model_config(model, project_path=project_path)
@@ -41,8 +45,15 @@ def main(
     _icon = Path(__file__).parent / "pyside_gui" / "resources" / "icon.png"
     if _icon.exists():
         qt_app.setWindowIcon(QIcon(str(_icon)))
+    intro = StartupSplash.from_folder(DAGI_ROOT / ".dagi" / "emotes" / "startup") if splash else None
+    if intro is not None:
+        intro.start()
+        qt_app.processEvents()  # paint the splash before the main window's slow build
     window = DagiMainWindow(config, project_path, verbose)
-    window.show()
+    if intro is not None and not intro.is_fading:
+        intro.fading.connect(window.show)
+    else:
+        window.show()
     sys.exit(qt_app.exec())
 
 
