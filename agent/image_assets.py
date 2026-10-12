@@ -179,6 +179,52 @@ def _materialize_part(part: dict, store: ImageAssetStore) -> dict:
     return {"type": "image_url", "image_url": image_url}
 
 
+_UI_SCREENSHOT_PREFIX = "[Image from read: ui_observe"
+_UI_SCREENSHOT_OBS_RE = re.compile(r"ui_observe ([^\]\s]+)")
+
+
+def elide_old_ui_screenshots(messages: list[dict], keep: int = 3) -> list[dict]:
+    """Return a deep copy of `messages` with old UI screenshots elided.
+
+    A UI screenshot is a `dagi_image` content part whose immediately
+    preceding text part starts with ``"[Image from read: ui_observe"``
+    (see `agent/_tool_dispatch.py::_attach_image`). All but the newest
+    `keep` such images (across the whole message list, in order) are
+    replaced with a text part `[screenshot obs_N elided]`; the preceding
+    text part is left untouched. Images from the plain `read` tool, and
+    any other content, are never touched. The input is not mutated.
+    """
+    messages = copy.deepcopy(messages)
+
+    # First pass: find every UI screenshot part, in order.
+    ui_screenshots: list[tuple[dict, int, str]] = []  # (content_list, index, obs_id)
+    for message in messages:
+        content = message.get("content")
+        if not isinstance(content, list):
+            continue
+        for i, part in enumerate(content):
+            if not isinstance(part, dict) or part.get("type") != "dagi_image":
+                continue
+            if i == 0:
+                continue
+            prev = content[i - 1]
+            if not isinstance(prev, dict) or prev.get("type") != "text":
+                continue
+            text = prev.get("text", "")
+            if not text.startswith(_UI_SCREENSHOT_PREFIX):
+                continue
+            match = _UI_SCREENSHOT_OBS_RE.search(text)
+            obs_id = match.group(1) if match else "?"
+            ui_screenshots.append((content, i, obs_id))
+
+    # Elide all but the newest `keep`.
+    to_elide = ui_screenshots[:-keep] if keep > 0 else ui_screenshots
+    for content, i, obs_id in to_elide:
+        content[i] = {"type": "text", "text": f"[screenshot {obs_id} elided]"}
+
+    return messages
+
+
 def materialize_messages(messages: list[dict], store: ImageAssetStore) -> list[dict]:
     """Return a deep copy of `messages` with dagi_image parts resolved to image_url data URLs.
 

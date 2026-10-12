@@ -133,6 +133,40 @@ def on_input_submitted(win, submission: str | UserSubmission) -> None:
     win._dispatch_agent(submission)
 
 
+_WORKFLOW_BUSY_TEXT = "dagi is busy — try again when the turn ends"
+
+
+def workflow_action_refusal(session) -> str | None:
+    """None when the Workflows view can send ``session`` a new plain message now.
+
+    A click must never answer a pending ``ask_user`` question, and two turns
+    on one session can't overlap — both cases refuse instead of queuing or
+    silently swallowing the click (see Subtask 18's Decision in plan.md).
+    """
+    if session.busy or session.waiting:
+        return _WORKFLOW_BUSY_TEXT
+    return None
+
+
+def dispatch_workflow_action(win, text: str, session=None) -> None:
+    """Route a Workflows-view (or a conversation card's) button click to a session.
+
+    ``session`` defaults to the active one (the Workflows view); a card embedded
+    in a specific conversation (e.g. an rpa halt card's Repair button) passes the
+    session that owns it instead, so the message always lands in the right turn.
+
+    Busy or mid-``ask_user`` -> a visible error line, nothing sent. Otherwise
+    the message is shown and dispatched exactly like typed input.
+    """
+    if session is None:
+        session = win._active
+    refusal = workflow_action_refusal(session)
+    if refusal is not None:
+        session._conversation.append_error(refusal)
+        return
+    session._on_input_submitted(text)
+
+
 def handle_special_command(win, result: str) -> None:
     if result == "__COMPACT__":
         win._do_compact()

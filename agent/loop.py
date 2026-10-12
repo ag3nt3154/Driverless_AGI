@@ -34,7 +34,7 @@ from agent.session_log import InvariantError, SessionLog
 from agent.session_store import append_event
 from agent.skills import Skill, SkillLoader
 from agent.user_input import UserSubmission
-from agent.image_assets import ImageAssetStore, materialize_messages
+from agent.image_assets import ImageAssetStore, elide_old_ui_screenshots, materialize_messages
 from tools import _subagent_runner
 from tools.subagent_api import build_fork_context, run_subagent
 from tools.compact._tail_boundary import compute_tail_boundary, estimate_tokens
@@ -337,7 +337,22 @@ class AgentLoop:
             code.force_kill()
         _subagent_runner.force_kill_active_subagents(owner=self._owner_id)
         self._close_active_stream()
+        ui_act = self.registry._tools.get("ui_act")
+        if ui_act is not None:
+            ui_act.cancel()  # stops a running rpa_run replay, then releases the lock
         return True
+
+    def _release_ui_lock(self) -> None:
+        """Release the computer-use desktop lock, if ui_act is registered (Subtask 10).
+
+        Looked up by name — same pattern as bash/code above — so this is a no-op
+        when computer_use is off. Called from the turn-close path in run()'s finally
+        block, which always fires exactly once per turn regardless of how the turn
+        ended; interrupt() calls ui_act.cancel() instead (cancel + release).
+        """
+        ui_act = self.registry._tools.get("ui_act")
+        if ui_act is not None:
+            ui_act.release_lock()
 
     def _close_active_stream(self) -> None:
         stream = self._active_stream
@@ -672,6 +687,7 @@ class AgentLoop:
         """
         messages = [self._header_message()]
         messages.extend(self._messages[1:])
+        messages = elide_old_ui_screenshots(messages)
         store = ImageAssetStore(self.config.project_path)
         return materialize_messages(messages, store)
 
@@ -793,6 +809,7 @@ class AgentLoop:
             # Defensive: any exit path added later without an explicit close
             # still leaves the log well-formed rather than half-open.
             self.turns.close_turn(sev.reason_error("turn closed without a reason"))
+            self._release_ui_lock()
 
     def _run_reload(self) -> str:
         added, removed, errors = self._rebuild_for_reload()

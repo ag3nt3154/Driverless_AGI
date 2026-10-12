@@ -1,6 +1,7 @@
 """tests/test_streaming_loop.py — _consume_stream accumulation + streaming run() path."""
 from __future__ import annotations
 
+import base64
 import json
 from pathlib import Path
 from types import SimpleNamespace
@@ -10,8 +11,10 @@ import httpx
 import openai
 import pytest
 
+from agent.image_assets import ImageAssetStore, ImageRef
 from agent.loop import AgentCallbacks, AgentConfig, AgentLoop
 from agent.protocol import SideEffect, ToolResult
+from agent.user_input import ImageAttachment
 
 
 def _make_loop(callbacks=None, **config_kwargs) -> AgentLoop:
@@ -339,3 +342,118 @@ class TestStreamingRun:
             with pytest.raises(httpx.ReadError):
                 loop.run("task")
         assert calls["n"] == 2
+
+
+def _ui_screenshot_message(obs_id: str, ref: ImageRef) -> dict:
+    return {
+        "role": "user",
+        "content": [
+            {"type": "text", "text": f"[Image from read: ui_observe {obs_id}]"},
+            ref.to_content_part(),
+        ],
+    }
+
+
+def _make_seeded_loop(tmp_path: Path, initial_messages: list[dict], **config_kwargs) -> AgentLoop:
+    """Like _make_loop, but seeds history (`initial_messages`) and uses a
+    real project_path so ImageAssetStore reads/writes actually land."""
+    config = AgentConfig(
+        model="test-model",
+        api_key="test-key",
+        system_prompt="You are a test agent.",
+        project_path=tmp_path,
+        **config_kwargs,
+    )
+    fake_registry = MagicMock()
+    fake_registry.get_openai_tools_list.return_value = []
+    fake_registry.list_tools.return_value = []
+    fake_registry._tools = {"write_handoff": SimpleNamespace(description="submit handoff")}
+
+    def _dispatch(name, args):
+        if name == "write_handoff":
+            return ToolResult(output=args.get("content", ""), side_effect=SideEffect.END_TURN)
+        return "tool ran"
+
+    fake_registry.dispatch.side_effect = _dispatch
+    fake_tracker = MagicMock()
+    with (
+        patch("agent.loop.SessionTracker", return_value=fake_tracker),
+        patch("openai.OpenAI"),
+    ):
+        loop = AgentLoop(
+            config=config,
+            _registry=fake_registry,
+            tracker=fake_tracker,
+            initial_messages=initial_messages,
+        )
+    loop.tracker = fake_tracker
+    loop.registry = fake_registry
+    loop._skip_slug_generation = True
+    return loop
+
+
+class TestRequestBuildScreenshotRetention:
+    """Subtask 11: only the newest 3 UI screenshots reach the provider request,
+    while the loop's own history (log / .messages) keeps all of them."""
+
+    def test_only_newest_three_ui_screenshots_sent_to_provider(self, tmp_path: Path):
+        tiny_png = base64.b64decode(
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
+        )
+        store = ImageAssetStore(tmp_path)
+        ref = store.store(
+            ImageAttachment(data=tiny_png, mime_type="image/png", width=1, height=1, name="shot")
+        )
+        history = [{"role": "system", "content": "sys"}] + [
+            _ui_screenshot_message(f"obs_{i}", ref) for i in range(1, 6)
+        ]
+        loop = _make_seeded_loop(tmp_path, history)
+
+        # The log / .messages property must hold all 5 screenshots untouched.
+        images_in_history = [
+            p
+            for m in loop.messages
+            for p in (m.get("content") or [])
+            if isinstance(p, dict) and p.get("type") == "dagi_image"
+        ]
+        assert len(images_in_history) == 5
+
+        _wh_tc = SimpleNamespace(
+            id="tc_end",
+            function=SimpleNamespace(name="write_handoff", arguments=json.dumps({"content": "ok"})),
+        )
+        response = SimpleNamespace(
+            choices=[SimpleNamespace(message=SimpleNamespace(
+                content=None, tool_calls=[_wh_tc], model_extra={}, reasoning_content=None,
+            ))],
+            usage=_usage(),
+        )
+        loop.client = MagicMock()
+        loop.client.chat.completions.create.return_value = response
+        loop.run("continue")
+
+        _, kwargs = loop.client.chat.completions.create.call_args
+        sent_messages = kwargs["messages"]
+        sent_image_urls = [
+            p
+            for m in sent_messages
+            for p in (m.get("content") or [])
+            if isinstance(p, dict) and p.get("type") == "image_url"
+        ]
+        elided_markers = [
+            p["text"]
+            for m in sent_messages
+            for p in (m.get("content") or [])
+            if isinstance(p, dict) and p.get("type") == "text" and p["text"].startswith("[screenshot")
+        ]
+        assert len(sent_image_urls) == 3
+        assert elided_markers == ["[screenshot obs_1 elided]", "[screenshot obs_2 elided]"]
+
+        # The loop's own history is still untouched after the request was built.
+        images_in_history_after = [
+            p
+            for m in loop.messages
+            for p in (m.get("content") or [])
+            if isinstance(p, dict) and p.get("type") == "dagi_image"
+        ]
+        assert len(images_in_history_after) == 5

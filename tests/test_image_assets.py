@@ -6,7 +6,13 @@ from pathlib import Path
 
 import pytest
 
-from agent.image_assets import AssetError, ImageAssetStore, ImageRef, materialize_messages
+from agent.image_assets import (
+    AssetError,
+    ImageAssetStore,
+    ImageRef,
+    elide_old_ui_screenshots,
+    materialize_messages,
+)
 from agent.user_input import ImageAttachment, UserSubmission
 
 # 1x1 transparent PNG.
@@ -320,3 +326,87 @@ def test_materialize_messages_raises_on_unknown_version(tmp_path: Path) -> None:
 
     with pytest.raises(AssetError):
         materialize_messages(messages, store)
+
+
+# --- elide_old_ui_screenshots -------------------------------------------------------------
+
+
+def _ui_screenshot_message(obs_id: str) -> dict:
+    ref = ImageRef(sha256="a" * 64, mime_type="image/png", byte_size=1, width=1, height=1, name="x")
+    return {
+        "role": "user",
+        "content": [
+            {"type": "text", "text": f"[Image from read: ui_observe {obs_id}]"},
+            ref.to_content_part(),
+        ],
+    }
+
+
+def _plain_image_message(path: str) -> dict:
+    ref = ImageRef(sha256="b" * 64, mime_type="image/png", byte_size=1, width=1, height=1, name="x")
+    return {
+        "role": "user",
+        "content": [
+            {"type": "text", "text": f"[Image from read: {path}]"},
+            ref.to_content_part(),
+        ],
+    }
+
+
+def test_elide_old_ui_screenshots_keeps_newest_three() -> None:
+    messages = [_ui_screenshot_message(f"obs_{i}") for i in range(1, 6)]
+
+    result = elide_old_ui_screenshots(messages, keep=3)
+
+    image_count = sum(
+        1 for m in result for p in m["content"] if p.get("type") == "dagi_image"
+    )
+    elided = [
+        p["text"]
+        for m in result
+        for p in m["content"]
+        if p.get("type") == "text" and p["text"].startswith("[screenshot")
+    ]
+    assert image_count == 3
+    assert elided == ["[screenshot obs_1 elided]", "[screenshot obs_2 elided]"]
+    # The kept images are the newest three.
+    kept_messages = [m for m in result[2:] if any(p.get("type") == "dagi_image" for p in m["content"])]
+    assert len(kept_messages) == 3
+
+
+def test_elide_old_ui_screenshots_leaves_non_ui_image_untouched() -> None:
+    messages = [
+        _plain_image_message("notes.txt"),  # older, but not a UI screenshot
+        *[_ui_screenshot_message(f"obs_{i}") for i in range(1, 5)],
+    ]
+
+    result = elide_old_ui_screenshots(messages, keep=3)
+
+    # The plain-read image is untouched regardless of its age.
+    assert result[0]["content"][1]["type"] == "dagi_image"
+    image_count = sum(
+        1 for m in result for p in m["content"] if p.get("type") == "dagi_image"
+    )
+    assert image_count == 1 + 3  # 1 plain + newest 3 UI screenshots
+
+
+def test_elide_old_ui_screenshots_does_not_mutate_input() -> None:
+    messages = [_ui_screenshot_message(f"obs_{i}") for i in range(1, 6)]
+    import copy as _copy
+
+    before = _copy.deepcopy(messages)
+
+    elide_old_ui_screenshots(messages, keep=3)
+
+    assert messages == before
+
+
+def test_elide_old_ui_screenshots_keep_zero_elides_all() -> None:
+    messages = [_ui_screenshot_message(f"obs_{i}") for i in range(1, 4)]
+
+    result = elide_old_ui_screenshots(messages, keep=0)
+
+    image_count = sum(
+        1 for m in result for p in m["content"] if p.get("type") == "dagi_image"
+    )
+    assert image_count == 0

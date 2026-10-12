@@ -1,0 +1,99 @@
+name: sales_export
+description: Export yesterday's sales report from the desktop app and upload it to the portal.
+params:
+  report_date:
+    default: "{{ yesterday | date('%Y-%m-%d') }}"
+secrets:
+  portal_pw:
+    env: PORTAL_PW
+steps:
+  - id: launch_app
+    launch: "SalesApp.exe"
+    expect:
+      window:
+        title_re: "Sales Reporting.*"
+      timeout: 15
+
+  - id: open_export_dialog
+    act: click
+    root:
+      window:
+        title_re: "Sales Reporting.*"
+    target:
+      locators:
+        - uia:
+            automation_id: btnExport
+    expect:
+      present:
+        uia:
+          role: Window
+          name: Export
+      timeout: 10
+    retry: 2
+    on_fail: continue
+
+  - id: set_report_date
+    act: set_value
+    root:
+      window:
+        title_re: "Export"
+    target:
+      locators:
+        - uia:
+            role: Edit
+            name: "Report date"
+    value: "{{ report_date }}"
+
+  - id: confirm_export
+    act: click
+    root:
+      window:
+        title_re: "Export"
+    target:
+      locators:
+        - uia:
+            role: Button
+            name: Export
+    confirm: once
+    sensitive: true
+    expect:
+      gone:
+        uia:
+          role: Window
+          name: Export
+      timeout: 10
+
+  - id: open_portal
+    launch: "https://portal.example.com/upload"
+    expect:
+      window:
+        title_re: "Sales Portal.*"
+      timeout: 15
+
+  - id: login_to_portal
+    act: set_value
+    root:
+      browser:
+        url_re: "https://portal\\.example\\.com/.*"
+    target:
+      locators:
+        - css: "#password"
+    value: "{{ secrets.portal_pw }}"
+    confirm: every_run
+    sensitive: true
+
+  - id: upload_file
+    act: upload
+    root:
+      browser:
+        url_re: "https://portal\\.example\\.com/.*"
+    target:
+      locators:
+        - aria:
+            role: button
+            name: "Upload report"
+    value: "{{ run_dir }}/export.csv"
+    expect:
+      text:
+        contains: "Upload complete"
+      timeout: 20

@@ -109,6 +109,7 @@ class BashTool(BaseTool):
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
+            errors="replace",  # console code page; one bad byte must not kill the reader
             cwd=str(self.cwd),
             **_process_group_kwargs(),
         )

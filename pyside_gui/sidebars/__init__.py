@@ -4,6 +4,7 @@ from pyside_gui.sidebars.file_tree import FileTreeView
 from pyside_gui.sidebars.file_viewer import FileViewerView
 from pyside_gui.sidebars.message_board import MessageBoardView
 from pyside_gui.sidebars.plan_view import PlanView
+from pyside_gui.sidebars.workflows_view import WorkflowsView
 
 __all__ = [
     "AgentsView",
@@ -12,4 +13,5 @@ __all__ = [
     "FileViewerView",
     "MessageBoardView",
     "PlanView",
+    "WorkflowsView",
 ]

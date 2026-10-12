@@ -34,6 +34,9 @@ chunking = ["chonkie>=1.7"]
 # Office/PDF/image support in the read tool; without it those reads return a
 # DAGI_CANNOT_PROCESS error (PDFs still work through a configured conversion API).
 read = ["markitdown[docx,pdf,pptx,xls,xlsx]>=0.1.6", "pillow>=10.0"]
+# Computer use / RPA (rpa/): desktop UIA + Firefox automation + screen capture.
+# Firefox/geckodriver are conda packages, not pip — see requirements-rpa.txt.
+rpa = ["uiautomation==2.0.29", "selenium==4.51.0", "mss==10.2.0", "psutil==7.2.2"]
 
 [project.scripts]
 dagi = "main:main"
@@ -46,7 +49,7 @@ build-backend = "setuptools.build_meta"
 py-modules = ["main", "dagi_launch", "hist"]
 
 [tool.setuptools.packages.find]
-include = ["agent*", "tools*", "scheduler*", "tui*", "pyside_gui*", "tg*", "services.message_board*"]
+include = ["agent*", "tools*", "scheduler*", "tui*", "pyside_gui*", "tg*", "services.message_board*", "rpa*"]
 exclude = ["*.tests", "*.tests.*"]
 
 [tool.setuptools.package-data]
@@ -56,4 +59,7 @@ exclude = ["*.tests", "*.tests.*"]
 pythonpath = ["."]
 testpaths = ["tests"]
 addopts = "-p no:pytest-qt"
-markers = ["slow: builds wheels and clean venvs (network); deselect with -m \"not slow\""]
+markers = [
+    "slow: builds wheels and clean venvs (network); deselect with -m \"not slow\"",
+    "desktop: drives real desktop/browser UI (rpa/); skipped unless DAGI_DESKTOP_TESTS=1, run unsandboxed",
+]

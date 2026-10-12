@@ -75,6 +75,16 @@ class _RamWatchdog:
             os._exit(1)
 
 
+def pytest_collection_modifyitems(config, items):
+    """Skip `desktop`-marked tests (rpa/) unless DAGI_DESKTOP_TESTS=1 (run unsandboxed)."""
+    if os.environ.get("DAGI_DESKTOP_TESTS") == "1":
+        return
+    skip = pytest.mark.skip(reason="desktop test: set DAGI_DESKTOP_TESTS=1 (run unsandboxed)")
+    for item in items:
+        if item.get_closest_marker("desktop") is not None:
+            item.add_marker(skip)
+
+
 @pytest.fixture(autouse=True)
 def _isolate_memory_root(monkeypatch, tmp_path_factory):
     """Tests never see the real central memory store (it exists on the dev machine)."""

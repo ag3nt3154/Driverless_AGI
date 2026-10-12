@@ -52,6 +52,7 @@ class TestConfigDrivenFilter:
         cfg.tools = tools
         cfg.bash_backend = "subprocess"
         cfg.sandbox_mode = False
+        cfg.computer_use = False  # a bare MagicMock attribute is truthy
         cfg.advanced_config = None
         cfg.worker_config = None
         cfg.autonomous = False

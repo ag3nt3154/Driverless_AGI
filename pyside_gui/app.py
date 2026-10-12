@@ -15,7 +15,7 @@ from PySide6.QtWidgets import (
 from agent import DAGI_ROOT
 from agent.loop import AgentConfig
 
-from pyside_gui import esc_stop, recent_folders
+from pyside_gui import _dispatch, esc_stop, recent_folders
 from pyside_gui.agent_session import AgentSession
 from pyside_gui.agents_controller import AgentsController
 from pyside_gui.bridge import init_worker_logger
@@ -141,7 +141,7 @@ class DagiMainWindow(QMainWindow):
         self._splitter = QSplitter(Qt.Orientation.Horizontal)
         self._splitter.setHandleWidth(1)
 
-        self._left_sidebar = LeftSidebar(project_path)
+        self._left_sidebar = LeftSidebar(project_path, computer_use=config.computer_use)
         self._splitter.addWidget(self._left_sidebar)
 
         main_col = QWidget()
@@ -209,6 +209,14 @@ class DagiMainWindow(QMainWindow):
         self._left_sidebar.session_selected.connect(self._on_session_selected)
         self._left_sidebar.expansion_changed.connect(self._on_sidebar_expansion)
         self._left_sidebar.view_changed.connect(self._on_left_view_changed)
+        if self._left_sidebar.workflows_view is not None:
+            self._left_sidebar.workflows_view.action_requested.connect(
+                self._on_workflow_action_requested
+            )
+
+    def _on_workflow_action_requested(self, text: str) -> None:
+        """A Workflows-view button was clicked: see `_dispatch.dispatch_workflow_action`."""
+        _dispatch.dispatch_workflow_action(self, text)
 
     def _start_timers(self) -> None:
         self._spinner_timer = QTimer(self)

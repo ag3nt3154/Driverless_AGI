@@ -1,10 +1,10 @@
 """tools/code/_runner.py — child process of the `code` tool.
 
-Runs one model-written script; every ``tools.<name>(**args)`` call is sent to the parent,
+Runs one model-written script; every ``tools.<name>(...)`` call is sent to the parent,
 which runs it through its ToolRegistry and replies. One JSON object per line, UTF-8:
 
   parent -> stdin   {"script": str}                                    (first line)
-  child  -> rpc     {"type": "call", "name": str, "args": dict}
+  child  -> rpc     {"type": "call", "name": str, "args": dict, "posargs"?: list}
   parent -> stdin   {"ok": bool, "result": any, "error": str | None}
   child  -> rpc     {"type": "done", "output": str, "return": str | None, "error": str | None}
 
@@ -79,10 +79,13 @@ class _Tools:
     def __getattr__(self, name: str):
         if name.startswith("_"):
             raise AttributeError(name)
-        return lambda **args: self._call(name, args)
+        return lambda *posargs, **args: self._call(name, args, list(posargs))
 
-    def _call(self, name: str, args: dict):
-        self._out.write(json.dumps({"type": "call", "name": name, "args": args}) + "\n")
+    def _call(self, name: str, args: dict, posargs: list | None = None):
+        message = {"type": "call", "name": name, "args": args}
+        if posargs:
+            message["posargs"] = posargs  # the parent maps them onto the stub's order
+        self._out.write(json.dumps(message) + "\n")
         self._out.flush()
         reply = json.loads(self._in.readline())
         if not reply["ok"]:

@@ -94,6 +94,7 @@ class RunSkillScriptTool(BaseTool):
                 cmd,
                 capture_output=True,
                 text=True,
+                errors="replace",  # one bad byte must not kill the reader
                 timeout=120,
                 cwd=str(skill_dir),
             )

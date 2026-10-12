@@ -39,6 +39,8 @@ def is_git_repo(cwd: Path) -> bool:
             ["git", "rev-parse", "--is-inside-work-tree"],
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             cwd=str(cwd),
         )
     except FileNotFoundError:
@@ -54,6 +56,8 @@ def get_current_branch(cwd: Path) -> str | None:
         ["git", "branch", "--show-current"],
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         cwd=str(cwd),
     )
     if result.returncode != 0:
@@ -77,6 +81,8 @@ def create_task_branch(cwd: Path, task_summary: str, plan_id: str) -> str | None
         ["git", "checkout", "-b", branch_name],
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         cwd=str(cwd),
     )
     if result.returncode != 0:

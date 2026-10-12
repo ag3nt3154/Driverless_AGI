@@ -2,3 +2,4 @@ name: Deepseek Flash (Deepseek)
 model: deepseek-flash
 api_url: https://api.deepseek.com/v1
 api_key_env: DEEPSEEK_API_KEY
+supports_images: true

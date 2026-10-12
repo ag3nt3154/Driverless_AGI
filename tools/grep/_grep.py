@@ -134,7 +134,11 @@ class GrepTool(BaseTool):
             if glob:
                 cmd += ["--glob", glob]
             cmd += [pattern, str(search_path)]
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+            # rg prints UTF-8; the Windows default (cp1252) crashed the reader thread on
+            # bytes like 0x90 and lost the whole result.
+            result = subprocess.run(
+                cmd, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30,
+            )
             if result.returncode in (0, 1):  # 0 = matches, 1 = no matches
                 return result.stdout.splitlines()
         except (FileNotFoundError, subprocess.TimeoutExpired):

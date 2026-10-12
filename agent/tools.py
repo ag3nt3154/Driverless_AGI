@@ -159,6 +159,33 @@ def _register_file_tools(
         reg.register(CodeTool(registry=reg, cwd=cwd))
 
 
+def _register_ui_tools(
+    reg: ToolRegistry, config: "AgentConfig | None", callbacks: "AgentCallbacks | None",
+) -> None:
+    """The four computer-use tools (ui_roots/ui_observe/ui_act/ui_wait), gated on
+    config.computer_use — mirrors how `code` is gated on config.code_mode above."""
+    if config is None or not config.computer_use:
+        return
+    from tools.ui import UiActTool, UiObserveTool, UiRootsTool, UiSession, UiWaitTool
+    session = UiSession(config, callbacks)
+    for tool_cls in (UiRootsTool, UiObserveTool, UiActTool, UiWaitTool):
+        reg.register(tool_cls(session))
+    from tools.rpa import (
+        RpaApproveTool,
+        RpaPatchTool,
+        RpaRecordTool,
+        RpaRepairTool,
+        RpaRunTool,
+        RpaSaveTool,
+    )
+    reg.register(RpaRecordTool(session))
+    reg.register(RpaSaveTool(session))
+    reg.register(RpaRunTool(session))
+    reg.register(RpaApproveTool(session))
+    reg.register(RpaRepairTool(session))
+    reg.register(RpaPatchTool(session))
+
+
 def _register_frontend_tools(
     reg: ToolRegistry, callbacks: "AgentCallbacks | None", project_path: Path,
     *, cwd: Path, roots: list[Path] | None, image_reader=None,
@@ -304,7 +331,12 @@ def _register_fallback_tools(
 def _apply_filters_and_handoff(reg: ToolRegistry, config: "AgentConfig | None") -> None:
     """Apply config allow/deny lists, then inject the canonical write_handoff."""
     if config is not None and config.tools is not None:
-        reg.filter_to(config.tools)
+        allowed = list(config.tools)
+        if config.computer_use:  # an explicit opt-in: the ui_*/rpa_* tools pass the allowlist
+            from tools.rpa import RPA_TOOL_NAMES
+            from tools.ui import UI_TOOL_NAMES
+            allowed += [name for name in (*UI_TOOL_NAMES, *RPA_TOOL_NAMES) if name not in allowed]
+        reg.filter_to(allowed)
     if config is not None and config.disabled_tools:
         reg.filter_out(config.disabled_tools)
     # write_handoff is a lifecycle tool, not a general file-write capability.
@@ -350,6 +382,7 @@ def create_tool_registry(
     reg = ToolRegistry()
     roots = _sandbox_roots(cwd, allowed_roots, config)
     _register_file_tools(reg, cwd, roots, config)
+    _register_ui_tools(reg, config, callbacks)
     _register_session_tools(
         reg, cwd=cwd, roots=roots, config=config, callbacks=callbacks,
         tracker=tracker, bash_tool=bash_tool,
