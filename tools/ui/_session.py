@@ -1,20 +1,21 @@
-"""tools/ui/_session.py — UiSession: shared desktop/browser state for the ui_* tools.
+"""tools/ui/_session.py — UiSession: shared desktop/browser state for the computer-use tools.
 
 One UiSession lives per tool registry (one per agent session, created in
 agent/tools.py only when `config.computer_use` is true). It lazily creates the
 UIA and Firefox drivers only on first use — importing `uiautomation` is
 Windows-only and slow, and constructing a FirefoxDriver should not spawn a
 real browser process until a tool actually needs one — and holds the
-ObservationStore, DesktopLock and SafetyGate that every ui_* tool call shares.
+ObservationStore, DesktopLock and SafetyGate that every computer-use tool call shares.
 
 Only windows dagi opened are listed (privacy: window titles go to the model
-provider): the window `ui_roots(launch=...)` returned, plus later windows of a
+provider): the window `computer_use_list_windows(launch=...)` returned, plus later windows of a
 process dagi launched that were not already open before the launch. Browser
 tabs all belong to dagi's own Firefox profile.
 
 Root ids exposed to the model are prefixed so they stay unique across drivers:
 "w:<hwnd>" for UIA windows, "b:<handle>" for Firefox tabs. `_roots` caches the
-(driver, Root) pair behind each prefixed id so ui_observe/ui_act/ui_wait can
+(driver, Root) pair behind each prefixed id so computer_use_inspect_window /
+computer_use_interact_with_window / computer_use_wait_for_window_state can
 look a root up without re-listing every call.
 """
 from __future__ import annotations
@@ -64,7 +65,7 @@ _PROCESS_STATE = _ProcessUiState()
 
 
 class UiSession:
-    """Per-registry state shared by ui_roots / ui_observe / ui_act / ui_wait."""
+    """Per-registry state shared by the four computer_use_* tools."""
 
     def __init__(
         self,
@@ -96,10 +97,10 @@ class UiSession:
         self.agent_name = f"{display}#{uuid.uuid4().hex[:8]}"
         # Filled in by Subtask 13 (trace recorder); None here means "not recording".
         self.recorder = None
-        # Set by ESC (AgentLoop.interrupt -> UiActTool.cancel); a running replay stops at
+        # Set by ESC (AgentLoop.interrupt -> ComputerUseInteractWithWindowTool.cancel); a running replay stops at
         # its next step or wait. Cleared when the next rpa_run starts.
         self.cancel_event = threading.Event()
-        # root_id (prefixed, e.g. "w:1234") -> (driver, Root); per session (re-list with ui_roots)
+        # root_id (prefixed, e.g. "w:1234") -> (driver, Root); per session (re-list with computer_use_list_windows)
         self._roots: dict[str, tuple[Driver, Root]] = {}
 
     # -- lazy drivers --------------------------------------------------------
@@ -157,7 +158,7 @@ class UiSession:
         self._shared.preexisting |= {r.id for r in self.uia().roots()}
 
     def adopt(self, root: Root) -> None:
-        """Mark a window/tab that dagi launched outside ui_roots (e.g. a replay) as dagi's."""
+        """Mark a window/tab that dagi launched outside computer_use_list_windows (e.g. a replay) as dagi's."""
         if root.kind == "window":
             self._shared.owned_handles.add(root.id)
             if root.pid:

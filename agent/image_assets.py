@@ -179,15 +179,16 @@ def _materialize_part(part: dict, store: ImageAssetStore) -> dict:
     return {"type": "image_url", "image_url": image_url}
 
 
-_UI_SCREENSHOT_PREFIX = "[Image from read: ui_observe"
-_UI_SCREENSHOT_OBS_RE = re.compile(r"ui_observe ([^\]\s]+)")
+# ui_observe: the tool's name before it became computer_use_inspect_window (sessions saved earlier).
+_UI_SCREENSHOT_PREFIXES = ("[Image from read: computer_use_inspect_window", "[Image from read: ui_observe")
+_UI_SCREENSHOT_OBS_RE = re.compile(r"(?:computer_use_inspect_window|ui_observe) ([^\]\s]+)")
 
 
 def elide_old_ui_screenshots(messages: list[dict], keep: int = 3) -> list[dict]:
     """Return a deep copy of `messages` with old UI screenshots elided.
 
     A UI screenshot is a `dagi_image` content part whose immediately
-    preceding text part starts with ``"[Image from read: ui_observe"``
+    preceding text part starts with ``"[Image from read: computer_use_inspect_window"``
     (see `agent/_tool_dispatch.py::_attach_image`). All but the newest
     `keep` such images (across the whole message list, in order) are
     replaced with a text part `[screenshot obs_N elided]`; the preceding
@@ -211,7 +212,7 @@ def elide_old_ui_screenshots(messages: list[dict], keep: int = 3) -> list[dict]:
             if not isinstance(prev, dict) or prev.get("type") != "text":
                 continue
             text = prev.get("text", "")
-            if not text.startswith(_UI_SCREENSHOT_PREFIX):
+            if not text.startswith(_UI_SCREENSHOT_PREFIXES):
                 continue
             match = _UI_SCREENSHOT_OBS_RE.search(text)
             obs_id = match.group(1) if match else "?"

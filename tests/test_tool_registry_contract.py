@@ -148,7 +148,11 @@ def test_computer_use_inserts_ui_tools_after_file_tools(tmp_path):
     off = _names(_config(tmp_path), tmp_path, **kwargs)
     on = _names(_config(tmp_path, computer_use=True), tmp_path, **kwargs)
 
-    ui_tools = ["ui_roots", "ui_observe", "ui_act", "ui_wait", "rpa_record", "rpa_save", "rpa_run", "rpa_approve", "rpa_repair", "rpa_patch"]
+    ui_tools = [
+        "computer_use_list_windows", "computer_use_inspect_window",
+        "computer_use_interact_with_window", "computer_use_wait_for_window_state",
+        "rpa_record", "rpa_save", "rpa_run", "rpa_approve", "rpa_repair", "rpa_patch",
+    ]
     assert on == _FILE_TOOLS + ui_tools + off[len(_FILE_TOOLS):]
 
 
@@ -160,7 +164,8 @@ def test_computer_use_with_code_mode_puts_ui_tools_after_code(tmp_path):
 
     assert names[: len(_FILE_TOOLS) + 1] == _FILE_TOOLS + ["code"]
     assert names[len(_FILE_TOOLS) + 1 : len(_FILE_TOOLS) + 11] == [
-        "ui_roots", "ui_observe", "ui_act", "ui_wait",
+        "computer_use_list_windows", "computer_use_inspect_window",
+        "computer_use_interact_with_window", "computer_use_wait_for_window_state",
         "rpa_record", "rpa_save", "rpa_run", "rpa_approve", "rpa_repair", "rpa_patch",
     ]
 
@@ -176,11 +181,15 @@ def test_board_tools_take_emote_slot_before_show_file(tmp_path):
 
 def test_computer_use_tools_pass_a_tools_allowlist(tmp_path):
     """`computer_use: true` is an explicit opt-in; a `tools:` allowlist written before
-    the ui_* tools existed must not silently drop them."""
+    the computer-use tools existed must not silently drop them."""
     kwargs = dict(callbacks=AgentCallbacks(), skill_roots=[tmp_path])
     on = _names(_config(tmp_path, tools=["read", "bash"], computer_use=True), tmp_path, **kwargs)
     off = _names(_config(tmp_path, tools=["read", "bash"]), tmp_path, **kwargs)
 
-    ui_and_rpa = {"ui_roots", "ui_observe", "ui_act", "ui_wait", "rpa_record", "rpa_save", "rpa_run", "rpa_approve", "rpa_repair", "rpa_patch"}
+    ui_and_rpa = {
+        "computer_use_list_windows", "computer_use_inspect_window",
+        "computer_use_interact_with_window", "computer_use_wait_for_window_state",
+        "rpa_record", "rpa_save", "rpa_run", "rpa_approve", "rpa_repair", "rpa_patch",
+    }
     assert ui_and_rpa <= set(on)
     assert not ui_and_rpa & set(off)

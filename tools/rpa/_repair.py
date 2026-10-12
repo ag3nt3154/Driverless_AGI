@@ -1,8 +1,8 @@
 """tools/rpa/_repair.py — rpa_repair / rpa_patch: fix a halted workflow with a
 small, reviewed YAML patch (Subtask 17). The model never invents a locator or
 edits workflow.yaml directly: a new target is only `{root, obs, index}` — an
-element already shown by ui_observe — and this tool resolves it (session
-lookup + observation + rebind, exactly like ui_act) and calls
+element already shown by computer_use_inspect_window — and this tool resolves it (session
+lookup + observation + rebind, exactly like computer_use_interact_with_window) and calls
 `generate_locators` itself.
 """
 from __future__ import annotations
@@ -41,14 +41,14 @@ def _fence_diff(diff_text: str) -> str:
 def _locators_from(session: UiSession, desc, field: str) -> list:
     """`{root, obs, index}` -> the element's generated locators, resolved live. Any
     other form (locators/css/automation_id/name/coords/...) is refused: a locator
-    must come from a ui_observe observation, never a literal the model invented."""
+    must come from a computer_use_inspect_window observation, never a literal the model invented."""
     if not isinstance(desc, dict):
         raise RpaError(f"rpa_patch: {field} must be a mapping with root/obs/index")
     extra = set(desc) - _TARGET_DESC_KEYS
     if extra:
         raise RpaError(
             f"rpa_patch: {field} may only have root/obs/index, got extra key(s) {sorted(extra)}; "
-            "a locator must come from a ui_observe observation, not a literal"
+            "a locator must come from a computer_use_inspect_window observation, not a literal"
         )
     missing = _TARGET_DESC_KEYS - set(desc)
     if missing:
@@ -57,7 +57,7 @@ def _locators_from(session: UiSession, desc, field: str) -> list:
     root_id, obs_id, index = desc["root"], desc["obs"], desc["index"]
     found = session.lookup(root_id)
     if found is None:
-        raise RpaError(f"rpa_patch: unknown root {root_id!r}; call ui_roots first")
+        raise RpaError(f"rpa_patch: unknown root {root_id!r}; call computer_use_list_windows first")
     driver, root_obj = found
 
     before_outline = session.store.get(obs_id)
@@ -120,8 +120,8 @@ class RpaRepairTool(BaseTool):
     description = (
         "Show the evidence for a halted workflow's latest run: the halted step's "
         "YAML, the halt reason, its recorded `before` state, and the outline/"
-        "screenshot evidence paths. Explore read-only first with ui_roots/"
-        "ui_observe, then fix it with rpa_patch — never edit workflow.yaml with "
+        "screenshot evidence paths. Explore read-only first with computer_use_list_windows/"
+        "computer_use_inspect_window, then fix it with rpa_patch — never edit workflow.yaml with "
         "file tools, and never approve the result yourself."
     )
     _parameters = {
@@ -164,9 +164,10 @@ class RpaRepairTool(BaseTool):
         lines.append("halted step YAML:")
         lines.append(ctx["step_yaml"])
         lines.append(
-            "Explore read-only first with ui_roots/ui_observe to find the fix. Then call "
+            "Explore read-only first with computer_use_list_windows/computer_use_inspect_window "
+            "to find the fix. Then call "
             "rpa_patch with ops (replace_step/insert_step_after/delete_step). Every locator "
-            "(target, if_present, expect.present, expect.gone) must come from a ui_observe "
+            "(target, if_present, expect.present, expect.gone) must come from a computer_use_inspect_window "
             'observation — {"root": <root id>, "obs": "obs_N", "index": <int>} — never a literal '
             "locator. A patch cannot change a step's root. Never edit workflow.yaml with file "
             "tools, and never approve the patched result yourself."
@@ -180,7 +181,7 @@ class RpaPatchTool(BaseTool):
         "Patch a workflow's steps (replace_step/insert_step_after/delete_step) after "
         "rpa_repair. Every locator (target, if_present, expect.present, expect.gone) is "
         "given as `{\"root\": <root id>, \"obs\": \"obs_N\", \"index\": <int>}` from a "
-        "ui_observe observation — a literal locator is rejected; a step's root cannot "
+        "computer_use_inspect_window observation — a literal locator is rejected; a step's root cannot "
         "change. Shows the unified diff and asks the Admiral to approve before writing "
         "anything; a changed confirm step needs a second, explicit confirmation. "
         "On approval, writes the patch and re-runs the workflow with verify=true."

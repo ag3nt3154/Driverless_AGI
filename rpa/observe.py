@@ -1,7 +1,7 @@
 """rpa/observe.py — observation store, outline formatting, diffing and rebinding.
 
 An "observation" is a numbered snapshot (`Outline`) that the agent was shown.
-`rebind` lets a later `ui_act` on `obs_N index` keep working after the UI
+`rebind` lets a later `computer_use_interact_with_window` on `obs_N index` keep working after the UI
 reshuffles element indices, by falling back to the resolver's locators.
 """
 from __future__ import annotations

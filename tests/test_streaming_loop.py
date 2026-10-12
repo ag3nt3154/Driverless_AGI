@@ -348,7 +348,7 @@ def _ui_screenshot_message(obs_id: str, ref: ImageRef) -> dict:
     return {
         "role": "user",
         "content": [
-            {"type": "text", "text": f"[Image from read: ui_observe {obs_id}]"},
+            {"type": "text", "text": f"[Image from read: computer_use_inspect_window {obs_id}]"},
             ref.to_content_part(),
         ],
     }

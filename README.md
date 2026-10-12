@@ -911,7 +911,7 @@ python -m pip install -r requirements-rpa.txt
 conda install -n dagi -c conda-forge firefox=157.0.1 geckodriver=0.37.1
 ```
 
-**Enable** — global config only (`.dagi/config.yaml`); with it off, no `ui_*` or `rpa_*`
+**Enable** — global config only (`.dagi/config.yaml`); with it off, no computer-use or `rpa_*`
 tool is registered and the Workflows rail icon is hidden:
 
 ```yaml
@@ -922,14 +922,14 @@ dagi's Firefox uses its own persistent profile, `.dagi/rpa/firefox-profile/` (gi
 To use a site that needs a login, let dagi open the page, then log in by hand in that
 window once; later runs reuse the session.
 
-**Live use** — four tools: `ui_roots` (list or launch windows; only windows dagi opened are
-listed), `ui_observe` (numbered outline + optional set-of-marks screenshot), `ui_act`
+**Live use** — four tools: `computer_use_list_windows` (list or launch windows; only windows dagi opened are
+listed), `computer_use_inspect_window` (numbered outline + optional set-of-marks screenshot), `computer_use_interact_with_window`
 (click / type / key / select / close_window …, always on an element from an observation),
-`ui_wait`. Keys use chord syntax: `ctrl+shift+s`.
+`computer_use_wait_for_window_state`. Keys use chord syntax: `ctrl+shift+s`.
 
 **Record → verify → approve → run:**
 
-1. Ask dagi to record (`rpa_record`), do the task with `ui_*` tools, then save
+1. Ask dagi to record (`rpa_record`), do the task with the computer-use tools, then save
    (`rpa_save`). The compiler writes `.dagi/rpa/<name>/workflow.yaml` (a draft): each
    step has a root, a target with a locator ladder (UIA automation id / DOM id or testid →
    role + name → opt-in coordinates), an `expect` check, and optional `confirm`, `retry`,
@@ -965,7 +965,7 @@ screen corner is the failsafe.
 **Halt and repair** — when a step finds no unique match, the run halts and saves evidence in
 `.dagi/rpa/<name>/runs/<timestamp>/` (`run.json`, `outline.txt`, `halt.png`). The GUI shows
 a halt card (Screenshot / Repair / Dismiss). dagi offers a repair but never starts one
-unasked. `rpa_repair` shows the evidence; dagi explores with `ui_observe`, then proposes
+unasked. `rpa_repair` shows the evidence; dagi explores with `computer_use_inspect_window`, then proposes
 `rpa_patch` ops (replace / insert / delete steps). Every new locator comes from an
 observed element — dagi cannot type a locator. You see the diff and choose
 **Approve and re-run** or **Reject**; a changed confirm step needs a second confirmation.

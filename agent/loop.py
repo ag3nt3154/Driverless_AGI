@@ -337,22 +337,22 @@ class AgentLoop:
             code.force_kill()
         _subagent_runner.force_kill_active_subagents(owner=self._owner_id)
         self._close_active_stream()
-        ui_act = self.registry._tools.get("ui_act")
-        if ui_act is not None:
-            ui_act.cancel()  # stops a running rpa_run replay, then releases the lock
+        computer_use_interact_with_window = self.registry._tools.get("computer_use_interact_with_window")
+        if computer_use_interact_with_window is not None:
+            computer_use_interact_with_window.cancel()  # stops a running rpa_run replay, then releases the lock
         return True
 
     def _release_ui_lock(self) -> None:
-        """Release the computer-use desktop lock, if ui_act is registered (Subtask 10).
+        """Release the computer-use desktop lock, if computer_use_interact_with_window is registered (Subtask 10).
 
         Looked up by name — same pattern as bash/code above — so this is a no-op
         when computer_use is off. Called from the turn-close path in run()'s finally
         block, which always fires exactly once per turn regardless of how the turn
-        ended; interrupt() calls ui_act.cancel() instead (cancel + release).
+        ended; interrupt() calls computer_use_interact_with_window.cancel() instead (cancel + release).
         """
-        ui_act = self.registry._tools.get("ui_act")
-        if ui_act is not None:
-            ui_act.release_lock()
+        computer_use_interact_with_window = self.registry._tools.get("computer_use_interact_with_window")
+        if computer_use_interact_with_window is not None:
+            computer_use_interact_with_window.release_lock()
 
     def _close_active_stream(self) -> None:
         stream = self._active_stream

@@ -48,7 +48,7 @@ _OUTLINE_JS = (Path(__file__).parent / "outline.js").read_text(encoding="utf-8")
 
 _CONDA_INSTALL_LINE = "conda install -n dagi -c conda-forge firefox=157.0.1 geckodriver=0.37.1"
 
-# rpa/keys.py chord names -> selenium Keys (D3's ui_act `key`).
+# rpa/keys.py chord names -> selenium Keys (D3's computer_use_interact_with_window `key`).
 _NAMED_KEYS = {
     "enter": Keys.ENTER, "tab": Keys.TAB, "escape": Keys.ESCAPE, "esc": Keys.ESCAPE,
     "backspace": Keys.BACKSPACE, "delete": Keys.DELETE, "insert": Keys.INSERT, "space": Keys.SPACE,

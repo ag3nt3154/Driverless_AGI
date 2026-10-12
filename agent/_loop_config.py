@@ -98,7 +98,8 @@ class AgentConfig:
     # defaults the config-file value to True; this dataclass default keeps tests and
     # benchmarks unchanged.
     code_mode: bool = False
-    # Computer use: register the ui_roots/ui_observe/ui_act/ui_wait tools (desktop +
+    # Computer use: register the computer_use_* tools (list_windows, inspect_window,
+    # interact_with_window, wait_for_window_state) (desktop +
     # Firefox control via rpa/). config_loader defaults the config-file value to False
     # (global only, like code_mode) — this dataclass default keeps tests unchanged.
     computer_use: bool = False

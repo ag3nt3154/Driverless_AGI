@@ -162,13 +162,25 @@ def _register_file_tools(
 def _register_ui_tools(
     reg: ToolRegistry, config: "AgentConfig | None", callbacks: "AgentCallbacks | None",
 ) -> None:
-    """The four computer-use tools (ui_roots/ui_observe/ui_act/ui_wait), gated on
+    """The four computer_use_* tools (list_windows, inspect_window, interact_with_window,
+    wait_for_window_state), gated on
     config.computer_use — mirrors how `code` is gated on config.code_mode above."""
     if config is None or not config.computer_use:
         return
-    from tools.ui import UiActTool, UiObserveTool, UiRootsTool, UiSession, UiWaitTool
+    from tools.ui import (
+        ComputerUseInspectWindowTool,
+        ComputerUseInteractWithWindowTool,
+        ComputerUseListWindowsTool,
+        ComputerUseWaitForWindowStateTool,
+        UiSession,
+    )
     session = UiSession(config, callbacks)
-    for tool_cls in (UiRootsTool, UiObserveTool, UiActTool, UiWaitTool):
+    for tool_cls in (
+        ComputerUseListWindowsTool,
+        ComputerUseInspectWindowTool,
+        ComputerUseInteractWithWindowTool,
+        ComputerUseWaitForWindowStateTool,
+    ):
         reg.register(tool_cls(session))
     from tools.rpa import (
         RpaApproveTool,
@@ -332,7 +344,7 @@ def _apply_filters_and_handoff(reg: ToolRegistry, config: "AgentConfig | None") 
     """Apply config allow/deny lists, then inject the canonical write_handoff."""
     if config is not None and config.tools is not None:
         allowed = list(config.tools)
-        if config.computer_use:  # an explicit opt-in: the ui_*/rpa_* tools pass the allowlist
+        if config.computer_use:  # an explicit opt-in: the computer-use and rpa_* tools pass the allowlist
             from tools.rpa import RPA_TOOL_NAMES
             from tools.ui import UI_TOOL_NAMES
             allowed += [name for name in (*UI_TOOL_NAMES, *RPA_TOOL_NAMES) if name not in allowed]

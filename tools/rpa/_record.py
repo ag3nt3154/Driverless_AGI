@@ -1,4 +1,4 @@
-"""tools/rpa/_record.py — rpa_record / rpa_save: capture a `ui_*` session as a
+"""tools/rpa/_record.py — rpa_record / rpa_save: capture a computer-use session as a
 trace, then compile it into a draft `workflow.yaml` (Subtask 13 / 14).
 """
 from __future__ import annotations
@@ -37,7 +37,8 @@ def _error(exc: RpaError) -> str:
 class RpaRecordTool(BaseTool):
     name = "rpa_record"
     description = (
-        "Start recording a workflow: every successful ui_act, and every ui_roots "
+        "Start recording a workflow: every successful computer_use_interact_with_window, "
+        "and every computer_use_list_windows "
         "launch, is appended to a trace until rpa_save. Only one recording runs at "
         "a time; refused if a workflow or trace already exists for this `name` "
         "(remove it or pick another name)."
@@ -64,7 +65,10 @@ class RpaRecordTool(BaseTool):
         except RpaError as exc:
             return _error(exc)
         session.recorder = recorder
-        return f"recording {name!r}… act with the ui_* tools, then call rpa_save."
+        return (
+            f"recording {name!r}… act with computer_use_list_windows / computer_use_inspect_window / "
+            "computer_use_interact_with_window, then call rpa_save."
+        )
 
 
 class RpaSaveTool(BaseTool):

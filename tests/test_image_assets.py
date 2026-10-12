@@ -331,12 +331,12 @@ def test_materialize_messages_raises_on_unknown_version(tmp_path: Path) -> None:
 # --- elide_old_ui_screenshots -------------------------------------------------------------
 
 
-def _ui_screenshot_message(obs_id: str) -> dict:
+def _ui_screenshot_message(obs_id: str, tool: str = "computer_use_inspect_window") -> dict:
     ref = ImageRef(sha256="a" * 64, mime_type="image/png", byte_size=1, width=1, height=1, name="x")
     return {
         "role": "user",
         "content": [
-            {"type": "text", "text": f"[Image from read: ui_observe {obs_id}]"},
+            {"type": "text", "text": f"[Image from read: {tool} {obs_id}]"},
             ref.to_content_part(),
         ],
     }
@@ -372,6 +372,18 @@ def test_elide_old_ui_screenshots_keeps_newest_three() -> None:
     # The kept images are the newest three.
     kept_messages = [m for m in result[2:] if any(p.get("type") == "dagi_image" for p in m["content"])]
     assert len(kept_messages) == 3
+
+
+def test_elide_old_ui_screenshots_counts_the_old_ui_observe_name() -> None:
+    # Sessions saved before the rename label screenshots "ui_observe".
+    messages = [
+        _ui_screenshot_message("obs_1", tool="ui_observe"),
+        *[_ui_screenshot_message(f"obs_{i}") for i in range(2, 5)],
+    ]
+
+    result = elide_old_ui_screenshots(messages, keep=3)
+
+    assert result[0]["content"][1] == {"type": "text", "text": "[screenshot obs_1 elided]"}
 
 
 def test_elide_old_ui_screenshots_leaves_non_ui_image_untouched() -> None:

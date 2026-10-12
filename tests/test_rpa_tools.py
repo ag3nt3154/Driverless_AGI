@@ -1,5 +1,5 @@
 """tests/test_rpa_tools.py — rpa_record / rpa_save through UiSession + FakeDriver,
-end to end with the real ui_act tool (Subtask 13 / 14)."""
+end to end with the real computer_use_interact_with_window tool (Subtask 13 / 14)."""
 from __future__ import annotations
 
 import copy
@@ -11,7 +11,12 @@ from rpa.model import Root
 from rpa.store import WorkflowStore
 from rpa.workflow import parse_workflow
 from tools.rpa import RpaApproveTool, RpaRecordTool, RpaRunTool, RpaSaveTool
-from tools.ui import UiActTool, UiObserveTool, UiRootsTool, UiSession
+from tools.ui import (
+    ComputerUseInspectWindowTool,
+    ComputerUseInteractWithWindowTool,
+    ComputerUseListWindowsTool,
+    UiSession,
+)
 
 _ROOT = Root(id="r1", kind="window", title="MyApp", pid=1, url=None, app="app.exe")
 
@@ -48,7 +53,7 @@ def _make_session(tmp_path):
 
 
 def _observe(session, root_id, **kwargs) -> str:
-    result = UiObserveTool(session).run(root=root_id, **kwargs)
+    result = ComputerUseInspectWindowTool(session).run(root=root_id, **kwargs)
     output = result.output if hasattr(result, "output") else result
     return output.splitlines()[0]
 
@@ -69,13 +74,13 @@ def test_rpa_save_without_recording_is_an_error(tmp_path):
 
 def test_full_record_act_save_round_trip_writes_workflow_yaml(tmp_path):
     session, driver = _make_session(tmp_path)
-    UiRootsTool(session).run(launch="r1")
+    ComputerUseListWindowsTool(session).run(launch="r1")
 
     RpaRecordTool(session).run(name="demo", goal="click ok then send")
     obs = _observe(session, "w:r1")
-    UiActTool(session).run(root="w:r1", target=0, action="click", obs=obs)
+    ComputerUseInteractWithWindowTool(session).run(root="w:r1", target=0, action="click", obs=obs)
     obs2 = _observe(session, "w:r1")
-    UiActTool(session).run(root="w:r1", target=1, action="click", obs=obs2)
+    ComputerUseInteractWithWindowTool(session).run(root="w:r1", target=1, action="click", obs=obs2)
 
     result = RpaSaveTool(session).run()
     assert result.startswith("saved draft workflow 'demo'")
@@ -88,12 +93,12 @@ def test_full_record_act_save_round_trip_writes_workflow_yaml(tmp_path):
 
 def test_failed_or_refused_act_adds_nothing_to_the_trace(tmp_path):
     session, driver = _make_session(tmp_path)
-    UiRootsTool(session).run(launch="r1")
+    ComputerUseListWindowsTool(session).run(launch="r1")
     RpaRecordTool(session).run(name="demo", goal="g")
     obs = _observe(session, "w:r1")
 
-    # A bad target index: ui_act returns an error and must not call record_act.
-    result = UiActTool(session).run(root="w:r1", target=999, action="click", obs=obs)
+    # A bad target index: computer_use_interact_with_window returns an error and must not call record_act.
+    result = ComputerUseInteractWithWindowTool(session).run(root="w:r1", target=999, action="click", obs=obs)
     assert result.startswith("Error")
 
     RpaSaveTool(session).run()
@@ -104,11 +109,11 @@ def test_failed_or_refused_act_adds_nothing_to_the_trace(tmp_path):
 def test_secure_value_stored_as_secret_ref_canary_never_in_files(tmp_path, monkeypatch):
     monkeypatch.setenv("DAGI_TEST_PW", "s3cr3t-canary")
     session, driver = _make_session(tmp_path)
-    UiRootsTool(session).run(launch="r1")
+    ComputerUseListWindowsTool(session).run(launch="r1")
     RpaRecordTool(session).run(name="demo", goal="g")
     obs = _observe(session, "w:r1")
 
-    UiActTool(session).run(
+    ComputerUseInteractWithWindowTool(session).run(
         root="w:r1", target=2, action="set_value", obs=obs, value="${env:DAGI_TEST_PW}",
     )
 
@@ -125,11 +130,11 @@ def test_secure_value_stored_as_secret_ref_canary_never_in_files(tmp_path, monke
 
 def test_send_button_compiles_with_confirm_once(tmp_path):
     session, driver = _make_session(tmp_path)
-    UiRootsTool(session).run(launch="r1")
+    ComputerUseListWindowsTool(session).run(launch="r1")
     RpaRecordTool(session).run(name="demo", goal="g")
     obs = _observe(session, "w:r1")
 
-    UiActTool(session).run(root="w:r1", target=1, action="click", obs=obs)
+    ComputerUseInteractWithWindowTool(session).run(root="w:r1", target=1, action="click", obs=obs)
 
     RpaSaveTool(session).run()
     workflow = WorkflowStore(tmp_path / ".dagi" / "rpa").load("demo")
@@ -138,10 +143,10 @@ def test_send_button_compiles_with_confirm_once(tmp_path):
 
 def test_duplicate_recording_name_refused_unless_removed(tmp_path):
     session, driver = _make_session(tmp_path)
-    UiRootsTool(session).run(launch="r1")
+    ComputerUseListWindowsTool(session).run(launch="r1")
     RpaRecordTool(session).run(name="demo", goal="g")
     obs = _observe(session, "w:r1")
-    UiActTool(session).run(root="w:r1", target=0, action="click", obs=obs)
+    ComputerUseInteractWithWindowTool(session).run(root="w:r1", target=0, action="click", obs=obs)
     RpaSaveTool(session).run()
 
     out = RpaRecordTool(session).run(name="demo", goal="again")
@@ -156,10 +161,10 @@ def test_duplicate_recording_name_refused_unless_removed(tmp_path):
 
 def test_rpa_save_error_keeps_recording_active(tmp_path):
     session, driver = _make_session(tmp_path)
-    UiRootsTool(session).run(launch="r1")
+    ComputerUseListWindowsTool(session).run(launch="r1")
     RpaRecordTool(session).run(name="demo", goal="g")
     obs = _observe(session, "w:r1")
-    UiActTool(session).run(root="w:r1", target=0, action="click", obs=obs)
+    ComputerUseInteractWithWindowTool(session).run(root="w:r1", target=0, action="click", obs=obs)
 
     bad_cleanup = [{"op": "delete", "step": "does-not-exist"}]
     result = RpaSaveTool(session).run(cleanup=bad_cleanup)
@@ -173,10 +178,10 @@ def test_rpa_save_error_keeps_recording_active(tmp_path):
 
 def test_same_trace_saved_twice_is_byte_identical_yaml(tmp_path):
     session, driver = _make_session(tmp_path)
-    UiRootsTool(session).run(launch="r1")
+    ComputerUseListWindowsTool(session).run(launch="r1")
     RpaRecordTool(session).run(name="demo", goal="g")
     obs = _observe(session, "w:r1")
-    UiActTool(session).run(root="w:r1", target=0, action="click", obs=obs)
+    ComputerUseInteractWithWindowTool(session).run(root="w:r1", target=0, action="click", obs=obs)
     RpaSaveTool(session).run()
     store = WorkflowStore(tmp_path / ".dagi" / "rpa")
     first_yaml = (store.dir("demo") / "workflow.yaml").read_text(encoding="utf-8")
@@ -184,10 +189,10 @@ def test_same_trace_saved_twice_is_byte_identical_yaml(tmp_path):
     (store.dir("demo") / "workflow.yaml").unlink()
     (store.dir("demo") / "trace.jsonl").unlink()
     session2, driver2 = _make_session(tmp_path)
-    UiRootsTool(session2).run(launch="r1")
+    ComputerUseListWindowsTool(session2).run(launch="r1")
     RpaRecordTool(session2).run(name="demo", goal="g")
     obs2 = _observe(session2, "w:r1")
-    UiActTool(session2).run(root="w:r1", target=0, action="click", obs=obs2)
+    ComputerUseInteractWithWindowTool(session2).run(root="w:r1", target=0, action="click", obs=obs2)
     RpaSaveTool(session2).run()
     second_yaml = (store.dir("demo") / "workflow.yaml").read_text(encoding="utf-8")
 
@@ -204,7 +209,7 @@ def _trace_acts(tmp_path):
 def test_an_act_that_closes_its_own_root_is_still_recorded(tmp_path, monkeypatch):
     from rpa import RpaError
     session, driver = _make_session(tmp_path)
-    UiRootsTool(session).run(launch="r1")
+    ComputerUseListWindowsTool(session).run(launch="r1")
     RpaRecordTool(session).run(name="demo", goal="close it")
     obs = _observe(session, "w:r1")
     real_act = driver.act
@@ -214,7 +219,7 @@ def test_an_act_that_closes_its_own_root_is_still_recorded(tmp_path, monkeypatch
         monkeypatch.setattr(driver, "outline", lambda *a, **k: (_ for _ in ()).throw(RpaError("gone")))
 
     monkeypatch.setattr(driver, "act", act_then_vanish)
-    out = UiActTool(session).run(root="w:r1", target=4, action="close_window", obs=obs)
+    out = ComputerUseInteractWithWindowTool(session).run(root="w:r1", target=4, action="close_window", obs=obs)
     assert out.startswith("ok: close_window")
     acts = _trace_acts(tmp_path)
     assert [a["action"] for a in acts] == ["close_window"] and acts[0]["expect_candidates"] == []
@@ -224,7 +229,7 @@ def test_locators_come_from_the_ui_before_the_act(tmp_path, monkeypatch):
     """The click makes a second "OK" appear; the recorded role+name locator must still
     be the one that was unique when the button was clicked."""
     session, driver = _make_session(tmp_path)
-    UiRootsTool(session).run(launch="r1")
+    ComputerUseListWindowsTool(session).run(launch="r1")
     RpaRecordTool(session).run(name="demo", goal="click ok")
     obs = _observe(session, "w:r1")
     real_act = driver.act
@@ -234,7 +239,7 @@ def test_locators_come_from_the_ui_before_the_act(tmp_path, monkeypatch):
         driver._trees["r1"].insert(0, {"role": "Button", "name": "OK", "bbox": (0, 200, 50, 220)})
 
     monkeypatch.setattr(driver, "act", act_then_add_twin)
-    UiActTool(session).run(root="w:r1", target=0, action="click", obs=obs)
+    ComputerUseInteractWithWindowTool(session).run(root="w:r1", target=0, action="click", obs=obs)
     [act] = _trace_acts(tmp_path)
     assert {"uia": {"automation_id": "btnOK"}} in act["locators"]
     assert {"uia": {"role": "Button", "name": "OK"}} in act["locators"]
@@ -329,7 +334,7 @@ def test_rpa_verify_then_approve_flow(tmp_path):
 
 def test_interrupt_cancel_sets_the_session_flag_and_rpa_run_clears_it(tmp_path):
     session, _driver = _make_session(tmp_path)
-    UiActTool(session).cancel()
+    ComputerUseInteractWithWindowTool(session).cancel()
     assert session.cancel_event.is_set()
     from tools.rpa import RpaRunTool
     RpaRunTool(session).run(name="does-not-exist")
@@ -339,9 +344,9 @@ def test_interrupt_cancel_sets_the_session_flag_and_rpa_run_clears_it(tmp_path):
 def test_recorded_acts_on_a_launched_window_compile_with_launched_by(tmp_path):
     session, _driver = _make_session(tmp_path)
     RpaRecordTool(session).run(name="demo", goal="launch and click")
-    UiRootsTool(session).run(launch="r1")
+    ComputerUseListWindowsTool(session).run(launch="r1")
     obs = _observe(session, "w:r1")
-    UiActTool(session).run(root="w:r1", target=0, action="click", obs=obs)
+    ComputerUseInteractWithWindowTool(session).run(root="w:r1", target=0, action="click", obs=obs)
     out = RpaSaveTool(session).run()
     assert "launched_by: step_01" in out, out
 
@@ -349,14 +354,14 @@ def test_recorded_acts_on_a_launched_window_compile_with_launched_by(tmp_path):
 def test_a_recorded_root_close_compiles_to_a_step_without_target(tmp_path):
     session, _driver = _make_session(tmp_path)
     RpaRecordTool(session).run(name="demo", goal="open and close")
-    UiRootsTool(session).run(launch="r1")
-    UiActTool(session).run(root="w:r1", action="close_window")
+    ComputerUseListWindowsTool(session).run(launch="r1")
+    ComputerUseInteractWithWindowTool(session).run(root="w:r1", action="close_window")
     out = RpaSaveTool(session).run()
     assert "act: close_window" in out and "target" not in out.split("act: close_window")[1].split("- id:")[0]
 
 
 def test_windows_a_replay_opened_are_dagis_afterwards(tmp_path):
-    """Close them later: a replay's launched windows must show up in ui_roots."""
+    """Close them later: a replay's launched windows must show up in computer_use_list_windows."""
     session, driver = _make_session(tmp_path)
     store = WorkflowStore(tmp_path / ".dagi" / "rpa")
     from rpa.workflow import parse_workflow
@@ -364,7 +369,7 @@ def test_windows_a_replay_opened_are_dagis_afterwards(tmp_path):
     from tools.rpa import RpaRunTool
     out = RpaRunTool(session).run(name="opener")
     assert "opened: w:r1" in out
-    assert "w:r1 | window" in UiRootsTool(session).run()
+    assert "w:r1 | window" in ComputerUseListWindowsTool(session).run()
 
 
 def test_listing_roots_never_starts_firefox():
@@ -373,7 +378,7 @@ def test_listing_roots_never_starts_firefox():
         def roots(self):
             raise AssertionError("listing started Firefox")
     session = UiSession(_Cfg(None), _AskSpy(), uia_driver=FakeDriver({}, {}), browser_driver=_LazyBrowser())
-    UiRootsTool(session).run()
+    ComputerUseListWindowsTool(session).run()
 
 
 def test_an_esc_stop_is_reported_as_deliberate_not_as_a_failure(tmp_path):
@@ -461,7 +466,7 @@ def test_rpa_repair_shows_halted_step_and_instructions(tmp_path):
     out = RpaRepairTool(session).run(name="demo")
     assert "halted step: click_ok" in out
     assert "no locator matched" in out
-    assert "ui_observe" in out
+    assert "computer_use_inspect_window" in out
     assert "never approve" in out
 
 
@@ -484,7 +489,7 @@ def test_rpa_patch_rejects_literal_locator_without_asking(tmp_path):
 def test_rpa_patch_question_fences_the_diff(tmp_path):
     session, _driver = _make_session(tmp_path)
     store = _save_patch_wf(tmp_path)
-    UiRootsTool(session).run(launch="r1")
+    ComputerUseListWindowsTool(session).run(launch="r1")
     obs = _observe(session, "w:r1")
     seen = []
 
@@ -508,7 +513,7 @@ def test_rpa_patch_question_fences_the_diff(tmp_path):
 def test_rpa_patch_reject_leaves_yaml_byte_identical(tmp_path):
     session, _driver = _make_session(tmp_path)
     store = _save_patch_wf(tmp_path)
-    UiRootsTool(session).run(launch="r1")
+    ComputerUseListWindowsTool(session).run(launch="r1")
     obs = _observe(session, "w:r1")
     before_yaml = (store.dir("demo") / "workflow.yaml").read_text(encoding="utf-8")
 
@@ -556,7 +561,7 @@ def test_rpa_patch_no_frontend_refuses_without_asking(tmp_path):
 def test_rpa_patch_approve_writes_patched_yaml_from_observation_and_reruns(tmp_path):
     session, _driver = _make_session(tmp_path)
     store = _save_patch_wf(tmp_path)
-    UiRootsTool(session).run(launch="r1")
+    ComputerUseListWindowsTool(session).run(launch="r1")
     obs = _observe(session, "w:r1")
 
     session.callbacks.on_ask_user = _ask_router([
@@ -580,7 +585,7 @@ def test_rpa_patch_approve_writes_patched_yaml_from_observation_and_reruns(tmp_p
 def test_rpa_patch_changed_confirm_step_needs_second_confirm_cancel_writes_nothing(tmp_path):
     session, _driver = _make_session(tmp_path)
     store = _save_patch_wf(tmp_path)
-    UiRootsTool(session).run(launch="r1")
+    ComputerUseListWindowsTool(session).run(launch="r1")
     obs = _observe(session, "w:r1")
     store.mark_verified("demo")
     store.approve("demo")
@@ -607,7 +612,7 @@ def test_rpa_patch_changed_confirm_step_needs_second_confirm_cancel_writes_nothi
 def test_rpa_patch_changed_confirm_step_approved_clears_hash_and_reruns(tmp_path):
     session, _driver = _make_session(tmp_path)
     store = _save_patch_wf(tmp_path)
-    UiRootsTool(session).run(launch="r1")
+    ComputerUseListWindowsTool(session).run(launch="r1")
     obs = _observe(session, "w:r1")
     store.mark_verified("demo")
     store.approve("demo")
@@ -650,7 +655,7 @@ def test_rpa_patch_rejects_literal_locators_in_expect_and_if_present(tmp_path, f
 def test_rpa_patch_resolves_expect_and_if_present_from_an_observation(tmp_path):
     session, _driver = _make_session(tmp_path)
     store = _save_patch_wf(tmp_path)
-    UiRootsTool(session).run(launch="r1")
+    ComputerUseListWindowsTool(session).run(launch="r1")
     obs = _observe(session, "w:r1")
     seen = []
 

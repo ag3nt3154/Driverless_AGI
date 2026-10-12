@@ -123,7 +123,7 @@ class RpaRunTool(BaseTool):
         except RpaError as exc:
             return _error(exc)
 
-        # Windows/tabs the replay opened are dagi's: listed by ui_roots, closable later.
+        # Windows/tabs the replay opened are dagi's: listed by computer_use_list_windows, closable later.
         for root in result.launched:
             session.adopt(root)
             driver = drivers["window" if root.kind == "window" else "browser"]

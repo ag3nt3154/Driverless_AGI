@@ -1,4 +1,4 @@
-"""rpa/keys.py — one key-chord syntax for every driver (`ui_act` action `key`).
+"""rpa/keys.py — one key-chord syntax for every driver (`computer_use_interact_with_window` action `key`).
 
 A chord is `+`-joined, case-insensitive: optional modifiers then one key, e.g.
 `enter`, `ctrl+s`, `ctrl+shift+s`, `alt+f4`, `shift+tab`. Each driver translates

@@ -1,4 +1,5 @@
-"""tools/ui/_tools.py — the four computer-use tools: ui_roots, ui_observe, ui_act, ui_wait.
+"""tools/ui/_tools.py — the four computer-use tools: computer_use_list_windows,
+computer_use_inspect_window, computer_use_interact_with_window, computer_use_wait_for_window_state.
 
 Registered only when `AgentConfig.computer_use` is true (agent/tools.py). All
 four share one `UiSession` (desktop/browser drivers, the observation store,
@@ -8,7 +9,7 @@ FailsafeAbort) a driver/resolver/safety call raises is turned into a single
 "Error (<Kind>): <message>" string rather than propagating, so the model sees
 a plain, recoverable tool result instead of a traceback.
 
-Secrets (D5): a `ui_act` value of the form `${env:NAME}` is read from the
+Secrets (D5): a `computer_use_interact_with_window` value of the form `${env:NAME}` is read from the
 environment inside the tool, so the tool-call arguments (and the session log
 that records them) hold only the reference. Typing into a secure (password)
 element requires such a reference; a literal value is refused.
@@ -24,7 +25,7 @@ from agent.base_tool import BaseTool
 from agent.protocol import SideEffect, ToolResult
 from agent.user_input import ImageAttachment
 from rpa import RpaError
-from rpa.model import Outline, validate_locator
+from rpa.model import ACTIONS, Outline, validate_locator
 from rpa.observe import diff, format_outline, rebind
 from rpa.resolver import resolve
 from rpa.screen import fit_width, mark, to_png_bytes
@@ -32,12 +33,12 @@ from tools.ui._session import UiSession
 
 
 def _error_result(exc: RpaError) -> str:
-    """"Error (<Kind>): <message>" — the one error shape every ui_* tool returns."""
+    """"Error (<Kind>): <message>" — the one error shape every computer-use tool returns."""
     return f"Error ({type(exc).__name__}): {exc}"
 
 
 def _unknown_root(root_id: str) -> str:
-    return f"Error (NotFound): unknown root {root_id!r}; call ui_roots first"
+    return f"Error (NotFound): unknown root {root_id!r}; call computer_use_list_windows first"
 
 
 def _resolve_region(
@@ -48,7 +49,7 @@ def _resolve_region(
     if region is None:
         return None
     if isinstance(region, bool):  # bool is an int subclass; never a valid index
-        raise RpaError(f"ui_observe: invalid region {region!r}")
+        raise RpaError(f"computer_use_inspect_window: invalid region {region!r}")
     if isinstance(region, (list, tuple)) and len(region) == 1:
         region = region[0]
     if isinstance(region, str):
@@ -56,11 +57,14 @@ def _resolve_region(
     if isinstance(region, int):
         element = next((e for e in outline.elements if e.index == region), None)
         if element is None:
-            raise RpaError(f"ui_observe: region index {region} is not in this outline")
+            raise RpaError(f"computer_use_inspect_window: region index {region} is not in this outline")
         left, top, right, bottom = element.bbox
         return (max(0, left - 40), max(0, top - 40), right + 40, bottom + 40)
     if not isinstance(region, (list, tuple)) or len(region) != 4:
-        raise RpaError(f"ui_observe: region must be an element index or [left, top, right, bottom], got {region!r}")
+        raise RpaError(
+            f"computer_use_inspect_window: region must be an element index or [left, top, right, bottom], "
+            f"got {region!r}"
+        )
     left, top, right, bottom = region
     return (int(left), int(top), int(right), int(bottom))
 
@@ -98,23 +102,28 @@ def _check_condition(driver, root_obj, condition: dict) -> "tuple[bool, str]":
         path = condition["file_exists"]
         exists = Path(path).exists()
         return exists, f'file {"exists" if exists else "missing"}: {path}'
-    raise RpaError(f"ui_wait: unknown condition key(s) {list(condition)}")
+    raise RpaError(f"computer_use_wait_for_window_state: unknown condition key(s) {list(condition)}")
 
 
-class UiRootsTool(BaseTool):
-    name = "ui_roots"
+class ComputerUseListWindowsTool(BaseTool):
+    name = "computer_use_list_windows"
     description = (
-        "List the windows and Firefox tabs dagi opened, as root ids (needed by "
-        "ui_observe/ui_act/ui_wait). Other windows are hidden. Pass `launch` to open "
-        "something first: an http(s):// URL opens a new Firefox tab, anything else "
-        "launches that exe."
+        "Computer use, step 1: list the desktop windows and Firefox tabs dagi opened, "
+        "or open a new one. Each row is `root_id | kind | app | title`; the root_id "
+        "(w:<n> for a window, b:<n> for a Firefox tab) is the `root` every other "
+        "computer-use tool takes. Windows dagi did not open are hidden and cannot be "
+        "used. `launch` opens something first: an http(s):// URL opens a new Firefox "
+        "tab, anything else is run as a program (exe path or name, e.g. notepad.exe)."
     )
     _parameters = {
         "type": "object",
         "properties": {
             "launch": {
                 "type": "string",
-                "description": "Optional: an http(s):// URL (opens in Firefox), or an exe path/name to launch.",
+                "description": (
+                    "Optional: an http(s):// URL to open in a new Firefox tab, or a program "
+                    "(exe path or name) to start."
+                ),
             },
         },
     }
@@ -154,27 +163,37 @@ class UiRootsTool(BaseTool):
         return "\n".join(lines)
 
 
-class UiObserveTool(BaseTool):
-    name = "ui_observe"
+class ComputerUseInspectWindowTool(BaseTool):
+    name = "computer_use_inspect_window"
     description = (
-        "Snapshot a root's UI as a numbered outline (one obs id per call) and, when "
-        "useful, a marked screenshot (context only — pick targets by [index] from the "
-        "text outline, not the picture). Screenshots older than the newest 3 are elided "
-        "automatically. `region` zooms: an element index (crops around it) or [l,t,r,b]."
+        "Computer use, step 2: read what is on screen in one window or tab. Returns an "
+        "observation id (obs_N) and a numbered outline of its UI elements, one "
+        "`[index] role \"name\"` per line; pass that obs id and an [index] to "
+        "computer_use_interact_with_window. A screenshot with the indexes drawn on it is added when "
+        "`mode` asks for one, or when the outline has few interactive elements (canvas "
+        "or custom-drawn UI). It is context only: always pick targets from the text "
+        "outline. Only the newest 3 screenshots stay in context. `query` filters a "
+        "large outline by name; `region` zooms the screenshot."
     )
     _parameters = {
         "type": "object",
         "properties": {
-            "root": {"type": "string", "description": "A root id from ui_roots."},
+            "root": {"type": "string", "description": "The window/tab root_id from computer_use_list_windows (e.g. w:1234)."},
             "mode": {
                 "type": "string",
                 "enum": ["outline", "screenshot", "both"],
-                "description": "outline (default) is text-only unless few interactive elements are present.",
+                "description": (
+                    "outline (default): text only, unless few interactive elements are found; "
+                    "screenshot or both: always add the marked screenshot."
+                ),
             },
-            "query": {"type": "string", "description": "Only elements whose name contains this substring."},
-            "depth": {"type": "integer", "description": "Limit how many levels deep to walk."},
+            "query": {"type": "string", "description": "Only list elements whose name contains this substring."},
+            "depth": {"type": "integer", "description": "Only walk this many levels of the UI tree."},
             "region": {
-                "description": "Zoom to this element [index] (crop + 40px) or an explicit [left, top, right, bottom].",
+                "description": (
+                    "Screenshot zoom: an element [index] (crops 40px around it) or a "
+                    "[left, top, right, bottom] box in outline coordinates."
+                ),
             },
         },
         "required": ["root"],
@@ -229,7 +248,7 @@ class UiObserveTool(BaseTool):
         return ToolResult(
             output=text,
             side_effect=SideEffect.ATTACH_IMAGE,
-            side_effect_data={"image": attachment, "path": f"ui_observe {obs_id}"},
+            side_effect_data={"image": attachment, "path": f"computer_use_inspect_window {obs_id}"},
         )
 
 
@@ -260,31 +279,47 @@ def _root_alive(driver, root_obj) -> bool:
         return False
 
 
-class UiActTool(BaseTool):
-    name = "ui_act"
+class ComputerUseInteractWithWindowTool(BaseTool):
+    name = "computer_use_interact_with_window"
     description = (
-        "Act on one element of a root: click, double_click, right_click, set_value, type, "
-        "key, scroll, select, upload, focus, close_window. `target` is an [index] from the "
-        "named `obs` (its observation id), or a locator dict ({\"uia\":...}/{\"css\":...}/"
-        "{\"aria\":...}/{\"coords\":...} — coords only with allow_coords=true). New apps and "
-        "sensitive actions (send, delete, pay, publish, ...) ask the user to confirm first. "
-        "For key, `value` is a chord: enter, tab, esc, ctrl+s, ctrl+shift+s, alt+f4 "
-        "(modifiers ctrl/shift/alt/win joined with +); for type, `value` is typed literally. "
-        "Never put a real password or secret in `value`: pass `${env:NAME}` and the tool reads "
-        "environment variable NAME (password fields accept only this form). "
-        "To close the root window/tab itself, use action=close_window with no target. "
-        "Returns the new observation id to use for the next ui_act."
+        "Computer use, step 3: do one action on one UI element in a window or tab. "
+        "`target` is an [index] from the computer_use_inspect_window outline named by `obs` (pass "
+        "both), or a locator dict ({\"uia\":...}/{\"css\":...}/{\"aria\":...}/"
+        "{\"coords\":...}; coords only with allow_coords=true). `value`: for key, a "
+        "chord such as enter, tab, esc, ctrl+s, ctrl+shift+s, alt+f4 (modifiers "
+        "ctrl/shift/alt/win joined with +); for type, text typed literally; for "
+        "set_value/select/upload, the value, option or file path. Never put a real "
+        "password or secret in `value`: pass `${env:NAME}` and the tool reads environment "
+        "variable NAME (password fields accept only this form). The first action in a "
+        "new app or site, and sensitive actions (send, delete, pay, publish, ...), ask "
+        "the user to confirm first. To close the window/tab itself, use "
+        "action=close_window with no target. Returns what changed and a new obs id: "
+        "target the next action from it instead of calling computer_use_inspect_window again."
     )
     _parameters = {
         "type": "object",
         "properties": {
-            "root": {"type": "string", "description": "A root id from ui_roots."},
-            "target": {"description": "An element [index] from `obs`, or a locator dict."},
-            "action": {"type": "string", "description": "One of the supported actions (see description)."},
+            "root": {"type": "string", "description": "The window/tab root_id from computer_use_list_windows (e.g. w:1234)."},
+            "target": {
+                "description": (
+                    "An element [index] from the `obs` outline, or a locator dict. "
+                    "Omit only for close_window on the window/tab itself."
+                ),
+            },
+            "action": {"type": "string", "enum": list(ACTIONS), "description": "What to do to `target`."},
             "value": {"type": "string", "description": "Text/value for set_value, type, key, select, upload."},
-            "obs": {"type": "string", "description": "The observation id `target` was picked from."},
-            "sensitive": {"type": "boolean", "description": "Force a confirm even if the name has no keyword."},
-            "allow_coords": {"type": "boolean", "description": "Allow a coords locator (last-resort rung)."},
+            "obs": {
+                "type": "string",
+                "description": "The obs id (e.g. obs_3) of the outline `target` was picked from.",
+            },
+            "sensitive": {
+                "type": "boolean",
+                "description": "Ask the user to confirm even if the element's name has no sensitive keyword.",
+            },
+            "allow_coords": {
+                "type": "boolean",
+                "description": "Allow a {\"coords\":...} locator. Last resort, when no outline element fits.",
+            },
         },
         "required": ["root", "action"],
     }
@@ -398,17 +433,21 @@ class UiActTool(BaseTool):
         return "\n".join(lines)
 
 
-class UiWaitTool(BaseTool):
-    name = "ui_wait"
+class ComputerUseWaitForWindowStateTool(BaseTool):
+    name = "computer_use_wait_for_window_state"
     description = (
-        'Poll a root until a condition holds, or time out. Conditions: {"present": locator}, '
-        '{"gone": locator}, {"text": "substring"}, {"window": "title regex"}, '
-        '{"file_exists": "path"}.'
+        "Computer use: wait until something happens in a window or tab: an element "
+        "appears or disappears, text shows up, the title changes, or a file is written "
+        "(e.g. a download or save). Polls every 0.5s and returns `ok: ...` once the "
+        "condition holds, or `timeout: ...`. Use it after an action that takes time "
+        "instead of calling computer_use_inspect_window over and over. "
+        'Conditions (exactly one): {"present": locator}, {"gone": locator}, '
+        '{"text": "substring"}, {"window": "title regex"}, {"file_exists": "path"}.'
     )
     _parameters = {
         "type": "object",
         "properties": {
-            "root": {"type": "string", "description": "A root id from ui_roots."},
+            "root": {"type": "string", "description": "The window/tab root_id from computer_use_list_windows (e.g. w:1234)."},
             "condition": {"type": "object", "description": "Exactly one of present/gone/text/window/file_exists."},
             "timeout": {"type": "number", "description": "Seconds to wait before giving up (default 10)."},
         },

@@ -1,7 +1,8 @@
 """rpa/trace.py — Recorder: appends `trace.jsonl` entries while a workflow is
 being recorded (`rpa_record` / `rpa_save`, Subtask 13).
 
-Each successful `ui_act` call appends one "act" entry; each `ui_roots(launch=...)`
+Each successful `computer_use_interact_with_window` call appends one "act" entry;
+each `computer_use_list_windows(launch=...)`
 call while recording appends one "launch" entry. Nothing is written for a
 failed or refused act (the caller only calls `record_act` after a successful
 `driver.act`).
