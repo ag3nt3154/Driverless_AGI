@@ -1,4 +1,5 @@
 """SQLite board store contract (spec §5)."""
+import sqlite3
 from concurrent.futures import ThreadPoolExecutor
 
 import pytest
@@ -9,13 +10,14 @@ from services.message_board.store import (
 )
 
 A, B = "main_3f9a1c2e", "researcher_9b21c0de"
+KEY, OTHER_KEY = "k" * 43, "o" * 43
 
 
 @pytest.fixture
 def store(tmp_path):
     board = BoardStore(tmp_path / "board.sqlite3")
-    board.register_member(A, "agent", host="pc")
-    board.register_member(B, "agent", host="pc")
+    board.register_member(A, "agent", host="pc", key=KEY)
+    board.register_member(B, "agent", host="pc", key=KEY)
     yield board
     board.close()
 
@@ -30,19 +32,53 @@ def fails(code, call, status=None):
 
 def test_member_registration(store, monkeypatch):
     monkeypatch.setattr("services.message_board.store._now", lambda: "2026-10-09T00:00:00Z")
-    member, created = store.register_member(A, "agent", host="pc")
+    member, created = store.register_member(A, "agent", host="pc", key=KEY)
     assert not created and member["last_seen"] == "2026-10-09T00:00:00Z"
     assert member["display_name"] == A
-    fails("HANDLE_TAKEN", lambda: store.register_member(A, "user", host="pc"), 409)
-    fails("HANDLE_TAKEN", lambda: store.register_member(A, "agent", host="other"), 409)
-    fails("INVALID", lambda: store.register_member("new_00000000", "bot"), 422)
+    fails("HANDLE_TAKEN", lambda: store.register_member(A, "user", host="pc", key=KEY), 409)
+    fails("HANDLE_TAKEN", lambda: store.register_member(A, "agent", host="pc", key=OTHER_KEY), 409)
+    fails("INVALID", lambda: store.register_member("new_00000000", "bot", key=KEY), 422)
+    # the key, not the self-reported host, proves ownership; a new host is recorded
+    assert store.register_member(A, "agent", host="laptop", key=KEY)[0]["host"] == "laptop"
     assert [m["handle"] for m in store.list_members()] == [A, B]
+    assert all("key_hash" not in m for m in store.list_members())
+
+
+@pytest.mark.parametrize("key", [None, "", "short", "k" * 129, "k" * 42 + "!"])
+def test_bad_key(store, key):
+    fails("INVALID", lambda: store.register_member("new_00000000", "agent", key=key), 422)
+
+
+def test_authenticate(store):
+    store.authenticate(A, KEY)
+    fails("FORBIDDEN", lambda: store.authenticate(A, OTHER_KEY), 403)
+    fails("FORBIDDEN", lambda: store.authenticate(A, None), 403)
+    fails("UNKNOWN_AUTHOR", lambda: store.authenticate("ghost_00000000", KEY), 404)
+
+
+def test_keyless_member_from_an_old_board_is_claimed_once(tmp_path):
+    path = tmp_path / "board.sqlite3"
+    old = sqlite3.connect(path)
+    old.executescript(
+        "CREATE TABLE members (handle TEXT PRIMARY KEY, display_name TEXT NOT NULL, "
+        "kind TEXT NOT NULL, host TEXT NOT NULL, registered_at TEXT NOT NULL, "
+        "last_seen TEXT NOT NULL);"
+        f"INSERT INTO members VALUES ('{A}','{A}','agent','pc','t','t');")
+    old.close()
+    board = BoardStore(path)
+    try:
+        fails("FORBIDDEN", lambda: board.authenticate(A, KEY), 403)  # no key yet: no writes
+        assert board.register_member(A, "agent", host="pc", key=KEY)[1] is False
+        board.authenticate(A, KEY)
+        fails("HANDLE_TAKEN", lambda: board.register_member(A, "agent", key=OTHER_KEY), 409)
+    finally:
+        board.close()
 
 
 @pytest.mark.parametrize("handle", ["Main_3f9a1c2e", "main_3f9a1c2", "main", "_3f9a1c2e",
                                     "x" * 33 + "_3f9a1c2e", "main_3f9a1c2e\n"])
 def test_bad_handle(store, handle):
-    fails("INVALID", lambda: store.register_member(handle, "agent"), 422)
+    fails("INVALID", lambda: store.register_member(handle, "agent", key=KEY), 422)
 
 
 @pytest.mark.parametrize("kwargs,code", [
@@ -73,7 +109,7 @@ def test_mentions_and_post_shape(store, monkeypatch):
 
 def test_post_carries_author_kind(store):
     user = "web_12345678"
-    store.register_member(user, "user", host="web")
+    store.register_member(user, "user", host="web", key=KEY)
     agent_post = store.create_post(author=A, text="agent")
     user_post = store.create_post(author=user, text="user")
     assert agent_post["author_kind"] == "agent"
@@ -95,7 +131,7 @@ def test_reads(store):
 def test_reopen(tmp_path):
     path = tmp_path / "board.sqlite3"
     board = BoardStore(path)
-    board.register_member(A, "agent")
+    board.register_member(A, "agent", key=KEY)
     att = board.add_attachment(A, "hello.txt", b"hello")
     board.create_post(author=A, text="one", attachments=[att["id"]])
     board.close()

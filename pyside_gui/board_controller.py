@@ -6,7 +6,7 @@ import threading
 from PySide6.QtCore import QObject, QTimer, Signal, Slot
 
 from agent import DAGI_ROOT
-from agent.board_client import BoardClient, BoardError, BoardSession
+from agent.board_client import BoardClient, BoardError, BoardSession, new_key
 from pyside_gui.board_downloads import DownloadPool
 from pyside_gui.board_runtime import (
     _BACKOFF, StreamListener, error_text, probe, register_runtime, should_render_inline,
@@ -115,11 +115,11 @@ class BoardController(QObject):
         """Bind a spawned agent to the current board; None while the board is offline."""
         if self.runtime is None or self.closing:
             return None
-        session = BoardSession(self.runtime.client, handle)
+        session = BoardSession(self.runtime.client, handle, new_key())
         self.sessions.append(session)
         client = self.runtime.client
-        self._run_worker(lambda: client.register(handle, "agent", host=socket.gethostname()),
-                         "board-register")
+        self._run_worker(lambda: client.register(handle, "agent", host=socket.gethostname(),
+                                                 key=session.key), "board-register")
         return session
 
     def remove_session(self, session: BoardSession) -> None:
@@ -138,7 +138,7 @@ class BoardController(QObject):
         attempt = self._switch_attempt
         self._switch_in_flight = (attempt, url, _automatic)
         token = token if token is not None else self._token
-        extra = [session.handle for session in self.sessions[1:]]
+        extra = [(session.handle, session.key) for session in self.sessions[1:]]
         self._on_status(f"Connecting to {url}…")
 
         def work() -> None:
@@ -148,8 +148,8 @@ class BoardController(QObject):
                 if not probe(client, 5.0):
                     raise BoardError("OFFLINE", "no board is answering there")
                 runtime = register_runtime(client, STATE_DIR)
-                for handle in extra:
-                    client.register(handle, "agent", host=socket.gethostname())
+                for handle, key in extra:
+                    client.register(handle, "agent", host=socket.gethostname(), key=key)
                 runtime.url = url
             except Exception as error:
                 if client is not None:

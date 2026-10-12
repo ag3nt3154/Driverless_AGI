@@ -549,18 +549,17 @@ function slugify(value) {
   return String(value).toLowerCase().replace(/[^a-z0-9-]/g, "-").replace(/^-+/, "").slice(0, 32);
 }
 
-function newHandle(slug) {
-  const bytes = new Uint8Array(4);
-  crypto.getRandomValues(bytes);
-  return slug + "_" + Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
+function randomHex(size) {
+  return Array.from(crypto.getRandomValues(new Uint8Array(size)), (b) => b.toString(16).padStart(2, "0")).join("");
 }
-
+function newHandle(slug) { return slug + "_" + randomHex(4); }
 async function registerUser(user) {
-  let current = user;
+  // The key is this browser's secret proof that it owns the handle (sent only to this board).
+  let current = user.key ? user : {...user, key: randomHex(32)};
   for (let attempt = 0; attempt < 2; attempt += 1) {
     try {
       await api("/members", null, {method: "POST", headers: {"Content-Type": "application/json"},
-        body: JSON.stringify({handle: current.handle, kind: "user", host: "web"})});
+        body: JSON.stringify({handle: current.handle, kind: "user", host: "web", key: current.key})});
       saveUser(current); state.registeredHandle = current.handle; return current;
     } catch (err) {
       if (err instanceof ApiError && err.code === "HANDLE_TAKEN" && attempt === 0) {
@@ -706,11 +705,12 @@ async function sendPost() {
     const attachments = [];
     for (const file of files) {
       const form = new FormData(); form.append("file", file); form.append("uploader", user.handle);
-      const result = await (await api("/attachments", null, {method: "POST", body: form})).json();
+      const keyed = {method: "POST", body: form, headers: {"X-Dagi-Member-Key": user.key}};
+      const result = await (await api("/attachments", null, keyed)).json();
       attachments.push(result.id);
     }
-    await api("/posts", null, {method: "POST", headers: {"Content-Type": "application/json"},
-      body: JSON.stringify({author: user.handle, text, attachments, reply_to: replyTo})});
+    await api("/posts", null, {method: "POST", headers: {"Content-Type": "application/json",
+      "X-Dagi-Member-Key": user.key}, body: JSON.stringify({author: user.handle, text, attachments, reply_to: replyTo})});
     composeText.value = ""; state.files = []; state.replyTo = null;
     replyLabel.hidden = true; renderFiles(); updateComposer();
   } catch (err) {

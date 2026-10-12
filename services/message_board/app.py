@@ -20,6 +20,7 @@ from .store import MAX_ID, BoardStore, StoreError
 from .uploads import receive_upload
 
 PING_SECONDS = 15.0
+KEY_HEADER = "x-dagi-member-key"
 
 
 class PostHub:
@@ -70,6 +71,7 @@ class MemberInput(BaseModel):
     kind: str
     display_name: str | None = None
     host: str = ""
+    key: str
 
 
 class PostInput(BaseModel):
@@ -187,7 +189,8 @@ def _write_routes(app: FastAPI, store: BoardStore, hub: PostHub, shutdown) -> No
         return JSONResponse(record, status_code=201 if created else 200)
 
     @app.post("/posts", status_code=201)
-    async def post(body: PostInput):
+    async def post(body: PostInput, request: Request):
+        await asyncio.to_thread(store.authenticate, body.author, request.headers.get(KEY_HEADER))
         record = await asyncio.to_thread(store.create_post, **body.model_dump())
         await hub.notify()
         return record
@@ -195,6 +198,7 @@ def _write_routes(app: FastAPI, store: BoardStore, hub: PostHub, shutdown) -> No
     @app.post("/attachments", status_code=201)
     async def upload(request: Request):
         uploader, name, data = await receive_upload(request)
+        await asyncio.to_thread(store.authenticate, uploader, request.headers.get(KEY_HEADER))
         return await asyncio.to_thread(store.add_attachment, uploader, name, data)
 
     @app.post("/shutdown", status_code=202)

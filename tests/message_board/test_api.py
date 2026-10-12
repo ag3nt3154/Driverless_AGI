@@ -14,6 +14,8 @@ from services.message_board.app import PostHub, create_app, post_events
 from services.message_board.store import BoardStore
 
 A = "main_3f9a1c2e"
+KEY = "k" * 43
+KEYED = {"X-Dagi-Member-Key": KEY}
 
 
 @pytest.fixture
@@ -25,12 +27,12 @@ def board(tmp_path):
 
 def test_api_roundtrip(board):
     with TestClient(create_app(board)) as client:
-        member = client.post("/members", json={"handle": A, "kind": "agent"})
+        member = client.post("/members", json={"handle": A, "kind": "agent", "key": KEY})
         assert member.status_code == 201
-        again = client.post("/members", json={"handle": A, "kind": "agent"})
+        again = client.post("/members", json={"handle": A, "kind": "agent", "key": KEY})
         assert again.status_code == 200
         assert client.get("/members").json() == [again.json()]
-        upload = client.post("/attachments", data={"uploader": A},
+        upload = client.post("/attachments", data={"uploader": A}, headers=KEYED,
                              files={"file": ("hello.txt", b"hello", "text/plain")})
         assert upload.status_code == 201, upload.text
         attachment = upload.json()
@@ -39,8 +41,8 @@ def test_api_roundtrip(board):
         assert response.headers["content-type"].startswith("text/plain")
         assert 'filename="hello.txt"' in response.headers["content-disposition"]
         assert client.get(f"/attachments/{attachment['id']}/meta").json() == attachment
-        post = client.post("/posts", json={"author": A, "text": f"hi @{A}",
-                                          "attachments": [attachment["id"]]})
+        post = client.post("/posts", headers=KEYED, json={"author": A, "text": f"hi @{A}",
+                                                          "attachments": [attachment["id"]]})
         assert post.status_code == 201
         assert client.get("/posts", params={"after": 0, "mention": A}).json() == [post.json()]
         assert client.get("/posts", params={"after": 1}).json() == []
@@ -69,7 +71,7 @@ def test_auth_and_errors(board):
 
 def test_sse_backlog_notify_ping_and_race(board, monkeypatch):
     monkeypatch.setattr("services.message_board.app.PING_SECONDS", 0.01)
-    board.register_member(A, "agent")
+    board.register_member(A, "agent", key=KEY)
     first = board.create_post(author=A, text="first")
 
     async def run():
@@ -95,11 +97,13 @@ def test_sse_backlog_notify_ping_and_race(board, monkeypatch):
 def test_posts_and_stream_include_author_kind(board):
     user = "web_12345678"
     with TestClient(create_app(board)) as client:
-        assert client.post("/members", json={"handle": A, "kind": "agent"}).status_code == 201
+        assert client.post("/members", json={"handle": A, "kind": "agent", "key": KEY}).status_code == 201
         assert client.post("/members", json={"handle": user, "kind": "user",
-                                             "host": "web"}).status_code == 201
-        agent_post_response = client.post("/posts", json={"author": A, "text": "agent"})
-        user_post_response = client.post("/posts", json={"author": user, "text": "user"})
+                                             "host": "web", "key": KEY}).status_code == 201
+        agent_post_response = client.post("/posts", headers=KEYED,
+                                          json={"author": A, "text": "agent"})
+        user_post_response = client.post("/posts", headers=KEYED,
+                                         json={"author": user, "text": "user"})
         assert agent_post_response.status_code == 201
         assert user_post_response.status_code == 201
         agent_post = agent_post_response.json()
@@ -151,13 +155,13 @@ def test_user_member_attachment_is_fetchable_by_agent(board, tmp_path):
             time.sleep(0.01)
         assert server.started, f"uvicorn did not start: {server_errors!r}"
 
-        user_client.register(user, "user", host="web")
-        agent_client.register(A, "agent")
+        user_client.register(user, "user", host="web", key=KEY)
+        agent_client.register(A, "agent", key="a" * 43)
         uploaded_bytes = b"from the web"
         source = tmp_path / "note.txt"
         source.write_bytes(uploaded_bytes)
-        attachment = user_client.upload(user, source)
-        user_client.post(user, "from web", attachments=[attachment["id"]])
+        attachment = user_client.upload(user, source, key=KEY)
+        user_client.post(user, "from web", key=KEY, attachments=[attachment["id"]])
 
         meta, path = agent_client.fetch_attachment(attachment["id"],
                                                    project_root=tmp_path / "agent")
@@ -174,16 +178,42 @@ def test_user_member_attachment_is_fetchable_by_agent(board, tmp_path):
 
 def test_store_errors_and_latest_reads(board):
     with TestClient(create_app(board)) as client:
-        assert client.post("/posts", json={"author": A, "text": "x"}).status_code == 404
-        client.post("/members", json={"handle": A, "kind": "agent"})
-        conflict = client.post("/members", json={"handle": A, "kind": "user"})
+        assert client.post("/posts", headers=KEYED,
+                           json={"author": A, "text": "x"}).status_code == 404
+        client.post("/members", json={"handle": A, "kind": "agent", "key": KEY})
+        conflict = client.post("/members", json={"handle": A, "kind": "user", "key": KEY})
         assert conflict.status_code == 409 and conflict.json()["code"] == "HANDLE_TAKEN"
         for i in range(3):
-            client.post("/posts", json={"author": A, "text": str(i)})
+            client.post("/posts", headers=KEYED, json={"author": A, "text": str(i)})
         assert [p["id"] for p in client.get("/posts?limit=2").json()] == [2, 3]
         assert client.get("/posts?after=9223372036854775808").status_code == 422
-        assert client.post("/posts", json={"author": A, "text": "x" * 701}).status_code == 422
+        assert client.post("/posts", headers=KEYED,
+                           json={"author": A, "text": "x" * 701}).status_code == 422
         assert client.get("/missing").json()["code"] == "INVALID"
+
+
+def test_writes_as_another_member_are_refused(board, tmp_path):
+    """Holding the board token is not enough to post or upload under someone else's handle."""
+    with TestClient(create_app(board, "secret")) as client:
+        token = {"Authorization": "Bearer secret"}
+        assert client.post("/members", headers=token,
+                           json={"handle": A, "kind": "agent", "key": KEY}).status_code == 201
+        hijack = client.post("/members", headers=token,
+                             json={"handle": A, "kind": "agent", "key": "x" * 43})
+        assert hijack.status_code == 409 and hijack.json()["code"] == "HANDLE_TAKEN"
+        assert client.post("/members", headers=token,
+                           json={"handle": "eve_00000000", "kind": "agent"}).status_code == 422
+        for key in (None, "x" * 43):
+            headers = token if key is None else {**token, "X-Dagi-Member-Key": key}
+            post = client.post("/posts", headers=headers, json={"author": A, "text": "forged"})
+            assert post.status_code == 403 and post.json()["code"] == "FORBIDDEN"
+            upload = client.post("/attachments", headers=headers, data={"uploader": A},
+                                 files={"file": ("a.txt", b"forged")})
+            assert upload.status_code == 403
+        assert client.get("/posts", headers=token).json() == []
+        assert not (tmp_path / "blobs").exists()
+        assert client.post("/posts", headers={**token, **KEYED},
+                           json={"author": A, "text": "real"}).status_code == 201
 
 
 def test_unexpected_store_failure_is_safe_json(board, monkeypatch, caplog):

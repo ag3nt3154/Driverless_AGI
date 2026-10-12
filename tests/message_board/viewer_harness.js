@@ -162,7 +162,8 @@ async function fakeFetch(path, options) {
   requests.push([path, auth]);
   let parsedBody = options.body;
   if (typeof parsedBody === "string") { try { parsedBody = JSON.parse(parsedBody); } catch (err) {} }
-  const details = {path, method: options.method || "GET", body: parsedBody};
+  const details = {path, method: options.method || "GET", body: parsedBody,
+                   memberKey: options.headers["X-Dagi-Member-Key"] || null};
   requestDetails.push(details);
   const kind = path.split("?")[0];
   calls[kind] = (calls[kind] || 0) + 1;
@@ -246,7 +247,11 @@ const context = {
   navigator: {onLine: true},
   sessionStorage: {getItem: (k) => storage.get(k) || null, setItem: (k, v) => storage.set(k, v)},
   localStorage: {getItem: (k) => storage.get(k) || null, setItem: (k, v) => storage.set(k, v)},
-  crypto: {getRandomValues(bytes) { const next = deterministicRandom.shift() || [0, 0, 0, 0]; bytes.set(next); return bytes; }},
+  // Handle suffixes (4 bytes) come from the deterministic queue; member keys (32 bytes) are 0xab.
+  crypto: {getRandomValues(bytes) {
+    if (bytes.length !== 4) { bytes.fill(0xab); return bytes; }
+    const next = deterministicRandom.shift() || [0, 0, 0, 0]; bytes.set(next); return bytes;
+  }},
   FormData: FakeFormData,
   fetch: fakeFetch,
   URL: {createObjectURL: (blob) => URL.createObjectURL(blob),

@@ -192,8 +192,18 @@ def test_first_send_identity_prompt_registers_and_posts(tmp_path):
     posts = [item for item in report["requests"]
              if item["path"] == "/posts" and item["method"] == "POST"]
     assert len(members) == len(posts) == 1
-    assert members[0]["body"] == {"handle": "web_12345678", "kind": "user", "host": "web"}
+    key = "ab" * 32
+    assert members[0]["body"] == {"handle": "web_12345678", "kind": "user", "host": "web",
+                                  "key": key}
     assert posts[0]["body"]["author"] == "web_12345678"
+    assert posts[0]["memberKey"] == key  # the post proves its author with the registered key
+
+
+def test_uploads_send_the_member_key(tmp_path):
+    report = _harness("compose", tmp_path)["compose"]
+    uploads = [item for item in report["requests"]
+               if item["path"] == "/attachments" and item["method"] == "POST"]
+    assert len(uploads) == 2 and {item["memberKey"] for item in uploads} == {"ab" * 32}
 
 
 def test_unknown_author_during_member_load_queues_one_refresh(tmp_path):

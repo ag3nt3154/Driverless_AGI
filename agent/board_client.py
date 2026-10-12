@@ -5,6 +5,7 @@ import asyncio
 import hashlib
 import os
 import re
+import secrets
 import socket
 import tempfile
 import threading
@@ -21,6 +22,7 @@ from ._board_files import (
 
 
 _CACHE_LOCK = threading.Lock()
+KEY_HEADER = "X-Dagi-Member-Key"  # proves the author or uploader of a write
 
 
 class BoardError(Exception):
@@ -29,6 +31,11 @@ class BoardError(Exception):
     def __init__(self, code: str, message: str) -> None:
         super().__init__(message)
         self.code, self.message = code, message
+
+
+def new_key() -> str:
+    """A fresh member key: the secret that proves a client owns its handle."""
+    return secrets.token_urlsafe(32)
 
 
 def new_handle(slug: str) -> str:
@@ -91,8 +98,11 @@ class BoardClient:
         if self._owned:
             self.http.close()
 
-    def _headers(self) -> dict:
-        return {"Authorization": f"Bearer {self.token}"} if self.token else {}
+    def _headers(self, key: str | None = None) -> dict:
+        headers = {"Authorization": f"Bearer {self.token}"} if self.token else {}
+        if key is not None:
+            headers[KEY_HEADER] = key
+        return headers
 
     def _network_error(self, error: httpx.HTTPError) -> BoardError:
         if isinstance(error, httpx.TimeoutException):
@@ -114,9 +124,9 @@ class BoardClient:
                 pass  # non-JSON HTTP errors retain their status code
             raise BoardError(str(code), str(message)) from error
 
-    def _request(self, method: str, path: str, **kwargs):
+    def _request(self, method: str, path: str, *, key: str | None = None, **kwargs):
         try:
-            response = self.http.request(method, path, headers=self._headers(),
+            response = self.http.request(method, path, headers=self._headers(key),
                                          timeout=kwargs.pop("timeout", self.timeout),
                                          follow_redirects=False, **kwargs)
             self._check_response(response)
@@ -130,8 +140,8 @@ class BoardClient:
         return self._request("GET", "health")
 
     def register(self, handle: str, kind: str, display_name: str | None = None,
-                 host: str | None = None) -> dict:
-        body = {"handle": handle, "kind": kind}
+                 host: str | None = None, *, key: str) -> dict:
+        body = {"handle": handle, "kind": kind, "key": key}
         if display_name is not None:
             body["display_name"] = display_name
         if host is not None:
@@ -141,9 +151,9 @@ class BoardClient:
     def members(self) -> list[dict]:
         return self._request("GET", "members")
 
-    def post(self, author: str, text: str, *, meme: str | None = None,
+    def post(self, author: str, text: str, *, key: str, meme: str | None = None,
              reply_to: int | None = None, attachments=None) -> dict:
-        return self._request("POST", "posts", json={"author": author, "text": text,
+        return self._request("POST", "posts", key=key, json={"author": author, "text": text,
                              "meme": meme, "reply_to": reply_to, "attachments": attachments or []})
 
     def posts(self, after: int | None = None, limit: int = 50,
@@ -155,10 +165,10 @@ class BoardClient:
             params["mention"] = mention
         return self._request("GET", "posts", params=params)
 
-    def upload(self, uploader: str, path: Path) -> dict:
+    def upload(self, uploader: str, path: Path, *, key: str) -> dict:
         try:
             with Path(path).open("rb") as stream:
-                return self._request("POST", "attachments", data={"uploader": uploader},
+                return self._request("POST", "attachments", key=key, data={"uploader": uploader},
                                      files={"file": (Path(path).name, stream)}, timeout=120.0)
         except OSError as error:
             raise BoardError("FILE_ERROR", f"cannot open attachment {Path(path).name}") from error
@@ -333,8 +343,8 @@ class _DownloadBudget:
 class BoardSession:
     """One agent identity and independent serialized all-post/mention read cursors."""
 
-    def __init__(self, client: BoardClient, handle: str) -> None:
-        self.client, self.handle = client, handle
+    def __init__(self, client: BoardClient, handle: str, key: str) -> None:
+        self.client, self.handle, self.key = client, handle, key
         self._lock = threading.Lock()
         self._cursors = {False: None, True: None}
 
@@ -356,8 +366,9 @@ class BoardSession:
 
     def post(self, text: str, meme: str | None = None, reply_to: int | None = None,
              files=()) -> dict:
-        attachments = [self.client.upload(self.handle, Path(path))["id"] for path in files]
-        return self.client.post(self.handle, text, meme=meme, reply_to=reply_to,
+        attachments = [self.client.upload(self.handle, Path(path), key=self.key)["id"]
+                       for path in files]
+        return self.client.post(self.handle, text, key=self.key, meme=meme, reply_to=reply_to,
                                 attachments=attachments)
 
     def fetch(self, att_id: str, project_root: Path) -> tuple[dict, Path]:

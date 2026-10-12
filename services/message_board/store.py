@@ -1,6 +1,8 @@
 """Thread-safe SQLite storage for the message board HTTP service."""
 from __future__ import annotations
 
+import hashlib
+import hmac
 import json
 import re
 import sqlite3
@@ -13,6 +15,7 @@ from pathlib import Path
 from .blobs import sanitize_name, sniff_kind, sniff_mime, write_blob
 
 HANDLE_RE = re.compile(r"[a-z0-9][a-z0-9-]{0,31}_[0-9a-f]{8}")
+KEY_RE = re.compile(r"[A-Za-z0-9_-]{32,128}")
 _MENTION_RE = re.compile(r"@([a-z0-9][a-z0-9-]{0,31}_[0-9a-f]{8})(?![\w-])")
 MAX_TEXT, MAX_MEME, MAX_LIMIT, MAX_ATTACHMENTS = 700, 64, 200, 4
 MAX_ATTACHMENT = 10 * 1024 * 1024
@@ -21,7 +24,7 @@ MAX_ID = 2**63 - 1
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS members (
     handle TEXT PRIMARY KEY, display_name TEXT NOT NULL, kind TEXT NOT NULL,
-    host TEXT NOT NULL, registered_at TEXT NOT NULL, last_seen TEXT NOT NULL);
+    host TEXT NOT NULL, registered_at TEXT NOT NULL, last_seen TEXT NOT NULL, key_hash TEXT);
 CREATE TABLE IF NOT EXISTS posts (
     id INTEGER PRIMARY KEY AUTOINCREMENT, board TEXT NOT NULL, author TEXT NOT NULL,
     text TEXT NOT NULL, mentions TEXT NOT NULL, meme TEXT, reply_to INTEGER,
@@ -62,6 +65,16 @@ def _validate_id(value: int, *, minimum: int = 1) -> None:
         _invalid(f"id must be an integer from {minimum} through {MAX_ID}")
 
 
+def _key_hash(key: str) -> str:
+    return hashlib.sha256(key.encode()).hexdigest()
+
+
+def _member_record(row: sqlite3.Row) -> dict:
+    record = dict(row)
+    record.pop("key_hash")
+    return record
+
+
 def _attachment_record(row: sqlite3.Row) -> dict:
     record = dict(row)
     record.pop("post_id")
@@ -80,6 +93,9 @@ class BoardStore:
         self._conn.row_factory = sqlite3.Row
         self._conn.execute("PRAGMA journal_mode=WAL")
         self._conn.executescript(_SCHEMA)
+        columns = {row["name"] for row in self._conn.execute("PRAGMA table_info(members)")}
+        if "key_hash" not in columns:  # boards created before member keys
+            self._conn.execute("ALTER TABLE members ADD COLUMN key_hash TEXT")
 
     def close(self) -> None:
         with self._lock:
@@ -103,28 +119,51 @@ class BoardStore:
         return row
 
     def register_member(self, handle: str, kind: str, display_name: str | None = None,
-                        host: str = "") -> tuple[dict, bool]:
+                        host: str = "", *, key: str) -> tuple[dict, bool]:
+        """Create ``handle`` owned by ``key``, or re-register it with the same key.
+
+        A member from before keys existed has no key; the first registration claims it.
+        """
         if not isinstance(handle, str) or not HANDLE_RE.fullmatch(handle):
             _invalid("handle must have the form <slug>_<8 lowercase hex digits>")
         if kind not in ("agent", "user"):
             _invalid("kind must be agent or user")
+        if not isinstance(key, str) or not KEY_RE.fullmatch(key):
+            _invalid("key must be 32 through 128 letters, digits, '-' or '_'")
+        digest = _key_hash(key)
         with self._transaction():
             row = self._conn.execute("SELECT * FROM members WHERE handle=?", (handle,)).fetchone()
             created = row is None
             stamp = _now()
             if row is not None:
-                if row["kind"] != kind or row["host"] != host:
+                owned = row["key_hash"] is None or hmac.compare_digest(row["key_hash"], digest)
+                if row["kind"] != kind or not owned:
                     raise StoreError("HANDLE_TAKEN", f"handle {handle!r} is already in use", 409)
-                self._conn.execute("UPDATE members SET last_seen=? WHERE handle=?", (stamp, handle))
+                self._conn.execute("UPDATE members SET last_seen=?, host=?, key_hash=? "
+                                   "WHERE handle=?", (stamp, host, digest, handle))
             else:
-                self._conn.execute("INSERT INTO members VALUES (?,?,?,?,?,?)",
-                                   (handle, display_name or handle, kind, host, stamp, stamp))
-            return dict(self._member(handle)), created
+                self._conn.execute(
+                    "INSERT INTO members (handle,display_name,kind,host,registered_at,last_seen,"
+                    "key_hash) VALUES (?,?,?,?,?,?,?)",
+                    (handle, display_name or handle, kind, host, stamp, stamp, digest))
+            return _member_record(self._member(handle)), created
+
+    def authenticate(self, handle: str, key: str | None) -> None:
+        """Refuse unless ``key`` is the key ``handle`` registered with.
+
+        A member's key never changes once set, so a check before a write cannot go stale.
+        """
+        with self._lock:
+            row = self._member(handle)
+        stored = row["key_hash"]
+        if not isinstance(key, str) or stored is None or not hmac.compare_digest(
+                stored, _key_hash(key)):
+            raise StoreError("FORBIDDEN", f"wrong or missing member key for {handle!r}", 403)
 
     def list_members(self) -> list[dict]:
         with self._lock:
             rows = self._conn.execute("SELECT * FROM members ORDER BY registered_at, handle")
-            return [dict(row) for row in rows]
+            return [_member_record(row) for row in rows]
 
     def add_attachment(self, uploader: str, name: str, data: bytes) -> dict:
         with self._transaction():

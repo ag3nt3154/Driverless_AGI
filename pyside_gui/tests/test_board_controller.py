@@ -290,6 +290,7 @@ class SwitchClient:
         self.health_result = health if health is not None else {"version": 1}
         self._posts = list(posts)
         self.registered = []
+        self.keys = {}
         self.closed = threading.Event()
         SwitchClient.instances.append(self)
 
@@ -298,8 +299,9 @@ class SwitchClient:
             raise self.health_result
         return self.health_result
 
-    def register(self, handle, kind, display_name=None, host=None):
+    def register(self, handle, kind, display_name=None, host=None, *, key):
         self.registered.append((handle, kind))
+        self.keys[handle] = key
 
     def posts(self, limit=50, **_kwargs):
         return self._posts
@@ -340,7 +342,8 @@ def _switchable(qtbot, monkeypatch, tmp_path, client_factory):
     window = _window(qtbot)
     controller = BoardController(window)
     old = FakeClient()
-    main, helper = BoardSession(old, "main_12345678"), BoardSession(old, "helper_abcdef12")
+    main = BoardSession(old, "main_12345678", "m" * 43)
+    helper = BoardSession(old, "helper_abcdef12", "h" * 43)
     controller.sessions = [main, helper]
     controller.runtime = SimpleNamespace(client=old, session=main, url="http://127.0.0.1:8765",
                                          central_url="http://central:8765")
@@ -364,6 +367,7 @@ def test_switch_repoints_every_session_listener_and_view(qtbot, monkeypatch, tmp
     assert controller.runtime.session is controller.sessions[0]
     assert window._board_session is controller.sessions[0]
     assert ("helper_abcdef12", "agent") in new.registered
+    assert new.keys["helper_abcdef12"] == "h" * 43  # the agent keeps its key on the new board
     assert old_listener.stopped
     qtbot.waitUntil(old.closed.is_set)
     qtbot.waitUntil(lambda: bool(listeners[1:]))

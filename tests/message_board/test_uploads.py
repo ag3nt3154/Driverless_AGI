@@ -89,11 +89,12 @@ def test_duplicate_extra_incomplete_and_disconnect():
 
 def test_endpoint_rejected_uploads_do_not_persist(tmp_path):
     store = BoardStore(tmp_path / "b.sqlite3")
-    store.register_member(A, "agent")
+    store.register_member(A, "agent", key="k" * 43)
     try:
         with TestClient(create_app(store)) as client:
             for content, expected in ((b"", 422), (b"x" * (MAX_ATTACHMENT + 1), 413)):
                 response = client.post("/attachments", data={"uploader": A},
+                                       headers={"X-Dagi-Member-Key": "k" * 43},
                                        files={"file": ("a.txt", content)})
                 assert response.status_code == expected
                 assert response.headers["x-content-type-options"] == "nosniff"

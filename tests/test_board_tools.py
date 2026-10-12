@@ -32,8 +32,8 @@ def tools(tmp_path):
         http.event_hooks["request"].append(lambda request: requests.append(request.url.path))
         client = BoardClient("http://board", http=http, download_http=lambda: httpx.AsyncClient(
             base_url="http://board", transport=httpx.ASGITransport(app=app)))
-        client.register(A, "agent")
-        session = BoardSession(client, A)
+        client.register(A, "agent", key="k" * 43)
+        session = BoardSession(client, A, "k" * 43)
         requests.clear()
         yield SimpleNamespace(post=PostBoardTool(session=session, memes_root=memes,
                                                 cwd=project, allowed_roots=[project]),

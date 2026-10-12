@@ -26,6 +26,7 @@ class FakeClient:
         self.outcomes = list(outcomes)
         self.timeout = 10.0
         self.registered = []
+        self.keys = []
         self.closed = False
 
     def health(self):
@@ -34,8 +35,9 @@ class FakeClient:
             raise result
         return result
 
-    def register(self, handle, kind, display_name=None, host=None):
+    def register(self, handle, kind, display_name=None, host=None, *, key):
         self.registered.append((handle, kind, host))
+        self.keys.append(key)
         return {"handle": handle}
 
     def close(self):
@@ -150,15 +152,19 @@ def test_start_board_uses_existing_healthy_service_without_temp(tmp_path):
 def test_main_handle_is_stable_across_starts(tmp_path):
     from pyside_gui.board_runtime import start_board
 
-    handles = []
+    handles, keys = [], []
     for _ in range(2):
         client = FakeClient([{"version": 1}])
-        handles.append(start_board(
+        session = start_board(
             "http://127.0.0.1:8765", None, state_dir=tmp_path,
             client_factory=lambda *a, **k: client,
-        ).session.handle)
-    assert handles[0] == handles[1]
+        ).session
+        handles.append(session.handle)
+        keys.append(session.key)
+        assert client.keys == [session.key]  # registered with the key it posts with
+    assert handles[0] == handles[1] and keys[0] == keys[1] and len(keys[0]) >= 32
     assert (tmp_path / "main_handle").read_text(encoding="utf-8").strip() == handles[0]
+    assert (tmp_path / "main_key").read_text(encoding="utf-8").strip() == keys[0]
 
 
 @pytest.mark.parametrize("url", ["http://127.0.0.1:9876", "http://central.lan:9876"])

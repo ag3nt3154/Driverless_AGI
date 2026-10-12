@@ -4,6 +4,7 @@ from __future__ import annotations
 import ipaddress
 import json
 import os
+import re
 import shutil
 import socket
 import subprocess
@@ -17,7 +18,7 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 from agent import DAGI_ROOT
-from agent.board_client import BoardClient, BoardError, BoardSession
+from agent.board_client import BoardClient, BoardError, BoardSession, new_key
 from services.message_board.lifecycle import DEFAULT_URL
 from services.message_board.runtime_records import (
     RecordError, discover_record, lock_file, open_lock, protect,
@@ -26,6 +27,7 @@ from services.message_board.settings import DEFAULT_BIND
 
 DEFAULT_BOARD_URL = DEFAULT_URL
 _BACKOFF = (1.0, 2.0, 4.0, 8.0, 16.0, 30.0)
+_KEY_RE = re.compile(r"[A-Za-z0-9_-]{32,128}")
 
 
 def error_text(error: BaseException) -> str:
@@ -66,35 +68,52 @@ def _valid_handle(value: str, slug: str) -> bool:
     )
 
 
-def load_or_create_handle(path: Path, slug: str) -> str:
-    """Return the persisted ``<slug>_<uuid8>`` at ``path``, creating it when absent or invalid."""
+def _load_or_create(path: Path, valid, make, *, secret: bool = False) -> str:
+    """Return the valid value persisted at ``path``, replacing it with ``make()`` otherwise.
+
+    A ``secret`` file is restricted to this user before it takes its final name.
+    """
     path = Path(path)
     if path.is_symlink():
         raise BoardError("IDENTITY_ERROR", "board identity path must not be a link")
     try:
         value = path.read_text(encoding="utf-8").strip()
-        if _valid_handle(value, slug):
+        if valid(value):
             return value
     except FileNotFoundError:
         pass
     path.parent.mkdir(parents=True, exist_ok=True)
-    value = f"{slug}_{uuid.uuid4().hex[:8]}"
+    value = make()
     temporary = None
     try:
         with tempfile.NamedTemporaryFile(
             "w", encoding="utf-8", dir=path.parent, delete=False,
         ) as stream:
             temporary = Path(stream.name)
+            if secret:
+                protect(temporary)
             stream.write(value + "\n")
             stream.flush()
             os.fsync(stream.fileno())
         os.replace(temporary, path)
-    except OSError as error:
+    except (OSError, RecordError) as error:
         raise BoardError("IDENTITY_ERROR", "cannot persist the board user identity") from error
     finally:
         if temporary is not None:
             temporary.unlink(missing_ok=True)
     return value
+
+
+def load_or_create_handle(path: Path, slug: str) -> str:
+    """Return the persisted ``<slug>_<uuid8>`` at ``path``, creating it when absent or invalid."""
+    return _load_or_create(path, lambda value: _valid_handle(value, slug),
+                           lambda: f"{slug}_{uuid.uuid4().hex[:8]}")
+
+
+def load_or_create_key(path: Path) -> str:
+    """Return the persisted member key at ``path``, creating a private one when absent."""
+    return _load_or_create(path, lambda value: bool(_KEY_RE.fullmatch(value)), new_key,
+                           secret=True)
 
 
 @dataclass
@@ -131,9 +150,10 @@ def _cancelled(cancel) -> bool:
 def register_runtime(client, state_dir: Path) -> BoardRuntime:
     """Register the persistent main-agent handle on ``client``'s board."""
     agent_handle = load_or_create_handle(state_dir / "main_handle", "main")
+    key = load_or_create_key(state_dir / "main_key")
     host = socket.gethostname()
-    client.register(agent_handle, "agent", host=host)
-    return BoardRuntime(client, BoardSession(client, agent_handle))
+    client.register(agent_handle, "agent", host=host, key=key)
+    return BoardRuntime(client, BoardSession(client, agent_handle, key))
 
 
 def local_url(bind: str, port: int) -> str:

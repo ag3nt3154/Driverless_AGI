@@ -12,6 +12,7 @@ from services.message_board.app import create_app
 from services.message_board.store import BoardStore
 
 A, B = "main_3f9a1c2e", "other_1234abcd"
+KA, KB = "a" * 43, "b" * 43
 
 
 @pytest.fixture
@@ -21,8 +22,8 @@ def client(tmp_path):
     with TestClient(app) as http:
         board = BoardClient("http://board", http=http, download_http=lambda: httpx.AsyncClient(
             transport=httpx.ASGITransport(app=app), base_url="http://board"))
-        board.register(A, "agent")
-        board.register(B, "agent")
+        board.register(A, "agent", key=KA)
+        board.register(B, "agent", key=KB)
         yield board
     store.close()
 
@@ -30,21 +31,24 @@ def client(tmp_path):
 def test_roundtrip_and_errors(client):
     assert client.health()["status"] == "ok"
     assert len(client.members()) == 2
-    post = client.post(A, "hello")
+    post = client.post(A, "hello", key=KA)
     assert client.posts(after=0) == [post]
     with pytest.raises(BoardError) as caught:
-        client.post("ghost_00000000", "hi")
+        client.post("ghost_00000000", "hi", key=KA)
     assert caught.value.code == "UNKNOWN_AUTHOR"
+    with pytest.raises(BoardError) as caught:
+        client.post(A, "forged", key=KB)
+    assert caught.value.code == "FORBIDDEN"
 
 
 def test_session_independent_cursors_and_serialized_reads(client):
-    session = BoardSession(client, A)
+    session = BoardSession(client, A, KA)
     for i in range(5):
-        client.post(B, str(i) + (f" @{A}" if i == 2 else ""))
+        client.post(B, str(i) + (f" @{A}" if i == 2 else ""), key=KB)
     assert [p["id"] for p in session.read(limit=2, mentions_only=True)] == [3]
     assert [p["id"] for p in session.read(limit=2)] == [4, 5]
     assert session.read() == []
-    client.post(B, "six")
+    client.post(B, "six", key=KB)
     with ThreadPoolExecutor(max_workers=2) as pool:
         results = list(pool.map(lambda _: session.read(), range(2)))
     assert sorted(len(items) for items in results) == [0, 1]
@@ -61,7 +65,7 @@ def test_handles():
 def test_fetch_roundtrip_cache_and_session(client, tmp_path):
     source = tmp_path / "input.txt"
     source.write_bytes(b"hello")
-    session = BoardSession(client, A)
+    session = BoardSession(client, A, KA)
     post = session.post("uploaded", files=[source])
     attachment = post["attachments"][0]
     meta, path = session.fetch(attachment["id"], tmp_path / "project")
@@ -132,7 +136,7 @@ def test_existing_symlink_cache_escape(tmp_path, component, monkeypatch):
         make_cache_link(target, outside, True, monkeypatch)
     board = mock_download(lambda request: httpx.Response(200, json=metadata()))
     with pytest.raises(BoardError) as caught:
-        BoardSession(board, A).fetch(metadata()["id"], project)
+        BoardSession(board, A, KA).fetch(metadata()["id"], project)
     assert caught.value.code == "INVALID_ATTACHMENT"
     assert list(outside.iterdir()) == ([destination] if target.suffix else [])
 
@@ -388,10 +392,10 @@ def test_token_applied_to_core_and_download_requests(tmp_path):
                                 download_http=lambda: httpx.AsyncClient(
                                     base_url="http://board",
                                     transport=httpx.ASGITransport(app=app)))
-            board.register(A, "agent")
+            board.register(A, "agent", key=KA)
             path = tmp_path / "source.txt"
             path.write_bytes(b"hello")
-            attachment = board.upload(A, path)
+            attachment = board.upload(A, path, key=KA)
             _, saved = board.fetch_attachment(attachment["id"], project_root=tmp_path)
             assert saved.read_bytes() == b"hello"
     finally:
