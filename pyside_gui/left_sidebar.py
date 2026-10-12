@@ -24,12 +24,17 @@ from pyside_gui.sidebars import (
     WorkflowsView,
 )
 
-_VIEW_NAMES = ("history", "files", "viewer", "plan", "board", "agents")
-_RAIL_ICONS = ("history", "folder", "file", "plan", "board", "agents")
-_RAIL_TIPS = ("Session history", "Files", "File viewer", "Plan", "Message board", "Agents")
 _WORKFLOWS_NAME = "workflows"
-_WORKFLOWS_ICON = "workflow"
-_WORKFLOWS_TIP = "Workflows"
+# Rail order, top to bottom: (view name, icon, tooltip). Workflows only with computer use.
+_RAIL = (
+    ("board", "board", "Message board"),
+    ("agents", "agents", "Agents"),
+    ("files", "folder", "Files"),
+    ("viewer", "file", "File viewer"),
+    ("plan", "plan", "Plan"),
+    (_WORKFLOWS_NAME, "workflow", "Workflows"),
+    ("history", "history", "Session history"),
+)
 _RAIL_WIDTH = 44
 
 _RAIL_CSS = qss("""
@@ -65,13 +70,10 @@ class LeftSidebar(QWidget):
         self._active_view: str | None = None
         self._expanded = False
 
-        self._view_names = _VIEW_NAMES
-        self._rail_icon_names = _RAIL_ICONS
-        self._rail_tips = _RAIL_TIPS
-        if computer_use:
-            self._view_names = _VIEW_NAMES + (_WORKFLOWS_NAME,)
-            self._rail_icon_names = _RAIL_ICONS + (_WORKFLOWS_ICON,)
-            self._rail_tips = _RAIL_TIPS + (_WORKFLOWS_TIP,)
+        entries = [e for e in _RAIL if computer_use or e[0] != _WORKFLOWS_NAME]
+        self._view_names = tuple(name for name, _, _ in entries)
+        self._rail_icon_names = tuple(glyph for _, glyph, _ in entries)
+        self._rail_tips = tuple(tip for _, _, tip in entries)
 
         root_layout = QHBoxLayout(self)
         root_layout.setContentsMargins(0, 0, 0, 0)
@@ -118,15 +120,19 @@ class LeftSidebar(QWidget):
         self._board_view = MessageBoardView()
         self._agents_view = AgentsView()
         self._workflows_view = WorkflowsView() if computer_use else None
-        self._panel.addWidget(self._history_view)
-        self._panel.addWidget(self._file_tree)
-        self._panel.addWidget(self._file_viewer)
-        self._panel.addWidget(self._plan_view)
-        self._panel.addWidget(self._board_view)
-        self._panel.addWidget(self._agents_view)
+        views = {
+            "history": self._history_view,
+            "files": self._file_tree,
+            "viewer": self._file_viewer,
+            "plan": self._plan_view,
+            "board": self._board_view,
+            "agents": self._agents_view,
+            _WORKFLOWS_NAME: self._workflows_view,
+        }
+        for name in self._view_names:  # stack index == rail index
+            self._panel.addWidget(views[name])
         if self._workflows_view is not None:
             self._workflows_view.set_project(project_path)
-            self._panel.addWidget(self._workflows_view)
 
         self._file_tree.file_selected.connect(
             self._on_file_selected

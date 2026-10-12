@@ -225,8 +225,7 @@ def test_real_window_routes_prompt_to_active_agent_and_streams_background_turn(
     window.close()
 
 
-def test_agents_is_the_sixth_rail_view():
-    from pyside_gui.left_sidebar import _RAIL_TIPS, _VIEW_NAMES
+def test_agents_is_the_second_rail_view():
+    from pyside_gui.left_sidebar import _RAIL
 
-    assert _VIEW_NAMES[:5] == ("history", "files", "viewer", "plan", "board")
-    assert _VIEW_NAMES[5] == "agents" and _RAIL_TIPS[5] == "Agents"
+    assert _RAIL[1] == ("agents", "agents", "Agents")

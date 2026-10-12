@@ -26,7 +26,7 @@ def test_activate_view_expands(sidebar):
     sidebar.activate_view("files")
     assert sidebar.is_expanded()
     assert sidebar._panel.isVisible()
-    assert sidebar._panel.currentIndex() == 1
+    assert sidebar._panel.currentWidget() is sidebar._file_tree
 
 
 def test_activate_history_loads_sessions(sidebar):
@@ -35,7 +35,7 @@ def test_activate_history_loads_sessions(sidebar):
     ) as mock:
         sidebar.activate_view("history")
     mock.assert_called_once()
-    assert sidebar._panel.currentIndex() == 0
+    assert sidebar._panel.currentWidget() is sidebar._history_view
 
 
 def test_activate_same_view_collapses(sidebar):
@@ -56,7 +56,7 @@ def test_open_file_switches_to_viewer(sidebar, tmp_path):
     f.write_text("x = 1", encoding="utf-8")
     sidebar.open_file(str(f))
     assert sidebar.is_expanded()
-    assert sidebar._panel.currentIndex() == 2
+    assert sidebar._panel.currentWidget() is sidebar._file_viewer
 
 
 def test_set_project_path(sidebar, tmp_path):
@@ -81,7 +81,15 @@ def test_computer_use_false_has_no_workflows_view(sidebar):
     assert "workflows" not in sidebar._view_names
 
 
-def test_computer_use_true_adds_workflows_view_last(qtbot, tmp_path):
+def test_rail_order(sidebar):
+    assert sidebar._view_names == ("board", "agents", "files", "viewer", "plan", "history")
+    for name, btn in zip(sidebar._view_names, sidebar._rail_buttons):
+        sidebar.activate_view(name)
+        assert btn.isChecked()
+    assert sidebar._panel.currentWidget() is sidebar._history_view
+
+
+def test_computer_use_true_adds_workflows_above_history(qtbot, tmp_path):
     (tmp_path / ".dagi" / "logs").mkdir(parents=True)
     w = LeftSidebar(tmp_path, computer_use=True)
     qtbot.addWidget(w)
@@ -89,7 +97,7 @@ def test_computer_use_true_adds_workflows_view_last(qtbot, tmp_path):
 
     assert len(w._rail_buttons) == 7
     assert w._panel.count() == 7
-    assert w._view_names[-1] == "workflows"
+    assert w._view_names[-2:] == ("workflows", "history")
     assert w.workflows_view is not None
 
     w.activate_view("workflows")
@@ -101,14 +109,13 @@ def test_activate_plan_expands_to_plan_view(sidebar):
     sidebar.activate_view("plan")
     assert sidebar.is_expanded()
     assert sidebar._panel.isVisible()
-    assert sidebar._panel.currentIndex() == 3
     assert sidebar._panel.currentWidget() is sidebar._plan_view
 
 
 def test_activate_plan_marks_rail_active(sidebar):
     sidebar.activate_view("plan")
-    assert sidebar._rail_buttons[3].isChecked()
-    assert not any(b.isChecked() for i, b in enumerate(sidebar._rail_buttons) if i != 3)
+    assert sidebar._rail_buttons[4].isChecked()
+    assert not any(b.isChecked() for i, b in enumerate(sidebar._rail_buttons) if i != 4)
 
 
 def test_activate_plan_twice_collapses(sidebar):
