@@ -8,10 +8,6 @@ from PySide6.QtCore import QObject
 from pyside_gui.sidebars.agents_view import slug_error
 from tools.board._board import format_post
 
-# Agent-to-agent mentions can ping-pong forever; stop waking an agent after this many in a row
-# that no user message or user post has interrupted.
-MAX_AGENT_WAKES = 5
-
 
 def mention_message(post: dict, handle: str) -> str:
     """The user message an @mention becomes: the post in read_board's line format."""
@@ -118,21 +114,10 @@ class AgentsController(QObject):
         """Deliver a live post to every agent it @mentions (never to its own author)."""
         mentions = post.get("mentions") or []
         author = post.get("author")
-        from_user = post.get("author_kind") == "user"
         for session in list(self.window._sessions):
             board = session._board_session
             if board is None or board.handle not in mentions or board.handle == author:
                 continue
-            if from_user:
-                session.agent_wakes = 0
-            elif session.agent_wakes >= MAX_AGENT_WAKES:
-                session._conversation.append_info(
-                    f"Board mention from {author} not delivered: {MAX_AGENT_WAKES} agent "
-                    "mentions in a row woke this agent. Send it a message to re-enable."
-                )
-                continue
-            else:
-                session.agent_wakes += 1
             session.deliver_mention(mention_message(post, board.handle))
         self.refresh()
 

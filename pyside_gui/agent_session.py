@@ -54,7 +54,6 @@ class AgentSession(QObject):
         self._streaming_active = False
         self._submission_seq = 0
         self._board_session = None
-        self.agent_wakes = 0  # consecutive board mentions from agents (see agents_controller)
         self.status = "idle"
         self.running = False
         self._last_tokens: tuple | None = None
@@ -172,7 +171,6 @@ class AgentSession(QObject):
     # ── submission and worker (see _dispatch) ──────────────────────────────────────────
 
     def _on_input_submitted(self, submission: object) -> None:
-        self.agent_wakes = 0
         _dispatch.on_input_submitted(self, submission)
 
     def deliver_mention(self, text: str) -> None:

@@ -357,10 +357,9 @@ choose its folder, then send its first prompt. Spawning is user-only; agents nev
 - **@mentions wake agents.** A live board post (not one from the initial snapshot) that
   @mentions an agent of this GUI arrives in that agent's loop as a user message: the post in
   `read_board`'s line format plus a hint to reply with `post_board`. An idle agent starts a turn;
-  a busy one gets it as a steer (a Queued bubble). An agent is never woken by its own post. To
-  stop agents pinging each other forever, an agent stops being woken after 5 agent-authored
-  mentions in a row; a message from you to that agent, or a board post by you that mentions
-  it, re-enables it (the skipped mention is noted in its chat).
+  a busy one gets it as a steer (a Queued bubble). An agent is never woken by its own post.
+  Agent-to-agent mentions are not capped, so agents that keep @mentioning each other keep
+  waking each other.
 - The main agent's board handle is stored in `.dagi/board/main_handle`, so it stays the same
   across launches and @mentions keep reaching it. A board meme from any agent shows in that
   agent's own conversation.

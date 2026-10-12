@@ -4,7 +4,7 @@ from __future__ import annotations
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
-from pyside_gui.agents_controller import MAX_AGENT_WAKES, AgentsController, mention_message
+from pyside_gui.agents_controller import AgentsController, mention_message
 from pyside_gui.tests.session_stub import StubSession
 
 HELPER = "helper_abcdef12"
@@ -42,16 +42,13 @@ def test_mention_reaches_only_the_named_agent_and_never_its_author():
     assert helper.deliver_mention.call_count == 1
 
 
-def test_user_kind_mention_resets_wake_cap():
-    """A user's mention resets the cap after five agent-originated wakes."""
+def test_agent_mentions_always_wake():
+    """Agent-to-agent mentions are never capped."""
     helper = _agent(HELPER)
     controller = _agents_window([helper])
-    for post_id in range(MAX_AGENT_WAKES + 2):
+    for post_id in range(20):
         controller.on_board_mention(_post(post_id + 1, "main_11112222", [HELPER]))
-    assert helper.deliver_mention.call_count == MAX_AGENT_WAKES
-    helper._conversation.append_info.assert_called()
-    controller.on_board_mention(_post(99, "user_x", [HELPER], author_kind="user"))
-    assert helper.deliver_mention.call_count == MAX_AGENT_WAKES + 1 and helper.agent_wakes == 0
+    assert helper.deliver_mention.call_count == 20
 
 
 def test_deliver_mention_starts_a_turn_when_idle_and_steers_when_busy(monkeypatch):

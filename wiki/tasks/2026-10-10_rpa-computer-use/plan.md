@@ -553,3 +553,18 @@ Verification — all 20 subtasks committed (2026-10-12). Automated verification 
 
 ## Next Action
 Admiral: review the branch; run Verification 2 (desktop tests, consent) and 3 (manual cross-app record / break / repair); then decide on merging `task/rpa-computer-use` into `main`.
+
+## Post-merge review (2026-10-12)
+
+Scope: RPA merge `a97a685` through `8e1f8b2`, including interpreter, repair, Esc watcher and GUI integration. The merge has already happened; the Next Action above is historical.
+
+Static review findings (implementation unchanged):
+- P1: `run_workflow(start_at=..., verify=True)` skips earlier steps but calls `mark_verified` for the whole workflow when the suffix succeeds. `approve` then approves every confirm step, including skipped ones. A resumed repair verification must not substitute for a full verification run.
+- P1: `on_fail: continue` produces a failed step log but does not affect `any_degraded`; a verify run can return `ok`, mark verified and be approved despite a failed step. The current continue test explicitly expects overall `ok`, so it does not protect clean verification.
+- P2: `EscWatcher` does not report hook installation failure or readiness timeout. Replay can proceed without the advertised physical Esc stop.
+
+Remaining manual acceptance checks: cross-app Qt/Firefox record, full verify, approve and ordinary replay with output inspection; halt after breaking a locator, screenshot/outline evidence and no later actions; reject a repair with byte-identical YAML, then approve a repair, full verify and re-approve; changed confirm step second prompt; Workflows rail lifecycle, busy/pending-question refusal and halt-card Screenshot/Repair/Dismiss; physical Esc while the driven app has focus. Prior S1/S2 checks are recorded above and need not all be repeated.
+
+Fresh verification: both P1 findings reproduced with fake drivers and temporary workflows; each returned `ok` and allowed `approve`, including approval of a skipped confirm step. Focused suite excluding browser/UIA driver modules: 357 passed, 4 skipped, 7 failed (all seven missing Selenium). Full focused collection also fails on missing `selenium` and `uiautomation`. No live desktop tests run.
+
+Run desktop-marked tests only with user consent and outside the sandbox. The documented miniconda interpreter is absent on the reviewing host; the existing environment is `C:\Users\alexr\anaconda3\envs\dagi\python.exe`. Install `requirements-rpa.txt` into that environment before acceptance testing. Do not interpret historical suite counts as fresh verification.
