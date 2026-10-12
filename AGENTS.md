@@ -1,6 +1,6 @@
 # AGENTS.md
 
-> Last updated: 2026-10-11 (standalone message-board split completed; composer fix and Qt probe guidance retained) | [README](README.md) | [TODO](TODO.md) | [Task specs & plans](wiki/tasks/)
+> Last updated: 2026-10-12 (review refreshed; RPA verification/retry/cancel contracts recorded in wiki) | [README](README.md) | [TODO](TODO.md) | [Task specs & plans](wiki/tasks/)
 
 ## Overview
 

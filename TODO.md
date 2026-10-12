@@ -56,30 +56,27 @@
     Add any future user-question tool (e.g. a revived `show_plan`) to `SOLO_TOOLS`.
   - `edit` takes an `edits` list for one file: in order, all-or-nothing, placeholder-tolerant.
 
-- **2026-10-11 review refresh on main.** See
-  [_CODEX_CODE_REVIEW_2026-10-11.md](_CODEX_CODE_REVIEW_2026-10-11.md) and
-  [_CODEX_SUGGESTIONS_2026-10-11.md](_CODEX_SUGGESTIONS_2026-10-11.md).
-  Retains 16 prior open findings and adds R22, for 17 total; no verified closure.
-  - **P1 R22:** old-board posts queued before a switch lack generation at GUI delivery;
-    they can display and wake agents after rebind. Carry board/generation in the signal and
-    reject obsolete events in the slot; commit snapshot state on the GUI thread.
-  - ~~R20 parent-scoped cancellation~~ — fixed 2026-10-11 (`fix/r20-subagent-owner`): each
-    `AgentLoop` has an `_owner_id`; `run`/`compact`/`run_wtf` record spawned subagents under it
-    (`owner_scope` ContextVar) and `interrupt()` kills only those. Residual (R8): a killed
-    child's `_pending_children` entry in `subagent_api` stays until a terminal resume.
-  - R21 terminal close remains a prerequisite for teamwork.
-  - R7 now includes board_runtime.py: five oversized modules and three long functions.
-  - Focused suites: 336 passed, three known missing-template failures, two opt-in
-    clean-install skips; another 55 Qt tests passed. SQLite setup now works.
-  - Fresh real Qt queued-signal probe reproduces R22 with fake clients and no board/provider
-    traffic. Earlier October 8–10 reproductions remain explicitly dated.
-  Roadmap: 14 unbuilt extensions, adding S14 failure-directed retries and extending S8/S13
-  with event provenance. Standalone browser composition/token settings are recognized as
-  shipped; RPA research/spikes are recognized as planned, avoiding duplicate proposals.
-  No full/live-provider suite or application changes. Reports remain uncommitted.
+- **2026-10-12 review refresh on main.** See
+  [_CODEX_CODE_REVIEW_2026-10-12.md](_CODEX_CODE_REVIEW_2026-10-12.md) and
+  [_CODEX_SUGGESTIONS_2026-10-12.md](_CODEX_SUGGESTIONS_2026-10-12.md).
+  20 open findings: remove verified R20; retain 16 and add R23–R26.
+  - **P1 R23/R24:** failed/partial replay can earn whole-workflow verification, and a
+    mid-run YAML edit can verify unexecuted content. Bind clean coverage to executed hash.
+  - **P1 R25:** expectation timeout repeats an executed click; separate observation retry
+    from mutation retry and retain uncertain outcomes.
+  - **P1 R26:** cancel releases the desktop lock while the action is live; for_each items
+    continue without cancellation checks. Keep ownership until acknowledged stop.
+  - R21 terminal session close and R22 queued board-event provenance remain open.
+  - R8 abandoned child metadata remains after the repaired owner-scoped kill selection.
+  - R7: seven oversized production modules and five long functions (new rpa included).
+  - Final focused verification: 810 passed, three known R15 failures, 24 skipped. No live
+    desktop/hook/provider checks; fake-driver probes reproduce all four new RPA findings.
+  Roadmap: 15 unbuilt extensions, adding S15's replay preview. Shipped recording/replay,
+  repair/Workflows rail, member keys/presence and child isolation are not reproposed.
+  Reports updated in place and renamed; documentation-only changes remain uncommitted.
 
 - **2026-10-02 automation review follow-ups.** The review covered `task/iteration-engine`
-  at `6917b131`. The running reports have since been renamed to the current October 11
+  at `6917b131`. The running reports have since been renamed to the current October 12
   files linked above; the October 2 observations remain historical. R2 and R6 are fixed (2026-10-05);
   R7's four targeted function refactors and R8/R9 are done; residuals and other findings
   are tracked in the current report.

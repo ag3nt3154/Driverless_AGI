@@ -1,20 +1,26 @@
-# Dagi code review — 2026-10-11
+# Dagi code review — 2026-10-12
 
 ## Scope and priorities
 
-Reviewed **main** at **3079386f6cc562e584608d97bed0024dfe0c6d8a**, starting from a clean checkout.
-The October 10 reports were edited in place and renamed to October 11. This report contains
-**17 open findings only**, retaining stable IDs. No existing finding was verified closed.
-The standalone board split, token resolution and GUI switching are the main changed paths;
-the owning scheduler, Telegram, plan, loop and code-mode defect paths are unchanged.
-R7 adds board_runtime.py to the remaining size violations. SQLite now imports successfully;
-yesterday's environment blockage is cleared, rather than retained as an application finding.
+Reviewed **main**, final revision **ff18da869a8a1885f3ed7d3851cb3c7d0e40e458**. The initial clean revision was
+53b6f7c7; the checkout advanced during review. Changed boundaries and offline probes were
+rechecked at the final revision before reporting. The October 11 reports were edited in
+place and renamed to October 12. This report contains **20 open findings only**, with stable
+IDs: 16 retained and four new RPA findings (R23–R26). R20 was removed after inspecting the
+owner-scoped cancellation repair and passing its regression suite; abandoned metadata (R8)
+and terminal GUI close (R21) remain open.
 
-Prioritize execution ownership and truthful outcomes (R4/R10/R16/R18/R20/R21), then Telegram
-delivery/routing (R11/R12), board event provenance (R22), publication, plan assignment and
-retained diagnostics (R14/R15/R17/R19). A new offline Qt probe confirms that an old-board post
-already queued before a switch can display and wake agents after the switch. Earlier
-reproductions are dated explicitly; unchanged defects were not re-probed indiscriminately.
+Computer-use tools, recording, deterministic replay, repair and the Workflows rail are now
+shipped. Board member keys/presence and computer-use tool naming also changed. Basic presence,
+record/replay and plan tracking are not missing-feature findings. The wiki's report that
+mentions fail to reach spawned agents remains unconfirmed; it is separate from R22's dated
+reproduction. This review does not claim live/manual validation of those changes.
+
+Prioritize truthful execution/verification and stop ownership (R4/R10/R16/R18/R21/R23/R24/R26),
+then non-idempotent replay retries (R25), Telegram routing/delivery (R11/R12), board event
+provenance (R22), and plan/publication/diagnostic contracts. The new probes use the real RPA
+interpreter/store and fake UI drivers; no real desktop, keyboard hook, provider, user board
+post or external side effect was exercised.
 
 ## R3 — P2: Record scheduler startup failures
 
@@ -46,23 +52,25 @@ providers, long tools and descendants; a thread join timeout cannot enforce a de
 
 ## R7 — P2: Reduce remaining orchestration complexity behind supported seams
 
-**Finding:** Five production modules and three callback/config builders exceed size limits.
+**Finding:** Seven production modules and five functions exceed the review's size thresholds.
 
-**Issue:** Today's AST inventory selects 218 tracked Python files under agent/tools/
-scheduler/tg/tui/pyside_gui/providers/services plus root entry points, excluding nested
-tests. Five exceed 500 lines: agent/loop.py (1,082), tools/subagent_main.py (744),
-tools/read/_reader_controller.py (525), pyside_gui/prompt_input.py (635) and
-pyside_gui/board_runtime.py (513). Three functions exceed 100:
-config_loader._build_config_from_entry (106), PySide bridge.build_callbacks (105) and TUI
-callbacks.build_callbacks (178). Counts include comments/docstrings. This uses yesterday's
-explicit production selection; the removed board composer explains the file-count change.
-Cyclomatic complexity was not measured. R20–R22 show why ownership and event provenance
-need supported contracts before extracting more orchestration code.
+**Issue:** Today's AST inventory selects 249 tracked Python files under agent/tools/
+scheduler/tg/tui/pyside_gui/providers/services, newly shipped rpa, and root entry points,
+excluding nested tests. Seven exceed 500 lines: agent/loop.py (1,117),
+tools/subagent_main.py (744), tools/read/_reader_controller.py (525),
+pyside_gui/prompt_input.py (635), pyside_gui/board_runtime.py (533),
+rpa/drivers/uia.py (518) and rpa/interpreter.py (524). Five functions exceed 100 lines:
+config_loader._build_config_from_entry (108), PySide bridge.build_callbacks (105),
+TUI callbacks.build_callbacks (178), rpa.interpreter.run_workflow (160) and
+rpa.workflow.parse_workflow (117). Counts include comments/docstrings; the selection now
+includes rpa rather than comparing a different production surface silently. Cyclomatic
+complexity was not measured. R23–R26 show why replay outcomes, revisions and stop ownership
+need contracts before further extraction.
 
-**Suggested solution:** Define per-run child ownership, terminal outcomes and stop/wait
-contracts before further extraction. Reduce remaining large modules along supported public
-API boundaries and preserve registry/construction/dispatch/argv ordering tests. Avoid
-splitting files solely to improve counts.
+**Suggested solution:** Define terminal outcomes, verification coverage, revision identity
+and stop/wait contracts first. Extract at supported public boundaries while retaining
+registry/construction/dispatch/argv ordering and adapter tests. Avoid splitting files solely
+to improve counts.
 
 ## R8 — P2 residual: Release abandoned child metadata
 
@@ -70,7 +78,7 @@ splitting files solely to improve counts.
 
 **Issue:** [_pending_children](C:/Users/alexr/Driverless_AGI/tools/subagent_api.py:62) retains
 the fork and parent provider until terminal resume or PID overwrite. The runner's
-[force-kill cleanup](C:/Users/alexr/Driverless_AGI/tools/_subagent_runner.py:227) clears its
+[force-kill cleanup](C:/Users/alexr/Driverless_AGI/tools/_subagent_runner.py:253) clears its
 own tracking without releasing this public metadata. A child never resumed can therefore
 retain parent references. This is source-inspected ownership debt; retained heap growth was
 not measured. The scope here is abandoned metadata, not stale-result acceptance.
@@ -193,7 +201,7 @@ the first case-insensitive substring match in any level-three heading. The real
 [worker composer](C:/Users/alexr/Driverless_AGI/.dagi/subagents/worker/plan_utils.py:37),
 given Subtask 1: Validate input and Subtask 2: Validate, assigned the first task's body/tests
 when asked for Validate on October 8. October 9's direct parser probe again selected the
-wrong block; the parser and worker composer remain unchanged today. The requested second task's content was absent. Existing tests allow
+wrong block; their assignment logic remains unchanged. The requested second task's content was absent. Existing tests allow
 partial-name lookup but do not protect an exact match later in the plan. No model call is needed
 to reproduce incorrect delegation.
 
@@ -206,7 +214,7 @@ names that are substrings of earlier titles, ambiguous fragments and unrelated l
 
 **Finding:** Killing the script does not reliably prevent parent-side tool execution.
 
-**Issue:** [_serve](C:/Users/alexr/Driverless_AGI/tools/code/_code.py:192) runs each
+**Issue:** [_serve](C:/Users/alexr/Driverless_AGI/tools/code/_code.py:193) runs each
 proxied call synchronously in the parent and checks its deadline only when waiting for an
 RPC line. On October 9, a real nested bash sleeping two seconds kept a one-second code call alive for
 2.18 seconds. This overrun is documented in the design, but the execution budget remains
@@ -215,6 +223,7 @@ unenforced during nested tools. More seriously,
 sets a flag and kills only the runner tree; the flag is not checked before dispatching a
 selected call. A controlled gate between RPC selection and actual dispatch demonstrated
 a real temporary-file write after force_kill returned true, followed by a killed result.
+The positional-argument repair does not change cancellation admission.
 AgentLoop separately kills bash before code, leaving a similar start-versus-stop race.
 This probe controls the interleaving; it does not measure how often users encounter it.
 
@@ -229,7 +238,7 @@ tool tests alongside the existing idle-script timeout/kill tests.
 
 **Finding:** Script progress is held only in child memory until normal completion.
 
-**Issue:** [Capture](C:/Users/alexr/Driverless_AGI/tools/code/_runner.py:108) replaces
+**Issue:** [Capture](C:/Users/alexr/Driverless_AGI/tools/code/_runner.py:111) replaces
 stdout/stderr with StringIO and sends their contents only in the final done message. October 9
 scripts printed a flushed checkpoint before an infinite loop or sleep. Timeout and force-kill
 both returned [no output], losing that checkpoint. The mutation ledger survives in the parent,
@@ -243,31 +252,12 @@ timeout, kill and crash; apply size limits while capturing, before final formatt
 ordering with tool replies and avoid replaying mutations to recover lost output. Add real
 print-then-timeout/kill/crash fixtures and a bounded-output check.
 
-## R20 — P1: Scope subagent cancellation to the interrupted agent
-
-**Finding:** Interrupting one GUI agent kills children owned by other concurrent agents.
-
-**Issue:** [AgentLoop.interrupt](C:/Users/alexr/Driverless_AGI/agent/loop.py:306) invokes
-[force_kill_active_subagents](C:/Users/alexr/Driverless_AGI/tools/_subagent_runner.py:227),
-which iterates the process-global `_active` table without an owner filter. Each
-[GUI session](C:/Users/alexr/Driverless_AGI/pyside_gui/agent_session.py:37) can run its own
-loop concurrently. October 10's offline probe created two independent parent loops and two
-synthetic registered child states: interrupting A targeted both child PIDs and cleaned
-both states, while B itself remained unpaused. The kill primitive was mocked; this proves
-target selection, not real process-tree termination. Esc or closing one agent can therefore
-terminate another agent's delegated work and invalidate its expected handoff.
-
-**Suggested solution:** Carry a stable parent/run identity through the public subagent API,
-runner state and resume lifetime. Interrupt only that owner's children. Reserve a separate
-all-owner shutdown operation for application exit. Test two concurrent parents, including
-timed-out children and PID reuse; cancelling A must preserve B's execution and metadata.
-
 ## R21 — P2: Terminate and release closed GUI agent sessions
 
 **Finding:** Closing a running agent removes its UI but retains a live paused worker.
 
 **Issue:** [close_agent](C:/Users/alexr/Driverless_AGI/pyside_gui/agents_controller.py:89)
-calls [stop](C:/Users/alexr/Driverless_AGI/pyside_gui/agent_session.py:216), removes the session
+calls [stop](C:/Users/alexr/Driverless_AGI/pyside_gui/agent_session.py:214), removes the session
 and appends it to `_retired`. Stop calls interrupt, which pauses rather than terminates;
 the loop blocks on its pause event. `_retired` has no reap/release path. October 10's real-loop
 probe called the actual controller/stop methods with stub GUI/provider sinks: at the pause
@@ -283,18 +273,18 @@ cancellation requested before loop construction, wake paused workers to exit thr
 and release session/widgets only after confirmed worker termination. Show stopping until
 acknowledgment. Reap completed retired sessions; do not resume hidden work just to close it.
 Test running, already-paused and starting agents, repeated closes, and application shutdown
-with background sessions. Apply R20's owner isolation to this path.
+with background sessions. Preserve the repaired per-parent child isolation in this path.
 
 ## R22 — P1: Reject queued events from the previous board at GUI delivery
 
 **Finding:** Switching boards can deliver an old board's queued post as live input on the new board.
 
-**Issue:** The [listener callback](C:/Users/alexr/Driverless_AGI/pyside_gui/board_controller.py:289)
+**Issue:** The [listener callback](C:/Users/alexr/Driverless_AGI/pyside_gui/board_controller.py:306)
 checks its generation before emitting a Qt signal, but the signal carries only the post.
-The [GUI slot](C:/Users/alexr/Driverless_AGI/pyside_gui/board_controller.py:303) does not check
-generation or board identity. The [switch](C:/Users/alexr/Driverless_AGI/pyside_gui/board_controller.py:191)
+The [GUI slot](C:/Users/alexr/Driverless_AGI/pyside_gui/board_controller.py:322) does not check
+generation or board identity. The [switch](C:/Users/alexr/Driverless_AGI/pyside_gui/board_controller.py:210)
 increments generation, clears the feed and rebinds sessions; it cannot retract already queued
-signals. Today's controlled probe used the real controller, listener callback and Qt queued
+signals. October 11's controlled probe used the real controller, listener callback and Qt queued
 delivery with fake clients. Old-board post #99 was queued in a worker, a switch completed,
 then GUI events were processed: #99 appeared and triggered the mention hook while the
 session client pointed at the new board. The new snapshot baseline was stubbed at zero.
@@ -309,34 +299,115 @@ identity. Preserve attachment provenance or invalidate obsolete cards. Add a det
 test that queues an old post, switches before processing Qt events, and proves no display,
 mention wake-up or new-board attachment fetch. Cover pending old snapshots and status too.
 
+## R23 — P1: Require complete, clean replay coverage before verification
+
+**Finding:** Failed or partial replay can earn whole-workflow verification and approval.
+
+**Issue:** [Outcome aggregation](C:/Users/alexr/Driverless_AGI/rpa/interpreter.py:189) tracks only degraded locator
+rungs and halts. A step with on_fail=continue returns failed, yet a run with that failed step
+and a successful last step returns ok; verify then calls mark_verified. Today's real
+interpreter/store probe produced step statuses failed/ok, run ok, and successful approval.
+A second probe set start_at to the last step: only that step executed, but verify recorded
+the whole workflow and approve succeeded. [The existing continuation test](C:/Users/alexr/Driverless_AGI/tests/rpa/test_interpreter.py:338)
+even asserts overall ok after failure. rpa_patch exposes from_step with verify=True, making
+partial verification reachable through the shipped repair flow. No live workflow was run.
+
+**Suggested solution:** Separate continued execution from clean acceptance. Aggregate failed,
+skipped and executed step/item coverage explicitly; reserve whole-workflow verification for
+the defined complete acceptance contract. A resumed suffix should produce partial evidence,
+or combine with validated prior coverage for the same revision, not approve unexecuted steps.
+Update continuation tests and add failed-step/partial-verify approval regressions.
+
+## R24 — P1: Verify the workflow revision that actually ran
+
+**Finding:** Editing workflow.yaml during replay can verify and approve unexecuted content.
+
+**Issue:** Replay loads a workflow once, but [mark_verified](C:/Users/alexr/Driverless_AGI/rpa/store.py:119)
+loads and hashes the current file at completion. Today's fake driver's act callback saved
+a different workflow while the real interpreter executed its previously loaded step. The
+recorded verified_hash matched the replacement, not the executed original; store.approve
+then pre-approved the replacement's unexecuted confirm:once step. This is a controlled
+interleaving with temporary files; no real desktop action or edit frequency was measured.
+run.json also omits the executed workflow hash, weakening later repair attribution.
+
+**Suggested solution:** Capture the immutable parsed workflow and its content hash at run
+admission. Persist that hash in evidence and pass it to verification recording. Refuse to
+publish a current-content verification receipt when the stored revision changed, using an
+atomic compare/update or serialized store ownership. Bind approval prompts/receipts to the
+reviewed hash too. Test a concurrent patch during execution and a change while approval waits.
+
+## R25 — P1: Do not repeat an executed action after an expectation timeout
+
+**Finding:** A post-action timeout retries the action itself without proving it is safe to repeat.
+
+**Issue:** [The retry loop](C:/Users/alexr/Driverless_AGI/rpa/interpreter.py:385) wraps resolve, confirm,
+driver.act and the expectation check in one boundary. _ExpectTimeout is retryable, so the
+next attempt calls driver.act again even though the first call returned successfully.
+Today's fake-driver probe used retry=1, an approved confirm:once click, and an absent
+expect.present condition with timeout=0: two clicks executed, then the run halted. Once
+approval is reused on both attempts. In a real submit/payment/send workflow, a slow or
+incorrect expectation could therefore duplicate an external operation; no such external
+operation was performed in the probe. Existing retry tests cover pre-action locator failure.
+
+**Suggested solution:** Separate pre-action resolution retries from post-action observation.
+Once an action is issued, retry bounded expectation polling or stop with an uncertain outcome.
+Repeat the mutation only under an explicit idempotency/reconciliation contract and applicable
+confirmation. Test delayed success, absent expectations and approved sensitive steps; each
+must execute at most one action by default while retaining evidence for recovery.
+
+## R26 — P1: Hold desktop ownership until cancelled execution has stopped
+
+**Finding:** Cancel releases the desktop lock while replay is live, and for_each can continue acting.
+
+**Issue:** [cancel](C:/Users/alexr/Driverless_AGI/tools/ui/_tools.py:330) sets the session flag and immediately
+calls end_turn, which releases DesktopLock. The interpreter checks cancellation before an
+outer step and during sleep, but [the item loop](C:/Users/alexr/Driverless_AGI/rpa/interpreter.py:154) has no check
+before each item or immediately before act. Today's gated fake-driver probe entered the first
+of three items with a real temporary desktop lock, called the actual cancellation method,
+and acquired the same lock as agent B while A's worker was still inside act. After B released
+and the gate opened, A executed all three items and returned ok with the cancellation flag
+still set. Worker resources were joined afterward. This proves admission/ownership ordering,
+not actual simultaneous OS input or cancellation latency in a real driver.
+
+**Suggested solution:** Make cancellation a stop request; let the execution owner release the
+lock only after acknowledged action completion/termination. Check the same run cancellation
+identity before every item, retry, launch and mutation, including after confirmation waits.
+Coordinate cancellation with action admission so a stale selected call cannot start afterward.
+Report stopping/uncertain activity until acknowledged, and preserve cancelled as the outcome.
+Add the gated two-owner lock test and zero-wait for_each cancellation regression. Do not
+clear a live run's cancellation flag merely because another tool entry begins.
+
 ## Verification and limits
 
-- Today's focused board/service/client/tool/runtime/download/helper, parser, interrupt and
-  run-contract suites: **336 passed, 3 failed, 2 skipped in 50.29s**. All failures are R15's
-  missing-template tests. The two clean-install tests require DAGI_RUN_SLOW=1 and network;
-  they were skipped. SQLite-dependent modules collect and pass now; sqlite3 reports 3.51.2.
-- Existing Qt controller/mention/agent/feed suites: **55 passed in 3.56s**. These do not cover
-  R22's queued-before-switch event ordering. Both commands used the dagi interpreter outside
-  the Windows sandbox with pytest-qt and pytest cache disabled; local GUI conftest registers
-  pytestqt after DLL bootstrap. Test services use temporary stores; no live user board posts.
-- R22's new assertion passes using real Qt queued signals and actual controller methods,
-  with fake board clients, a listener stub and a settled-new-snapshot stub. Its emission-to-
-  delivery interleaving is deliberate; frequency in real use was not measured.
-- R3/R4/R10–R14/R16 runtime evidence is from **October 8**, R17–R19 from **October 8/9**,
-  and R20/R21 from **October 10**. Owning defect code is unchanged. R21's close method has
-  nearby board-removal changes but retains the stop/pause/_retired behavior. R8 remains
-  source-inspected metadata debt; retained heap growth was not measured. R15 failures and
-  R7 inventory are fresh. Resolved R2/R6/R8-generation/R9 defects remain removed.
-- [Today's probe source](C:/Users/alexr/.codex/visualizations/2026/10/11/01a128a5-2829-73f1-a28a-648eb65c6cf3/review_probes.py),
-  [results](C:/Users/alexr/.codex/visualizations/2026/10/11/01a128a5-2829-73f1-a28a-648eb65c6cf3/review_probe_results.json) and
-  [verification summary](C:/Users/alexr/.codex/visualizations/2026/10/11/01a128a5-2829-73f1-a28a-648eb65c6cf3/verification.json)
-  retain fresh evidence. [October 10 evidence](C:/Users/alexr/.codex/visualizations/2026/10/10/01a1236a-9530-7a20-9210-07bdb703de16/review_probe_results.json),
-  [October 9 evidence](C:/Users/alexr/.codex/visualizations/2026/10/09/01a12093-68e8-7b40-98a4-9682ae3fc5c0/review_probe_results.json) and
-  [October 8 evidence](C:/Users/alexr/.codex/visualizations/2026/10/08/01a11b73-16a4-7810-b1e8-4e890c34d652/)
-  support unchanged-path findings. Python: C:/Users/alexr/miniconda3/envs/dagi/python.exe -u.
-- No full suite, rendered GUI interaction, live provider/Telegram, campaign, converter,
-  power-loss or actual multi-parent process-tree termination check. Campaign remains absent
-  from this checkout. RPA is research/spike work with implementation still planned; it is
-  not claimed shipped or reproposed here. Documentation-only review; no application repairs.
+- Final-revision focused run: **810 passed, 3 failed, 24 skipped in 68.93s**. Failures are
+  the known R15 missing-template tests. Coverage includes owner-scoped subagents, code scripts,
+  RPA, computer-use tools, image assets, board service/client/tools/runtime, and Qt board/
+  mentions/agent controllers. Real desktop and keyboard-hook fixtures remained disabled;
+  clean-install/network and platform-dependent fixtures also skip. Python was the project
+  dagi interpreter, with pytest-qt/cache disabled and a dedicated temporary test root.
+- The initial sandbox attempt could not create pytest's default temporary directory.
+  An explicit writable base fixed setup; sandbox Python also emits a startup warning that
+  contaminated the empty-script result. The unsandboxed rerun removed that extra failure.
+  Those are environment limitations, not new application findings.
+- All five new assertions (R23 has two) reproduce at the final revision with real interpreter,
+  store and lock and fake drivers. [Probe source](C:/Users/alexr/.codex/visualizations/2026/10/12/01a12ff5-eea2-7331-bb17-fd980fad5b50/review_probes.py),
+  [results and AST inventory](C:/Users/alexr/.codex/visualizations/2026/10/12/01a12ff5-eea2-7331-bb17-fd980fad5b50/review_probe_results.json), and
+  [test log](C:/Users/alexr/.codex/visualizations/2026/10/12/01a12ff5-eea2-7331-bb17-fd980fad5b50/verification-final.log) retain evidence. R24 edits only its temporary
+  workflow; R26 uses a deliberate gate and joins its worker. No live UI or external action.
+- R20's owning-code repair and tests cover concurrent parents, timeout ownership, PID reuse,
+  scope restoration and run/compact/wtf entry points; its open finding is removed. Real
+  multi-parent process-tree termination was not exercised. R8 metadata cleanup remains.
+- R3/R4/R10–R14/R16 reproductions are from **October 8**, R17–R19 from **October 8/9**,
+  R21 from **October 10**, and R22 from **October 11**. Current source preserves those
+  defective paths; fresh tests do not supersede their dated probes. R22's new snapshot-display
+  guard still does not carry provenance in a queued signal. R8 is source-inspected metadata
+  debt. R15 failures and R7 inventory are fresh.
+- [October 11 board-event evidence](C:/Users/alexr/.codex/visualizations/2026/10/11/01a128a5-2829-73f1-a28a-648eb65c6cf3/review_probe_results.json),
+  [October 10 evidence](C:/Users/alexr/.codex/visualizations/2026/10/10/01a1236a-9530-7a20-9210-07bdb703de16/review_probe_results.json),
+  [October 9 evidence](C:/Users/alexr/.codex/visualizations/2026/10/09/01a12093-68e8-7b40-98a4-9682ae3fc5c0/review_probe_results.json),
+  and [October 8 evidence](C:/Users/alexr/.codex/visualizations/2026/10/08/01a11b73-16a4-7810-b1e8-4e890c34d652/)
+  support retained findings. No full suite, rendered GUI, live provider/Telegram, converter,
+  power-loss or live cross-app repair check was run. Campaign remains absent. Only reports,
+  pointers and wiki were edited; no application repairs, staging or commits.
 
-See the [improvement roadmap](C:/Users/alexr/Driverless_AGI/_CODEX_SUGGESTIONS_2026-10-11.md).
+See the [improvement roadmap](C:/Users/alexr/Driverless_AGI/_CODEX_SUGGESTIONS_2026-10-12.md).

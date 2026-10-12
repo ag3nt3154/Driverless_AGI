@@ -1,43 +1,48 @@
-# Dagi suggestions — 2026-10-11
+# Dagi suggestions — 2026-10-12
 
 Proposals for sustained agentic work, measured self-improvement and understandable recovery.
-They do not authorize implementation. Reviewed main at 3079386f6cc562e584608d97bed0024dfe0c6d8a. The October 10 report
-was edited in place and renamed to October 11. Only unbuilt improvements or explicit
-extensions of existing features are listed.
+They do not authorize implementation. Reviewed main at **ff18da869a8a1885f3ed7d3851cb3c7d0e40e458**. The October 11 report
+was edited in place and renamed to October 12. Only unbuilt improvements or explicit
+extensions of shipped features remain; none of the existing 14 extensions is fully implemented.
 
-Already shipped: Python code-mode tool scripts, CLI UTF-8 output, standalone message-board
-browser composition, token resolution, attachment save/preview and image input, board
-switching/fallback, AgentSession state, Agents rail spawn/open/close and @mention wake-ups
-with a five-wake guard. RequestExecutor, persisted revisions, generation-aware child resume,
-output draining, active-plan sidecars, process-state events and steering receipts exist.
-The existing improve-yourself baseline/after workflow is recognized, not reproposed.
-Campaign is absent from this checkout; reconcile its design before schema reuse.
-RPA computer-use/record/replay and a Workflows rail are already planned in
-[research](C:/Users/alexr/Driverless_AGI/wiki/tasks/2026-10-10_rpa-computer-use/research.md);
-do not create a competing automation feature. Keep the coding harness on its standing
-yolo workflow without an additional orchestration language or approval layer; the separate
-RPA design's explicit replay/confirmation contract remains its own planned scope.
+Already shipped: code-mode scripts (including positional tool arguments), standalone board
+composition/token resolution, member keys and online presence, attachment save/preview,
+image input, board switching, Agents rail and mention wake-ups, owner-scoped child cancellation,
+computer-use tools, recording/compilation, deterministic replay, content-based approval,
+halt evidence, repair patches, and the Workflows rail/cards. Recognize RequestExecutor,
+persisted revisions, child generation checks, output draining, active-plan sidecars,
+process-state events and steering receipts. Extend the existing
+[improve-yourself workflow](C:/Users/alexr/Driverless_AGI/.dagi/workflow/improve-yourself/workflow.md), rather than
+reproposing baseline/after testing. Campaign is absent; reconcile its design before schema reuse.
 
-[Today's review](C:/Users/alexr/Driverless_AGI/_CODEX_CODE_REVIEW_2026-10-11.md) contains
-17 open findings. R22 adds board event provenance to the ownership prerequisites for teamwork.
-Fresh verification: 336 passed, three known plan-template failures and two opt-in clean-install
-skips; another 55 focused Qt tests passed. SQLite's previous setup blockage is cleared.
-The roadmap contains 14 unbuilt extensions; S14 adds failure-directed retry decisions.
+RPA is now implemented, not merely planned. Keep its explicit replay/confirmation contract
+separate from the standing coding harness workflow; no new orchestration language or coding
+approval layer is proposed. The board's five-wake cap was deliberately removed; S13 proposes
+task receipts and scoped work budgets, not restoring that cap. The wiki already tracks @all,
+board moderation, image attachments and startup animation follow-ups; those are not duplicated.
+Reported missed mentions to spawned agents still need diagnosis, independently of R22.
+
+[Today's review](C:/Users/alexr/Driverless_AGI/_CODEX_CODE_REVIEW_2026-10-12.md) contains 20 open findings, removes
+repaired R20, and adds R23–R26 for replay verification, revision identity, retries and cancellation.
+Final-revision validation: 810 passed, three known R15 failures and 24 skips, including Qt
+controller fixtures. Five offline probe assertions reproduce the four new findings. No live
+desktop, hook or provider validation. The roadmap has **15 unbuilt extensions**, adding S15's
+read-only replay preflight preview and extending existing contracts for the shipped RPA paths.
 
 ## S1 — One owned run with an explicit outcome
 
 **Improvement:** Give frontends, scheduled tasks and children a supported
 start/status/steer/cancel/await-stopped contract and explicit terminal outcome.
 
-**Issue addressed:** R4/R10/R18/R20/R21 show incompatible meanings of timeout, completion and failure.
-R22 adds the need to preserve input provenance across concurrent UI lifetimes.
+**Issue addressed:** R4/R10/R18/R21/R26 show incompatible meanings of timeout, completion and failure.
+R22 adds input provenance; R23/R24 add verification coverage and executed-revision identity.
 R8 now preserves branch/generation through resume; its abandoned metadata remains ownership
 debt. A PID alone cannot prove stopped execution or own all cleanup.
 
 **Smallest useful version:** Add stable run identity and an outcome containing terminal
 reason, final text, diagnostics and artifact references. Retain branch/generation metadata
 through child resume. Distinguish wait timeout from execution deadline. Prototype with
-scheduler, code mode and child resume before migrating all UIs. Include one admitted scheduler owner
+scheduler, code mode, child resume and RPA replay before migrating all UIs. Include one admitted scheduler owner
 (R16); an expired wait must not allow another owner while execution survives.
 
 **Acceptance:** Ghost exhaustion is recorded as failure; immediate and resumed results use
@@ -45,8 +50,10 @@ the same generation check; no owned execution survives reported deadline enforce
 no selected code-mode mutation begins after acknowledged cancellation; cancelling one
 parent preserves other parents' children, and closing a session terminates/reaps its worker;
 queued events from a previous board cannot admit new work after a switch;
-preserve R9 tests proving output drains when its diagnostic log is unavailable. These child
-contracts already exist; S1 extends ownership and outcomes rather than reimplementing them.
+RPA cancellation holds ownership until stopped, verification names executed revision and
+coverage, and post-action timeout cannot duplicate a mutation. Preserve R9 tests proving
+output drains when its diagnostic log is unavailable. Per-parent child cancellation and
+these resume/drain contracts already exist; S1 extends ownership and outcomes.
 
 ## S2 — Durable objectives and an attempt journal
 
@@ -161,8 +168,8 @@ matches live history; save failure remains visible.
 
 **Improvement:** Turn repeatable boundary reproductions into a maintained contract corpus.
 
-**Issue addressed:** Core run contracts are strong, but scheduler tests omit runtime
-execution, and Telegram delivery/dispatch defects survived previous reviews.
+**Issue addressed:** Passing core and RPA tests miss replay acceptance gaps. Scheduler tests
+omit runtime execution, and Telegram delivery/dispatch defects survived previous reviews.
 
 **Smallest useful version:** Preserve the R8/R9 regression tests that already landed.
 Promote still-open scheduler/Telegram/publication probes as their repairs land. Use a fake
@@ -172,9 +179,11 @@ link review IDs to fixtures. Add the R16 two-process admission scenario and R17 
 worker-selection scenario, plus skill-format checks from S10. Add R18
 controlled admission-versus-cancellation and nested-budget fixtures, and R19
 print-before-timeout/kill fixtures; idle-script timeout tests do not cover these boundaries.
-Add two-parent cancellation isolation (R20) and actual worker exit after session close (R21),
+Preserve the shipped two-parent cancellation isolation tests and add actual worker exit after session close (R21),
 rather than a mocked stop return alone. Include queued old-board events delivered after
 a switch (R22); checking generation only before emitting is insufficient.
+Add R23/R24 complete coverage and executed-revision verification, R25 post-action
+expectation timeout and R26 per-item cancellation/lock acknowledgment fixtures.
 
 **Acceptance:** A fixture fails on the current defect and passes only with correct behavior.
 Adapters agree on the same core scenario. Infrastructure errors report separately.
@@ -191,7 +200,9 @@ Computation, acceptance and delivery have different failure modes.
 
 **Smallest useful version:** Retain final text and artifact references under S1's stable
 run identity. Record a delivery receipt with destination, attempt, status and diagnostic.
-Offer retry export with a new path and redelivery of the retained final message. Show
+Offer retry export with a new path and redelivery of the retained final message.
+Extend existing RPA run.json evidence with executed revision, per-item coverage and unknown
+side-effect status; retain its existing halt/repair artifacts rather than rebuilding them. Show
 computed / verified / delivered separately in S5. Keep scheduler jobs runnable after an
 individual publication error; never automatically rerun computation just to export it.
 Retain code-mode partial output and its mutation ledger as incomplete attempt evidence;
@@ -279,12 +290,12 @@ or new tool-chain language is needed.
 so an @mention starts useful bounded work without losing ownership or replaying it.
 
 **Issue addressed:** Agent spawning, board messages and mention wake-up are already built.
-The current five-wake guard limits consecutive agent mentions, but does not describe the
-delegated objective, acceptance command, execution budget or returned evidence. R20/R21
-show why hidden or cancelled agents need explicit ownership before unattended teamwork;
+Agent-to-agent wake-ups are intentionally uncapped. Existing messages do not carry the
+delegated objective, acceptance command, execution budget or returned evidence. R21
+shows why hidden or cancelled agents need terminal ownership before unattended teamwork;
 R22 adds event provenance across board switches.
 
-**Smallest useful version:** After S1/S2 and R20/R21/R22, attach a task/attempt reference to a
+**Smallest useful version:** After S1/S2 and R21/R22, attach a task/attempt reference to a
 board assignment and its reply. Record accepted/running/result-received/verified states
 against the existing run identity. Start with a read-only reviewer in a separate agent,
 with one acceptance check and a bounded token/time budget. Deduplicate deliveries by board
@@ -306,8 +317,8 @@ spending another automatic attempt on the same failure.
 **Issue addressed:** RequestExecutor already bounds ghost-response retries and the loop
 guards consecutive empty replies. Those controls do not connect identical tool, capability,
 publication or acceptance failures across objective attempts. S2 budgets bound total work;
-S14 explains what needs to change to make the next attempt useful. Yesterday's missing
-SQLite DLL and today's still-missing plan template illustrate different recovery causes.
+S14 explains what needs to change to make the next attempt useful. The historical SQLite setup failure and still-missing plan template illustrate distinct
+recovery causes. R25 shows why post-action uncertainty must not trigger an automatic mutation retry.
 
 **Smallest useful version:** Extend S2's journal with a normalized failure signature, affected
 operation and relevant input/environment revision. Retain the diagnostic/artifact under S9.
@@ -323,27 +334,53 @@ attempt while preserving prior evidence. Transient retries remain bounded; uncer
 effects require reconciliation. The task view names the blocked operation and useful next
 action. S3's evaluation corpus covers false suppression and repeated-failure escape.
 
+## S15 — Preview a replay before it controls applications
+
+**Improvement:** Add a read-only preflight preview to the shipped Workflows rail and CLI.
+
+**Issue addressed:** verify is a real replay, not a dry run. The current workflow detail view
+lists default parameters, secret names and steps, but does not show effective parameters,
+expanded item counts, skipped prefix, destinations or confirm coverage for the next run.
+R23/R24 demonstrate why a planned or partial run must not masquerade as verified execution.
+
+**Smallest useful version:** Use the existing workflow parser/rendering and
+[detail API](C:/Users/alexr/Driverless_AGI/rpa/api.py) to show the exact workflow hash, resolved non-secret inputs,
+secret names/availability only, planned step/item count, start-step coverage and confirmation
+policy. Display templated paths/URLs without launching drivers or rendering secret values.
+Flag missing parameters/capabilities before replay. A resume preview must show the skipped
+prefix and distinguish expected root bindings from bindings established by this attempt.
+Extend the existing rail rather than inventing a new workflow editor or language.
+
+**Acceptance:** Opening a preview performs zero launches, actions, global hooks or verification
+writes. Missing secrets name the missing variable without revealing values. Changing input or
+YAML invalidates the preview. Planned coverage stays visibly separate from execution/acceptance
+receipts; only a clean complete run earns verification after R23/R24 are repaired. Add preview
+fixtures to S3/S8 and keep replay retry behavior under S14/R25.
+
 ## Sequence and measures
 
-1. Repair R4/R10/R16/R18/R20/R21/R22 and Telegram R11/R12; retain verified R2/R6/R8/R9 contracts.
+1. Repair R4/R10/R16/R18/R21/R22/R23/R24/R25/R26 and Telegram R11/R12; retain verified R2/R6/R8/R9 contracts.
 2. Repair R3/R13/R14, add S8 regression fixtures and the minimal S9 retained-export path;
    repair R19 to retain interrupted script diagnostics.
    Extend S1 ownership to abandoned-child cleanup. Repair R15/R17 and establish S10's plan
    contract before relying on unattended delivery.
-3. Add S2 objectives and S4 manifests; prototype S5 on those records. Add S14 once retained
+3. Add S2 objectives and S4 manifests; prototype S5 on those records. Extend the shipped Workflows rail with executed/verified/delivered
+   distinctions. Add S14 once retained
    failure evidence can distinguish recovery changes. S6 remains a bounded
    capability-preflight opportunity under the project's normal implementation workflow.
-   Add S11 once admission and attempt recovery have durable ownership.
+   Add S11 once admission and attempt recovery have durable ownership. Prototype S15
+   atop the existing RPA detail API after verification/ownership repairs.
 4. Connect S7 checkpoints and extend S3's existing self-improvement workflow. Candidate
    promotion requires intact evaluator evidence and passing behavioral contracts.
    Measure shipped code mode through S12 before choosing examples to reuse.
-5. Pilot S13 with read-only review after per-parent cancellation and durable attempt
-   ownership work; expand collaboration only when receipts prove correct admission/results.
+5. Pilot S13 with read-only review once durable attempt ownership is established. Preserve
+   repaired per-parent cancellation; expand collaboration when receipts prove admission/results.
 
 Measure verified acceptance, false-success rate, final-delivery failures, question-answer
 latency, cancellation latency, code-mode deadline overrun/partial-output retention, export
 recovery without recomputation, plan-contract rejection, recovery success, duplicate-admission
-rate, exact task-selection accuracy, obsolete-board wake-ups, retry-without-change rate, stale-result
+rate, exact task-selection accuracy, obsolete-board wake-ups, replay coverage/hash mismatches, repeated post-action mutations,
+preview-versus-run input drift, retry-without-change rate, stale-result
 rejection and repeated failed hypotheses. Record cost per verified outcome with missing-cost
 cases explicit. Establish
 baselines before choosing numerical targets. No external framework migration is required.
