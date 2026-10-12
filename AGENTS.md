@@ -50,4 +50,5 @@ private throwaway board only while the configured central board is unavailable.
 ## Memory
 
 - Project wiki: `wiki` (architecture, errors log, notes and terms, todos, reviews).
+- Offline PyTorch wheel requests and verified ZIP bundle: [Windows x64 / Python 3.13 reference](wiki/pytorch-offline-windows-python313.md).
 - Required checkpoints (see `enter-workflow`)
