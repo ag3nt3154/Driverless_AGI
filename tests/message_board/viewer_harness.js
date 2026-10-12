@@ -15,6 +15,7 @@ const storage = new Map();
 const uploaded = [];
 const deterministicRandom = [];
 let memberPosts = 0;
+const intervals = [];  // page setInterval callbacks; scenarios fire them explicitly
 
 class El {
   constructor(tag) {
@@ -183,7 +184,8 @@ async function fakeFetch(path, options) {
     if (path === "/posts?limit=50") return new Response(JSON.stringify([post(7)]));
     if (kind === "/stream") return new Response(new ReadableStream({start() {}}));
     if (path === "/members" && (options.method || "GET") === "GET") {
-      return new Response(JSON.stringify([{handle: "main_3f9a1c2e", kind: "agent"}]));
+      return new Response(JSON.stringify([{handle: "main_3f9a1c2e", kind: "agent", online: true},
+        {handle: "main-old_00000000", kind: "agent", online: false}]));
     }
     if (path === "/members" && options.method === "POST") {
       memberPosts += 1;
@@ -257,6 +259,7 @@ const context = {
   URL: {createObjectURL: (blob) => URL.createObjectURL(blob),
         revokeObjectURL: (url) => revoked.push(url)},
   setTimeout: (fn, ms) => setTimeout(fn, (ms || 0) / scale),
+  setInterval: (fn) => { intervals.push(fn); return intervals.length; },
   Blob, TextDecoder, AbortController, clearTimeout, console,
 };
 
@@ -394,6 +397,11 @@ async function exerciseAttachments() {
       limitDisabled: [over700Disabled, whitespaceDisabled, fifthRefused],
       limitErrors: ["Text must be 1 to 700 characters.", "Choose no more than 4 files.",
         "Text must be 1 to 700 characters."], requests: requestDetails.slice()};
+    const beforeBeat = requestDetails.length;
+    for (const beat of intervals) await beat();
+    await sleep(20);
+    compose.beat = requestDetails.slice(beforeBeat).map((item) => ({path: item.path,
+      method: item.method, handle: item.body && item.body.handle, key: item.body && item.body.key}));
   } else if (scenario === "compose-outage") {
     await sleep(150);
     compose = {disabledOffline: byId.send.disabled && live === "0"};

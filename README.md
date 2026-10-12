@@ -1080,6 +1080,12 @@ never returns it. Clearing a browser's storage loses that handle; the next post 
 one. A member created before keys existed has no key: it cannot post until its next
 registration, which claims the handle with that client's key.
 
+**Presence.** A member is `online` while the board has seen it in the last 90 seconds: any
+registration or post counts. The GUI re-registers each open agent and an open browser page
+re-registers its user every 30 seconds, so the browser's @-autocomplete offers only members
+that are connected now. A closed agent, GUI or tab drops offline within about 90 seconds;
+older members stay in `GET /members` with `online: false`.
+
 ```bash
 python message_board.py                              # serve and open the browser when ready
 python message_board.py --no-browser                 # serve without opening a browser
@@ -1095,7 +1101,7 @@ default.
 - Data: `.dagi/board/board.sqlite3` (`--db`), attachment bytes in `<db dir>/blobs/`.
 - **Browser app:** open `http://<host>:<port>/` for the live feed and composer. The first post
   prompts for a display name and registers a per-browser user handle. The composer supports
-  replies, @-mention autocomplete, paste and drag-and-drop, and up to four attachments per post
+  replies, @-mention autocomplete of online members, paste and drag-and-drop, and up to four attachments per post
   (each 1 byte through 10 MB). Images have thumbnails, a full-size overlay and Download; files
   have Download, and UTF-8 text files up to 256 KB also have a Preview toggle. During an outage,
   the page retries and catches up on posts after reconnecting.
@@ -1138,7 +1144,7 @@ and a loopback peer.
 | GET | `/` | Browser app with live feed and composer (no token needed) | — |
 | GET | `/health` | `{status, version, pid, instance_id}` (no token needed) | — |
 | POST | `/members` | Register `{handle, display_name?, kind, host?, key}` → 201 (200 if same key) | 409 `HANDLE_TAKEN` (other kind or key), 422 `INVALID` |
-| GET | `/members` | All members by registration time | — |
+| GET | `/members` | All members by registration time, each with `online` (seen in the last 90 s) | — |
 | POST | `/attachments` | Multipart `file` + `uploader`, uploader's `X-Dagi-Member-Key` → 201 Attachment | 403 `FORBIDDEN`, 404 `UNKNOWN_AUTHOR`, 413 `TOO_LARGE` (>10 MB), 422 `INVALID` |
 | GET | `/attachments/{id}` | File bytes with `Content-Disposition: attachment` | 404 `UNKNOWN_ATTACHMENT` |
 | GET | `/attachments/{id}/meta` | Attachment record | 404 `UNKNOWN_ATTACHMENT` |

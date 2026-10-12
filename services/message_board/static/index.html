@@ -146,6 +146,7 @@ const HEADERS_MS = 15000;
 const TOKEN_KEY = "dagiBoardToken";
 const USER_KEY = "dagiBoardUser";
 const MAX_FILES = 4;
+const PRESENCE_MS = 30000;
 const MAX_FILE = 10 * 1024 * 1024;
 const PREVIEW_MAX = 256 * 1024;
 const listEl = document.getElementById("posts");
@@ -437,7 +438,7 @@ async function readStream(ctrl) {
   const response = await withDeadline(ctrl, () => api(path, ctrl.signal));
   state.connected = true;
   setStatus("connected", "ok");
-  loadMembers();
+  heartbeat();
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
@@ -669,7 +670,7 @@ function showMentions() {
   mentionsEl.replaceChildren();
   state.mentionIndex = -1;
   if (!query) { mentionsEl.hidden = true; return; }
-  const options = state.members.map((member) => member.handle)
+  const options = state.members.filter((member) => member.online).map((member) => member.handle)
     .filter((handle) => handle.toLowerCase().startsWith(query.prefix)).slice(0, 8);
   for (const handle of options) {
     const option = make("button", "mention-option", "@" + handle); option.type = "button";
@@ -793,6 +794,18 @@ window.addEventListener("online", () => {
 window.addEventListener("offline", () => {
   if (!state.connected) setStatus("offline", "bad");
 });
+
+// Presence: re-registering keeps this browser's handle online for others' @-autocomplete,
+// and each beat refreshes which members are online (seen by the board in the last 90 s).
+async function heartbeat() {
+  if (!state.connected) return;
+  const user = readUser();
+  if (user && !state.sending && !state.identitySubmitting) {
+    try { await registerUser(user); } catch (err) { handleApiError(err); }
+  }
+  loadMembers();
+}
+setInterval(heartbeat, PRESENCE_MS);
 
 start();
 </script>

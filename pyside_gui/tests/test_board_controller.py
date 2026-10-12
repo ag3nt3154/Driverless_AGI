@@ -592,3 +592,25 @@ def test_each_agent_meme_renders_in_its_own_conversation(qtbot, tmp_path):
         "reply_to": None, "attachments": [], "created_at": "2026-10-09T00:00:00Z",
     })
     assert main_emotes == [] and [args[0] for args in helper_emotes] == ["wave"]
+
+
+def test_heartbeat_re_registers_every_open_agent_with_its_key(qtbot):
+    from agent.board_client import BoardSession
+
+    window = _window(qtbot)
+    controller = BoardController(window)
+    client = SwitchClient("http://central:8765")
+    main = BoardSession(client, "main_12345678", "m" * 43)
+    helper = BoardSession(client, "helper_abcdef12", "h" * 43)
+    controller.sessions = [main, helper]
+    controller.runtime = SimpleNamespace(client=client, session=main, temp=None)
+    controller._heartbeat()
+    qtbot.waitUntil(lambda: len(client.registered) == 2)
+    assert client.keys == {"main_12345678": "m" * 43, "helper_abcdef12": "h" * 43}
+    controller.remove_session(helper)  # a closed agent stops beating and drops offline
+    controller._heartbeat()
+    qtbot.waitUntil(lambda: len(client.registered) == 3)
+    assert client.registered[-1] == ("main_12345678", "agent")
+    controller._presence_timer.start()
+    controller.close()
+    assert not controller._presence_timer.isActive()

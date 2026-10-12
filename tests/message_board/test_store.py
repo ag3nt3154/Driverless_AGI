@@ -1,6 +1,7 @@
 """SQLite board store contract (spec §5)."""
 import sqlite3
 from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
@@ -42,6 +43,20 @@ def test_member_registration(store, monkeypatch):
     assert store.register_member(A, "agent", host="laptop", key=KEY)[0]["host"] == "laptop"
     assert [m["handle"] for m in store.list_members()] == [A, B]
     assert all("key_hash" not in m for m in store.list_members())
+
+
+def test_members_are_online_only_while_recently_seen(store, monkeypatch):
+    start = datetime(2026, 10, 12, tzinfo=timezone.utc)
+    clock = [start]
+    monkeypatch.setattr("services.message_board.store._clock", lambda: clock[0])
+    store.register_member(A, "agent", host="pc", key=KEY)
+    clock[0] = start + timedelta(seconds=60)
+    store.register_member(B, "agent", host="pc", key=KEY)  # B's heartbeat; A stays quiet
+    assert {m["handle"]: m["online"] for m in store.list_members()} == {A: True, B: True}
+    clock[0] = start + timedelta(seconds=91)
+    assert {m["handle"]: m["online"] for m in store.list_members()} == {A: False, B: True}
+    store.create_post(author=A, text="back")  # posting also counts as being seen
+    assert all(m["online"] for m in store.list_members())
 
 
 @pytest.mark.parametrize("key", [None, "", "short", "k" * 129, "k" * 42 + "!"])

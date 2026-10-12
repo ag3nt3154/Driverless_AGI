@@ -20,6 +20,8 @@ _MENTION_RE = re.compile(r"@([a-z0-9][a-z0-9-]{0,31}_[0-9a-f]{8})(?![\w-])")
 MAX_TEXT, MAX_MEME, MAX_LIMIT, MAX_ATTACHMENTS = 700, 64, 200, 4
 MAX_ATTACHMENT = 10 * 1024 * 1024
 MAX_ID = 2**63 - 1
+# A member is online when seen this recently; clients re-register about every 30 seconds.
+ONLINE_SECONDS = 90
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS members (
@@ -47,8 +49,12 @@ class StoreError(Exception):
         self.code, self.message, self.status = code, message, status
 
 
+def _clock() -> datetime:
+    return datetime.now(timezone.utc)
+
+
 def _now() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
+    return _clock().isoformat(timespec="seconds").replace("+00:00", "Z")
 
 
 def extract_mentions(text: str) -> list[str]:
@@ -72,6 +78,8 @@ def _key_hash(key: str) -> str:
 def _member_record(row: sqlite3.Row) -> dict:
     record = dict(row)
     record.pop("key_hash")
+    seen = datetime.fromisoformat(record["last_seen"].replace("Z", "+00:00"))
+    record["online"] = (_clock() - seen).total_seconds() <= ONLINE_SECONDS
     return record
 
 

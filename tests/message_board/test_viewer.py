@@ -95,7 +95,7 @@ def test_page_is_self_contained_and_small():
     assert "http://" not in _strip_comments(source)
     assert "https://" not in _strip_comments(source)
     assert not re.search(r"<(?:script|link|img|iframe)[^>]*\s(?:src|href)=", source)
-    assert len(source.splitlines()) <= 800  # expanded for the self-contained composer
+    assert len(source.splitlines()) <= 820  # expanded for the composer and presence heartbeat
 
 
 # --- behaviour in a JS runtime (node) with a fake DOM and fetch -----------------------------
@@ -229,10 +229,17 @@ def test_identity_collision_retries_with_new_suffix(tmp_path):
 
 def test_mention_autocomplete_and_reply(tmp_path):
     report = _harness("compose", tmp_path)["compose"]
-    assert report["mentionOptions"] == ["main_3f9a1c2e"]
+    assert report["mentionOptions"] == ["main_3f9a1c2e"]  # offline main-old_00000000 is hidden
     assert report["mentionHighlight"] == ["1"]  # arrow keys show the selected option
     assert report["posted"]["text"].startswith("@main_3f9a1c2e ")
     assert report["posted"]["reply_to"] == 7
+
+
+def test_heartbeat_keeps_the_user_online_and_refreshes_members(tmp_path):
+    beat = _harness("compose", tmp_path)["compose"]["beat"]
+    assert {"path": "/members", "method": "POST", "handle": "web_12345678",
+            "key": "ab" * 32} in beat
+    assert any(item["path"] == "/members" and item["method"] == "GET" for item in beat)
 
 
 def test_composer_is_disabled_during_outage(tmp_path):

@@ -24,6 +24,7 @@ def _valid_snapshot(posts) -> tuple[list[dict], bool]:
 
 STATE_DIR = DAGI_ROOT / ".dagi" / "board"
 CENTRAL_PROBE_MS = 30_000
+PRESENCE_MS = 30_000  # re-register every agent so the board shows it online (90 s window)
 
 
 class BoardController(QObject):
@@ -52,6 +53,9 @@ class BoardController(QObject):
         self._central_timer = QTimer(self)
         self._central_timer.setInterval(CENTRAL_PROBE_MS)
         self._central_timer.timeout.connect(self._probe_central)
+        self._presence_timer = QTimer(self)
+        self._presence_timer.setInterval(PRESENCE_MS)
+        self._presence_timer.timeout.connect(self._heartbeat)
         self._switch_done.connect(self._on_switched)
         self._central_state.connect(self._on_central_state)
         self.downloads = DownloadPool(self._download)
@@ -103,6 +107,7 @@ class BoardController(QObject):
             self._central_timer.start()
         else:
             self._central_timer.stop()
+        self._presence_timer.start()
         hook = getattr(self.window, "_on_board_ready", None)
         if hook is not None:
             hook()
@@ -125,6 +130,20 @@ class BoardController(QObject):
     def remove_session(self, session: BoardSession) -> None:
         if session in self.sessions[1:]:
             self.sessions.remove(session)
+
+    def _heartbeat(self) -> None:
+        """Keep every agent online on the board; closed agents drop off after 90 s."""
+        if self.runtime is None or self.closing:
+            return
+        client = self.runtime.client
+        members = [(session.handle, session.key) for session in self.sessions]
+
+        def work() -> None:
+            host = socket.gethostname()
+            for handle, key in members:
+                client.register(handle, "agent", host=host, key=key)
+
+        self._run_worker(work, "board-presence")
 
     # ── switching boards ────────────────────────────────────────────────────────────────
 
@@ -366,6 +385,7 @@ class BoardController(QObject):
 
     def close(self) -> None:
         self._central_timer.stop()
+        self._presence_timer.stop()
         with self._listener_lock:
             self.closing = True
             listener = self.listener
