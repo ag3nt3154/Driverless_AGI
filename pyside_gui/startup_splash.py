@@ -17,6 +17,7 @@ _SCREEN_FRACTION = 0.55  # splash width as a share of the available screen width
 _ASPECT = QSize(16, 9)  # until the video reports its own size
 _FADE_MS = 450
 _MAX_MS = 20_000  # never let a stuck or very long video hold the main window back
+_FIRST_FRAME_MS = 3_000  # give up on the splash if the video has not painted by then
 _VOLUME = 0.6
 
 
@@ -49,6 +50,9 @@ class StartupSplash(QWidget):
     ``fading`` fires once when the fade begins (show the main window then, so
     the splash cross-fades over it) and ``finished`` once it has closed. Any
     click or key skips straight to the fade; a decode error skips it too.
+
+    The window stays fully transparent until the first video frame arrives,
+    so it never shows as an empty black box while the decoder warms up.
     """
 
     fading = Signal()
@@ -66,6 +70,7 @@ class StartupSplash(QWidget):
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         self.setToolTip("Click or press any key to skip")
         self._fade: QPropertyAnimation | None = None
+        self._has_frame = False
 
         self._video = QVideoWidget(self)
         self._video.setAspectRatioMode(Qt.AspectRatioMode.KeepAspectRatio)
@@ -87,6 +92,7 @@ class StartupSplash(QWidget):
 
         self._place(_ASPECT)
         self._player.videoSink().videoSizeChanged.connect(self._on_video_size)
+        self._player.videoSink().videoFrameChanged.connect(self._on_first_frame)
 
     @classmethod
     def from_folder(cls, folder: Path) -> StartupSplash | None:
@@ -94,9 +100,12 @@ class StartupSplash(QWidget):
         return cls(video) if video else None
 
     def start(self) -> None:
+        # Shown (so the video widget renders) but transparent until the first frame.
+        self.setWindowOpacity(0.0)
         self.show()
         self.raise_()
         self._player.play()
+        QTimer.singleShot(_FIRST_FRAME_MS, self._on_no_frame)
         QTimer.singleShot(_MAX_MS, self.skip)
 
     @property
@@ -133,6 +142,20 @@ class StartupSplash(QWidget):
         size = self._player.videoSink().videoSize()
         if not size.isEmpty():
             self._place(size)
+
+    @Slot()
+    def _on_first_frame(self) -> None:
+        if self._has_frame:
+            return
+        self._has_frame = True
+        if self._fade is None:
+            self.setWindowOpacity(1.0)
+
+    @Slot()
+    def _on_no_frame(self) -> None:
+        if not self._has_frame:
+            _LOGGER.warning("startup video showed no frame in %d ms; skipping", _FIRST_FRAME_MS)
+            self.skip()
 
     @Slot(int)
     def _on_position(self, position: int) -> None:

@@ -45,13 +45,13 @@ def main(
     _icon = Path(__file__).parent / "pyside_gui" / "resources" / "icon.png"
     if _icon.exists():
         qt_app.setWindowIcon(QIcon(str(_icon)))
+    # Build the main window first: its slow build blocks the event loop, and a splash
+    # started before it would sit as a black box with no video frames.
+    window = DagiMainWindow(config, project_path, verbose)
     intro = StartupSplash.from_folder(DAGI_ROOT / ".dagi" / "emotes" / "startup") if splash else None
     if intro is not None:
-        intro.start()
-        qt_app.processEvents()  # paint the splash before the main window's slow build
-    window = DagiMainWindow(config, project_path, verbose)
-    if intro is not None and not intro.is_fading:
         intro.fading.connect(window.show)
+        intro.start()
     else:
         window.show()
     sys.exit(qt_app.exec())
