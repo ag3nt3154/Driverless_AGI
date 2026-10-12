@@ -107,7 +107,7 @@ def build_callbacks(app: DagiApp, loop_ref: list) -> AgentCallbacks:
         app.call_from_thread(conv.append_info,
             "[yellow]⚡ Compacting context...[/yellow]")
 
-    def on_compaction(kept, removed):
+    def on_compaction(kept, removed, _summary, _fallback):
         app.call_from_thread(conv.append_info,
             f"[yellow]⚡ Context compacted — removed {removed} messages, kept {kept}[/yellow]")
         if loop_ref:

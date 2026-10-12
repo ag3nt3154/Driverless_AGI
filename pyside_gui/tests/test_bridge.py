@@ -46,6 +46,16 @@ def test_tool_started_signal_emits():
     assert received[0] == ("bash", '{"command": "ls"}')
 
 
+
+def test_compaction_signal_carries_summary():
+    bridge = AgentBridge()
+    received = []
+    bridge.compaction_done.connect(lambda *a: received.append(a))
+    bridge.build_callbacks().on_compaction(2, 5, "## Goal\nship it", False)
+    _app.processEvents()
+    assert received == [(2, 5, "## Goal\nship it", False)]
+
+
 def test_build_callbacks_passes_board_session():
     bridge = AgentBridge()
     board = object()

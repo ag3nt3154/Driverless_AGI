@@ -327,7 +327,9 @@ def compact(loop: AgentLoop, force: bool = False, summarize_all: bool = False) -
             f"[Warning: context compaction failed — {failure[:1000]} "
             f"Selected history chunk removed without a summary ({removed_count} steps).]"
         )
-    loop.callbacks.on_compaction(len(boundary.tail_steps), removed_count)
+    loop.callbacks.on_compaction(
+        len(boundary.tail_steps), removed_count, summary_content, bool(failure),
+    )
     return CompactionResult(True, generation, summary_content, removed_count)
 
 

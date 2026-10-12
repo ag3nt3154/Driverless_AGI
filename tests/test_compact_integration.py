@@ -387,6 +387,7 @@ class TestCompactionSurfaceIntegration:
         assert SessionLog(loop.log.events).derive_messages() == loop.log.derive_messages()
         loop.callbacks.on_compaction.assert_called_once_with(
             0 if summarize_all else 1, 4 if summarize_all else 3,
+            event.data["summary"], True,
         )
         warning = loop.callbacks.on_assistant_text.call_args.args[0]
         assert "context compaction failed" in warning

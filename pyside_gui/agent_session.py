@@ -207,11 +207,9 @@ class AgentSession(QObject):
         def _work() -> None:
             with loop.turns.side_turn(source="gui_compact"):
                 try:
-                    r = loop.compact(force=True)
+                    loop.compact(force=True)  # reports through on_compaction
                 except Exception as exc:
-                    self._bridge.error_occurred.emit(f"Compact failed: {exc}"); return
-            if r.did_compact:
-                self._bridge.compaction_done.emit(len(loop.messages), r.removed_count)
+                    self._bridge.error_occurred.emit(f"Compact failed: {exc}")
         threading.Thread(target=_work, daemon=True).start()
 
     def stop(self) -> bool:
@@ -343,11 +341,9 @@ class AgentSession(QObject):
     def _on_compaction_started(self) -> None:
         self._set_status("compacting")
 
-    @Slot(int, int)
-    def _on_compaction(self, kept: int, removed: int) -> None:
-        self._conversation.append_info(
-            f"Context compacted — removed {removed} messages, kept {kept}"
-        )
+    @Slot(int, int, str, bool)
+    def _on_compaction(self, kept: int, removed: int, summary: str, fallback: bool) -> None:
+        self._conversation.append_compaction(kept, removed, summary, fallback)
 
     @Slot(str, str)
     def _on_model_switched(self, from_name: str, to_name: str) -> None:

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from pathlib import Path
 
 from PySide6.QtCore import QObject, QTimer, QUrl, Signal, Slot
@@ -20,6 +21,9 @@ _page_log = logging.getLogger("dagi.pyside.worker.page")
 
 REASONING_PREVIEW_MS = 120
 REASONING_PREVIEW_CHARS = 4000
+
+# The header agent._compaction puts on a summary; the card shows it as "gen N".
+_SUMMARY_HEADER = re.compile(r"\[CONTEXT SUMMARY — [^\]]*\(generation (\d+)\)\]")
 
 
 def _file_url(path: str | Path) -> str:
@@ -160,6 +164,19 @@ class ConversationView(QWebEngineView):
 
     def append_reasoning(self, markdown: str) -> None:
         self._run_js(f"appendReasoning({self._js_str(markdown)})")
+
+    def append_compaction(
+        self, kept: int, removed: int, summary: str, fallback: bool,
+    ) -> None:
+        """One collapsed line; the summary (markdown) shows when expanded."""
+        m = _SUMMARY_HEADER.match(summary)
+        status = f"gen {m.group(1)}" if m else ""
+        body = summary[m.end():] if m else summary
+        label = f"Context compacted — removed {removed} steps, kept {kept}"
+        self._run_js(
+            f"appendCompaction({self._js_str(label)}, {self._js_str(status)}, "
+            f"{self._js_str(body.strip())}, {'true' if fallback else 'false'})"
+        )
 
     def append_info(self, text: str) -> None:
         self._run_js(f"appendInfo({self._js_str(text)})")

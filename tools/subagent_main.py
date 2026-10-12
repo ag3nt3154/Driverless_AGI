@@ -150,7 +150,7 @@ def _build_pipe_callbacks() -> AgentCallbacks:
         ),
         on_model_switch=lambda _f, to: _emit({"type": "status", "text": f"→ {to}"}),
         on_error=lambda e: _emit({"type": "error", "message": str(e)}),
-        on_compaction=lambda kept, removed: _emit({
+        on_compaction=lambda kept, removed, _summary, _fallback: _emit({
             "type": "status", "text": f"compacted ({removed} msgs removed, {kept} kept)",
         }),
         on_compaction_started=lambda: _emit({"type": "status", "text": "compacting context..."}),

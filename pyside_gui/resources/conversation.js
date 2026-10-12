@@ -28,6 +28,7 @@ const ICONS = {
     globe: '<circle cx="12" cy="12" r="8.5"/><path d="M3.5 12h17M12 3.5c2.5 2.5 2.5 14.5 0 17M12 3.5c-2.5 2.5-2.5 14.5 0 17"/>',
     tool: '<path d="M12 3l2 5 5 2-5 2-2 5-2-5-5-2 5-2z"/>',
     chevron: '<path d="M9 6l6 6-6 6"/>',
+    compact: '<path d="M4 9h16M4 15h16M12 3v4l-2-2M12 7l2-2M12 21v-4l-2 2M12 17l2 2"/>',
     paste: '<rect x="6" y="4" width="12" height="17" rx="2"/><path d="M9 4h6v3H9zM9 12h6M9 16h4"/>',
 };
 
@@ -702,6 +703,24 @@ function updateToolResult(result, failed) {
     out.textContent = result;
     row.querySelector('.tool-detail').appendChild(out);
     _scrollToBottom();
+}
+
+// Same quiet line as a tool call; the summary renders as markdown when opened.
+function appendCompaction(label, status, summary, fallback) {
+    const row = _el('div', `tool-call compaction ${fallback ? 'failed' : 'done'}`);
+    const head = _el('div', 'tool-head',
+        _icon('chevron', 'chevron') + _icon('compact') +
+        `<span class="tool-label"></span><span class="tool-status"></span>`);
+    head.querySelector('.tool-label').textContent = label;
+    head.querySelector('.tool-status').textContent =
+        (fallback ? '✕' : '✓') + (status ? ` ${status}` : '');
+    head.addEventListener('click', () => _toggle(row));
+    const detail = _el('div', 'tool-detail');
+    detail.hidden = true;
+    renderMarkdownInto(detail.appendChild(_el('div', 'compaction-summary')), summary);
+    row.appendChild(head);
+    row.appendChild(detail);
+    _insert(row);
 }
 
 // ---- reasoning -------------------------------------------------------------

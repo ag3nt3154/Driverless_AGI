@@ -81,7 +81,7 @@ def build_cli_callbacks(verbose: bool = False, prefix: str = "") -> AgentCallbac
     def on_error(exc):
         logger.error("%s%s", tag, exc)
 
-    def on_compaction(kept, removed):
+    def on_compaction(kept, removed, _summary, _fallback):
         logger.info("%scontext compacted — removed %d messages, kept %d", tag, removed, kept)
 
     def on_compaction_started():

@@ -607,3 +607,15 @@ body {
 
 /* Plain-text fallback when the markdown renderer fails. */
 .md-fallback { white-space: pre-wrap; }
+
+/* ---- compaction: a tool-call line whose detail is the summary --------- */
+
+.compaction-summary {
+    padding: 8px 14px 10px;
+    font-size: 13.5px;
+    color: var(--fg);
+    max-height: 480px;
+    overflow: auto;
+}
+.compaction-summary > :first-child { margin-top: 0; }
+.compaction-summary > :last-child { margin-bottom: 0; }

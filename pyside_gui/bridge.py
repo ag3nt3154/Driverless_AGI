@@ -41,7 +41,7 @@ class AgentBridge(QObject):
     stream_reasoning_delta = Signal(str)   # chunk
     stream_ended = Signal(str, str)
     compaction_started = Signal()
-    compaction_done = Signal(int, int)     # kept, removed
+    compaction_done = Signal(int, int, str, bool)  # kept, removed, summary, fallback
     model_switched = Signal(str, str)      # from, to
     error_occurred = Signal(str)           # message
     agent_done = Signal(str)               # result
@@ -173,8 +173,8 @@ class AgentBridge(QObject):
         def on_compaction_started() -> None:
             self.compaction_started.emit()
 
-        def on_compaction(kept: int, removed: int) -> None:
-            self.compaction_done.emit(kept, removed)
+        def on_compaction(kept: int, removed: int, summary: str, fallback: bool) -> None:
+            self.compaction_done.emit(kept, removed, summary, fallback)
             if loop_ref:
                 self.context_update.emit(_breakdown(loop_ref[0].messages))
 
