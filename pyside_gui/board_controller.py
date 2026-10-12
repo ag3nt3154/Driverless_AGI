@@ -329,6 +329,8 @@ class BoardController(QObject):
         hook = getattr(self.window, "_on_board_mention", None)
         if live and post.get("mentions") and hook is not None:
             hook(post)
+        if not live:
+            return  # startup snapshot: board panel only, so a new chat opens empty
         memes = self.window._left_sidebar.board_view.meme_map
         for handle, conversation in self._conversations():
             path = should_render_inline(post, handle, memes)

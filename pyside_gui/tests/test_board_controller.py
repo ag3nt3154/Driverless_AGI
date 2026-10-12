@@ -274,11 +274,30 @@ def test_main_agent_meme_uses_view_meme_map_without_rescanning(qtbot, monkeypatc
     monkeypatch.setattr("pyside_gui.sidebars.message_board._scan_memes", no_scan)
     monkeypatch.setattr("tools.board._board._scan_memes", no_scan)
     controller.runtime = SimpleNamespace(session=SimpleNamespace(handle="main_12345678"))
+    controller._live_after = 0
     controller._on_post({
         "id": 1, "author": "main_12345678", "text": "hey", "meme": "wave",
         "reply_to": None, "attachments": [], "created_at": "2026-10-09T00:00:00Z",
     })
     assert emotes == [("wave", str(meme), "hey", "2026-10-09T00:00:00Z")]
+
+
+def test_snapshot_meme_stays_out_of_the_new_conversation(qtbot, tmp_path):
+    window = _window(qtbot)
+    emotes = []
+    window._conversation = SimpleNamespace(append_emote=lambda *args: emotes.append(args))
+    controller = BoardController(window)
+    window._left_sidebar.board_view._memes = {"wave": tmp_path / "wave.png"}
+    controller.runtime = SimpleNamespace(session=SimpleNamespace(handle="main_12345678"))
+    post = {
+        "id": 7, "author": "main_12345678", "text": "old", "meme": "wave",
+        "reply_to": None, "attachments": [], "created_at": "2026-10-09T00:00:00Z",
+    }
+    controller._on_post(post)  # snapshot still loading: no live cursor yet
+    controller._live_after = 7
+    controller._on_post(dict(post, id=6))  # snapshot post delivered after the cursor
+    assert emotes == []
+    assert set(window._left_sidebar.board_view._cards) == {7, 6}
 
 
 class SwitchClient:
@@ -587,6 +606,7 @@ def test_each_agent_meme_renders_in_its_own_conversation(qtbot, tmp_path):
     controller = BoardController(window)
     window._left_sidebar.board_view._memes = {"wave": tmp_path / "wave.png"}
     controller.runtime = SimpleNamespace(session=SimpleNamespace(handle="main_12345678"))
+    controller._live_after = 0
     controller._on_post({
         "id": 1, "author": "helper_abcdef12", "text": "hi", "meme": "wave",
         "reply_to": None, "attachments": [], "created_at": "2026-10-09T00:00:00Z",
