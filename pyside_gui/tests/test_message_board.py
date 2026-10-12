@@ -100,7 +100,7 @@ def test_posts_are_deduped_and_inserted_newest_first(qtbot):
     view.add_post(_post(1))
     view.add_post(_post(1))
     view.add_post(_post(2))
-    assert view._posts_layout.count() == 2
+    assert view._posts_layout.count() == 3  # two cards + trailing stretch
     assert view._posts_layout.itemAt(0).widget() is view._cards[2]()
 
 
@@ -187,7 +187,7 @@ def test_non_dict_post_is_ignored(qtbot):
     for junk in ("x", None, 7, ["id", 1]):
         view.add_post(junk)
     assert view._cards == {}
-    assert view._posts_layout.count() == 0
+    assert view._posts_layout.count() == 1  # only the trailing stretch
 
 
 def test_file_chip_escapes_mnemonic_ampersand(qtbot):
@@ -324,3 +324,27 @@ def test_save_as_cancel_and_failed_download(qtbot, tmp_path, monkeypatch):
                         lambda *args: ("", ""))
     card._save_buttons[first["id"]].click()
     assert card._save_buttons[first["id"]].text() == "Save as…"
+
+
+def test_wrapped_post_text_grows_when_the_board_narrows(qtbot):
+    view = MessageBoardView()
+    qtbot.addWidget(view)
+    view.resize(520, 900)
+    view.show()
+    view.add_post(_post(1, text="word " * 120))
+    view.resize(300, 900)
+    qtbot.wait(50)
+    text = next(label for label in view._cards[1]().findChildren(QLabel) if label.wordWrap())
+    assert text.height() >= text.heightForWidth(text.width())
+
+
+def test_clear_posts_keeps_new_posts_at_the_top(qtbot):
+    view = MessageBoardView()
+    qtbot.addWidget(view)
+    view.resize(400, 900)
+    view.show()
+    view.add_post(_post(1))
+    view.clear_posts()
+    view.add_post(_post(2, text="short"))
+    qtbot.wait(50)
+    assert view._cards[2]().y() < 50

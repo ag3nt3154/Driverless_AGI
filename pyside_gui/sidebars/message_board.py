@@ -121,7 +121,9 @@ class MessageBoardView(QWidget):
         self._posts_layout = QVBoxLayout(self._container)
         self._posts_layout.setContentsMargins(8, 4, 8, 8)
         self._posts_layout.setSpacing(10)
-        self._posts_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
+        # A trailing stretch, not setAlignment(AlignTop): an aligned layout is sized
+        # from sizeHint and ignores heightForWidth, clipping wrapped post text when narrow.
+        self._posts_layout.addStretch()
         self._scroll.setWidget(self._container)
         outer.addWidget(self._scroll, 1)
 
@@ -207,7 +209,7 @@ class MessageBoardView(QWidget):
 
     def clear_posts(self) -> None:
         """Drop every card before showing another board's posts."""
-        while self._posts_layout.count():
+        while self._posts_layout.count() > 1:  # keep the trailing stretch
             item = self._posts_layout.takeAt(0)
             if item.widget() is not None:
                 item.widget().deleteLater()
