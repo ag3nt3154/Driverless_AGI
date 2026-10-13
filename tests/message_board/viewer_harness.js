@@ -1,5 +1,6 @@
 // Runs the viewer's inline script against a minimal fake DOM and a scripted board server.
-// Usage: node viewer_harness.js <index.html> <main|eof|hang|outage|attach|compose>; prints JSON.
+// Usage: node viewer_harness.js <index.html> <main|eof|hang|outage|attach|compose|admin|...>;
+// prints JSON.
 "use strict";
 const fs = require("fs");
 const vm = require("vm");
@@ -79,7 +80,9 @@ for (const [id, tag] of [["posts", "ol"], ["status", "span"], ["empty", "p"],
                          ["composer", "form"], ["compose-text", "textarea"], ["counter", "span"],
                          ["send", "button"], ["composer-error", "p"], ["file-input", "input"],
                          ["file-chips", "div"], ["reply-label", "div"], ["mentions", "div"],
-                         ["attach", "button"]]) {
+                         ["attach", "button"], ["admin", "section"], ["admin-error", "p"],
+                         ["admin-clear", "button"], ["admin-shutdown", "button"],
+                         ["admin-members", "ul"]]) {
   byId[id] = new El(tag);
   body.append(byId[id]);
 }
@@ -88,6 +91,7 @@ byId["identity-form"].hidden = true;
 byId.mentions.hidden = true;
 byId["reply-label"].hidden = true;
 byId.lightbox.hidden = true;
+byId.admin.hidden = true;
 const liveHistory = [];
 let live;
 Object.defineProperty(body.dataset, "live", {
@@ -121,6 +125,13 @@ if (["compose", "collision", "compose-first-send", "compose-outage"].includes(sc
   deterministicRandom.push(...(scenario === "collision"
     ? [[170, 170, 170, 170], [187, 187, 187, 187]] : [[18, 52, 86, 120]]));
 }
+const ADMIN_KEY = "aZ09_-".repeat(7) + "xy";
+const location = {hash: scenario.startsWith("admin") ? "#admin=" + ADMIN_KEY : "", pathname: "/",
+                  search: scenario.startsWith("admin") ? "?view=1" : ""};
+const replaced = [];
+const confirms = [];
+const banned = new Set();
+let adminStream = null;
 const outage = (n) => n >= 2 && n <= 3;  // stream calls 2 and 3 find the server down
 const history = [];
 let statusText = "";
@@ -164,12 +175,14 @@ async function fakeFetch(path, options) {
   let parsedBody = options.body;
   if (typeof parsedBody === "string") { try { parsedBody = JSON.parse(parsedBody); } catch (err) {} }
   const details = {path, method: options.method || "GET", body: parsedBody,
-                   memberKey: options.headers["X-Dagi-Member-Key"] || null};
+                   memberKey: options.headers["X-Dagi-Member-Key"] || null,
+                   adminKey: options.headers["X-Dagi-Admin-Key"] || null, auth};
   requestDetails.push(details);
   const kind = path.split("?")[0];
   calls[kind] = (calls[kind] || 0) + 1;
   if (auth !== "Bearer secret") return new Response(JSON.stringify({error: "token required", code: "UNAUTHORIZED"}), {status: 401});
   if (scenario === "compose-outage" && kind === "/stream") throw new TypeError("offline");
+  if (scenario.startsWith("admin")) return adminFetch(path, kind, options.method || "GET", details);
   if (scenario === "members-race") {
     if (path === "/posts?limit=50") return new Response("[]");
     if (kind === "/stream") return new Response(new ReadableStream({async start(controller) {
@@ -238,6 +251,53 @@ async function fakeFetch(path, options) {
   return new Response("{}", {status: 404});
 }
 
+const purgeEvent = (p) => "event: purge\ndata: " + JSON.stringify(p) + "\n\n";
+async function adminFetch(path, kind, method, details) {
+  const json = (value, status = 200) => new Response(JSON.stringify(value), {status});
+  const denied = () => json({error: "invalid admin key", code: "FORBIDDEN"}, 403);
+  if (path === "/posts?limit=50") {
+    return json([post(1), post(2), post(3, {author: "bad_00000000"}),
+                 post(4, {author: "bad_00000000"}), post(5)]);
+  }
+  if (kind === "/stream") {
+    if (calls[kind] > 1) return new Response(new ReadableStream({start() {}}));
+    return new Response(new ReadableStream({async start(controller) {
+      adminStream = controller;
+      await sleep(5);
+      // A valid author purge, three malformed ones, a new post, then the replayed purge.
+      const authorPurge = {id: 1, scope: "author", author: "bad_00000000", through: 3, created_at: "x"};
+      controller.enqueue(encoder.encode(purgeEvent(authorPurge)
+        + purgeEvent({id: 8, scope: "all", through: "9"}) + purgeEvent({id: 9, scope: "author", through: 9})
+        + purgeEvent({id: 10, scope: "nope", through: 9}) + purgeEvent({id: 11, scope: "all", through: 9.5}) + purgeEvent({id: 12, scope: "author", author: "main_3f9a1c2e", through: "9"}) + purgeEvent({id: 13, scope: "author", author: 7, through: 9}) + event(post(6)) + purgeEvent(authorPurge)));
+    }}));
+  }
+  if (path === "/members" && method === "GET") {
+    return json([{handle: "main_3f9a1c2e", kind: "agent", online: true, banned: banned.has("main_3f9a1c2e")},
+      {handle: "bad_00000000", kind: "user", online: false, banned: banned.has("bad_00000000")}]);
+  }
+  if (kind.startsWith("/admin") && details.adminKey !== ADMIN_KEY) return denied();
+  if (path === "/admin") return scenario === "admin-denied" ? denied() : json({admin: true});
+  if (path === "/admin/clear" && method === "POST") {
+    await sleep(20);
+    return json({id: 2, scope: "all", through: 6, created_at: "x"});
+  }
+  if (path === "/admin/bans" && method === "POST") {
+    const handle = details.body.handle;
+    banned.add(handle);
+    return json({handle, created_at: "x", purge: details.body.purge
+      ? {id: 3, scope: "author", author: handle, through: 6, created_at: "x"} : null}, 201);
+  }
+  if (path.startsWith("/admin/bans/") && method === "DELETE") {
+    banned.delete(decodeURIComponent(path.slice("/admin/bans/".length)));
+    return new Response(null, {status: 204});
+  }
+  if (path === "/admin/shutdown" && method === "POST") {
+    setTimeout(() => adminStream && adminStream.close(), 10);
+    return json({status: "stopping"}, 202);
+  }
+  return json({}, 404);
+}
+
 const context = {
   document: {
     getElementById: (id) => byId[id],
@@ -245,9 +305,14 @@ const context = {
     addEventListener: (type, fn) => { (docListeners[type] = docListeners[type] || []).push(fn); },
     body,
   },
-  window: {addEventListener() {}},
+  window: {addEventListener() {}, confirm: (text) => { confirms.push(text); return true; }},
+  location,
+  history: {replaceState: (data, title, url) => {
+    replaced.push(url); location.hash = "";
+  }},
   navigator: {onLine: true},
-  sessionStorage: {getItem: (k) => storage.get(k) || null, setItem: (k, v) => storage.set(k, v)},
+  sessionStorage: {getItem: (k) => storage.get(k) || null, setItem: (k, v) => storage.set(k, v),
+                   removeItem: (k) => storage.delete(k)},
   localStorage: {getItem: (k) => storage.get(k) || null, setItem: (k, v) => storage.set(k, v)},
   // Handle suffixes (4 bytes) come from the deterministic queue; member keys (32 bytes) are 0xab.
   crypto: {getRandomValues(bytes) {
@@ -282,7 +347,43 @@ function snapshot() {
           token: storage.get("dagiBoardToken") || null, requests: requests.slice(), ids,
           hostileText: text ? text.textContent : null, imageSrc: img ? img.src || null : null,
           revoked: revoked.slice(), countdowns: countdowns(), live, liveHistory: liveHistory.slice(),
-          statusHistory: history.slice()};
+          statusHistory: history.slice(), adminVisible: !byId.admin.hidden};
+}
+
+const walk = (node) => node ? [node, ...node.children.flatMap(walk)] : [];
+const findIn = (node, tag, text) => walk(node).find(
+  (item) => item.tagName === tag && (text === undefined || item.textContent === text)) || null;
+
+async function exerciseAdmin() {
+  const report = {hash: location.hash, replaced: replaced.slice(),
+    storedKey: storage.get("dagiBoardAdmin") || null, visible: !byId.admin.hidden,
+    idsAfterStream: snapshot().ids};
+  if (scenario !== "admin") return report;
+  const row = (handle) => byId["admin-members"].children.find((node) => node.dataset.handle === handle);
+  report.rows = byId["admin-members"].children.map((node) => node.dataset.handle);
+  const box = findIn(row("bad_00000000"), "INPUT");
+  box.checked = true; box.fire("change");
+  findIn(row("bad_00000000"), "BUTTON", "Ban").fire("click");
+  await sleep(40);
+  report.idsAfterBan = snapshot().ids;
+  const unban = findIn(row("bad_00000000"), "BUTTON", "Unban");
+  report.unbanShown = Boolean(unban);
+  unban.fire("click");
+  await sleep(40);
+  report.banShownAgain = Boolean(findIn(row("bad_00000000"), "BUTTON", "Ban"));
+  byId["admin-clear"].fire("click");
+  await sleep(1);
+  report.clearDisabledInFlight = byId["admin-clear"].disabled === true
+    && byId["admin-shutdown"].disabled === true;
+  await sleep(50);
+  report.idsAfterClear = snapshot().ids;
+  report.emptyShown = !byId.empty.hidden;
+  byId["admin-shutdown"].fire("click");
+  await sleep(40);
+  report.confirms = confirms.slice();
+  report.error = byId["admin-error"].textContent;
+  report.adminRequests = requestDetails.filter((item) => item.path.startsWith("/admin"));
+  return report;
 }
 
 const findAll = (pred) => created.filter(pred);
@@ -412,8 +513,13 @@ async function exerciseAttachments() {
     membersRace = {loads: requestDetails.filter((item) => item.path === "/members").length,
       ids: snapshot().ids};
   }
-  await sleep(scenario === "eof" ? 1000 : scenario === "attach" ? 300 : 2000);
+  let admin = null;
+  if (scenario.startsWith("admin")) {
+    await sleep(60);
+    admin = await exerciseAdmin();
+  }
+  await sleep(scenario === "eof" ? 1000 : scenario === "attach" || admin ? 300 : 2000);
   const extra = scenario === "attach" ? await exerciseAttachments() : null;
-  process.stdout.write(JSON.stringify({first, final: snapshot(), extra, compose, membersRace}));
+  process.stdout.write(JSON.stringify({first, final: snapshot(), extra, compose, membersRace, admin}));
   process.exit(0);
 })().catch((err) => { console.error(err); process.exit(1); });

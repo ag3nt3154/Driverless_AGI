@@ -95,7 +95,7 @@ def test_page_is_self_contained_and_small():
     assert "http://" not in _strip_comments(source)
     assert "https://" not in _strip_comments(source)
     assert not re.search(r"<(?:script|link|img|iframe)[^>]*\s(?:src|href)=", source)
-    assert len(source.splitlines()) <= 820  # expanded for the composer and presence heartbeat
+    assert len(source.splitlines()) <= 980  # expanded for the composer, presence and admin panel
 
 
 # --- behaviour in a JS runtime (node) with a fake DOM and fetch -----------------------------
@@ -245,6 +245,49 @@ def test_heartbeat_keeps_the_user_online_and_refreshes_members(tmp_path):
 def test_composer_is_disabled_during_outage(tmp_path):
     report = _harness("compose-outage", tmp_path)["compose"]
     assert report["disabledOffline"] is True
+
+
+ADMIN_KEY = "aZ09_-" * 7 + "xy"
+
+
+def test_admin_panel_and_purge(tmp_path):
+    report = _harness("admin", tmp_path)
+    admin = report["admin"]
+    assert admin["hash"] == "" and admin["replaced"] == ["/?view=1"]
+    assert admin["storedKey"] == ADMIN_KEY and admin["visible"] is True
+    # Author purge through #3 drops only bad's #3; malformed purges are ignored; replay is a no-op.
+    assert admin["idsAfterStream"] == [6, 5, 4, 2, 1]
+    assert admin["rows"] == ["main_3f9a1c2e", "bad_00000000"]
+    assert admin["idsAfterBan"] == [6, 5, 2, 1]
+    assert admin["unbanShown"] is True and admin["banShownAgain"] is True
+    assert admin["clearDisabledInFlight"] is True
+    assert admin["idsAfterClear"] == [] and admin["emptyShown"] is True
+    assert len(admin["confirms"]) == 3  # ban with purge, clear, shutdown
+    requests = [(item["path"], item["method"], item.get("body")) for item in admin["adminRequests"]]
+    assert requests == [
+        ("/admin", "GET", None),
+        ("/admin/bans", "POST", {"handle": "bad_00000000", "purge": True}),
+        ("/admin/bans/bad_00000000", "DELETE", None),
+        ("/admin/clear", "POST", None),
+        ("/admin/shutdown", "POST", None),
+    ]
+    assert {item["adminKey"] for item in admin["adminRequests"]} == {ADMIN_KEY}
+    assert {item["auth"] for item in admin["adminRequests"]} == {"Bearer secret"}
+    final = report["final"]
+    assert final["status"] == "board stopped" and final["adminVisible"] is False
+    assert [path for path, _ in final["requests"] if path.startswith("/stream")] == ["/stream?after=5"]
+    assert admin["error"] == ""
+
+    denied = _harness("admin-denied", tmp_path)
+    assert denied["admin"]["storedKey"] is None and denied["admin"]["visible"] is False
+    assert denied["admin"]["hash"] == ""
+
+
+@pytest.mark.parametrize("scenario", ["attach", "compose"])
+def test_no_admin_panel_without_key(tmp_path, scenario):
+    final = _harness(scenario, tmp_path)["final"]
+    assert final["adminVisible"] is False
+    assert not [path for path, _ in final["requests"] if path.startswith("/admin")]
 
 
 # --- packaging and clean installs -----------------------------------------------------------
