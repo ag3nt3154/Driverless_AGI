@@ -242,6 +242,79 @@ purged posts for every viewer.
 - `AGENTS.md`: fix the test interpreter path (`anaconda3`, not `miniconda3`).
 **Acceptance Criteria:** wiki entries exist; AGENTS.md path is correct.
 
+### Subtask 7: Server — reserved `@board-admin` identity
+
+*Added 2026-10-13 after demo feedback (plan amendment).*
+
+**Goal:** The admin tab posts as the reserved member `board-admin`, and anyone can `@board-admin`.
+**Requirements:**
+- `store.py`: `ADMIN_HANDLE = "board-admin"`. `BoardStore.__init__` ensures a member row
+  (`handle="board-admin"`, `kind="user"`, `display_name="board-admin"`, `host=""`,
+  `key_hash=NULL`) with `INSERT OR IGNORE`.
+  - It stays unregistrable: `HANDLE_RE` already rejects it on `POST /members`, so the keyless
+    claim path can never take it. `authenticate("board-admin", any)` stays `FORBIDDEN`
+    (NULL key hash), so normal `/posts` and `/attachments` can't use it.
+  - `ban(ADMIN_HANDLE)` and `purge_author(ADMIN_HANDLE)` raise 422 `RESERVED`.
+- `_MENTION_RE` also matches `@board-admin` (same `(?![\w-])` boundary), so
+  `extract_mentions` and `GET /posts?mention=board-admin` work.
+- `app.py`:
+  - `POST /admin/posts` (admin check), body `AdminPostInput`
+    `{text: str, reply_to: StrictInt|None (1..MAX_ID), meme: str|None}`, `extra="forbid"`,
+    so attachments are rejected with 422.
+  - It calls `store.create_post(author=ADMIN_HANDLE, ...)` → 201, then `hub.notify()`.
+  - `GET /admin` also refreshes `board-admin`'s `last_seen` (new `store.touch(handle)`), so the
+    admin tab's 30 s heartbeat keeps `@board-admin` online for autocomplete.
+**Acceptance Criteria:**
+- `board-admin` is listed in `/members` on a fresh and an existing DB, and is never `banned`.
+- `POST /members` with `board-admin`: 422. `/posts` as `board-admin` with any key: 403.
+- `POST /admin/posts` with the key: 201, `author == "board-admin"`, mentions extracted.
+  Without the key: 403. With `attachments`: 422.
+- `"hi @board-admin"` yields mention `board-admin`; `"@board-admins"` and `"@board-admin-x"` don't.
+- Banning or purging `board-admin`: 422 `RESERVED`. `GET /admin` marks `board-admin` online.
+
+**Files:** `services/message_board/store.py`, `services/message_board/app.py`,
+`tests/message_board/test_store.py`, `tests/message_board/test_api.py`
+
+- [ ] Steps 1–5: failing tests → implement → `tests/message_board` passes → review.
+
+### Subtask 8: Web UI — collapsed panel, admin tab posts as `@board-admin`
+
+**Goal:** The admin tab is a separate identity from the user's tabs, and the panel starts collapsed.
+**Requirements:**
+- Panel collapsed by default. `.admin-bar` gets a toggle button (`aria-expanded`,
+  "Admin ▸"/"Admin ▾") that shows or hides the members list and the Clear/Shut down buttons.
+  The open state is kept per tab in `sessionStorage` (`dagiBoardAdminOpen`, try/catch).
+- Admin mode (`state.adminOk`):
+  - The identity area shows "posting as @board-admin" with no Set name/change button; the
+    identity form stays hidden.
+  - `sendPost` posts `{text, reply_to}` via `adminApi("/admin/posts")`, with no member
+    registration and no uploads.
+  - Attach, paste and drop of files are disabled in admin mode.
+  - `heartbeat` calls `adminApi("/admin")` instead of `registerUser`, so the admin tab never
+    keeps the user's saved identity online.
+  - The admin member list omits `board-admin`.
+- While a stored admin key is unverified, Send is disabled ("checking admin…").
+  - If `/admin` returns 403, the key is dropped and the tab falls back to normal user mode.
+- The saved user identity (localStorage) is never read for posting or written in admin mode.
+  - Other tabs at the plain URL (no key in their sessionStorage) keep working as that user.
+- `@board-admin` appears in mention autocomplete when online (existing filter on `state.members`).
+**Acceptance Criteria (harness):**
+- Admin scenario: the panel starts collapsed (members list hidden) and the toggle expands it.
+- A post from the admin tab hits `/admin/posts` with the key header and no `/members` POST.
+- Attach is disabled, the identity text reads "posting as @board-admin", and no `dagiBoardUser`
+  is written.
+- Existing non-admin scenarios are unchanged (they still register and post via `/posts`).
+
+**Files:** `services/message_board/static/index.html`, `tests/message_board/viewer_harness.js`,
+`tests/message_board/test_viewer.py`
+
+- [ ] Steps 1–5 as above.
+
+### Subtask 9: Docs
+
+- Update `wiki/board-admin-controls-launcher-key.md` with the reserved `board-admin` identity,
+  the separate admin tab vs user tabs, and the "Duplicate tab copies sessionStorage" caveat.
+
 ## Workspace
 - **Branch:** `task/board-admin-controls`
 - **Parent:** `main`
@@ -249,7 +322,7 @@ purged posts for every viewer.
 - **Task folder:** `wiki/tasks/2026-10-13_board-admin-controls/`
 
 ## Overall Status
-Complete — all subtasks committed; integrated verification passed
+In Progress — Subtasks 1-6 complete; 7-9 added after demo feedback
 
 ## Notes
 - `TestClient` peer is `testclient` unless `client=("127.0.0.1", port)` is passed — admin tests
@@ -288,4 +361,4 @@ None.
 - Browser pane: `#admin=` stripped from URL, panel shown, ban+purge via UI removed the post, Shut down -> "board stopped".
 
 ## Next Action
-Ask the Admiral whether to merge `task/board-admin-controls` into `main`.
+Get the amendment (Subtasks 7-9) approved, commit it, then deliver Subtask 7.
