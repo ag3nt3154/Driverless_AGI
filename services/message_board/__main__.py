@@ -22,7 +22,7 @@ from agent import DAGI_ROOT
 from .app import create_app
 from .lifecycle import ShutdownControl, check_bind, stop_local, validate_health_identity
 from .lifecycle import is_loopback_host as is_loopback_host
-from .runtime_records import RecordError, remove_record, write_record
+from .runtime_records import RecordError, read_record, remove_record, write_record
 from .settings import DEFAULT_TOKEN, ENV_PATH, BoardSettings, load_settings, resolve_token
 from .store import BoardStore
 
@@ -49,7 +49,8 @@ class RecordServer(uvicorn.Server):
         )
         url_host = f"[{host}]" if ":" in host else host
         record = {"url": f"http://{url_host}:{port}", "port": port,
-                  "instance_id": self.control.instance_id, "capability": self.control.capability}
+                  "instance_id": self.control.instance_id, "capability": self.control.capability,
+                  "admin_key": self.control.admin_key}
         try:
             write_record(self.runtime_dir, record)
         except Exception:
@@ -130,8 +131,24 @@ def _loopback_url(port: int) -> str:
     return f"http://127.0.0.1:{port}"
 
 
+def _admin_url(url: str, admin_key: str) -> str:
+    return url.rstrip("/") + "/#admin=" + admin_key
+
+
+def _running_admin_key(runtime_dir: Path, port: int, instance_id: str) -> str:
+    """The running board's admin key from its protected record; raise ValueError if absent."""
+    record = read_record(runtime_dir, port)
+    if record.get("instance_id") != instance_id:
+        raise ValueError("runtime record belongs to another instance")
+    admin_key = record.get("admin_key")
+    if not isinstance(admin_key, str) or not admin_key:
+        raise ValueError("no admin key")
+    return admin_key
+
+
 def _open_when_ready(url: str, instance_id: str, opener, probe,
-                     stopped: threading.Event) -> None:
+                     stopped: threading.Event, target: str | None = None) -> None:
+    """Open ``target`` (default ``<url>/``) once ``url`` health reports ``instance_id``."""
     deadline = time.monotonic() + 10.0
     while not stopped.is_set():
         try:
@@ -139,7 +156,7 @@ def _open_when_ready(url: str, instance_id: str, opener, probe,
         except Exception:
             ready = False
         if ready and not stopped.is_set():
-            opener(url.rstrip("/") + "/")
+            opener(target or url.rstrip("/") + "/")
             return
         remaining = deadline - time.monotonic()
         if remaining <= 0:
@@ -154,7 +171,8 @@ def serve_board(args, *, on_start=None) -> None:
         print(f"LAN: http://{socket.gethostname()}:{args.port}/ "
               f"(token: DAGI_BOARD_TOKEN in {ENV_PATH})")
     store = BoardStore(args.db)
-    control = ShutdownControl(uuid.uuid4().hex, secrets.token_hex(32), lambda: None)
+    control = ShutdownControl(uuid.uuid4().hex, secrets.token_hex(32), lambda: None,
+                              admin_key=secrets.token_urlsafe(32))
     config = uvicorn.Config(create_app(store, args.token, shutdown=control),
                             host=args.host, port=args.port, proxy_headers=False,
                             timeout_graceful_shutdown=1, log_level="warning")
@@ -170,7 +188,7 @@ def serve_board(args, *, on_start=None) -> None:
         threading.Thread(target=_watch_stdin, daemon=True, name="stdin-watch").start()
     try:
         if on_start is not None:
-            on_start(control.instance_id)
+            on_start(control.instance_id, control.admin_key)
         server.run()
     finally:
         store.close()
@@ -193,14 +211,20 @@ def main(argv=None, *, open_browser: bool = False, opener=webbrowser.open,
         if already_running:
             browser_url = local_url + "/"
             print(f"message board already running at {browser_url}")
+            try:
+                browser_url = _admin_url(
+                    local_url, _running_admin_key(args.runtime_dir, args.port, already_running))
+            except (RecordError, OSError, ValueError) as error:
+                print(f"admin controls unavailable: {error}", file=sys.stderr)
             opener(browser_url)
             return 0
 
     stopped = threading.Event()
 
-    def on_start(instance_id: str) -> None:
+    def on_start(instance_id: str, admin_key: str) -> None:
         threading.Thread(target=_open_when_ready,
-                         args=(local_url, instance_id, opener, probe, stopped),
+                         args=(local_url, instance_id, opener, probe, stopped,
+                               _admin_url(local_url, admin_key)),
                          daemon=True, name="board-browser-ready").start()
 
     try:

@@ -109,11 +109,11 @@ def test_entry_script_runs():
     assert "--no-browser" in result.stdout
 
 
-def test_running_board_only_opens_browser(capsys):
+def test_running_board_only_opens_browser(tmp_path, capsys):
     served = []
     opened = []
 
-    result = main(["--port", "9"], open_browser=True,
+    result = main(["--port", "9", "--runtime-dir", str(tmp_path / "run")], open_browser=True,
                   opener=opened.append, probe=lambda url: True,
                   serve=served.append)
 
@@ -153,7 +153,7 @@ def test_browser_opens_after_health_answers():
         return instance_id if len(calls) >= 2 else None
 
     def serve(args, *, on_start):
-        on_start(instance_id)
+        on_start(instance_id, "k" * 43)
         assert ready.wait(2)
 
     def opener(url):
@@ -164,7 +164,7 @@ def test_browser_opens_after_health_answers():
                 probe=probe, serve=serve) == 0
     assert calls[0] == "http://127.0.0.1:9"
     assert len(calls) == 2
-    assert opened == ["http://127.0.0.1:9/"]
+    assert opened == ["http://127.0.0.1:9/#admin=" + "k" * 43]
 
 
 def test_foreign_instance_never_opens_during_readiness():
@@ -182,12 +182,127 @@ def test_foreign_instance_never_opens_during_readiness():
         return "b" * 32
 
     def serve(args, *, on_start):
-        on_start("a" * 32)
+        on_start("a" * 32, "k" * 43)
         assert probed.wait(2)
 
     assert main(["--port", "9"], open_browser=True, opener=opened.append,
                 probe=probe, serve=serve) == 0
     assert opened == []
+
+
+def test_fresh_start_opens_admin_fragment(monkeypatch):
+    import threading
+
+    class Store:
+        def __init__(self, path):
+            pass
+
+        def close(self):
+            pass
+
+    controls = []
+    opened = []
+    ready = threading.Event()
+
+    class Server:
+        def __init__(self, config, *, runtime_dir, control):
+            self.should_exit = False
+            controls.append(control)
+
+        def run(self):
+            assert ready.wait(2)
+
+    def opener(url):
+        opened.append(url)
+        ready.set()
+
+    monkeypatch.setattr(board_main, "BoardStore", Store)
+    monkeypatch.setattr(board_main, "RecordServer", Server)
+    monkeypatch.setattr(board_main, "resolve_serve_token", lambda *a, **k: "t")
+
+    assert main(["--host", "127.0.0.1", "--port", "9"], open_browser=True, opener=opener,
+                probe=lambda url: controls[0].instance_id if controls else None) == 0
+    key = controls[0].admin_key
+    assert len(key) >= 32
+    assert opened == ["http://127.0.0.1:9/#admin=" + key]
+
+
+def _write_running_record(runtime, port, instance_id, **extra):
+    from services.message_board.runtime_records import write_record
+
+    write_record(runtime, {"url": f"http://127.0.0.1:{port}", "port": port,
+                           "instance_id": instance_id, "capability": "c" * 64, **extra})
+
+
+def test_already_running_opens_admin_fragment_from_record(tmp_path, capsys):
+    runtime = tmp_path / "run"
+    key = "K" * 43
+    _write_running_record(runtime, 9, "a" * 32, admin_key=key)
+    opened = []
+
+    assert main(["--port", "9", "--runtime-dir", str(runtime)], open_browser=True,
+                opener=opened.append, probe=lambda url: "a" * 32,
+                serve=lambda *a, **k: pytest.fail("must not serve")) == 0
+
+    assert opened == ["http://127.0.0.1:9/#admin=" + key]
+    captured = capsys.readouterr()
+    assert captured.out == "message board already running at http://127.0.0.1:9/\n"
+    assert key not in captured.out + captured.err
+
+
+@pytest.mark.parametrize(("record", "reason"), [
+    ({"instance_id": "b" * 32, "admin_key": "K" * 43}, "belongs to another instance"),
+    ({"instance_id": "a" * 32}, "no admin key"),
+    ({"instance_id": "a" * 32, "admin_key": ""}, "no admin key"),
+    (None, ""),
+])
+def test_already_running_with_stale_record_opens_plain_url(tmp_path, capsys, record, reason):
+    runtime = tmp_path / "run"
+    if record is not None:
+        _write_running_record(runtime, 9, **record)
+    opened = []
+
+    assert main(["--port", "9", "--runtime-dir", str(runtime)], open_browser=True,
+                opener=opened.append, probe=lambda url: "a" * 32,
+                serve=lambda *a, **k: pytest.fail("must not serve")) == 0
+
+    assert opened == ["http://127.0.0.1:9/"]
+    captured = capsys.readouterr()
+    assert captured.out == "message board already running at http://127.0.0.1:9/\n"
+    assert captured.err.startswith("admin controls unavailable: ")
+    assert reason in captured.err
+    assert "K" * 43 not in captured.err
+
+
+def test_runtime_record_contains_admin_key(tmp_path):
+    import asyncio
+
+    import uvicorn
+
+    from services.message_board.lifecycle import ShutdownControl
+    from services.message_board.runtime_records import read_record
+
+    async def app(scope, receive, send):
+        pass
+
+    control = ShutdownControl("a" * 32, "c" * 64, lambda: None, admin_key="K" * 43)
+    runtime = tmp_path / "run"
+
+    async def run():
+        config = uvicorn.Config(app, host="127.0.0.1", port=0, lifespan="off",
+                                log_level="warning")
+        server = board_main.RecordServer(config, runtime_dir=runtime, control=control)
+        config.load()
+        server.lifespan = config.lifespan_class(config)
+        await server.startup()
+        try:
+            return read_record(runtime, server.record_port)
+        finally:
+            await server.shutdown()
+
+    record = asyncio.run(run())
+    assert record["admin_key"] == "K" * 43
+    assert record["instance_id"] == "a" * 32
 
 
 @pytest.mark.parametrize("body", [

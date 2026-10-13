@@ -140,7 +140,7 @@ and the PySide feed drop removed posts.
 - [ ] Step 4: Run `tests/message_board` — all pass.
 - [ ] Step 5: Return for review.
 
-### Subtask 3: Launcher — mint the key and open the admin URL
+### Subtask 3: Launcher — mint the key and open the admin URL ✅ Complete
 
 **Goal:** `python message_board.py` opens the UI already holding the admin key.
 **Requirements:**
@@ -249,7 +249,7 @@ purged posts for every viewer.
 - **Task folder:** `wiki/tasks/2026-10-13_board-admin-controls/`
 
 ## Overall Status
-In Progress — Subtasks 1-2 complete
+In Progress — Subtasks 1-3 complete
 
 ## Notes
 - `TestClient` peer is `testclient` unless `client=("127.0.0.1", port)` is passed — admin tests
@@ -269,6 +269,7 @@ None.
 ## Attempts and Resolutions
 - **Subtask 1, attempt 1:** review PASS with a gap: `authenticate` ignored key bans for other handles sharing a banned key -> added key-ban check + test; added NULL-key-hash ban test. Deviations accepted: `create_post`/`add_attachment` also refuse banned authors; blob unlink after commit under the store lock (`_transaction` split into `_transaction` + `_begin`); purge record omits `author` for scope `all`.
 - **Subtask 2, attempt 1:** review PASS; applied `StrictBool` for `BanInput.purge` and 404 status asserts. Known: purge table replays in full on every stream connect (fine at expected volumes). Subtask 3 must keep the tokenless GUI temp board from exposing an admin key.
+- **Subtask 3, attempt 1:** review PASS, no changes. stdout deliberately prints the plain URL (key must never be printed). GUI temp boards also carry an admin key in their protected record; harmless (never opened).
 - **Environment:** RAM ~85-87% trips `tests/conftest.py` RAM watchdog; suite verified with `--noconftest` (163 passed, 2 skipped). Re-run normally when RAM is lower.
 
 ## Verification
