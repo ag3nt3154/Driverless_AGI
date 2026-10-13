@@ -18,7 +18,7 @@ from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictInt
 from starlette.exceptions import HTTPException
 
 from .lifecycle import is_loopback_host
-from .store import MAX_ID, BoardStore, StoreError
+from .store import ADMIN_HANDLE, MAX_ID, BoardStore, StoreError
 from .uploads import receive_upload
 
 PING_SECONDS = 15.0
@@ -91,6 +91,14 @@ class PostInput(BaseModel):
     meme: str | None = None
     reply_to: StrictInt | None = Field(default=None, ge=1, le=MAX_ID)
     attachments: list[str] = Field(default_factory=list)
+
+
+class AdminPostInput(BaseModel):
+    """A post as ``board-admin``; no author or attachments."""
+    model_config = ConfigDict(extra="forbid")
+    text: str
+    reply_to: StrictInt | None = Field(default=None, ge=1, le=MAX_ID)
+    meme: str | None = None
 
 
 class BanInput(BaseModel):
@@ -241,7 +249,16 @@ def _admin_routes(app: FastAPI, store: BoardStore, hub: PostHub, shutdown) -> No
     @app.get("/admin")
     def admin(request: Request):
         _admin_check(request, shutdown)
+        store.touch(ADMIN_HANDLE)  # the admin tab's heartbeat keeps @board-admin online
         return {"admin": True}
+
+    @app.post("/admin/posts", status_code=201)
+    async def admin_post(body: AdminPostInput, request: Request):
+        _admin_check(request, shutdown)
+        record = await asyncio.to_thread(store.create_post, author=ADMIN_HANDLE,
+                                         **body.model_dump())
+        await hub.notify()
+        return record
 
     @app.post("/admin/shutdown", status_code=202)
     def admin_stop(request: Request, background: BackgroundTasks):

@@ -295,7 +295,8 @@ def test_temp_board_lifecycle_live(tmp_path, monkeypatch):
     client = BoardClient(url, timeout=1)
     try:
         assert client.health()["version"] == 1
-        assert client.members() == []  # authenticated endpoint, no token sent
+        # authenticated endpoint, no token sent; only the reserved admin member exists
+        assert [m["handle"] for m in client.members()] == ["board-admin"]
         record = json.loads(next((run_dir / "run").glob("board-*.json")).read_text())
         assert url.endswith(f":{record['port']}") and record["port"] != 0
     finally:

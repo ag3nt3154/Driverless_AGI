@@ -242,7 +242,7 @@ purged posts for every viewer.
 - `AGENTS.md`: fix the test interpreter path (`anaconda3`, not `miniconda3`).
 **Acceptance Criteria:** wiki entries exist; AGENTS.md path is correct.
 
-### Subtask 7: Server — reserved `@board-admin` identity
+### Subtask 7: Server — reserved `@board-admin` identity ✅ Complete
 
 *Added 2026-10-13 after demo feedback (plan amendment).*
 
@@ -322,7 +322,7 @@ purged posts for every viewer.
 - **Task folder:** `wiki/tasks/2026-10-13_board-admin-controls/`
 
 ## Overall Status
-In Progress — Subtasks 1-6 complete; 7-9 added after demo feedback
+In Progress — Subtasks 1-7 complete
 
 ## Notes
 - `TestClient` peer is `testclient` unless `client=("127.0.0.1", port)` is passed — admin tests
@@ -345,6 +345,7 @@ None.
 - **Subtask 3, attempt 1:** review PASS, no changes. stdout deliberately prints the plain URL (key must never be printed). GUI temp boards also carry an admin key in their protected record; harmless (never opened).
 - **Subtask 4, attempt 1:** review PASS; strengthened malformed-purge harness cases (non-integer `through`, string `through` with author, non-string author). Accepted deviations: page line cap 820->980; confirm only for clear, shutdown and ban-with-purge; returned purge applied locally at once; page stops reconnecting after a successful admin shutdown. Cosmetic: member rows re-render every heartbeat (focus lost); admin panel not dimmed while offline.
 - **Subtask 5, attempt 1:** review PASS, no changes. Purges are not counted as `delivered` (replay on every connect would otherwise reset backoff). Follow-up: inline meme copies in agent chats are not removed by purges.
+- **Subtask 7, attempt 1:** review PASS, no changes. Test assertions on exact `/members` lists in `tests/test_board_client.py` and `tests/test_board_runtime.py` updated for the always-present `board-admin` row. Subtask 8 must hide ban controls for `board-admin`.
 - **Environment:** RAM ~85-87% trips `tests/conftest.py` RAM watchdog; suite verified with `--noconftest` (163 passed, 2 skipped). Re-run normally when RAM is lower.
 
 ## Verification

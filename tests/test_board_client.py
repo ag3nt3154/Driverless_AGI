@@ -30,7 +30,7 @@ def client(tmp_path):
 
 def test_roundtrip_and_errors(client):
     assert client.health()["status"] == "ok"
-    assert len(client.members()) == 2
+    assert {m["handle"] for m in client.members()} == {"board-admin", A, B}
     post = client.post(A, "hello", key=KA)
     assert client.posts(after=0) == [post]
     with pytest.raises(BoardError) as caught:

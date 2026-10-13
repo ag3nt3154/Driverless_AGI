@@ -19,7 +19,9 @@ log = logging.getLogger(__name__)
 
 HANDLE_RE = re.compile(r"[a-z0-9][a-z0-9-]{0,31}_[0-9a-f]{8}")
 KEY_RE = re.compile(r"[A-Za-z0-9_-]{32,128}")
-_MENTION_RE = re.compile(r"@([a-z0-9][a-z0-9-]{0,31}_[0-9a-f]{8})(?![\w-])")
+# Reserved member the launcher's admin tab posts as; HANDLE_RE can never register it.
+ADMIN_HANDLE = "board-admin"
+_MENTION_RE = re.compile(r"@(board-admin|[a-z0-9][a-z0-9-]{0,31}_[0-9a-f]{8})(?![\w-])")
 MAX_TEXT, MAX_MEME, MAX_LIMIT, MAX_ATTACHMENTS = 700, 64, 200, 4
 MAX_ATTACHMENT = 10 * 1024 * 1024
 MAX_ID = 2**63 - 1
@@ -80,6 +82,11 @@ def _banned(handle: str) -> None:
     raise StoreError("BANNED", f"{handle!r} is banned from this board", 403)
 
 
+def _refuse_reserved(handle: str) -> None:
+    if handle == ADMIN_HANDLE:
+        raise StoreError("RESERVED", f"{handle!r} is reserved for the board admin", 422)
+
+
 def _validate_id(value: int, *, minimum: int = 1) -> None:
     if type(value) is not int or not minimum <= value <= MAX_ID:
         _invalid(f"id must be an integer from {minimum} through {MAX_ID}")
@@ -127,6 +134,10 @@ class BoardStore:
         columns = {row["name"] for row in self._conn.execute("PRAGMA table_info(members)")}
         if "key_hash" not in columns:  # boards created before member keys
             self._conn.execute("ALTER TABLE members ADD COLUMN key_hash TEXT")
+        stamp = _now()  # keyless, so authenticate() always refuses it
+        self._conn.execute(
+            "INSERT OR IGNORE INTO members (handle,display_name,kind,host,registered_at,last_seen,"
+            "key_hash) VALUES (?,?,'user','',?,?,NULL)", (ADMIN_HANDLE, ADMIN_HANDLE, stamp, stamp))
 
     def close(self) -> None:
         with self._lock:
@@ -208,6 +219,11 @@ class BoardStore:
             banned = self._conn.execute("SELECT 1 FROM bans WHERE key_hash=?", (stored,)).fetchone()
         if banned:  # another handle sharing a banned member's key
             _banned(handle)
+
+    def touch(self, handle: str) -> None:
+        """Mark ``handle`` as seen now."""
+        with self._transaction():
+            self._conn.execute("UPDATE members SET last_seen=? WHERE handle=?", (_now(), handle))
 
     def list_members(self) -> list[dict]:
         with self._lock:
@@ -329,6 +345,7 @@ class BoardStore:
 
     def ban(self, handle: str, *, purge: bool = False) -> dict:
         """Ban ``handle`` and its key; with ``purge`` also delete its history."""
+        _refuse_reserved(handle)
         with self._lock:
             with self._begin():
                 key_hash, stamp = self._member(handle)["key_hash"], _now()
@@ -362,6 +379,7 @@ class BoardStore:
 
     def purge_author(self, handle: str) -> dict:
         """Delete ``handle``'s posts and uploads; return the ``scope="author"`` purge."""
+        _refuse_reserved(handle)
         with self._lock:
             with self._begin():
                 record, digests = self._purge_author(handle)
