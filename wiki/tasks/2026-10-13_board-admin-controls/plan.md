@@ -231,7 +231,7 @@ purged posts for every viewer.
 
 - [ ] Steps 1–5 as above (Qt tests unsandboxed).
 
-### Subtask 6: Docs
+### Subtask 6: Docs ✅ Complete
 
 **Goal:** Record the design and close the todo.
 **Requirements:**
@@ -249,7 +249,7 @@ purged posts for every viewer.
 - **Task folder:** `wiki/tasks/2026-10-13_board-admin-controls/`
 
 ## Overall Status
-In Progress — Subtasks 1-5 complete
+Complete — all subtasks committed; integrated verification passed
 
 ## Notes
 - `TestClient` peer is `testclient` unless `client=("127.0.0.1", port)` is passed — admin tests
@@ -281,5 +281,11 @@ None.
   → browser shows admin panel; post from a second (non-admin) browser profile shows no panel;
   ban it → its posts fail with BANNED; clear history → both pages empty; shut down → process exits.
 
+## Verification Results (2026-10-13)
+- `tests/message_board` + board client/runtime/stream/tools/downloads suites (`--noconftest`, RAM high): 303 passed, 2 skipped.
+- `pyside_gui/tests` (unsandboxed, conftest on): 375 passed.
+- Live smoke (scratch port 8799): admin 403 without/with wrong key; ban+purge -> member `BANNED`, posts gone; unban 204; clear -> 0 posts; stream starts with `event: purge`; `/admin/shutdown` -> process exit 0.
+- Browser pane: `#admin=` stripped from URL, panel shown, ban+purge via UI removed the post, Shut down -> "board stopped".
+
 ## Next Action
-Get the plan approved, commit it as `plan: approve plan`, then deliver Subtask 1.
+Ask the Admiral whether to merge `task/board-admin-controls` into `main`.

@@ -38,7 +38,7 @@ private throwaway board only while the configured central board is unavailable.
 - Python env `dagi` (`DEFAULT_PYTHON_ENV`) for all scripts and installs.
 - Install from the repo root: `python -m pip install -r requirements-core.txt`; add
   `-r requirements-gui.txt`, `-r requirements-tui.txt` or `-r requirements-tools.txt` as needed.
-- Tests: `C:\Users\alexr\miniconda3\envs\dagi\python.exe -u -m pytest -q -p no:pytest-qt`.
+- Tests: `C:\Users\alexr\anaconda3\envs\dagi\python.exe -u -m pytest -q -p no:pytest-qt`.
   `conda run` fully buffers stdout when not on a TTY (looks like a hang) — call the env's
   interpreter directly with `-u`. pytest-qt must be disabled as `-p no:pytest-qt` (not `no:qt`).
 - Hooks use `envs/dagi/python.exe` directly (`conda run` drops stdin).
