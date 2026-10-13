@@ -11,6 +11,7 @@ from fastapi.testclient import TestClient
 
 from agent.board_client import BoardClient
 from services.message_board.app import PostHub, create_app, post_events
+from services.message_board.lifecycle import ShutdownControl
 from services.message_board.store import BoardStore
 
 A = "main_3f9a1c2e"
@@ -125,6 +126,111 @@ def test_posts_and_stream_include_author_kind(board):
             await events.aclose()
 
     asyncio.run(backlog())
+
+
+ADMIN = {"X-Dagi-Admin-Key": "z" * 43}
+
+
+def admin_app(board):
+    control = ShutdownControl("a" * 32, "b" * 64, lambda: None, admin_key=ADMIN["X-Dagi-Admin-Key"])
+    return create_app(board, shutdown=control)
+
+
+def test_admin_clear_and_ban_routes(board):
+    B = "web_12345678"
+    with TestClient(admin_app(board), client=("127.0.0.1", 123)) as client:
+        for handle, kind in ((A, "agent"), (B, "user")):
+            assert client.post("/members", json={"handle": handle, "kind": kind,
+                                                 "key": handle + KEY}).status_code == 201
+        def post(handle, text):
+            return client.post("/posts", headers={"X-Dagi-Member-Key": handle + KEY},
+                               json={"author": handle, "text": text})
+        first = post(A, "one").json()
+        post(B, "two")
+        hub = client.app.state.hub
+        version = hub.version
+        clear = client.post("/admin/clear", headers=ADMIN)
+        assert clear.status_code == 200
+        purge = clear.json()
+        assert purge["scope"] == "all" and purge["through"] == first["id"] + 1
+        assert hub.version == version + 1
+        assert client.get("/posts", params={"after": 0}).json() == []
+
+        post(A, "three")
+        kept = post(B, "four").json()
+        assert client.get("/admin/bans", headers=ADMIN).json() == []
+        version = hub.version
+        ban = client.post("/admin/bans", headers=ADMIN, json={"handle": A, "purge": True})
+        assert ban.status_code == 201, ban.text
+        body = ban.json()
+        assert body["handle"] == A and body["purge"]["scope"] == "author"
+        assert body["purge"]["author"] == A
+        assert hub.version == version + 1
+        assert client.get("/posts", params={"after": 0}).json() == [kept]
+        refused = post(A, "again")
+        assert refused.status_code == 403 and refused.json()["code"] == "BANNED"
+        assert [b["handle"] for b in client.get("/admin/bans", headers=ADMIN).json()] == [A]
+        assert client.post("/admin/bans", headers=ADMIN,
+                           json={"handle": A, "extra": 1}).status_code == 422
+        unknown = client.post("/admin/bans", headers=ADMIN, json={"handle": "nobody"})
+        assert unknown.status_code == 404 and unknown.json()["code"] == "UNKNOWN_AUTHOR"
+        assert client.post("/admin/bans", headers=ADMIN,
+                           json={"handle": A, "purge": "yes"}).status_code == 422
+        plain = client.post("/admin/bans", headers=ADMIN, json={"handle": B})
+        assert plain.status_code == 201 and plain.json()["purge"] is None
+
+        response = client.delete(f"/admin/bans/{A}", headers=ADMIN)
+        assert response.status_code == 204 and response.content == b""
+        again = client.delete(f"/admin/bans/{A}", headers=ADMIN)
+        assert again.status_code == 404 and again.json()["code"] == "UNKNOWN_BAN"
+        assert post(A, "back").status_code == 201
+        assert [b["handle"] for b in client.get("/admin/bans", headers=ADMIN).json()] == [B]
+
+
+def test_stream_replays_purges_before_posts(board):
+    board.register_member(A, "agent", key=KEY)
+    board.create_post(author=A, text="gone")
+    purge = board.clear_all()
+    kept = board.create_post(author=A, text="kept")
+
+    async def run():
+        for after in (0, None):
+            events = post_events(board, PostHub(), after)
+            try:
+                assert await anext(events) == f"event: purge\ndata: {json.dumps(purge)}\n\n"
+                if after == 0:
+                    assert await anext(events) == (
+                        f"id: {kept['id']}\nevent: post\ndata: {json.dumps(kept)}\n\n")
+            finally:
+                await events.aclose()
+    asyncio.run(run())
+
+
+def test_stream_pushes_live_purge(board, monkeypatch):
+    monkeypatch.setattr("services.message_board.app.PING_SECONDS", 5)
+    board.register_member(A, "agent", key=KEY)
+    first = board.create_post(author=A, text="first")
+
+    async def run():
+        hub = PostHub()
+        events = post_events(board, hub, 0)
+        try:
+            assert (await anext(events)).startswith("id: 1\nevent: post")
+            waiting = asyncio.create_task(anext(events))
+            await asyncio.sleep(0)
+            purge = board.purge_author(A)
+            await hub.notify()
+            assert await asyncio.wait_for(waiting, 2) == (
+                f"event: purge\ndata: {json.dumps(purge)}\n\n")
+            assert purge["through"] >= first["id"]
+            # A purge-only change must not leave the stream waiting before new posts.
+            second = board.create_post(author=A, text="second")
+            await hub.notify()
+            assert await asyncio.wait_for(anext(events), 2) == (
+                f"id: {second['id']}\nevent: post\ndata: {json.dumps(second)}\n\n")
+        finally:
+            await events.aclose()
+    asyncio.run(run())
 
 
 def test_user_member_attachment_is_fetchable_by_agent(board, tmp_path):

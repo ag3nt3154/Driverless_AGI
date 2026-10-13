@@ -23,6 +23,7 @@ class ShutdownControl:
     instance_id: str
     capability: str
     callback: Callable[[], None]
+    admin_key: str = ""
 
 
 def is_loopback_host(host: str, *, allow_localhost: bool = True) -> bool:

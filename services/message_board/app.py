@@ -11,8 +11,10 @@ from importlib import resources
 
 from fastapi import BackgroundTasks, FastAPI, Query, Request
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, StreamingResponse
-from pydantic import BaseModel, ConfigDict, Field, StrictInt
+from fastapi.responses import (
+    FileResponse, HTMLResponse, JSONResponse, Response, StreamingResponse,
+)
+from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictInt
 from starlette.exceptions import HTTPException
 
 from .lifecycle import is_loopback_host
@@ -21,6 +23,7 @@ from .uploads import receive_upload
 
 PING_SECONDS = 15.0
 KEY_HEADER = "x-dagi-member-key"
+ADMIN_HEADER = "x-dagi-admin-key"
 
 
 class PostHub:
@@ -53,8 +56,15 @@ class PostHub:
 
 async def post_events(store: BoardStore, hub: PostHub, after: int | None):
     cursor = await asyncio.to_thread(store.latest_id) if after is None else after
+    purge_cursor = 0
     while True:
         seen = hub.version
+        purges = await asyncio.to_thread(store.list_purges, after=purge_cursor)
+        for purge in purges:  # before posts, so clients never re-show purged posts
+            purge_cursor = purge["id"]
+            yield f"event: purge\ndata: {json.dumps(purge)}\n\n"
+        if purges:
+            continue
         posts = await asyncio.to_thread(store.list_posts, after=cursor, limit=200)
         for post in posts:
             cursor = post["id"]
@@ -83,6 +93,12 @@ class PostInput(BaseModel):
     attachments: list[str] = Field(default_factory=list)
 
 
+class BanInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    handle: str
+    purge: StrictBool = False
+
+
 class ShutdownInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
     instance_id: str
@@ -103,6 +119,17 @@ def _shutdown_check(request: Request, shutdown, instance_id: str) -> None:
         raise StoreError("FORBIDDEN", "invalid local shutdown capability", 403)
     if instance_id != shutdown.instance_id:
         raise StoreError("STALE_INSTANCE", "shutdown instance does not match", 409)
+
+
+def _admin_check(request: Request, shutdown) -> None:
+    if shutdown is None or not shutdown.admin_key:
+        raise StoreError("ADMIN_UNAVAILABLE", "this board has no admin controls", 503)
+    peer = request.client.host if request.client else ""
+    if not is_loopback_host(peer, allow_localhost=False):
+        raise StoreError("FORBIDDEN", "admin requires a direct loopback peer", 403)
+    supplied = request.headers.get(ADMIN_HEADER, "")
+    if not hmac.compare_digest(supplied.encode(), shutdown.admin_key.encode()):
+        raise StoreError("FORBIDDEN", "invalid admin key", 403)
 
 
 def create_app(store: BoardStore, token: str | None = None, *, shutdown=None) -> FastAPI:
@@ -145,6 +172,7 @@ def create_app(store: BoardStore, token: str | None = None, *, shutdown=None) ->
 
     _read_routes(app, store, hub, instance_id)
     _write_routes(app, store, hub, shutdown)
+    _admin_routes(app, store, hub, shutdown)
     return app
 
 
@@ -206,3 +234,42 @@ def _write_routes(app: FastAPI, store: BoardStore, hub: PostHub, shutdown) -> No
         _shutdown_check(request, shutdown, body.instance_id)
         background.add_task(shutdown.callback)
         return {"status": "stopping"}
+
+
+def _admin_routes(app: FastAPI, store: BoardStore, hub: PostHub, shutdown) -> None:
+    """Launcher-only moderation: bearer (middleware) + admin key + direct loopback peer."""
+    @app.get("/admin")
+    def admin(request: Request):
+        _admin_check(request, shutdown)
+        return {"admin": True}
+
+    @app.post("/admin/shutdown", status_code=202)
+    def admin_stop(request: Request, background: BackgroundTasks):
+        _admin_check(request, shutdown)
+        background.add_task(shutdown.callback)
+        return {"status": "stopping"}
+
+    @app.post("/admin/clear")
+    async def admin_clear(request: Request):
+        _admin_check(request, shutdown)
+        record = await asyncio.to_thread(store.clear_all)
+        await hub.notify()
+        return record
+
+    @app.get("/admin/bans")
+    def admin_bans(request: Request):
+        _admin_check(request, shutdown)
+        return store.list_bans()
+
+    @app.post("/admin/bans", status_code=201)
+    async def admin_ban(body: BanInput, request: Request):
+        _admin_check(request, shutdown)
+        record = await asyncio.to_thread(store.ban, body.handle, purge=body.purge)
+        await hub.notify()
+        return record
+
+    @app.delete("/admin/bans/{handle}", status_code=204)
+    async def admin_unban(handle: str, request: Request):
+        _admin_check(request, shutdown)
+        await asyncio.to_thread(store.unban, handle)
+        return Response(status_code=204)
