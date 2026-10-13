@@ -310,7 +310,7 @@ purged posts for every viewer.
 
 - [ ] Steps 1–5 as above.
 
-### Subtask 9: Docs
+### Subtask 9: Docs ✅ Complete
 
 - Update `wiki/board-admin-controls-launcher-key.md` with the reserved `board-admin` identity,
   the separate admin tab vs user tabs, and the "Duplicate tab copies sessionStorage" caveat.
@@ -322,7 +322,7 @@ purged posts for every viewer.
 - **Task folder:** `wiki/tasks/2026-10-13_board-admin-controls/`
 
 ## Overall Status
-In Progress — Subtasks 1-8 complete
+Verification — Subtasks 1-9 complete
 
 ## Notes
 - `TestClient` peer is `testclient` unless `client=("127.0.0.1", port)` is passed — admin tests
