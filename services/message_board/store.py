@@ -4,6 +4,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+import logging
 import re
 import sqlite3
 import threading
@@ -13,6 +14,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from .blobs import sanitize_name, sniff_kind, sniff_mime, write_blob
+
+log = logging.getLogger(__name__)
 
 HANDLE_RE = re.compile(r"[a-z0-9][a-z0-9-]{0,31}_[0-9a-f]{8}")
 KEY_RE = re.compile(r"[A-Za-z0-9_-]{32,128}")
@@ -38,7 +41,14 @@ CREATE TABLE IF NOT EXISTS attachments (
     created_at TEXT NOT NULL, post_id INTEGER);
 CREATE INDEX IF NOT EXISTS idx_attachments_post ON attachments(post_id);
 CREATE INDEX IF NOT EXISTS idx_post_mentions ON post_mentions(handle, post_id);
+CREATE TABLE IF NOT EXISTS bans (
+    handle TEXT PRIMARY KEY, key_hash TEXT, created_at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS purges (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, scope TEXT NOT NULL, author TEXT,
+    through INTEGER NOT NULL, created_at TEXT NOT NULL);
 """
+_MEMBERS = ("SELECT m.*, EXISTS (SELECT 1 FROM bans b WHERE b.handle=m.handle) AS banned "
+            "FROM members m")
 
 
 class StoreError(Exception):
@@ -66,6 +76,10 @@ def _invalid(message: str) -> None:
     raise StoreError("INVALID", message, 422)
 
 
+def _banned(handle: str) -> None:
+    raise StoreError("BANNED", f"{handle!r} is banned from this board", 403)
+
+
 def _validate_id(value: int, *, minimum: int = 1) -> None:
     if type(value) is not int or not minimum <= value <= MAX_ID:
         _invalid(f"id must be an integer from {minimum} through {MAX_ID}")
@@ -78,8 +92,17 @@ def _key_hash(key: str) -> str:
 def _member_record(row: sqlite3.Row) -> dict:
     record = dict(row)
     record.pop("key_hash")
+    record["banned"] = bool(record["banned"])
     seen = datetime.fromisoformat(record["last_seen"].replace("Z", "+00:00"))
     record["online"] = (_clock() - seen).total_seconds() <= ONLINE_SECONDS
+    return record
+
+
+def _purge_record(row: sqlite3.Row) -> dict:
+    """``author`` is present only for ``scope == "author"`` purges."""
+    record = dict(row)
+    if record["scope"] != "author":
+        record.pop("author")
     return record
 
 
@@ -111,19 +134,30 @@ class BoardStore:
 
     @contextmanager
     def _transaction(self):
-        with self._lock:
-            self._conn.execute("BEGIN IMMEDIATE")
-            try:
-                yield
-                self._conn.execute("COMMIT")
-            except BaseException:
-                self._conn.execute("ROLLBACK")
-                raise
+        with self._lock, self._begin():
+            yield
+
+    @contextmanager
+    def _begin(self):
+        """A write transaction; the caller holds ``_lock``."""
+        self._conn.execute("BEGIN IMMEDIATE")
+        try:
+            yield
+            self._conn.execute("COMMIT")
+        except BaseException:
+            self._conn.execute("ROLLBACK")
+            raise
 
     def _member(self, handle: str) -> sqlite3.Row:
-        row = self._conn.execute("SELECT * FROM members WHERE handle=?", (handle,)).fetchone()
+        row = self._conn.execute(_MEMBERS + " WHERE m.handle=?", (handle,)).fetchone()
         if row is None:
             raise StoreError("UNKNOWN_AUTHOR", f"member {handle!r} is not registered", 404)
+        return row
+
+    def _active_member(self, handle: str) -> sqlite3.Row:
+        row = self._member(handle)
+        if row["banned"]:
+            _banned(handle)
         return row
 
     def register_member(self, handle: str, kind: str, display_name: str | None = None,
@@ -140,6 +174,9 @@ class BoardStore:
             _invalid("key must be 32 through 128 letters, digits, '-' or '_'")
         digest = _key_hash(key)
         with self._transaction():
+            if self._conn.execute("SELECT 1 FROM bans WHERE handle=? OR key_hash=?",
+                                  (handle, digest)).fetchone():
+                _banned(handle)
             row = self._conn.execute("SELECT * FROM members WHERE handle=?", (handle,)).fetchone()
             created = row is None
             stamp = _now()
@@ -162,20 +199,24 @@ class BoardStore:
         A member's key never changes once set, so a check before a write cannot go stale.
         """
         with self._lock:
-            row = self._member(handle)
+            row = self._active_member(handle)
         stored = row["key_hash"]
         if not isinstance(key, str) or stored is None or not hmac.compare_digest(
                 stored, _key_hash(key)):
             raise StoreError("FORBIDDEN", f"wrong or missing member key for {handle!r}", 403)
+        with self._lock:
+            banned = self._conn.execute("SELECT 1 FROM bans WHERE key_hash=?", (stored,)).fetchone()
+        if banned:  # another handle sharing a banned member's key
+            _banned(handle)
 
     def list_members(self) -> list[dict]:
         with self._lock:
-            rows = self._conn.execute("SELECT * FROM members ORDER BY registered_at, handle")
+            rows = self._conn.execute(_MEMBERS + " ORDER BY m.registered_at, m.handle")
             return [_member_record(row) for row in rows]
 
     def add_attachment(self, uploader: str, name: str, data: bytes) -> dict:
         with self._transaction():
-            self._member(uploader)
+            self._active_member(uploader)
             if not data:
                 _invalid("attachment must not be empty")
             if len(data) > MAX_ATTACHMENT:
@@ -217,7 +258,7 @@ class BoardStore:
 
     def _check_post_references(self, author: str, reply_to: int | None,
                                attachments: list[str]) -> None:
-        self._member(author)
+        self._active_member(author)
         if reply_to is not None:
             _validate_id(reply_to)
             row = self._conn.execute("SELECT id FROM posts WHERE id=?", (reply_to,)).fetchone()
@@ -286,3 +327,85 @@ class BoardStore:
         with self._lock:
             return self._conn.execute("SELECT COALESCE(MAX(id), 0) FROM posts").fetchone()[0]
 
+    def ban(self, handle: str, *, purge: bool = False) -> dict:
+        """Ban ``handle`` and its key; with ``purge`` also delete its history."""
+        with self._lock:
+            with self._begin():
+                key_hash, stamp = self._member(handle)["key_hash"], _now()
+                self._conn.execute("INSERT OR REPLACE INTO bans VALUES (?,?,?)",
+                                   (handle, key_hash, stamp))
+                record, digests = self._purge_author(handle) if purge else (None, [])
+            self._unlink_unreferenced(digests)
+        return {"handle": handle, "created_at": stamp, "purge": record}
+
+    def unban(self, handle: str) -> None:
+        with self._transaction():
+            if not self._conn.execute("DELETE FROM bans WHERE handle=?", (handle,)).rowcount:
+                raise StoreError("UNKNOWN_BAN", f"{handle!r} is not banned", 404)
+
+    def list_bans(self) -> list[dict]:
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT handle, created_at FROM bans ORDER BY created_at, handle")
+            return [dict(row) for row in rows]
+
+    def clear_all(self) -> dict:
+        """Delete every post, mention and attachment; return the ``scope="all"`` purge."""
+        with self._lock:
+            with self._begin():
+                digests = self._delete_attachments("1=1", ())
+                self._conn.execute("DELETE FROM post_mentions")
+                self._conn.execute("DELETE FROM posts")
+                record = self._record_purge("all", None)
+            self._unlink_unreferenced(digests)
+        return record
+
+    def purge_author(self, handle: str) -> dict:
+        """Delete ``handle``'s posts and uploads; return the ``scope="author"`` purge."""
+        with self._lock:
+            with self._begin():
+                record, digests = self._purge_author(handle)
+            self._unlink_unreferenced(digests)
+        return record
+
+    def list_purges(self, after: int = 0) -> list[dict]:
+        _validate_id(after, minimum=0)
+        with self._lock:
+            rows = self._conn.execute("SELECT * FROM purges WHERE id > ? ORDER BY id", (after,))
+            return [_purge_record(row) for row in rows]
+
+    def _purge_author(self, handle: str) -> tuple[dict, list[str]]:
+        self._member(handle)
+        posts = "SELECT id FROM posts WHERE author=?"
+        digests = self._delete_attachments(
+            f"post_id IN ({posts}) OR (post_id IS NULL AND uploader=?)", (handle, handle))
+        self._conn.execute(f"DELETE FROM post_mentions WHERE post_id IN ({posts})", (handle,))
+        self._conn.execute("DELETE FROM posts WHERE author=?", (handle,))
+        return self._record_purge("author", handle), digests
+
+    def _delete_attachments(self, where: str, params: tuple) -> list[str]:
+        digests = [row[0] for row in self._conn.execute(
+            f"SELECT DISTINCT sha256 FROM attachments WHERE {where}", params)]
+        self._conn.execute(f"DELETE FROM attachments WHERE {where}", params)
+        return digests
+
+    def _record_purge(self, scope: str, author: str | None) -> dict:
+        """Purge through the highest post id ever issued, so no id a client holds exceeds it."""
+        seq = self._conn.execute("SELECT seq FROM sqlite_sequence WHERE name='posts'").fetchone()
+        top = self._conn.execute("SELECT COALESCE(MAX(id), 0) FROM posts").fetchone()[0]
+        cursor = self._conn.execute(
+            "INSERT INTO purges (scope, author, through, created_at) VALUES (?,?,?,?)",
+            (scope, author, max(top, seq[0] if seq else 0), _now()))
+        return _purge_record(self._conn.execute(
+            "SELECT * FROM purges WHERE id=?", (cursor.lastrowid,)).fetchone())
+
+    def _unlink_unreferenced(self, digests: list[str]) -> None:
+        """Run after commit but under ``_lock``, so no upload re-references a digest meanwhile."""
+        for digest in digests:
+            if self._conn.execute("SELECT 1 FROM attachments WHERE sha256=?",
+                                  (digest,)).fetchone():
+                continue
+            try:
+                (self._blob_dir / digest).unlink(missing_ok=True)
+            except OSError as error:
+                log.warning("could not delete blob %s: %s", digest, error)

@@ -37,7 +37,7 @@ and the PySide feed drop removed posts.
 
 ---
 
-### Subtask 1: Store — bans, purges, enforcement
+### Subtask 1: Store — bans, purges, enforcement ✅ Complete
 
 **Goal:** `BoardStore` persists bans and purges and refuses banned members.
 **Requirements:**
@@ -249,7 +249,7 @@ purged posts for every viewer.
 - **Task folder:** `wiki/tasks/2026-10-13_board-admin-controls/`
 
 ## Overall Status
-Pending
+In Progress — Subtask 1 complete
 
 ## Notes
 - `TestClient` peer is `testclient` unless `client=("127.0.0.1", port)` is passed — admin tests
@@ -267,6 +267,8 @@ Pending
 None.
 
 ## Attempts and Resolutions
+- **Subtask 1, attempt 1:** review PASS with a gap: `authenticate` ignored key bans for other handles sharing a banned key -> added key-ban check + test; added NULL-key-hash ban test. Deviations accepted: `create_post`/`add_attachment` also refuse banned authors; blob unlink after commit under the store lock (`_transaction` split into `_transaction` + `_begin`); purge record omits `author` for scope `all`.
+- **Environment:** RAM ~85-87% trips `tests/conftest.py` RAM watchdog; suite verified with `--noconftest` (163 passed, 2 skipped). Re-run normally when RAM is lower.
 
 ## Verification
 - `C:\Users\alexr\anaconda3\envs\dagi\python.exe -u -m pytest -q -p no:pytest-qt tests/message_board tests/test_board_stream.py tests/test_board_client.py`

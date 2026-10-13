@@ -86,6 +86,28 @@ def test_keyless_member_from_an_old_board_is_claimed_once(tmp_path):
         assert board.register_member(A, "agent", host="pc", key=KEY)[1] is False
         board.authenticate(A, KEY)
         fails("HANDLE_TAKEN", lambda: board.register_member(A, "agent", key=OTHER_KEY), 409)
+        assert board.list_bans() == [] and board.list_purges() == []  # tables added on open
+        board.ban(A)
+        assert board.list_members()[0]["banned"] is True
+    finally:
+        board.close()
+
+
+def test_banning_a_keyless_member_matches_only_its_handle(tmp_path):
+    path = tmp_path / "board.sqlite3"
+    old = sqlite3.connect(path)
+    old.executescript(
+        "CREATE TABLE members (handle TEXT PRIMARY KEY, display_name TEXT NOT NULL, "
+        "kind TEXT NOT NULL, host TEXT NOT NULL, registered_at TEXT NOT NULL, "
+        "last_seen TEXT NOT NULL);"
+        f"INSERT INTO members VALUES ('{A}','{A}','agent','pc','t','t');")
+    old.close()
+    board = BoardStore(path)
+    try:
+        board.ban(A)  # no key hash to ban: a NULL must never match another member's key
+        fails("BANNED", lambda: board.register_member(A, "agent", key=KEY), 403)
+        board.register_member(B, "agent", key=OTHER_KEY)
+        board.authenticate(B, OTHER_KEY)
     finally:
         board.close()
 
@@ -262,3 +284,135 @@ def test_write_failure_rolls_back_post_and_claim(store, monkeypatch):
 def test_exact_attachment_limit(store):
     attachment = store.add_attachment(A, "max.bin", b"x" * MAX_ATTACHMENT)
     assert attachment["size"] == MAX_ATTACHMENT
+
+
+def test_ban_blocks_register_post_upload_and_key_reuse(store):
+    att = store.add_attachment(A, "a.txt", b"before ban")["id"]
+    ban = store.ban(A)
+    assert ban["handle"] == A and ban["purge"] is None and ban["created_at"]
+    fails("BANNED", lambda: store.register_member(A, "agent", host="pc", key=KEY), 403)
+    fails("BANNED", lambda: store.authenticate(A, KEY), 403)
+    fails("BANNED", lambda: store.authenticate(A, OTHER_KEY), 403)
+    fails("BANNED", lambda: store.create_post(author=A, text="hi"), 403)
+    fails("BANNED", lambda: store.create_post(author=A, text="hi", attachments=[att]), 403)
+    fails("BANNED", lambda: store.add_attachment(A, "a.txt", b"x"), 403)
+    # B shares A's key in the fixture, and a brand-new handle reusing it is refused too
+    fails("BANNED", lambda: store.register_member("new_00000000", "agent", key=KEY), 403)
+    fails("BANNED", lambda: store.authenticate(B, KEY), 403)  # B already owns the banned key
+    store.register_member("new_00000000", "agent", key=OTHER_KEY)
+    store.unban(A)
+    assert store.register_member(A, "agent", host="pc", key=KEY)[1] is False
+    store.authenticate(A, KEY)
+    store.add_attachment(A, "b.txt", b"after")
+    assert store.create_post(author=A, text="back", attachments=[att])["attachments"]
+    store.register_member("new2_00000000", "agent", key=KEY)
+    assert store.list_bans() == []
+
+
+def test_ban_unknown_member_and_unban_unknown_are_404(store):
+    fails("UNKNOWN_AUTHOR", lambda: store.ban("ghost_00000000"), 404)
+    fails("UNKNOWN_BAN", lambda: store.unban(A), 404)
+    store.ban(A)
+    store.ban(A)  # banning again replaces the ban
+    assert [b["handle"] for b in store.list_bans()] == [A]
+    assert set(store.list_bans()[0]) == {"handle", "created_at"}
+    store.unban(A)
+    fails("UNKNOWN_BAN", lambda: store.unban(A), 404)
+
+
+def test_clear_all_deletes_history_keeps_members_and_ids_increase(store):
+    for i in range(3):
+        store.create_post(author=A, text=f"@{B} {i}")
+    store.ban(B)
+    purge = store.clear_all()
+    assert purge["scope"] == "all" and purge["through"] == 3 and "author" not in purge
+    assert store.list_posts() == [] and store.list_posts(mention=B) == []
+    assert store.latest_id() == 0
+    assert [m["handle"] for m in store.list_members()] == [A, B]
+    assert [b["handle"] for b in store.list_bans()] == [B]
+    # an empty board still never reports a lower id than clients may hold
+    assert store.clear_all()["through"] == 3
+    assert store.create_post(author=A, text="fresh")["id"] == 4
+
+
+def test_clear_all_removes_only_unreferenced_blobs(store, tmp_path):
+    blobs = tmp_path / "blobs"
+    shared = store.add_attachment(A, "s.txt", b"shared")
+    gone = store.add_attachment(A, "g.txt", b"gone")
+    store.create_post(author=A, text="x", attachments=[shared["id"], gone["id"]])
+    pending = store.add_attachment(B, "p.txt", b"pending")
+    store.clear_all()
+    assert not (blobs / shared["sha256"]).exists() and not (blobs / gone["sha256"]).exists()
+    assert not (blobs / pending["sha256"]).exists()
+    fails("UNKNOWN_ATTACHMENT", lambda: store.get_attachment(pending["id"]), 404)
+    kept = store.add_attachment(A, "k.txt", b"kept")
+    store.create_post(author=A, text="keep", attachments=[kept["id"]])
+    dup = store.add_attachment(B, "d.txt", b"kept")
+    store.create_post(author=B, text="dup", attachments=[dup["id"]])
+    store.purge_author(B)  # B's row goes, A's row still references the same digest
+    assert (blobs / kept["sha256"]).read_bytes() == b"kept"
+    assert store.get_attachment(kept["id"])[1].read_bytes() == b"kept"
+
+
+def test_clear_all_logs_blob_unlink_failure(store, tmp_path, monkeypatch, caplog):
+    att = store.add_attachment(A, "a.txt", b"locked")
+    from pathlib import Path
+
+    def refuse(self, missing_ok=False):
+        raise PermissionError("locked")
+
+    monkeypatch.setattr(Path, "unlink", refuse)
+    assert store.clear_all()["through"] == 0
+    assert att["sha256"] in caplog.text
+    fails("UNKNOWN_ATTACHMENT", lambda: store.get_attachment(att["id"]), 404)
+
+
+def test_purge_author_removes_only_their_posts_and_uploads(store, tmp_path):
+    a_att = store.add_attachment(A, "a.txt", b"from a")
+    store.create_post(author=A, text=f"a1 @{B}", attachments=[a_att["id"]])
+    b_post = store.create_post(author=B, text=f"b1 @{A}")
+    store.create_post(author=A, text="a2")
+    a_pending = store.add_attachment(A, "p.txt", b"a pending")
+    b_pending = store.add_attachment(B, "q.txt", b"b pending")
+    purge = store.purge_author(A)
+    assert purge["scope"] == "author" and purge["author"] == A and purge["through"] == 3
+    assert [p["id"] for p in store.list_posts()] == [b_post["id"]]
+    assert store.list_posts(mention=B) == []
+    assert [p["id"] for p in store.list_posts(mention=A)] == [b_post["id"]]
+    for att in (a_att, a_pending):
+        fails("UNKNOWN_ATTACHMENT", lambda: store.get_attachment(att["id"]), 404)
+        assert not (tmp_path / "blobs" / att["sha256"]).exists()
+    assert store.get_attachment(b_pending["id"])[1].read_bytes() == b"b pending"
+    fails("UNKNOWN_AUTHOR", lambda: store.purge_author("ghost_00000000"), 404)
+    assert store.list_members()[0]["handle"] == A  # membership is kept
+
+
+def test_ban_with_purge(store):
+    store.create_post(author=A, text="a")
+    store.create_post(author=B, text="b")
+    ban = store.ban(A, purge=True)
+    assert ban["purge"]["scope"] == "author" and ban["purge"]["author"] == A
+    assert [p["author"] for p in store.list_posts()] == [B]
+    assert store.list_purges() == [ban["purge"]]
+
+
+def test_purges_are_recorded_in_order(store, monkeypatch):
+    monkeypatch.setattr("services.message_board.store._now", lambda: "2026-10-13T00:00:00Z")
+    store.create_post(author=A, text="a")
+    first = store.purge_author(A)
+    second = store.clear_all()
+    assert first == {"id": 1, "scope": "author", "author": A, "through": 1,
+                     "created_at": "2026-10-13T00:00:00Z"}
+    assert second == {"id": 2, "scope": "all", "through": 1,
+                      "created_at": "2026-10-13T00:00:00Z"}
+    assert store.list_purges() == [first, second]
+    assert store.list_purges(after=1) == [second]
+    assert store.list_purges(after=2) == []
+    fails("INVALID", lambda: store.list_purges(after=-1), 422)
+
+
+def test_members_report_banned_flag(store):
+    assert {m["handle"]: m["banned"] for m in store.list_members()} == {A: False, B: False}
+    store.ban(B)
+    assert {m["handle"]: m["banned"] for m in store.list_members()} == {A: False, B: True}
+    assert store.register_member("new_00000000", "user", key=OTHER_KEY)[0]["banned"] is False
