@@ -257,7 +257,12 @@ def test_admin_panel_and_purge(tmp_path):
     assert admin["storedKey"] == ADMIN_KEY and admin["visible"] is True
     # Author purge through #3 drops only bad's #3; malformed purges are ignored; replay is a no-op.
     assert admin["idsAfterStream"] == [6, 5, 4, 2, 1]
-    assert admin["rows"] == ["main_3f9a1c2e", "bad_00000000"]
+    # The panel starts collapsed; the toggle opens it and remembers that for this tab.
+    assert admin["collapsed"] == {"bodyHidden": True, "text": "Admin ▸", "expanded": "false",
+                                  "saved": None}
+    assert admin["expanded"] == {"bodyHidden": False, "text": "Admin ▾", "expanded": "true",
+                                 "saved": "1"}
+    assert admin["rows"] == ["main_3f9a1c2e", "bad_00000000"]  # board-admin is not listed
     assert admin["idsAfterBan"] == [6, 5, 2, 1]
     assert admin["unbanShown"] is True and admin["banShownAgain"] is True
     assert admin["clearDisabledInFlight"] is True
@@ -266,6 +271,8 @@ def test_admin_panel_and_purge(tmp_path):
     requests = [(item["path"], item["method"], item.get("body")) for item in admin["adminRequests"]]
     assert requests == [
         ("/admin", "GET", None),
+        ("/admin/posts", "POST", {"text": "hello @main_3f9a1c2e", "reply_to": None}),
+        ("/admin", "GET", None),  # the heartbeat keeps @board-admin online
         ("/admin/bans", "POST", {"handle": "bad_00000000", "purge": True}),
         ("/admin/bans/bad_00000000", "DELETE", None),
         ("/admin/clear", "POST", None),
@@ -281,6 +288,28 @@ def test_admin_panel_and_purge(tmp_path):
     denied = _harness("admin-denied", tmp_path)
     assert denied["admin"]["storedKey"] is None and denied["admin"]["visible"] is False
     assert denied["admin"]["hash"] == ""
+    assert denied["admin"]["identity"] == ["Set name"]  # back to normal user mode
+
+
+def test_admin_tab_posts_as_board_admin(tmp_path):
+    admin = _harness("admin", tmp_path)["admin"]
+    assert admin["identity"] == ["posting as @board-admin"] and admin["identityFormHidden"]
+    assert admin["attachDisabled"] is True and admin["fileChips"] == 0  # paste/drop ignored
+    assert admin["composerCleared"] is True
+    posts = [item for item in admin["adminRequests"] if item["path"] == "/admin/posts"]
+    assert len(posts) == 1 and posts[0]["adminKey"] == ADMIN_KEY
+    assert posts[0]["contentType"] == "application/json" and posts[0]["memberKey"] is None
+    # The saved user identity is neither registered, used for posting, nor rewritten.
+    assert admin["userRequests"] == [] and admin["userWrites"] == 0
+
+
+def test_unverified_admin_key_blocks_send_then_falls_back_when_unavailable(tmp_path):
+    admin = _harness("admin-unavailable", tmp_path)["admin"]
+    assert admin["pending"] == {"identity": ["checking admin…"], "sendDisabled": True,
+                                "live": "1"}
+    # 503 ADMIN_UNAVAILABLE: drop the key and post as a normal user.
+    assert admin["storedKey"] is None and admin["visible"] is False
+    assert admin["identity"] == ["Set name"] and admin["sendDisabled"] is False
 
 
 @pytest.mark.parametrize("scenario", ["attach", "compose"])

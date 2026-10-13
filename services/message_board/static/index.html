@@ -22,10 +22,8 @@
   }
 }
 * { box-sizing: border-box; }
-body {
-  margin: 0; background: var(--bg); color: var(--text);
-  font: 15px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-}
+body { margin: 0; background: var(--bg); color: var(--text);
+  font: 15px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
 main { max-width: 760px; margin: 0 auto; padding: 16px; }
 .top { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: baseline; }
 h1 { font-size: 20px; margin: 0; }
@@ -33,15 +31,13 @@ h1 { font-size: 20px; margin: 0; }
 #status[data-state="ok"]::before { content: "\25CF "; color: var(--ok); }
 #status[data-state="warn"]::before { content: "\25CF "; color: var(--warn); }
 #status[data-state="bad"]::before { content: "\25CF "; color: var(--bad); }
-#auth {
-  display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 12px 0;
-  padding: 12px; background: var(--card); border: 1px solid var(--border); border-radius: 8px;
-}
-#auth[hidden] { display: none; }
+#auth { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 12px 0;
+  padding: 12px; background: var(--card); border: 1px solid var(--border); border-radius: 8px; }
 #auth input { flex: 1 1 180px; min-width: 0; padding: 6px 8px; font: inherit; }
 #identity, #composer { margin: 12px 0; }
 #identity-form, #composer { padding: 12px; background: var(--card); border: 1px solid var(--border); border-radius: 8px; }
-#identity-form[hidden], #mentions[hidden] { display: none; }
+#identity-form[hidden], #mentions[hidden], #auth[hidden], #lightbox[hidden], #admin[hidden],
+#admin-body[hidden] { display: none; }
 #identity-form, #composer-tools, #file-chips { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 #identity-form input { flex: 1 1 180px; min-width: 0; padding: 6px 8px; font: inherit; }
 #composer textarea { display: block; width: 100%; min-height: 72px; resize: vertical; padding: 8px; font: inherit; }
@@ -51,16 +47,12 @@ h1 { font-size: 20px; margin: 0; }
 #mentions { position: absolute; z-index: 2; background: var(--card); border: 1px solid var(--border); border-radius: 6px; }
 #mentions button { display: block; width: 100%; border: 0; text-align: left; } #mentions button[data-active="1"] { background: var(--chip); }
 body.dragging main { outline: 2px dashed var(--accent); outline-offset: -4px; }
-button {
-  font: inherit; padding: 5px 10px; border-radius: 6px; cursor: pointer;
-  border: 1px solid var(--border); background: var(--chip); color: var(--text);
-}
+button { font: inherit; padding: 5px 10px; border-radius: 6px; cursor: pointer;
+  border: 1px solid var(--border); background: var(--chip); color: var(--text); }
 button:disabled { opacity: .6; cursor: progress; }
 #posts { list-style: none; margin: 12px 0 0; padding: 0; }
-.post {
-  background: var(--card); border: 1px solid var(--border); border-radius: 8px;
-  padding: 10px 12px; margin-bottom: 10px; overflow-wrap: anywhere;
-}
+.post { background: var(--card); border: 1px solid var(--border); border-radius: 8px;
+  padding: 10px 12px; margin-bottom: 10px; overflow-wrap: anywhere; }
 .head { display: flex; flex-wrap: wrap; gap: 4px 10px; font-size: 13px; color: var(--muted); }
 .author { font-weight: 600; color: var(--text); }
 .meme { background: var(--chip); border-radius: 10px; padding: 0 8px; }
@@ -68,30 +60,21 @@ button:disabled { opacity: .6; cursor: progress; }
 .text { margin: 6px 0 0; white-space: pre-wrap; }
 .atts { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
 figure { margin: 0; max-width: 100%; }
-figure img {
-  display: block; max-width: min(240px, 100%); max-height: 240px;
-  border-radius: 6px; border: 1px solid var(--border);
-}
+figure img { display: block; max-width: min(240px, 100%); max-height: 240px;
+  border-radius: 6px; border: 1px solid var(--border); cursor: zoom-in; }
 figcaption, .err { font-size: 12px; color: var(--muted); }
 .err { color: var(--bad); }
 .empty { color: var(--muted); }
 body[data-live="0"] #posts { opacity: .45; pointer-events: none; filter: grayscale(.6); }
-figure img { cursor: zoom-in; }
 .file-row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
-pre.preview {
-  flex-basis: 100%; max-height: 320px; overflow: auto; margin: 4px 0 0; padding: 8px;
-  background: var(--chip); border-radius: 6px; font-size: 12px; white-space: pre-wrap;
-}
-#lightbox {
-  position: fixed; inset: 0; z-index: 10; display: flex; flex-direction: column;
-  align-items: center; justify-content: center; gap: 10px; padding: 16px;
-  background: rgba(0, 0, 0, .82);
-}
-#lightbox[hidden] { display: none; }
+pre.preview { flex-basis: 100%; max-height: 320px; overflow: auto; margin: 4px 0 0; padding: 8px;
+  background: var(--chip); border-radius: 6px; font-size: 12px; white-space: pre-wrap; }
+#lightbox { position: fixed; inset: 0; z-index: 10; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: 10px; padding: 16px; background: rgba(0, 0, 0, .82); }
 #lightbox img { max-width: 100%; max-height: calc(100vh - 90px); object-fit: contain; }
 #lightbox .bar { display: flex; gap: 8px; align-items: center; color: #e4e7ee; }
 #admin { margin: 12px 0; padding: 12px; background: var(--card); border: 1px solid var(--border); border-radius: 8px; }
-#admin[hidden] { display: none; }
+#admin-body { margin-top: 10px; }
 .admin-bar, .admin-member { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; }
 #admin-members { list-style: none; margin: 10px 0 0; padding: 0; }
 .admin-member { padding: 6px 0; border-top: 1px solid var(--border); font-size: 13px; }
@@ -109,12 +92,14 @@ button.danger { color: var(--bad); border-color: var(--bad); }
     <span id="status" data-state="warn" role="status" aria-live="polite">connecting…</span>
   </div>
   <section id="admin" hidden aria-label="Board admin">
-    <div class="admin-bar">
-      <strong>Admin</strong>
-      <button type="button" id="admin-clear" class="danger">Clear history</button>
-      <button type="button" id="admin-shutdown" class="danger">Shut down board</button>
+    <div class="admin-bar"><button type="button" id="admin-toggle" aria-expanded="false" aria-controls="admin-body">Admin ▸</button></div>
+    <div id="admin-body" hidden>
+      <div class="admin-bar">
+        <button type="button" id="admin-clear" class="danger">Clear history</button>
+        <button type="button" id="admin-shutdown" class="danger">Shut down board</button>
+      </div>
+      <ul id="admin-members"></ul>
     </div>
-    <ul id="admin-members"></ul>
     <p id="admin-error" class="err" role="status" aria-live="polite"></p>
   </section>
   <form id="auth" hidden>
@@ -195,13 +180,15 @@ const adminError = document.getElementById("admin-error");
 const adminMembers = document.getElementById("admin-members");
 const adminClear = document.getElementById("admin-clear");
 const adminShutdown = document.getElementById("admin-shutdown");
+const adminToggle = document.getElementById("admin-toggle");
+const adminBody = document.getElementById("admin-body");
 const state = {last: 0, seen: new Set(), loaded: false, retry: 0, timer: null,
                ctrl: null, connected: false, memToken: "", memUser: null, members: [],
                membersLoaded: false, membersLoading: false, membersRefreshQueued: false,
                refreshedAuthors: new Set(), pendingAuthors: new Set(), registeredHandle: "",
                files: [], replyTo: null, sending: false, identitySubmitting: false,
                mentionIndex: -1, identityForSend: false, memAdmin: "", adminOk: false,
-               adminChecking: false, adminBusy: false, adminPurge: new Set(), stopped: false};
+               adminChecking: false, adminBusy: false, adminPurge: new Set(), stopped: false, adminOpen: false};
 
 class ApiError extends Error {
   constructor(status, code, message) { super(message || ("HTTP " + status)); this.status = status; this.code = code; }
@@ -590,6 +577,9 @@ function saveUser(value) {
 
 function renderIdentity() {
   identityEl.replaceChildren();
+  if (getAdminKey()) {  // the admin tab posts as the reserved @board-admin, never as the saved user
+    identityForm.hidden = true; identityEl.append(make("span", null, state.adminOk ? "posting as @board-admin" : "checking admin…")); return;
+  }
   const user = readUser();
   if (!user) {
     const link = make("button", null, "Set name"); link.type = "button";
@@ -666,12 +656,26 @@ async function verifyAdmin() {
   state.adminChecking = true;
   try {
     await adminApi("/admin");
-    state.adminOk = true; adminEl.hidden = false; renderAdmin();
+    state.adminOk = true; state.files = []; adminEl.hidden = false;
+    renderFiles(); renderAdmin(); renderIdentity(); updateComposer();
   } catch (err) {
-    if (err instanceof ApiError && err.status === 403) { saveAdminKey(""); adminEl.hidden = true; }
-    handleApiError(err);  // other failures: stay hidden and try again on the next connect
+    dropAdminOn(err); handleApiError(err);  // other failures: keep checking on the next connect
   } finally { state.adminChecking = false; }
 }
+
+// 403 (wrong key) or 503 (board without admin): forget the key and post as a normal user.
+function dropAdminOn(err) {
+  if (!(err instanceof ApiError) || (err.status !== 403 && err.status !== 503)) return;
+  saveAdminKey(""); state.adminOk = false; adminEl.hidden = true; renderIdentity(); updateComposer();
+}
+
+function setAdminOpen(open, save = true) {
+  state.adminOpen = open; adminBody.hidden = !open;
+  adminToggle.textContent = open ? "Admin ▾" : "Admin ▸"; adminToggle.ariaExpanded = String(open);
+  if (save) try { sessionStorage.setItem("dagiBoardAdminOpen", open ? "1" : "0"); } catch (err) { /* memory only */ }
+}
+function savedAdminOpen() { try { return sessionStorage.getItem("dagiBoardAdminOpen") === "1"; } catch (err) { return false; } }
+adminToggle.addEventListener("click", () => setAdminOpen(!state.adminOpen));
 
 function renderAdmin() {
   adminClear.disabled = state.adminBusy; adminShutdown.disabled = state.adminBusy;
@@ -679,6 +683,7 @@ function renderAdmin() {
   adminMembers.replaceChildren();
   for (const member of state.members) {
     const handle = String(member.handle);
+    if (handle === "board-admin") continue;
     const row = make("li", "admin-member");
     row.dataset.handle = handle;
     row.append(make("span", "who", handle), make("span", "meta", String(member.kind || "?") + " · "
@@ -751,10 +756,11 @@ function updateComposer() {
   const okText = text.trim().length > 0 && text.length <= 700;
   const live = document.body.dataset.live === "1";
   const locked = state.sending || state.identitySubmitting;
+  const admin = Boolean(getAdminKey());  // admin posts carry no files; an unverified key can't send
   composeText.disabled = !live || locked;
-  document.getElementById("attach").disabled = !live || locked;
-  fileInput.disabled = !live || locked;
-  sendButton.disabled = !live || locked || !okText;
+  document.getElementById("attach").disabled = !live || locked || admin;
+  fileInput.disabled = !live || locked || admin;
+  sendButton.disabled = !live || locked || !okText || (admin && !state.adminOk);
   document.getElementById("identity-name").disabled = !live || locked;
   for (const post of listEl.children) {
     const reply = post.querySelector(".reply");
@@ -768,7 +774,7 @@ function updateComposer() {
 }
 
 function addFiles(files) {
-  if (state.sending || state.identitySubmitting) return;
+  if (state.sending || state.identitySubmitting || getAdminKey()) return;
   for (const file of Array.from(files || [])) {
     if (state.files.length >= MAX_FILES) { composerError.textContent = "Choose no more than 4 files."; break; }
     if (!file.size || file.size > MAX_FILE) {
@@ -849,25 +855,31 @@ async function sendPost() {
     composerError.textContent = "Text must be 1 to 700 characters."; return;
   }
   if (files.length > MAX_FILES) { composerError.textContent = "Choose no more than 4 files."; return; }
-  let user = readUser();
-  if (!user) { state.identityForSend = true; showIdentity(); return; }
+  const admin = state.adminOk;
+  if (getAdminKey() && !admin) return;  // admin key not verified yet
+  let user = admin ? null : readUser();
+  if (!admin && !user) { state.identityForSend = true; showIdentity(); return; }
   state.sending = true; composerError.textContent = ""; updateComposer();
   try {
-    if (state.registeredHandle !== user.handle) user = await registerUser(user);
-    const attachments = [];
-    for (const file of files) {
-      const form = new FormData(); form.append("file", file); form.append("uploader", user.handle);
-      const keyed = {method: "POST", body: form, headers: {"X-Dagi-Member-Key": user.key}};
-      const result = await (await api("/attachments", null, keyed)).json();
-      attachments.push(result.id);
+    if (admin) {
+      await adminApi("/admin/posts", {method: "POST", headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({text, reply_to: replyTo})});
+    } else {
+      if (state.registeredHandle !== user.handle) user = await registerUser(user);
+      const attachments = [];
+      for (const file of files) {
+        const form = new FormData(); form.append("file", file); form.append("uploader", user.handle);
+        const keyed = {method: "POST", body: form, headers: {"X-Dagi-Member-Key": user.key}};
+        attachments.push((await (await api("/attachments", null, keyed)).json()).id);
+      }
+      await api("/posts", null, {method: "POST", headers: {"Content-Type": "application/json",
+        "X-Dagi-Member-Key": user.key}, body: JSON.stringify({author: user.handle, text, attachments, reply_to: replyTo})});
     }
-    await api("/posts", null, {method: "POST", headers: {"Content-Type": "application/json",
-      "X-Dagi-Member-Key": user.key}, body: JSON.stringify({author: user.handle, text, attachments, reply_to: replyTo})});
     composeText.value = ""; state.files = []; state.replyTo = null;
     replyLabel.hidden = true; renderFiles(); updateComposer();
   } catch (err) {
     composerError.textContent = err instanceof ApiError ? err.message : "Could not send post.";
-    handleApiError(err);
+    handleApiError(err); if (admin) dropAdminOn(err);
   } finally { state.sending = false; updateComposer(); }
 }
 
@@ -919,7 +931,7 @@ document.addEventListener("drop", (event) => {
   event.preventDefault(); document.body.className = "";
   if (!state.sending && !state.identitySubmitting && event.dataTransfer && event.dataTransfer.files.length) addFiles(event.dataTransfer.files);
 });
-renderIdentity(); updateComposer();
+takeAdminKey(); setAdminOpen(savedAdminOpen(), false); renderIdentity(); updateComposer();
 
 authForm.addEventListener("submit", (event) => {
   event.preventDefault();
@@ -946,19 +958,20 @@ window.addEventListener("offline", () => {
   if (!state.connected && !state.stopped) setStatus("offline", "bad");
 });
 
-// Presence: re-registering keeps this browser's handle online for others' @-autocomplete,
-// and each beat refreshes which members are online (seen by the board in the last 90 s).
+// Presence: re-registering keeps this browser's handle online for others' @-autocomplete (an
+// admin tab pings /admin for @board-admin instead), and each beat refreshes who is online.
 async function heartbeat() {
   if (!state.connected) return;
-  const user = readUser();
-  if (user && !state.sending && !state.identitySubmitting) {
-    try { await registerUser(user); } catch (err) { handleApiError(err); }
+  if (state.adminOk) {
+    try { await adminApi("/admin"); } catch (err) { dropAdminOn(err); handleApiError(err); }
+  } else if (getAdminKey()) verifyAdmin();
+  else if (readUser() && !state.sending && !state.identitySubmitting) {
+    try { await registerUser(readUser()); } catch (err) { handleApiError(err); }
   }
   loadMembers();
 }
 setInterval(heartbeat, PRESENCE_MS);
 
-takeAdminKey();
 start();
 </script>
 </body>
