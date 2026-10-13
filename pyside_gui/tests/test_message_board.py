@@ -348,3 +348,76 @@ def test_clear_posts_keeps_new_posts_at_the_top(qtbot):
     view.add_post(_post(2, text="short"))
     qtbot.wait(50)
     assert view._cards[2]().y() < 50
+
+
+def _card_ids(view) -> list[int]:
+    ids = []
+    for index in range(view._posts_layout.count()):
+        widget = view._posts_layout.itemAt(index).widget()
+        if widget is not None:
+            ids.append(next(pid for pid, ref in view._cards.items() if ref() is widget))
+    return ids
+
+
+def _feed(qtbot):
+    view = _view(qtbot)
+    for post_id, author in ((1, "a"), (2, "b"), (3, "a"), (4, "b"), (5, "a")):
+        view.add_post(_post(post_id, author=author))
+    return view
+
+
+def test_remove_purged_all_drops_cards_through_the_cursor(qtbot):
+    view = _feed(qtbot)
+    removed = [view._cards[pid]() for pid in (1, 2, 3)]
+    view.remove_purged({"id": 1, "scope": "all", "through": 3, "created_at": "t"})
+    assert _card_ids(view) == [5, 4]
+    assert set(view._cards) == {4, 5} and view._seen == {4, 5}
+    qtbot.waitUntil(lambda: not any(isValid(card) for card in removed))
+    view.add_post(_post(6))
+    assert _card_ids(view) == [6, 5, 4]
+
+
+def test_remove_purged_author_drops_only_that_author(qtbot):
+    view = _feed(qtbot)
+    view.remove_purged({"id": 2, "scope": "author", "author": "a", "through": 3})
+    assert _card_ids(view) == [5, 4, 2]
+    assert view._seen == {2, 4, 5}
+    view.remove_purged({"id": 2, "scope": "author", "author": "a", "through": 3})  # replay
+    assert _card_ids(view) == [5, 4, 2]
+
+
+def test_remove_purged_ignores_malformed_payloads(qtbot):
+    view = _feed(qtbot)
+    for purge in (None, [], {"scope": "all"}, {"scope": "all", "through": "5"},
+                  {"scope": "all", "through": True}, {"scope": "all", "through": 5.0},
+                  {"scope": "other", "through": 5},
+                  {"scope": "author", "through": 5},
+                  {"scope": "author", "author": 7, "through": 5}):
+        view.remove_purged(purge)
+    assert _card_ids(view) == [5, 4, 3, 2, 1]
+
+
+def test_remove_purged_tolerates_deleted_cards_closing_and_late_downloads(qtbot, monkeypatch):
+    future = Future()
+    view = _view(qtbot, future)
+    view.add_post(_post(1, attachments=[_attachment()]))
+    view.add_post(_post(2))
+    gone = view._cards[2]()
+    gone.deleteLater()
+    qtbot.waitUntil(lambda: not isValid(gone))
+    calls = _record_card_updates(monkeypatch)
+    view.remove_purged({"scope": "all", "through": 2})
+    assert _card_ids(view) == [] and view._cards == {}
+    future.set_result("x.txt")
+    qtbot.wait(20)
+    assert calls == []
+    view.add_post(_post(3))
+    view.close_downloads()
+    view.remove_purged({"scope": "all", "through": 9})
+    assert 3 in view._cards
+
+
+def test_clear_posts_forgets_authors(qtbot):
+    view = _feed(qtbot)
+    view.clear_posts()
+    assert view._authors == {}

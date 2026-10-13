@@ -73,7 +73,7 @@ def test_snapshot_starts_stream_after_maximum_id(qtbot, monkeypatch):
     created = []
 
     class Listener:
-        def __init__(self, client, after, on_post, on_status):
+        def __init__(self, client, after, on_post, on_status, on_purge=None):
             created.append((client, after, on_post, on_status))
 
         def start(self):
@@ -102,7 +102,7 @@ def test_close_during_listener_construction_prevents_late_start(qtbot, monkeypat
     started = threading.Event()
 
     class Listener:
-        def __init__(self, *_args):
+        def __init__(self, *_args, **_kwargs):
             constructing.set()
             release.wait(2)
 
@@ -143,7 +143,7 @@ def test_close_waits_off_thread_for_active_work_before_client_close(qtbot):
 class _Listener:
     created: list = []
 
-    def __init__(self, client, after, on_post, on_status):
+    def __init__(self, client, after, on_post, on_status, on_purge=None):
         _Listener.created.append((client, after))
 
     def start(self):
@@ -342,7 +342,7 @@ def _switchable(qtbot, monkeypatch, tmp_path, client_factory):
     listeners = []
 
     class Listener:
-        def __init__(self, client, after, on_post, on_status):
+        def __init__(self, client, after, on_post, on_status, on_purge=None):
             self.client, self.after = client, after
             self.stopped = False
             self.joined = False
@@ -634,3 +634,38 @@ def test_heartbeat_re_registers_every_open_agent_with_its_key(qtbot):
     controller._presence_timer.start()
     controller.close()
     assert not controller._presence_timer.isActive()
+
+
+def test_stream_purges_reach_the_view_only_for_the_current_board(qtbot, monkeypatch):
+    window = _window(qtbot)
+    controller = BoardController(window)
+    controller.runtime = SimpleNamespace(client=FakeClient([]))
+    created = []
+
+    class Listener:
+        def __init__(self, client, after, on_post, on_status, on_purge=None):
+            created.append(on_purge)
+
+        def start(self):
+            pass
+
+        def stop(self):
+            pass
+
+        def join(self):
+            pass
+
+    monkeypatch.setattr("pyside_gui.board_controller.StreamListener", Listener)
+    view = window._left_sidebar.board_view
+    view.add_post({"id": 1, "author": "a", "text": "x"})
+    view.add_post({"id": 2, "author": "b", "text": "y"})
+    controller._load_snapshot()
+    on_purge = created[0]
+    assert on_purge is not None
+    on_purge({"id": 1, "scope": "author", "author": "a", "through": 2})
+    qtbot.waitUntil(lambda: set(view._cards) == {2})
+    controller._generation += 1  # a board switch makes this listener stale
+    on_purge({"id": 2, "scope": "all", "through": 2})
+    qtbot.wait(20)
+    assert set(view._cards) == {2}
+    controller.close()

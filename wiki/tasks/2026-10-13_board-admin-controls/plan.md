@@ -206,7 +206,7 @@ purged posts for every viewer.
 
 - [ ] Steps 1–5 as above. Run `tests/message_board/test_viewer.py` (needs `node` on PATH).
 
-### Subtask 5: Desktop GUI feed — honour purges
+### Subtask 5: Desktop GUI feed — honour purges ✅ Complete
 
 **Goal:** The PySide board feed drops purged posts.
 **Requirements:**
@@ -249,7 +249,7 @@ purged posts for every viewer.
 - **Task folder:** `wiki/tasks/2026-10-13_board-admin-controls/`
 
 ## Overall Status
-In Progress — Subtasks 1-4 complete
+In Progress — Subtasks 1-5 complete
 
 ## Notes
 - `TestClient` peer is `testclient` unless `client=("127.0.0.1", port)` is passed — admin tests
@@ -271,6 +271,7 @@ None.
 - **Subtask 2, attempt 1:** review PASS; applied `StrictBool` for `BanInput.purge` and 404 status asserts. Known: purge table replays in full on every stream connect (fine at expected volumes). Subtask 3 must keep the tokenless GUI temp board from exposing an admin key.
 - **Subtask 3, attempt 1:** review PASS, no changes. stdout deliberately prints the plain URL (key must never be printed). GUI temp boards also carry an admin key in their protected record; harmless (never opened).
 - **Subtask 4, attempt 1:** review PASS; strengthened malformed-purge harness cases (non-integer `through`, string `through` with author, non-string author). Accepted deviations: page line cap 820->980; confirm only for clear, shutdown and ban-with-purge; returned purge applied locally at once; page stops reconnecting after a successful admin shutdown. Cosmetic: member rows re-render every heartbeat (focus lost); admin panel not dimmed while offline.
+- **Subtask 5, attempt 1:** review PASS, no changes. Purges are not counted as `delivered` (replay on every connect would otherwise reset backoff). Follow-up: inline meme copies in agent chats are not removed by purges.
 - **Environment:** RAM ~85-87% trips `tests/conftest.py` RAM watchdog; suite verified with `--noconftest` (163 passed, 2 skipped). Re-run normally when RAM is lower.
 
 ## Verification

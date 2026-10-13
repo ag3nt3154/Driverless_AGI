@@ -64,6 +64,7 @@ class BoardController(QObject):
         bridge.board_post.connect(self._on_post)
         bridge.board_status.connect(self._on_status)
         view = window._left_sidebar.board_view
+        bridge.board_purge.connect(view.remove_purged)
         view.open_file_requested.connect(lambda path: window._left_sidebar.open_file(path, None))
         view.connect_requested.connect(self.switch)
 
@@ -310,6 +311,7 @@ class BoardController(QObject):
             runtime.client, after,
             lambda post: current() and bridge.board_post.emit(post),
             lambda text: current() and bridge.board_status.emit(text),
+            on_purge=lambda purge: current() and bridge.board_purge.emit(purge),
         )
         with self._listener_lock:
             if self.closing or not current():
