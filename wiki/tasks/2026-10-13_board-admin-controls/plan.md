@@ -322,7 +322,7 @@ purged posts for every viewer.
 - **Task folder:** `wiki/tasks/2026-10-13_board-admin-controls/`
 
 ## Overall Status
-Verification — Subtasks 1-9 complete
+Complete — Subtasks 1-9 committed; integrated verification passed
 
 ## Notes
 - `TestClient` peer is `testclient` unless `client=("127.0.0.1", port)` is passed — admin tests
@@ -362,5 +362,9 @@ None.
 - Live smoke (scratch port 8799): admin 403 without/with wrong key; ban+purge -> member `BANNED`, posts gone; unban 204; clear -> 0 posts; stream starts with `event: purge`; `/admin/shutdown` -> process exit 0.
 - Browser pane: `#admin=` stripped from URL, panel shown, ban+purge via UI removed the post, Shut down -> "board stopped".
 
+## Verification Results — amendment (2026-10-13)
+- Board suites: 315 passed, 2 skipped. `pyside_gui/tests`: 375 passed (conftest on, RAM OK).
+- Browser pane, scratch board: admin tab shows collapsed "Admin ▸", "posting as @board-admin", Attach disabled; reply to #3 posted as `board-admin` (#4 ↩ #3); expanded panel omits board-admin; a plain-URL tab shows no panel, "Set name", Attach enabled.
+
 ## Next Action
-Get the amendment (Subtasks 7-9) approved, commit it, then deliver Subtask 7.
+Ask the Admiral whether to merge `task/board-admin-controls` into `main`.
