@@ -62,6 +62,64 @@ def test_shutdown_requires_actual_peer_capability_instance_and_bearer(board):
         assert client.post("/shutdown", json=body).json()["code"] == "STOP_UNAVAILABLE"
 
 
+ADMIN_KEY = "z" * 43
+
+
+def test_admin_requires_bearer_key_and_loopback_peer(board):
+    calls = []
+    control = ShutdownControl(INSTANCE, CAPABILITY, lambda: calls.append("exit"),
+                              admin_key=ADMIN_KEY)
+    app = create_app(board, "bearer", shutdown=control)
+    good = {"Authorization": "Bearer bearer", "X-Dagi-Admin-Key": ADMIN_KEY}
+    routes = (("GET", "/admin"), ("POST", "/admin/clear"), ("GET", "/admin/bans"),
+              ("POST", "/admin/shutdown"), ("DELETE", "/admin/bans/someone"))
+    with TestClient(app, client=("127.0.0.1", 123)) as client:
+        for method, path in routes:
+            for headers in ({"X-Dagi-Admin-Key": ADMIN_KEY},
+                            {**good, "Authorization": "Bearer wrong"}):
+                assert client.request(method, path, headers=headers).status_code == 401
+            for key in ("", "wrong", CAPABILITY):
+                result = client.request(method, path, headers={**good, "X-Dagi-Admin-Key": key})
+                assert result.status_code == 403 and result.json()["code"] == "FORBIDDEN"
+        result = client.post("/admin/bans", json={"handle": "x", "purge": False},
+                             headers={**good, "X-Dagi-Admin-Key": "wrong"})
+        assert result.status_code == 403
+        assert client.get("/admin", headers=good).json() == {"admin": True}
+    with TestClient(app, client=("192.0.2.1", 123)) as client:
+        for method, path in routes:
+            result = client.request(method, path,
+                                    headers={**good, "X-Forwarded-For": "127.0.0.1"})
+            assert result.status_code == 403 and result.json()["code"] == "FORBIDDEN"
+    with TestClient(app) as client:  # peer "testclient" is not an IP
+        assert client.get("/admin", headers=good).status_code == 403
+    assert calls == []
+
+
+def test_admin_unavailable_without_control(board):
+    headers = {"X-Dagi-Admin-Key": ADMIN_KEY}
+    no_key = ShutdownControl(INSTANCE, CAPABILITY, lambda: None)
+    for app in (create_app(board), create_app(board, shutdown=no_key)):
+        with TestClient(app, client=("127.0.0.1", 123)) as client:
+            for method, path in (("GET", "/admin"), ("POST", "/admin/clear"),
+                                 ("POST", "/admin/shutdown")):
+                result = client.request(method, path, headers=headers)
+                assert result.status_code == 503
+                assert result.json()["code"] == "ADMIN_UNAVAILABLE"
+            # Even an empty admin key must not unlock a control without one.
+            result = client.get("/admin", headers={"X-Dagi-Admin-Key": ""})
+            assert result.json()["code"] == "ADMIN_UNAVAILABLE"
+
+
+def test_admin_shutdown_runs_callback(board):
+    calls = []
+    control = ShutdownControl(INSTANCE, CAPABILITY, lambda: calls.append("exit"),
+                              admin_key=ADMIN_KEY)
+    with TestClient(create_app(board, shutdown=control), client=("127.0.0.1", 123)) as client:
+        response = client.post("/admin/shutdown", headers={"X-Dagi-Admin-Key": ADMIN_KEY})
+        assert response.status_code == 202 and response.json() == {"status": "stopping"}
+    assert calls == ["exit"]
+
+
 def test_exit_callback_runs_after_response_body(board):
     events = []
     control = ShutdownControl(INSTANCE, CAPABILITY, lambda: events.append("exit"))

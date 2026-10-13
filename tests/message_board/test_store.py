@@ -7,7 +7,7 @@ import pytest
 
 from services.message_board.blobs import sanitize_name, sniff_kind, sniff_mime
 from services.message_board.store import (
-    MAX_ATTACHMENT, BoardStore, StoreError, extract_mentions,
+    ADMIN_HANDLE, MAX_ATTACHMENT, BoardStore, StoreError, extract_mentions,
 )
 
 A, B = "main_3f9a1c2e", "researcher_9b21c0de"
@@ -21,6 +21,11 @@ def store(tmp_path):
     board.register_member(B, "agent", host="pc", key=KEY)
     yield board
     board.close()
+
+
+def members(board):
+    """Registered members, without the reserved ``board-admin`` row every board has."""
+    return [m for m in board.list_members() if m["handle"] != ADMIN_HANDLE]
 
 
 def fails(code, call, status=None):
@@ -41,7 +46,7 @@ def test_member_registration(store, monkeypatch):
     fails("INVALID", lambda: store.register_member("new_00000000", "bot", key=KEY), 422)
     # the key, not the self-reported host, proves ownership; a new host is recorded
     assert store.register_member(A, "agent", host="laptop", key=KEY)[0]["host"] == "laptop"
-    assert [m["handle"] for m in store.list_members()] == [A, B]
+    assert [m["handle"] for m in members(store)] == [A, B]
     assert all("key_hash" not in m for m in store.list_members())
 
 
@@ -52,11 +57,11 @@ def test_members_are_online_only_while_recently_seen(store, monkeypatch):
     store.register_member(A, "agent", host="pc", key=KEY)
     clock[0] = start + timedelta(seconds=60)
     store.register_member(B, "agent", host="pc", key=KEY)  # B's heartbeat; A stays quiet
-    assert {m["handle"]: m["online"] for m in store.list_members()} == {A: True, B: True}
+    assert {m["handle"]: m["online"] for m in members(store)} == {A: True, B: True}
     clock[0] = start + timedelta(seconds=91)
-    assert {m["handle"]: m["online"] for m in store.list_members()} == {A: False, B: True}
+    assert {m["handle"]: m["online"] for m in members(store)} == {A: False, B: True}
     store.create_post(author=A, text="back")  # posting also counts as being seen
-    assert all(m["online"] for m in store.list_members())
+    assert all(m["online"] for m in members(store))
 
 
 @pytest.mark.parametrize("key", [None, "", "short", "k" * 129, "k" * 42 + "!"])
@@ -86,6 +91,28 @@ def test_keyless_member_from_an_old_board_is_claimed_once(tmp_path):
         assert board.register_member(A, "agent", host="pc", key=KEY)[1] is False
         board.authenticate(A, KEY)
         fails("HANDLE_TAKEN", lambda: board.register_member(A, "agent", key=OTHER_KEY), 409)
+        assert board.list_bans() == [] and board.list_purges() == []  # tables added on open
+        board.ban(A)
+        assert members(board)[0]["banned"] is True
+    finally:
+        board.close()
+
+
+def test_banning_a_keyless_member_matches_only_its_handle(tmp_path):
+    path = tmp_path / "board.sqlite3"
+    old = sqlite3.connect(path)
+    old.executescript(
+        "CREATE TABLE members (handle TEXT PRIMARY KEY, display_name TEXT NOT NULL, "
+        "kind TEXT NOT NULL, host TEXT NOT NULL, registered_at TEXT NOT NULL, "
+        "last_seen TEXT NOT NULL);"
+        f"INSERT INTO members VALUES ('{A}','{A}','agent','pc','t','t');")
+    old.close()
+    board = BoardStore(path)
+    try:
+        board.ban(A)  # no key hash to ban: a NULL must never match another member's key
+        fails("BANNED", lambda: board.register_member(A, "agent", key=KEY), 403)
+        board.register_member(B, "agent", key=OTHER_KEY)
+        board.authenticate(B, OTHER_KEY)
     finally:
         board.close()
 
@@ -118,7 +145,7 @@ def test_mentions_and_post_shape(store, monkeypatch):
     assert post == dict(id=1, board="default", author=A, text="x" * 700, mentions=[],
                         meme="m" * 64, reply_to=None, attachments=[], author_kind="agent",
                         created_at="2026-10-09T00:00:00Z")
-    assert store.list_members()[0]["last_seen"] == post["created_at"]
+    assert members(store)[0]["last_seen"] == post["created_at"]
     assert store.create_post(author=B, text="reply", reply_to=1)["reply_to"] == 1
 
 
@@ -262,3 +289,205 @@ def test_write_failure_rolls_back_post_and_claim(store, monkeypatch):
 def test_exact_attachment_limit(store):
     attachment = store.add_attachment(A, "max.bin", b"x" * MAX_ATTACHMENT)
     assert attachment["size"] == MAX_ATTACHMENT
+
+
+def test_ban_blocks_register_post_upload_and_key_reuse(store):
+    att = store.add_attachment(A, "a.txt", b"before ban")["id"]
+    ban = store.ban(A)
+    assert ban["handle"] == A and ban["purge"] is None and ban["created_at"]
+    fails("BANNED", lambda: store.register_member(A, "agent", host="pc", key=KEY), 403)
+    fails("BANNED", lambda: store.authenticate(A, KEY), 403)
+    fails("BANNED", lambda: store.authenticate(A, OTHER_KEY), 403)
+    fails("BANNED", lambda: store.create_post(author=A, text="hi"), 403)
+    fails("BANNED", lambda: store.create_post(author=A, text="hi", attachments=[att]), 403)
+    fails("BANNED", lambda: store.add_attachment(A, "a.txt", b"x"), 403)
+    # B shares A's key in the fixture, and a brand-new handle reusing it is refused too
+    fails("BANNED", lambda: store.register_member("new_00000000", "agent", key=KEY), 403)
+    fails("BANNED", lambda: store.authenticate(B, KEY), 403)  # B already owns the banned key
+    store.register_member("new_00000000", "agent", key=OTHER_KEY)
+    store.unban(A)
+    assert store.register_member(A, "agent", host="pc", key=KEY)[1] is False
+    store.authenticate(A, KEY)
+    store.add_attachment(A, "b.txt", b"after")
+    assert store.create_post(author=A, text="back", attachments=[att])["attachments"]
+    store.register_member("new2_00000000", "agent", key=KEY)
+    assert store.list_bans() == []
+
+
+def test_ban_unknown_member_and_unban_unknown_are_404(store):
+    fails("UNKNOWN_AUTHOR", lambda: store.ban("ghost_00000000"), 404)
+    fails("UNKNOWN_BAN", lambda: store.unban(A), 404)
+    store.ban(A)
+    store.ban(A)  # banning again replaces the ban
+    assert [b["handle"] for b in store.list_bans()] == [A]
+    assert set(store.list_bans()[0]) == {"handle", "created_at"}
+    store.unban(A)
+    fails("UNKNOWN_BAN", lambda: store.unban(A), 404)
+
+
+def test_clear_all_deletes_history_keeps_members_and_ids_increase(store):
+    for i in range(3):
+        store.create_post(author=A, text=f"@{B} {i}")
+    store.ban(B)
+    purge = store.clear_all()
+    assert purge["scope"] == "all" and purge["through"] == 3 and "author" not in purge
+    assert store.list_posts() == [] and store.list_posts(mention=B) == []
+    assert store.latest_id() == 0
+    assert [m["handle"] for m in members(store)] == [A, B]
+    assert [b["handle"] for b in store.list_bans()] == [B]
+    # an empty board still never reports a lower id than clients may hold
+    assert store.clear_all()["through"] == 3
+    assert store.create_post(author=A, text="fresh")["id"] == 4
+
+
+def test_clear_all_removes_only_unreferenced_blobs(store, tmp_path):
+    blobs = tmp_path / "blobs"
+    shared = store.add_attachment(A, "s.txt", b"shared")
+    gone = store.add_attachment(A, "g.txt", b"gone")
+    store.create_post(author=A, text="x", attachments=[shared["id"], gone["id"]])
+    pending = store.add_attachment(B, "p.txt", b"pending")
+    store.clear_all()
+    assert not (blobs / shared["sha256"]).exists() and not (blobs / gone["sha256"]).exists()
+    assert not (blobs / pending["sha256"]).exists()
+    fails("UNKNOWN_ATTACHMENT", lambda: store.get_attachment(pending["id"]), 404)
+    kept = store.add_attachment(A, "k.txt", b"kept")
+    store.create_post(author=A, text="keep", attachments=[kept["id"]])
+    dup = store.add_attachment(B, "d.txt", b"kept")
+    store.create_post(author=B, text="dup", attachments=[dup["id"]])
+    store.purge_author(B)  # B's row goes, A's row still references the same digest
+    assert (blobs / kept["sha256"]).read_bytes() == b"kept"
+    assert store.get_attachment(kept["id"])[1].read_bytes() == b"kept"
+
+
+def test_clear_all_logs_blob_unlink_failure(store, tmp_path, monkeypatch, caplog):
+    att = store.add_attachment(A, "a.txt", b"locked")
+    from pathlib import Path
+
+    def refuse(self, missing_ok=False):
+        raise PermissionError("locked")
+
+    monkeypatch.setattr(Path, "unlink", refuse)
+    assert store.clear_all()["through"] == 0
+    assert att["sha256"] in caplog.text
+    fails("UNKNOWN_ATTACHMENT", lambda: store.get_attachment(att["id"]), 404)
+
+
+def test_purge_author_removes_only_their_posts_and_uploads(store, tmp_path):
+    a_att = store.add_attachment(A, "a.txt", b"from a")
+    store.create_post(author=A, text=f"a1 @{B}", attachments=[a_att["id"]])
+    b_post = store.create_post(author=B, text=f"b1 @{A}")
+    store.create_post(author=A, text="a2")
+    a_pending = store.add_attachment(A, "p.txt", b"a pending")
+    b_pending = store.add_attachment(B, "q.txt", b"b pending")
+    purge = store.purge_author(A)
+    assert purge["scope"] == "author" and purge["author"] == A and purge["through"] == 3
+    assert [p["id"] for p in store.list_posts()] == [b_post["id"]]
+    assert store.list_posts(mention=B) == []
+    assert [p["id"] for p in store.list_posts(mention=A)] == [b_post["id"]]
+    for att in (a_att, a_pending):
+        fails("UNKNOWN_ATTACHMENT", lambda: store.get_attachment(att["id"]), 404)
+        assert not (tmp_path / "blobs" / att["sha256"]).exists()
+    assert store.get_attachment(b_pending["id"])[1].read_bytes() == b"b pending"
+    fails("UNKNOWN_AUTHOR", lambda: store.purge_author("ghost_00000000"), 404)
+    assert members(store)[0]["handle"] == A  # membership is kept
+
+
+def test_ban_with_purge(store):
+    store.create_post(author=A, text="a")
+    store.create_post(author=B, text="b")
+    ban = store.ban(A, purge=True)
+    assert ban["purge"]["scope"] == "author" and ban["purge"]["author"] == A
+    assert [p["author"] for p in store.list_posts()] == [B]
+    assert store.list_purges() == [ban["purge"]]
+
+
+def test_purges_are_recorded_in_order(store, monkeypatch):
+    monkeypatch.setattr("services.message_board.store._now", lambda: "2026-10-13T00:00:00Z")
+    store.create_post(author=A, text="a")
+    first = store.purge_author(A)
+    second = store.clear_all()
+    assert first == {"id": 1, "scope": "author", "author": A, "through": 1,
+                     "created_at": "2026-10-13T00:00:00Z"}
+    assert second == {"id": 2, "scope": "all", "through": 1,
+                      "created_at": "2026-10-13T00:00:00Z"}
+    assert store.list_purges() == [first, second]
+    assert store.list_purges(after=1) == [second]
+    assert store.list_purges(after=2) == []
+    fails("INVALID", lambda: store.list_purges(after=-1), 422)
+
+
+def test_members_report_banned_flag(store):
+    assert {m["handle"]: m["banned"] for m in members(store)} == {A: False, B: False}
+    store.ban(B)
+    assert {m["handle"]: m["banned"] for m in members(store)} == {A: False, B: True}
+    assert store.register_member("new_00000000", "user", key=OTHER_KEY)[0]["banned"] is False
+
+
+def _admin_row(board):
+    return next(m for m in board.list_members() if m["handle"] == ADMIN_HANDLE)
+
+
+def test_board_admin_member_exists_on_a_fresh_board(store):
+    assert ADMIN_HANDLE == "board-admin"
+    admin = _admin_row(store)
+    assert admin["kind"] == "user" and admin["display_name"] == "board-admin"
+    assert admin["host"] == "" and admin["banned"] is False
+    assert [m["handle"] for m in store.list_members()].count(ADMIN_HANDLE) == 1
+
+
+def test_board_admin_member_is_added_to_an_old_board_once(tmp_path):
+    path = tmp_path / "board.sqlite3"
+    old = sqlite3.connect(path)
+    old.executescript(
+        "CREATE TABLE members (handle TEXT PRIMARY KEY, display_name TEXT NOT NULL, "
+        "kind TEXT NOT NULL, host TEXT NOT NULL, registered_at TEXT NOT NULL, "
+        "last_seen TEXT NOT NULL);"
+        f"INSERT INTO members VALUES ('{A}','{A}','agent','pc',"
+        "'2026-01-01T00:00:00Z','2026-01-01T00:00:00Z');")
+    old.close()
+    for _ in range(2):  # reopening must not duplicate or reset the reserved row
+        board = BoardStore(path)
+        try:
+            assert _admin_row(board)["banned"] is False
+            assert sorted(m["handle"] for m in board.list_members()) == [ADMIN_HANDLE, A]
+        finally:
+            board.close()
+
+
+def test_board_admin_cannot_be_registered_or_authenticated(store):
+    fails("INVALID", lambda: store.register_member(ADMIN_HANDLE, "user", key=KEY), 422)
+    for key in (None, "", KEY, OTHER_KEY):
+        fails("FORBIDDEN", lambda: store.authenticate(ADMIN_HANDLE, key), 403)
+
+
+def test_board_admin_cannot_be_banned_or_purged(store):
+    store.create_post(author=ADMIN_HANDLE, text="notice")
+    fails("RESERVED", lambda: store.ban(ADMIN_HANDLE), 422)
+    fails("RESERVED", lambda: store.ban(ADMIN_HANDLE, purge=True), 422)
+    fails("RESERVED", lambda: store.purge_author(ADMIN_HANDLE), 422)
+    assert store.list_bans() == [] and store.list_purges() == []
+    assert [p["author"] for p in store.list_posts()] == [ADMIN_HANDLE]
+
+
+def test_board_admin_posts_and_mentions(store):
+    post = store.create_post(author=ADMIN_HANDLE, text=f"hi @{A}")
+    assert post["author"] == ADMIN_HANDLE and post["author_kind"] == "user"
+    assert post["mentions"] == [A]
+    assert extract_mentions("hi @board-admin") == [ADMIN_HANDLE]
+    assert extract_mentions("@board-admin, thanks") == [ADMIN_HANDLE]
+    assert extract_mentions("@board-admins @board-admin-x @board-admin_1") == []
+    assert extract_mentions(f"@{A} @board-admin @{A}") == [A, ADMIN_HANDLE]
+    asked = store.create_post(author=A, text="@board-admin please clear")
+    assert asked["mentions"] == [ADMIN_HANDLE]
+    assert [p["id"] for p in store.list_posts(mention=ADMIN_HANDLE)] == [asked["id"]]
+
+
+def test_touch_marks_a_member_seen(store, monkeypatch):
+    start = datetime(2100, 1, 1, tzinfo=timezone.utc)
+    clock = [start]
+    monkeypatch.setattr("services.message_board.store._clock", lambda: clock[0])
+    clock[0] = start + timedelta(days=1)
+    assert _admin_row(store)["online"] is False
+    store.touch(ADMIN_HANDLE)
+    assert _admin_row(store)["online"] is True
+    assert _admin_row(store)["last_seen"] == "2100-01-02T00:00:00Z"

@@ -96,6 +96,7 @@ class MessageBoardView(QWidget):
         super().__init__()
         self._seen: set[int] = set()
         self._cards: dict[int, weakref.ReferenceType] = {}
+        self._authors: dict[int, str] = {}  # post id -> author, for author-scoped purges
         self._fetch = None
         self._closing = False
         self._memes = _scan_memes(DAGI_ROOT / ".dagi" / "emotes" / "memes")
@@ -215,6 +216,7 @@ class MessageBoardView(QWidget):
                 item.widget().deleteLater()
         self._seen.clear()
         self._cards.clear()
+        self._authors.clear()
 
     def set_status(self, text: str) -> None:
         self._status.setText(str(text))
@@ -245,6 +247,7 @@ class MessageBoardView(QWidget):
         self._seen.add(post_id)
         card.open_file_requested.connect(self.open_file_requested)
         self._cards[post_id] = weakref.ref(card)
+        self._authors[post_id] = post["author"]
         self._posts_layout.insertWidget(0, card)
         self._scroll.verticalScrollBar().setValue(0)
         if self._fetch is not None:
@@ -256,6 +259,34 @@ class MessageBoardView(QWidget):
                     if view is not None and isValid(view) and not view._closing:
                         view._future_finished(pid, att, done)
                 future.add_done_callback(complete)
+
+    @Slot(object)
+    def remove_purged(self, purge) -> None:
+        """Drop cards a board purge deleted: ``id <= through``, and the author for scope author.
+
+        Purges are replayed on every stream connect, so this must be idempotent; malformed
+        payloads are ignored. Late attachment downloads for removed posts find no card and
+        stay silent.
+        """
+        if self._closing or not isinstance(purge, dict):
+            return
+        scope, through = purge.get("scope"), purge.get("through")
+        if scope not in ("all", "author") or type(through) is not int:
+            return
+        author = purge.get("author")
+        if scope == "author" and not isinstance(author, str):
+            return
+        doomed = [
+            post_id for post_id in self._seen
+            if post_id <= through and (scope == "all" or self._authors.get(post_id) == author)
+        ]
+        for post_id in doomed:
+            self._seen.discard(post_id)
+            self._authors.pop(post_id, None)
+            card = self._cards.pop(post_id, lambda: None)()
+            if card is not None and isValid(card):
+                self._posts_layout.removeWidget(card)
+                card.deleteLater()
 
     def _future_finished(self, post_id: int, attachment: dict, future) -> None:
         try:

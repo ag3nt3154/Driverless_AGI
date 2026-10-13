@@ -53,6 +53,7 @@ class AgentBridge(QObject):
     continue_injected = Signal(int, int)   # cur, max
     subagent_event = Signal(str, str)      # type, json line
     board_post = Signal(object)
+    board_purge = Signal(object)           # purge payload from the board stream
     board_status = Signal(str)
     board_ready = Signal(object)
     show_file_requested = Signal(str, object)             # path, line (int | None)

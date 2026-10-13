@@ -430,17 +430,21 @@ def start_board(url: str, token: str | None, *, state_dir: Path, bind: str = DEF
                 temp.close()
 
 
-def _decode_event(event: str | None, data: list[str]) -> dict | None:
-    if event != "post" or not data:
+_SSE_EVENTS = ("post", "purge")
+
+
+def _decode_event(event: str | None, data: list[str]) -> tuple[str, dict] | None:
+    if event not in _SSE_EVENTS or not data:
         return None
     try:
         value = json.loads("\n".join(data))
     except (json.JSONDecodeError, TypeError):
         return None
-    return value if isinstance(value, dict) else None
+    return (event, value) if isinstance(value, dict) else None
 
 
-def parse_sse(lines):
+def parse_sse_events(lines):
+    """Yield ``(event, payload)`` for each well-formed ``post`` or ``purge`` SSE event."""
     event = None
     data = []
     for raw_line in lines:
@@ -461,13 +465,22 @@ def parse_sse(lines):
         yield value
 
 
+def parse_sse(lines):
+    """Yield only the ``post`` payloads of an SSE line stream."""
+    for event, payload in parse_sse_events(lines):
+        if event == "post":
+            yield payload
+
+
 class StreamListener(threading.Thread):
-    def __init__(self, client, after: int, on_post, on_status, *, backoff=_BACKOFF) -> None:
+    def __init__(self, client, after: int, on_post, on_status, *, backoff=_BACKOFF,
+                 on_purge=None) -> None:
         super().__init__(daemon=True)
         self.client = client
         self.after = after
         self.on_post = on_post
         self.on_status = on_status
+        self.on_purge = on_purge
         self.backoff = tuple(backoff) or (30.0,)
         self._stop_event = threading.Event()
         self._active = None
@@ -492,6 +505,12 @@ class StreamListener(threading.Thread):
             self._active = None
 
     def _listen_once(self) -> bool:
+        """Consume one connection; True when it delivered a new post.
+
+        Purges are forwarded but never count as delivery and never move ``after``: the board
+        replays every purge on each connect, so counting them would reset the reconnect
+        backoff on every flapping connection.
+        """
         delivered = False
         with self.client.stream(self.after) as lines:
             if not self._activate(lines):
@@ -501,9 +520,13 @@ class StreamListener(threading.Thread):
                 lines.close()
                 return delivered
             self.on_status("connected")
-            for post in parse_sse(lines):
+            for event, post in parse_sse_events(lines):
                 if self._stop_event.is_set():
                     return delivered
+                if event == "purge":
+                    if self.on_purge is not None:
+                        self.on_purge(post)
+                    continue
                 post_id = post.get("id")
                 if type(post_id) is int and post_id > self.after:
                     self.after = post_id
