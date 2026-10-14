@@ -77,8 +77,8 @@ body {
 
 .empty-pet {
     border-radius: 16px;
-    max-width: 150px;
-    max-height: 150px;
+    max-width: 300px;
+    max-height: 300px;
     object-fit: contain;
     margin-bottom: 6px;
 }

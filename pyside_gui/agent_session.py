@@ -27,6 +27,7 @@ from pyside_gui.overlays import CopyPicker
 from pyside_gui.rpa_cards import parse_rpa_halt
 from pyside_gui.steer_queue import SteerQueue
 from pyside_gui.utils import idle_emote_path
+from pyside_gui.welcome_video import idle_videos
 from agent import DAGI_ROOT
 
 
@@ -163,9 +164,10 @@ class AgentSession(QObject):
         subtitle = f"{self._project_path}\nType /help for commands"
         if self.handle and not self.handle.startswith("main"):
             subtitle = f"Agent {self.handle}\n{subtitle}\nUse /wd <folder> to choose its folder"
+        videos = idle_videos(DAGI_ROOT / ".dagi" / "emotes" / "idle")
         self._conversation.show_welcome(
             f"Driverless AGI · {self._config.display_name}", subtitle,
-            idle_emote_path(DAGI_ROOT),
+            None if videos else idle_emote_path(DAGI_ROOT), videos,
         )
 
     # ── submission and worker (see _dispatch) ──────────────────────────────────────────
@@ -242,6 +244,7 @@ class AgentSession(QObject):
         self._restore_initial_messages = None
         self._restore_initial_affect = None
         self._last_tokens = self._last_context = None
+        self.show_welcome()
 
     def restore(self, session_data: dict) -> None:
         """Load a saved session's messages; the next prompt continues it."""

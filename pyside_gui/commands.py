@@ -170,7 +170,6 @@ class SlashCommandHandler:
             self._on_session_cleared()
         self._w.right_sidebar.update_stats(0, 0, None, 0)
         self._w.left_sidebar.update_plan([], "")
-        self._w.conversation.append_info("Context cleared — new session")
         return None
 
     def _cmd_model(self, arg: str | None) -> None:

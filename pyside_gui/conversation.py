@@ -13,6 +13,7 @@ from PySide6.QtWebEngineWidgets import QWebEngineView
 
 from pyside_gui.theme import with_theme
 from pyside_gui.tool_labels import tool_kind, tool_label
+from pyside_gui.welcome_video import WelcomeVideo
 
 
 _RESOURCES = Path(__file__).parent / "resources"
@@ -89,6 +90,7 @@ class ConversationView(QWebEngineView):
         self._reasoning_timer.setSingleShot(True)
         self._reasoning_timer.setInterval(REASONING_PREVIEW_MS)
         self._reasoning_timer.timeout.connect(self._push_reasoning_preview)
+        self._welcome_video: WelcomeVideo | None = None
         self.setPage(_ConversationPage(self))
         self._page_bridge = _PageBridge(self)
         self._page_bridge.cancel_queued.connect(self.queued_cancel_requested)
@@ -119,13 +121,51 @@ class ConversationView(QWebEngineView):
 
     def show_welcome(
         self, title: str, subtitle: str, image_path: str | Path | None = None,
+        videos: list[Path] | None = None,
     ) -> None:
-        """Centered empty-chat screen; it disappears with the first message."""
+        """Centered empty-chat screen; it disappears with the first message.
+
+        With ``videos`` the picture plays them in turn (see welcome_video) until
+        the welcome screen leaves.
+        """
         url = _file_url(image_path) if image_path else ""
+        self._stop_welcome_video()
         self._run_js(
             f"showWelcome({self._js_str(title)}, {self._js_str(subtitle)}, "
-            f"{self._js_str(url)})"
+            f"{self._js_str(url)}, {'true' if videos else 'false'})"
         )
+        if videos:
+            self._welcome_video = WelcomeVideo(videos, self)
+            self._welcome_video.frame.connect(self._push_welcome_frame)
+            self._welcome_video.start()
+            if not self.isVisible():
+                self._welcome_video.pause()
+
+    def _push_welcome_frame(self, url: str) -> None:
+        if not self._ready:
+            return
+        # The page answers false once the welcome screen has gone; stop decoding then.
+        self.page().runJavaScript(
+            f"setWelcomeFrame({self._js_str(url)})",
+            0,
+            lambda shown: shown is False and self._stop_welcome_video(),
+        )
+
+    def _stop_welcome_video(self) -> None:
+        if self._welcome_video is not None:
+            self._welcome_video.stop()
+            self._welcome_video.deleteLater()
+            self._welcome_video = None
+
+    def showEvent(self, event) -> None:  # noqa: N802
+        super().showEvent(event)
+        if self._welcome_video is not None:
+            self._welcome_video.resume()
+
+    def hideEvent(self, event) -> None:  # noqa: N802
+        super().hideEvent(event)
+        if self._welcome_video is not None:
+            self._welcome_video.pause()
 
     def append_user_message(self, text: str) -> None:
         self._run_js(
@@ -249,6 +289,7 @@ class ConversationView(QWebEngineView):
         self._reasoning_timer.stop()
         self._stream_reasoning = ""
         self._reasoning_dirty = False
+        self._stop_welcome_video()
         self._run_js("clearConversation()")
 
     def scroll_to_bottom(self) -> None:
