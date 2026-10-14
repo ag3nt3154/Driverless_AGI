@@ -2,9 +2,18 @@
 
 A thin view over one ``agent.config_editor.ConfigDocument``, the single source
 of truth. The "Raw YAML" tab edits the document's text; leaving it re-parses
-the text (an invalid document keeps the user on the tab). The "Form" tab is a
-placeholder for now and re-populates from the document via
-``_sync_form_from_doc`` whenever it is shown.
+the text (an invalid document keeps the user on the tab). The "Form" tab has
+one widget per agreed key; each change is written to the document at once
+(text fields on editingFinished) and marks the view dirty. The form is
+re-populated from the document (``_sync_form_from_doc``) on load and whenever
+it is shown, under the ``_populating`` guard so populating never marks dirty.
+Absent keys show the loader default and are written only when changed.
+
+Tool checklists toggle entries by commenting their lines
+(``ConfigDocument.set_item_enabled``). With no ``tools`` key (= all tools)
+the Tools checklist edits ``disabled_tools`` instead: the form never writes a
+``tools:`` snapshot, which would silently drop project and future tools.
+``tools: null`` (or a non-list value) shows a read-only checklist and a note.
 
 Save parses pending raw text, runs the strict ``validate()`` (errors block the
 write, warnings are shown) and writes conflict-checked; a file changed on disk
@@ -14,16 +23,26 @@ offers Reload / Overwrite. ``validate()`` runs synchronously on the GUI thread
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any, Callable
 
-from PySide6.QtCore import Qt, QTimer, Signal
+from PySide6.QtCore import QEvent, QObject, Qt, QTimer, Signal
 from PySide6.QtWidgets import (
+    QApplication,
+    QCheckBox,
+    QComboBox,
+    QFileDialog,
     QFrame,
+    QGroupBox,
     QHBoxLayout,
     QLabel,
+    QLineEdit,
     QPlainTextEdit,
     QPushButton,
     QScrollArea,
+    QSizePolicy,
+    QSpinBox,
     QTabWidget,
+    QToolButton,
     QVBoxLayout,
     QWidget,
 )
@@ -34,12 +53,57 @@ from agent.config_editor import (
     ConfigDocument,
     ConfigParseError,
     file_hash,
+    tool_catalog,
     validate,
 )
 from pyside_gui.theme import qss
+from services.message_board.lifecycle import DEFAULT_URL as _BOARD_DEFAULT_URL
+from services.message_board.settings import DEFAULT_BIND as _BOARD_DEFAULT_BIND
 
 _SAVED_MS = 2500
 _FOOTER_TEXT = "Changes apply to new sessions."
+_MISSING: Any = object()
+
+# Loader defaults (agent.config_loader._build_config_from_entry) shown for absent keys.
+_SPIN_FIELDS: tuple[tuple[str, str, str, int, int, int], ...] = (
+    # (group, key, label, minimum, maximum, default)
+    ("Context", "context_window", "Context window (tokens)", 1, 10_000_000, 128_000),
+    ("Context", "keep_recent_tokens", "Keep recent (tokens)", 1, 10_000_000, 20_000),
+    ("Context", "reserve_tokens", "Reserve (tokens)", 1, 10_000_000, 16_384),
+    ("Reliability", "null_response_retries", "Null-response retries", 0, 100, 3),
+    ("Reliability", "api_error_retries", "API-error retries", 0, 100, 3),
+)
+_FEATURE_FIELDS: tuple[tuple[str, str, bool, str], ...] = (
+    ("sandbox_mode", "Sandbox mode", False,
+     "On: file tools have no path restrictions (allowed_roots=None). Default: off."),
+    ("code_mode", "Code mode", True,
+     "Off: the `code` tool is not registered. Default: on."),
+    ("computer_use", "Computer use", False,
+     "On: register the computer_use_* window tools (they still pass the tools "
+     "allowlist). Default: off."),
+)
+_MODEL_FIELDS: tuple[tuple[str, str], ...] = (
+    ("default_model", "Default model"),
+    ("worker_model", "Worker model"),
+    ("advanced_model", "Advanced model"),
+)
+_SAME_AS_DEFAULT = "(same as default)"
+_TEXT_FIELDS: tuple[tuple[str, str, str], ...] = (
+    ("memory_root", "Memory root", "Built-in default"),
+    ("services.message_board.url", "Message board URL", _BOARD_DEFAULT_URL),
+    ("services.message_board.bind", "Message board bind", _BOARD_DEFAULT_BIND),
+)
+_NOTE_ALL_TOOLS = "All tools enabled (no `tools:` list) — unchecking adds to disabled_tools."
+_NOTE_TOOLS_NULL = "tools: null — remove the key to enable all tools (Save will refuse null)."
+_NOTE_TOOLS_NOT_LIST = "tools is not a list — edit it in Raw YAML."
+_UNKNOWN_TOOL_TIP = "Not a known built-in or subagent tool"
+# With computer_use on, these pass the `tools:` allowlist (agent/tools.py
+# _apply_filters_and_handoff); only disabled_tools can turn them off.
+_ALLOWLIST_BYPASS_PREFIXES = ("computer_use_", "rpa_")
+_BYPASS_TIP = (
+    "Always available while Computer use is on: computer_use_* and rpa_* tools "
+    "bypass the tools: allowlist. Use Disabled tools to turn it off."
+)
 
 _CSS = qss("""
 QWidget#settings-view, QWidget#settings-content {
@@ -64,11 +128,68 @@ QLabel#settings-footer {
     font-size: 11px;
     padding: 4px 8px 8px 8px;
 }
-QLabel#settings-placeholder {
+QWidget#settings-form {
+    background: @app_bg;
+}
+QGroupBox {
     color: @fg_secondary;
     font-family: @font_ui;
-    padding: 8px;
+    font-size: 11px;
+    font-weight: bold;
+    border: 1px solid @border;
+    border-radius: 6px;
+    margin-top: 14px;
+    padding: 6px 6px 6px 6px;
 }
+QGroupBox::title {
+    subcontrol-origin: margin;
+    left: 8px;
+    padding: 0 4px;
+}
+QLabel#settings-field-label, QLabel#settings-note {
+    color: @fg_secondary;
+    font-family: @font_ui;
+    font-size: 11px;
+    font-weight: normal;
+}
+QLabel#settings-note { color: @fg_tertiary; }
+QLabel#settings-warning { color: @warn; font-family: @font_ui; font-size: 11px; }
+QCheckBox {
+    color: @fg;
+    font-family: @font_ui;
+    font-size: 12px;
+    font-weight: normal;
+    spacing: 6px;
+}
+QCheckBox:disabled, QLabel:disabled { color: @fg_tertiary; }
+QLineEdit, QSpinBox, QComboBox {
+    color: @fg;
+    background: @well_bg;
+    border: 1px solid @border;
+    border-radius: 4px;
+    padding: 3px 6px;
+    font-family: @font_ui;
+    font-size: 12px;
+    font-weight: normal;
+    selection-background-color: @selection;
+}
+QLineEdit:focus, QSpinBox:focus, QComboBox:focus { border: 1px solid @accent; }
+QLineEdit:disabled, QSpinBox:disabled, QComboBox:disabled { color: @fg_tertiary; }
+QComboBox QAbstractItemView {
+    color: @fg;
+    background: @menu_bg;
+    selection-background-color: @active_bg;
+}
+QToolButton#settings-disclosure {
+    color: @fg_secondary;
+    background: transparent;
+    border: none;
+    font-family: @font_ui;
+    font-size: 12px;
+    font-weight: normal;
+    padding: 2px 0;
+}
+QToolButton#settings-disclosure:hover { color: @fg; }
 QFrame#settings-banner {
     border-radius: 6px;
     background: @well_bg;
@@ -137,6 +258,45 @@ def _plain(text: str = "", name: str | None = None) -> QLabel:
     return label
 
 
+def _expanding(widget: QWidget) -> QWidget:
+    widget.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+    widget.setMinimumWidth(0)
+    return widget
+
+
+def _checklist_order(listed: list[str], catalog: list[str]) -> list[str]:
+    """Listed names in file order (de-duplicated), then the rest of the catalog
+    alphabetically."""
+    names = list(dict.fromkeys(listed))
+    seen = set(names)
+    return names + sorted(n for n in catalog if n not in seen)
+
+
+def _is_int(value: Any) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool)
+
+
+class _WheelGuard(QObject):
+    """Ignore wheel events on unfocused spin boxes / combos.
+
+    The form lives in a scroll area: scrolling the panel over a field must not
+    silently change (and write) a config value. The wheel event is forwarded
+    to the scroll area so the panel still scrolls.
+    """
+
+    def __init__(self, parent: QObject, scroll: Callable[[], QScrollArea | None]) -> None:
+        super().__init__(parent)
+        self._scroll = scroll
+
+    def eventFilter(self, obj: QObject, event: QEvent) -> bool:  # noqa: N802
+        if event.type() == QEvent.Type.Wheel and isinstance(obj, QWidget) and not obj.hasFocus():
+            scroll = self._scroll()
+            if scroll is not None:
+                QApplication.sendEvent(scroll.verticalScrollBar(), event)
+            return True
+        return False
+
+
 class SettingsView(QWidget):
     """Form + Raw YAML editor with one dirty flag and Save / Revert."""
 
@@ -153,6 +313,9 @@ class SettingsView(QWidget):
         self._dirty = False
         self._unreadable = False
         self._populating = False
+        self._catalog: list[str] | None = None  # tool_catalog(), computed on first use
+        self._scroll: QScrollArea | None = None
+        self._wheel_guard = _WheelGuard(self, lambda: self._scroll)
 
         self._banner_timer = QTimer(self)
         self._banner_timer.setSingleShot(True)
@@ -174,6 +337,7 @@ class SettingsView(QWidget):
         layout.setSpacing(6)
         scroll.setWidget(content)
         outer.addWidget(scroll)
+        self._scroll = scroll
 
         title_row = QHBoxLayout()
         title_row.setContentsMargins(0, 0, 8, 0)
@@ -190,13 +354,7 @@ class SettingsView(QWidget):
 
         self._tabs = QTabWidget()
         self._tabs.setDocumentMode(True)
-        self._form_page = QWidget()
-        form_layout = QVBoxLayout(self._form_page)
-        form_layout.setContentsMargins(0, 0, 0, 0)
-        placeholder = _plain("Form editor coming soon. Use Raw YAML.", "settings-placeholder")
-        placeholder.setWordWrap(True)
-        form_layout.addWidget(placeholder)
-        form_layout.addStretch()
+        self._form_page = self._build_form()
         self._form_index = self._tabs.addTab(self._form_page, "Form")
 
         self._raw = QPlainTextEdit()
@@ -283,9 +441,363 @@ class SettingsView(QWidget):
         self._unreadable = unreadable
         self._save_btn.setEnabled(not unreadable)
         self._raw.setReadOnly(unreadable)
+        self._form_body.setEnabled(not unreadable)
+
+    # ── Form tab ──
+
+    def _build_form(self) -> QWidget:
+        page = QWidget()
+        page.setObjectName("settings-form")
+        page_layout = QVBoxLayout(page)
+        page_layout.setContentsMargins(6, 6, 6, 6)
+        page_layout.setSpacing(0)
+        self._form_body = QWidget()
+        self._form_body.setObjectName("settings-form")
+        body = QVBoxLayout(self._form_body)
+        body.setContentsMargins(0, 0, 0, 0)
+        body.setSpacing(4)
+        page_layout.addWidget(self._form_body)
+        page_layout.addStretch()
+
+        groups: dict[str, QVBoxLayout] = {}
+
+        def group(title: str) -> QVBoxLayout:
+            if title not in groups:
+                box = QGroupBox(title)
+                lay = QVBoxLayout(box)
+                lay.setContentsMargins(6, 10, 6, 6)
+                lay.setSpacing(3)
+                body.addWidget(box)
+                groups[title] = lay
+            return groups[title]
+
+        # Models
+        self._model_combos: dict[str, QComboBox] = {}
+        for key, label in _MODEL_FIELDS:
+            combo = QComboBox()
+            combo.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
+            combo.setMinimumContentsLength(8)
+            combo.currentIndexChanged.connect(lambda _i, k=key: self._on_model_changed(k))
+            self._add_field(group("Models"), label, combo)
+            self._model_combos[key] = combo
+
+        # Context / Reliability
+        self._spins: dict[str, QSpinBox] = {}
+        self._spin_defaults: dict[str, int] = {}
+        self._spin_warnings: dict[str, QLabel] = {}
+        for grp, key, label, lo, hi, default in _SPIN_FIELDS:
+            spin = QSpinBox()
+            spin.setRange(lo, hi)
+            spin.setGroupSeparatorShown(True)
+            spin.setKeyboardTracking(False)  # commit on Enter / focus-out / arrows
+            spin.setToolTip(f"{key} — default {default:,}")
+            spin.valueChanged.connect(lambda v, k=key: self._on_spin_changed(k, int(v)))
+            self._add_field(group(grp), label, spin)
+            warning = _plain("", "settings-warning")
+            warning.setWordWrap(True)
+            warning.hide()
+            group(grp).addWidget(warning)
+            self._spins[key] = spin
+            self._spin_defaults[key] = default
+            self._spin_warnings[key] = warning
+
+        # Features
+        self._checks: dict[str, QCheckBox] = {}
+        self._check_defaults: dict[str, bool] = {}
+        for key, label, default, tip in _FEATURE_FIELDS:
+            check = QCheckBox(label)
+            check.setToolTip(f"{key}: {tip}")
+            check.toggled.connect(lambda on, k=key: self._commit(k, bool(on)))
+            group("Features").addWidget(check)
+            self._checks[key] = check
+            self._check_defaults[key] = default
+        self._checks["computer_use"].toggled.connect(lambda _on: self._refresh_tool_states())
+
+        # Tools
+        tools = group("Tools")
+        self._tools_note = _plain("", "settings-note")
+        self._tools_note.setWordWrap(True)
+        tools.addWidget(self._tools_note)
+        self._tools_list = QWidget()
+        self._tools_list_layout = QVBoxLayout(self._tools_list)
+        self._tools_list_layout.setContentsMargins(0, 0, 0, 0)
+        self._tools_list_layout.setSpacing(1)
+        tools.addWidget(self._tools_list)
+        self._tool_checks: dict[str, QCheckBox] = {}
+        self._tools_mode = "absent"  # "list" | "absent" (all tools) | "locked" (null / not a list)
+
+        self._disabled_toggle = QToolButton()
+        self._disabled_toggle.setObjectName("settings-disclosure")
+        self._disabled_toggle.setText("Disabled tools (always off)")
+        self._disabled_toggle.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
+        self._disabled_toggle.setArrowType(Qt.ArrowType.RightArrow)
+        self._disabled_toggle.setCheckable(True)
+        self._disabled_toggle.setToolTip(
+            "disabled_tools: always off, even if a project config enables all tools")
+        self._disabled_toggle.toggled.connect(self._on_disabled_toggled)
+        tools.addWidget(self._disabled_toggle)
+        self._disabled_box = QWidget()
+        self._disabled_layout = QVBoxLayout(self._disabled_box)
+        self._disabled_layout.setContentsMargins(12, 0, 0, 0)
+        self._disabled_layout.setSpacing(1)
+        self._disabled_box.hide()
+        tools.addWidget(self._disabled_box)
+        self._disabled_checks: dict[str, QCheckBox] = {}
+
+        # Paths & services
+        paths = group("Paths && services")
+        self._text_fields: dict[str, QLineEdit] = {}
+        for key, label, placeholder in _TEXT_FIELDS:
+            field = QLineEdit()
+            field.setPlaceholderText(placeholder)
+            field.setToolTip(f"{key} — leave empty to remove the key (default: {placeholder})")
+            field.editingFinished.connect(lambda k=key: self._on_text_committed(k))
+            self._text_fields[key] = field
+            if key == "memory_root":
+                row = QWidget()
+                row_layout = QHBoxLayout(row)
+                row_layout.setContentsMargins(0, 0, 0, 0)
+                row_layout.setSpacing(4)
+                row_layout.addWidget(_expanding(field), 1)
+                self._browse_btn = QPushButton("Browse…")
+                self._browse_btn.clicked.connect(self._on_browse_memory_root)
+                row_layout.addWidget(self._browse_btn)
+                self._add_field(paths, label, row)
+            else:
+                self._add_field(paths, label, field)
+        return page
+
+    def _add_field(self, layout: QVBoxLayout, label: str, widget: QWidget) -> None:
+        """Label above its widget: stays usable in the narrow side panel."""
+        layout.addWidget(_plain(label, "settings-field-label"))
+        _expanding(widget)
+        if isinstance(widget, (QSpinBox, QComboBox)):
+            widget.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+            widget.installEventFilter(self._wheel_guard)
+        layout.addWidget(widget)
+
+    def _tool_names(self) -> list[str]:
+        if self._catalog is None:
+            try:
+                self._catalog = tool_catalog()
+            except Exception:  # noqa: BLE001 — an unusable catalog must not break the view
+                self._catalog = []
+        return self._catalog
+
+    def _model_ids(self) -> list[str]:
+        """Model IDs from the catalog next to this view's config, plus inline models."""
+        from agent import config_loader
+
+        ids: list[str] = []
+        try:
+            ids = list((config_loader.load_raw_config(config_path=self._path).get("models") or {}))
+        except Exception:  # noqa: BLE001 — unreadable catalog: show what the doc has
+            ids = []
+        inline = self._doc.get("models")
+        if isinstance(inline, dict):
+            ids += [str(k) for k in inline if str(k) not in ids]
+        return ids
 
     def _sync_form_from_doc(self) -> None:
-        """Re-populate the Form tab from the document (no-op until Subtask 6)."""
+        """Re-populate every Form widget from the document without marking dirty."""
+        was, self._populating = self._populating, True
+        try:
+            self._populate_models()
+            for key, spin in self._spins.items():
+                value = self._doc.get(key)
+                spin.setValue(value if _is_int(value) else self._spin_defaults[key])
+                self._update_spin_warning(key)
+            for key, check in self._checks.items():
+                value = self._doc.get(key)
+                check.setChecked(value if isinstance(value, bool) else self._check_defaults[key])
+            self._populate_tools()
+            for key, field in self._text_fields.items():
+                value = self._doc.get(key)
+                field.setText("" if value is None else str(value))
+        finally:
+            self._populating = was
+
+    def _populate_models(self) -> None:
+        from agent.config_loader import _FALLBACK_MODEL_ID
+
+        ids = self._model_ids()
+        for key, combo in self._model_combos.items():
+            combo.clear()
+            current = self._doc.get(key)
+            if key != "default_model":
+                combo.addItem(_SAME_AS_DEFAULT, None)
+            elif current in (None, ""):
+                current = _FALLBACK_MODEL_ID  # what the loader picks when absent
+            for model_id in ids:
+                combo.addItem(model_id, model_id)
+            if current not in (None, "") and combo.findData(current) < 0:
+                combo.addItem(f"{current} (missing)", current)
+            combo.setCurrentIndex(max(0, combo.findData(current)))
+
+    def _update_spin_warning(self, key: str) -> None:
+        """Flag a file value the spin box cannot show (non-int or out of range)."""
+        spin, warning = self._spins[key], self._spin_warnings[key]
+        raw = self._doc.get(key, _MISSING)
+        bad = raw is not _MISSING and not (
+            _is_int(raw) and spin.minimum() <= raw <= spin.maximum())
+        if bad:
+            shown = "null" if raw is None else str(raw)
+            warning.setText(
+                f"File value: {shown} — not valid here, showing {spin.value():,}. "
+                "Left unchanged until you edit this field.")
+        warning.setVisible(bad)
+
+    def _on_spin_changed(self, key: str, value: int) -> None:
+        if self._populating:
+            return
+        self._commit(key, value)
+        self._update_spin_warning(key)
+
+    # ── Tool checklists ──
+    # `tools` list present ("list"): boxes edit `tools` by commenting entries.
+    # `tools` absent ("absent", = all tools): boxes edit `disabled_tools`; the
+    # form never writes a `tools:` snapshot (it would drop project tools).
+    # `tools: null` or a non-list value ("locked"): shown all-checked, read-only.
+
+    def _populate_tools(self) -> None:
+        catalog = self._tool_names()
+        known = set(catalog)
+        value = self._doc.get("tools", _MISSING)
+        tool_items = self._doc.list_items("tools")
+        disabled_items = self._doc.list_items("disabled_tools")
+        if value is _MISSING:
+            self._tools_mode = "absent"
+            note = _NOTE_ALL_TOOLS
+        elif isinstance(value, list) or tool_items:
+            self._tools_mode = "list"  # incl. every entry commented out
+            note = ""
+        else:
+            self._tools_mode = "locked"
+            note = _NOTE_TOOLS_NULL if value is None else _NOTE_TOOLS_NOT_LIST
+        self._tools_note.setText(note)
+        self._tools_note.setVisible(bool(note))
+
+        if self._tools_mode == "list":
+            tool_names = _checklist_order([n for n, _ in tool_items], catalog)
+        else:
+            tool_names = _checklist_order([], catalog)
+            if self._tools_mode == "absent":
+                tool_names += [n for n, _ in disabled_items if n not in tool_names]
+        self._fill_checklist(self._tools_list_layout, self._tool_checks, "tools", tool_names, known)
+        self._fill_checklist(
+            self._disabled_layout, self._disabled_checks, "disabled_tools",
+            _checklist_order([n for n, _ in disabled_items], catalog), known,
+        )
+        self._refresh_tool_states()
+
+    def _fill_checklist(
+        self, layout: QVBoxLayout, checks: dict[str, QCheckBox], key: str,
+        names: list[str], known: set[str],
+    ) -> None:
+        for check in checks.values():
+            layout.removeWidget(check)
+            check.deleteLater()
+        checks.clear()
+        for name in names:
+            check = QCheckBox(name if name in known else f"{name}  (unknown)")
+            check.setProperty("unknown", name not in known)
+            check.toggled.connect(lambda on, k=key, n=name: self._on_tool_toggled(k, n, on))
+            layout.addWidget(check)
+            checks[name] = check
+
+    def _refresh_tool_states(self) -> None:
+        """Set every tool box's checked/enabled state and tooltip from the document."""
+        active = {n for n, on in self._doc.list_items("tools") if on}
+        disabled = {n for n, on in self._doc.list_items("disabled_tools") if on}
+        bypass_on = self._tools_mode == "list" and self._checks["computer_use"].isChecked()
+        was, self._populating = self._populating, True
+        try:
+            for name, check in self._tool_checks.items():
+                if self._tools_mode == "list":
+                    check.setChecked(name in active)
+                elif self._tools_mode == "absent":
+                    check.setChecked(name not in disabled)
+                else:
+                    check.setChecked(True)
+                bypass = bypass_on and name.startswith(_ALLOWLIST_BYPASS_PREFIXES)
+                check.setEnabled(not bypass)
+                tips = [_UNKNOWN_TOOL_TIP] if check.property("unknown") else []
+                if bypass:
+                    tips.append(_BYPASS_TIP)
+                check.setToolTip("\n".join(tips))
+            for name, check in self._disabled_checks.items():
+                check.setChecked(name in disabled)
+                check.setToolTip(_UNKNOWN_TOOL_TIP if check.property("unknown") else "")
+        finally:
+            self._populating = was
+        self._tools_list.setEnabled(self._tools_mode != "locked")
+
+    def _on_tool_toggled(self, key: str, name: str, checked: bool) -> None:
+        if self._populating:
+            return
+        if key == "tools" and self._tools_mode == "absent":
+            key, checked = "disabled_tools", not checked  # unchecked = add to disabled_tools
+        elif key == "tools" and self._tools_mode == "locked":
+            self._refresh_tool_states()
+            return
+        self._apply_edit(lambda: self._doc.set_item_enabled(key, name, checked))
+        self._refresh_tool_states()  # keeps both checklists in sync (or reverts on failure)
+
+    # ── Scalar fields ──
+
+    def _apply_edit(self, edit: Callable[[], None]) -> bool:
+        """Run a document edit; mark dirty if the text changed, banner on failure."""
+        before = self._doc.text()
+        try:
+            edit()
+        except (TypeError, ValueError) as exc:
+            self._show_banner("error", f"Could not apply the change: {exc}")
+            return False
+        if self._doc.text() != before:
+            self._set_dirty(True)
+        return True
+
+    def _commit(self, key: str, value: Any) -> None:
+        """Write one Form value (``None`` deletes the key).
+
+        On failure the form is re-populated so no widget shows a value that
+        was not applied.
+        """
+        if self._populating:
+            return
+        if not self._apply_edit(lambda: self._doc.set(key, value)):
+            self._sync_form_from_doc()
+
+    def _on_model_changed(self, key: str) -> None:
+        if self._populating:
+            return
+        self._commit(key, self._model_combos[key].currentData())
+
+    def _on_text_committed(self, key: str) -> None:
+        if self._populating:
+            return
+        text = self._text_fields[key].text().strip()
+        current = self._doc.get(key)
+        if text == ("" if current is None else str(current)):
+            return
+        # An empty value deletes the key only when committed, never mid-edit.
+        self._commit(key, text or None)
+
+    def _on_browse_memory_root(self) -> None:
+        field = self._text_fields["memory_root"]
+        start = field.text().strip() or str(Path.home())
+        chosen = QFileDialog.getExistingDirectory(self, "Choose memory root", start)
+        if not chosen:
+            return
+        field.setText(str(Path(chosen)))
+        self._on_text_committed("memory_root")
+
+    def _on_disabled_toggled(self, expanded: bool) -> None:
+        self._disabled_toggle.setArrowType(
+            Qt.ArrowType.DownArrow if expanded else Qt.ArrowType.RightArrow)
+        self._disabled_box.setVisible(expanded)
+
+    # ── Raw text ──
 
     def _set_raw_text(self, text: str) -> None:
         self._populating = True
