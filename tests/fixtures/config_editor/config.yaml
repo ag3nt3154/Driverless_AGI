@@ -1,0 +1,77 @@
+# increase for flaky providers
+null_response_retries: 5
+
+context_window: 200000
+keep_recent_tokens: 20000
+reserve_tokens: 16384
+
+# default_model: minimax-2.7-openrouter
+# default_model: deepseek-v4-flash-openrouter
+default_model: deepseek-flash
+# default_model: current-free-openrouter
+# default_model: laguna-free-openrouter
+# worker_model: glm-5-turbo-openrouter       # cheaper LLM for sub-agents; omit to use default_model
+# advanced_model: deepseek-v4-pro-openrouter   # advanced LLM for planning; omit to use default_model
+
+# default_model: local_model
+# context_window: 32000
+# keep_recent_tokens: 15000
+# reserve_tokens: 10000
+
+# Central memory store (contains wiki/). Omit to use the built-in default.
+memory_root: "G:\\My Drive\\black_grimoire"
+services:
+  # Message board service. `url` is the central board address used by clients.
+  # `bind` is used only by `python message_board.py` (default 0.0.0.0, reachable on LAN).
+  # If central is unreachable, the GUI starts its own private loopback temp board;
+  # temp posts are discarded when the GUI switches away or closes; it switches to central when ready.
+  # Token: DAGI_BOARD_TOKEN in the env or .env, else "dagi".
+  message_board:
+    url: "http://127.0.0.1:8765"
+    bind: "0.0.0.0"
+tools:                      # Restrict the main agent to a specific subset of tools.
+                            # Omit (or set to null) to enable all available tools.
+  # ── File tools ──────────────────────────────────────────────────────────────
+  - read                    # Read files from disk
+  - grep                    # Regex search across files
+  - find                    # Locate files by name/pattern
+  - write                   # Write (create/overwrite) files
+  - edit                    # Patch a specific region of a file
+  - copy                    # Copy files or directories
+  # ── Shell tools ─────────────────────────────────────────────────────────────
+  - bash                    # Run arbitrary shell commands
+  - code                    # Run one Python script chaining tool calls (needs code_mode)
+  - tmux_bash               # Run commands in a persistent tmux session
+  # ── Planning tools ───────────────────────────────────────────────────────────
+  - enter_plan_mode         # Switch agent into plan-writing mode
+  - update_task_status      # Mark a plan task complete/failed/in-progress
+  - set_active_plan         # Attach or detach the active plan for this session
+  - check_active_plan       # Read current active plan and restore association on resume
+  # ── Agent / subagent tools ───────────────────────────────────────────────────
+  - ask_user                # Pause and prompt the user for input
+  - run_worker              # Spawn a worker subagent for one subtask
+  - review_work             # Spawn a general-purpose reviewer
+  - web_research            # Spawn a web-research subagent
+  - explore_files           # Spawn a file-exploration subagent
+  - read_large_file         # Indexed digest of a file too large for context
+  - extend_subagent_timeout # Extend timeout for an in-flight subagent
+  # ── Model tools ──────────────────────────────────────────────────────────────
+  - switch_model            # Switch between default / worker / advanced models
+  # ── Skill tools ──────────────────────────────────────────────────────────────
+  - skill                   # Load and run a skill document
+  - run_skill_script        # Execute a skill's companion script
+  - reload_skills           # Hot-reload skill definitions from disk
+  # ── Web tools ────────────────────────────────────────────────────────────────
+  - web_search              # Search the web (fallback when no config subagents)
+  - web_fetch               # Fetch a URL (fallback when no config subagents)
+  # ── Board tools ─────────────────────────────────────────────────────────────
+  - read_board
+  - post_board
+  - fetch_attachment
+  # ── GUI tools ────────────────────────────────────────────────────────────────
+  - show_file               # Open a file in the GUI file viewer with optional line highlight
+sandbox_mode: false     # true = file tools have no path restrictions (allowed_roots=None)
+code_mode: true         # false = the `code` tool is not registered
+computer_use: true      # register computer_use_list_windows/computer_use_inspect_window/computer_use_interact_with_window/computer_use_wait_for_window_state (they pass the tools: allowlist)
+disabled_tools:         # Always off, even if a project config sets `tools: null`.
+  - memory_refresh      # Built for the retired memory layout; redesign pending (TODO.md).
