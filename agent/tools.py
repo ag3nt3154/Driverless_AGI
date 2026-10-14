@@ -367,6 +367,37 @@ def _apply_filters_and_handoff(reg: ToolRegistry, config: "AgentConfig | None") 
     reg.register(WriteHandoffTool(handoff_path=None))
 
 
+# Every built-in tool name create_tool_registry can register under some feature
+# combination, in registration order. Subagent tools (.dagi/subagents/*/main.py)
+# and project tools (<project>/.dagi/tools/*.py) are discovered at runtime and
+# are not listed, nor is a caller-injected `bash_tool`. Kept in sync (names and
+# order) by tests/test_tool_registry_contract.py.
+KNOWN_TOOL_NAMES: tuple[str, ...] = (
+    # _register_file_tools
+    "read", "grep", "find", "write", "edit", "copy", "bash",
+    "code",  # code_mode
+    # _register_ui_tools (computer_use)
+    "computer_use_list_windows", "computer_use_inspect_window",
+    "computer_use_interact_with_window", "computer_use_wait_for_window_state",
+    "rpa_record", "rpa_save", "rpa_run", "rpa_approve", "rpa_repair", "rpa_patch",
+    # _register_session_tools
+    "set_active_plan", "check_active_plan", "update_task_status", "ask_user",
+    "switch_model",  # worker or advanced tier configured
+    "reload_skills",
+    "read_board", "post_board", "fetch_attachment",  # callbacks.board
+    "show_file",  # callbacks.on_show_file
+    "read_notepad",
+    # _register_fallback_tools (no config; then `skill` below)
+    "web_search", "web_fetch",
+    # _register_configured_tools
+    "extend_subagent_timeout",
+    "skill", "run_skill_script",  # skill_roots (skill also without config)
+    "schedule_task", "list_scheduled_tasks", "remove_scheduled_task",  # interactive
+    # _apply_filters_and_handoff
+    "write_handoff",
+)
+
+
 def create_tool_registry(
     cwd: Path = Path("."),
     allowed_roots: list[Path] | None = None,

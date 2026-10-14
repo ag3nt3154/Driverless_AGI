@@ -10,7 +10,10 @@ from agent.config_editor import (
     ConfigConflictError,
     ConfigDocument,
     ConfigParseError,
+    ValidationResult,
     file_hash,
+    tool_catalog,
+    validate,
 )
 
 FIXTURES = Path(__file__).parent / "fixtures" / "config_editor"
@@ -592,3 +595,319 @@ def test_invalid_item_name_rejected(tmp_path):
     doc = _doc("tools:\n  - a\n", tmp_path)
     with pytest.raises(ValueError):
         doc.set_item_enabled("tools", "bad name: x", True)
+
+
+# ── Tool catalog ───────────────────────────────────────────────────────────
+
+
+def _write_subagent(root: Path, dirname: str, source: str) -> None:
+    d = root / ".dagi" / "subagents" / dirname
+    d.mkdir(parents=True, exist_ok=True)
+    (d / "main.py").write_text(source, encoding="utf-8")
+
+
+def test_tool_catalog_adds_subagent_names_without_importing(tmp_path):
+    from agent.tools import KNOWN_TOOL_NAMES
+
+    _write_subagent(tmp_path, "worker", (
+        "raise RuntimeError('must not be executed')\n"
+        "class RunWorkerTool(Base):\n"
+        "    name = \"run_worker\"\n"
+        "    description = 'x'\n"
+    ))
+    _write_subagent(tmp_path, "dup", "class A:\n    name = 'read'\n")  # built-in name
+    _write_subagent(tmp_path, "broken", "class (:\n")  # syntax error: skipped
+    _write_subagent(tmp_path, "dynamic", "class B:\n    name = compute()\n")
+    (tmp_path / ".dagi" / "subagents" / "no_main").mkdir()
+
+    catalog = tool_catalog(tmp_path)
+
+    assert catalog[: len(KNOWN_TOOL_NAMES)] == list(KNOWN_TOOL_NAMES)
+    assert catalog[len(KNOWN_TOOL_NAMES):] == ["run_worker"]
+
+
+def test_tool_catalog_without_subagents_dir(tmp_path):
+    from agent.tools import KNOWN_TOOL_NAMES
+
+    assert tool_catalog(tmp_path) == list(KNOWN_TOOL_NAMES)
+
+
+def test_tool_catalog_reads_real_subagents():
+    names = tool_catalog()
+    for name in ("run_worker", "review_work", "web_research", "explore_files",
+                 "read_large_file", "memory_refresh"):
+        assert name in names
+
+
+# ── Validation ─────────────────────────────────────────────────────────────
+
+_KEY_ENV = "DAGI_TEST_VALIDATE_KEY"
+
+
+@pytest.fixture
+def vdoc(tmp_path, monkeypatch) -> ConfigDocument:
+    """The fixture config next to a model catalog, with memory_root pointing at
+    an existing directory and the model's API key set."""
+    models = tmp_path / "model_config"
+    models.mkdir()
+    for model_id in ("deepseek-flash", "other-model"):
+        (models / f"{model_id}.yaml").write_text(
+            f"name: {model_id}\nmodel: {model_id}\napi_url: https://x.test/v1\n"
+            f"api_key_env: {_KEY_ENV}\n",
+            encoding="utf-8",
+        )
+    monkeypatch.setenv(_KEY_ENV, "secret")
+    path = _copy_fixture(tmp_path)
+    doc = ConfigDocument.load(path)
+    doc.set("memory_root", str(tmp_path))
+    return doc
+
+
+def _catalog() -> list[str]:
+    return tool_catalog(Path(__file__).resolve().parents[1])
+
+
+def _check(doc: ConfigDocument) -> ValidationResult:
+    # The fixture lists two names nothing registers; accept them here.
+    return validate(doc, catalog=_catalog() + ["tmux_bash", "enter_plan_mode"])
+
+
+def test_fixture_config_validates_cleanly(vdoc):
+    result = _check(vdoc)
+    assert result.errors == []
+    assert result.warnings == []
+    assert result.ok
+
+
+def test_validation_result_ok():
+    assert ValidationResult([], ["w"]).ok
+    assert not ValidationResult(["e"], []).ok
+
+
+def test_validate_leaves_no_temp_file(vdoc):
+    _check(vdoc)
+    vdoc.set("default_model", "nope")
+    _check(vdoc)
+    assert not list(vdoc.path.parent.glob(".config.validate*"))
+
+
+@pytest.mark.parametrize("key", [
+    "context_window", "keep_recent_tokens", "reserve_tokens", "max_output_tokens",
+    "max_continuations", "truncate_edge_chars",
+])
+@pytest.mark.parametrize("value", [0, -5, "big", 1.5, True])
+def test_non_positive_int_is_an_error(vdoc, key, value):
+    vdoc.set(key, value)
+    result = _check(vdoc)
+    assert not result.ok
+    assert any(key in e for e in result.errors)
+
+
+@pytest.mark.parametrize("key", ["null_response_retries", "api_error_retries"])
+def test_retries_may_be_zero_but_not_negative(vdoc, key):
+    vdoc.set(key, 0)
+    assert _check(vdoc).ok
+    vdoc.set(key, -1)
+    result = _check(vdoc)
+    assert any(key in e for e in result.errors)
+
+
+def test_null_max_output_tokens_is_allowed(vdoc):
+    vdoc._replace_text(vdoc.text() + "max_output_tokens: null\n")
+    assert _check(vdoc).ok
+
+
+@pytest.mark.parametrize("key", ["sandbox_mode", "code_mode", "computer_use"])
+def test_null_flag_is_allowed(vdoc, key):
+    vdoc.set(key, None)  # delete, then re-add as an explicit null
+    vdoc._replace_text(vdoc.text() + f"{key}: null\n")
+    assert key in vdoc._data and vdoc.get(key) is None
+    assert _check(vdoc).ok
+
+
+@pytest.mark.parametrize("key", ["sandbox_mode", "code_mode", "computer_use"])
+def test_non_bool_flag_is_an_error(vdoc, key):
+    vdoc.set(key, "yes")
+    assert any(key in e for e in _check(vdoc).errors)
+    vdoc.set(key, 1)
+    assert any(key in e for e in _check(vdoc).errors)
+
+
+@pytest.mark.parametrize("key", ["default_model", "worker_model", "advanced_model"])
+def test_unknown_model_is_an_error(vdoc, key):
+    vdoc.set(key, "no-such-model")
+    result = _check(vdoc)
+    assert any(key in e and "no-such-model" in e for e in result.errors)
+
+
+@pytest.mark.parametrize("key", ["worker_model", "advanced_model"])
+def test_known_tier_model_is_fine(vdoc, key):
+    vdoc.set(key, "other-model")
+    assert _check(vdoc).ok
+
+
+def test_model_catalog_is_read_next_to_the_document(vdoc, tmp_path, monkeypatch):
+    """Model IDs come from doc.path.parent/model_config, not the global DAGI root."""
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    (elsewhere / "config.yaml").write_text("default_model: x\n", encoding="utf-8")
+    monkeypatch.setattr("agent.config_loader._CONFIG_PATH", elsewhere / "config.yaml")
+    assert _check(vdoc).ok
+
+
+def test_missing_memory_root_is_an_error(vdoc, tmp_path):
+    vdoc.set("memory_root", str(tmp_path / "missing"))
+    assert any("memory_root" in e for e in _check(vdoc).errors)
+
+
+def test_zero_enabled_tools_is_an_error(vdoc):
+    for name, enabled in vdoc.list_items("tools"):
+        if enabled:
+            vdoc.set_item_enabled("tools", name, False)
+    assert vdoc.get("tools") is None  # the loader would read this as ALL tools
+    assert "At least one tool must be enabled." in _check(vdoc).errors
+
+
+@pytest.mark.parametrize("text", [
+    "tools:\nc: 1\n", "tools: []\n",
+    # ruamel writes `tools: null` back as a bare `tools:`, so it is refused too.
+    "tools: null\n", "tools: ~  # all\n",
+])
+def test_empty_tools_list_is_an_error(tmp_path, text):
+    doc = ConfigDocument.from_text(text, tmp_path / "config.yaml", None)
+    assert "At least one tool must be enabled." in validate(doc, catalog=[]).errors
+
+
+def test_absent_tools_means_all(tmp_path):
+    doc = ConfigDocument.from_text("c: 1\n", tmp_path / "config.yaml", None)
+    assert "At least one tool must be enabled." not in validate(doc, catalog=[]).errors
+
+
+def test_scalar_tools_value_is_an_error(vdoc):
+    vdoc.set("disabled_tools", None)
+    vdoc._replace_text(vdoc.text() + "disabled_tools: memory_refresh\n")
+    assert any("disabled_tools" in e for e in _check(vdoc).errors)
+
+
+@pytest.mark.parametrize("url", [
+    "ftp://127.0.0.1:8765", "127.0.0.1:8765", "http://", "http://host:99999",
+    "http://host:port", "http://host/path", "http://host?x=1", "http://u@host", 8765,
+])
+def test_bad_board_url_is_an_error(vdoc, url):
+    vdoc.set("services.message_board.url", url)
+    assert any("services.message_board.url" in e for e in _check(vdoc).errors)
+
+
+@pytest.mark.parametrize("url", [
+    "http://127.0.0.1:8765", "https://board.example.com", "http://host:80/",
+    "http://[::1]:8765",
+])
+def test_good_board_url(vdoc, url):
+    vdoc.set("services.message_board.url", url)
+    assert _check(vdoc).ok
+
+
+def test_unknown_tool_is_only_a_warning(vdoc):
+    vdoc.set_item_enabled("tools", "made_up_tool", True)
+    vdoc.set_item_enabled("disabled_tools", "other_made_up", True)
+    result = _check(vdoc)
+    assert result.ok
+    assert "Unknown tool: made_up_tool" in result.warnings
+    assert "Unknown tool: other_made_up" in result.warnings
+
+
+def test_commented_unknown_entries_do_not_warn(vdoc):
+    vdoc.set_item_enabled("tools", "tmux_bash", False)
+    result = validate(vdoc, catalog=_catalog())
+    assert "Unknown tool: tmux_bash" not in result.warnings
+    assert "Unknown tool: enter_plan_mode" in result.warnings
+
+
+def test_unknown_tools_use_catalog_from_dagi_root(vdoc, tmp_path):
+    result = validate(vdoc, dagi_root=tmp_path)  # no subagents here
+    assert "Unknown tool: run_worker" in result.warnings
+    assert result.ok
+
+
+def test_missing_api_key_is_only_a_warning(vdoc, monkeypatch):
+    monkeypatch.delenv(_KEY_ENV)
+    result = _check(vdoc)
+    assert result.ok
+    assert any(_KEY_ENV in w for w in result.warnings)
+
+
+def test_missing_client_script_is_an_error(vdoc, tmp_path):
+    """An OSError from the loader is a broken config, not a missing env var."""
+    (tmp_path / "model_config" / "scripted.yaml").write_text(
+        f"client_script: {(tmp_path / 'missing_client.py').as_posix()}\nmodel: m\n",
+        encoding="utf-8",
+    )
+    vdoc.set("default_model", "scripted")
+    result = _check(vdoc)
+    assert not result.ok
+    assert any("missing_client" in e for e in result.errors)
+
+
+@pytest.mark.parametrize(
+    "exc", [
+        ValueError("bad value"), KeyError("bad key"), RuntimeError("boom"),
+        FileNotFoundError("no such script"),
+    ],
+)
+def test_resolve_failure_is_an_error(vdoc, monkeypatch, exc):
+    seen = []
+
+    def fail(**kwargs):
+        seen.append(kwargs["config_path"])
+        assert kwargs["config_path"].read_text(encoding="utf-8") == vdoc.text()
+        raise exc
+
+    monkeypatch.setattr("agent.config_loader.resolve_model_config", fail)
+    result = _check(vdoc)
+    assert not result.ok
+    assert any(str(exc.args[0]) in e for e in result.errors)
+    assert len(seen) == 1
+    assert seen[0].parent == vdoc.path.parent
+    assert seen[0].name.startswith(".config.validate.") and seen[0].suffix == ".yaml"
+    assert not seen[0].exists()
+
+
+def test_each_validate_uses_its_own_temp_file(vdoc, monkeypatch):
+    seen = []
+    monkeypatch.setattr(
+        "agent.config_loader.resolve_model_config",
+        lambda **kwargs: seen.append(kwargs["config_path"]),
+    )
+    _check(vdoc)
+    _check(vdoc)
+    assert len(seen) == 2 and seen[0] != seen[1]
+
+
+def test_resolve_runs_against_document_text(vdoc):
+    """An invalid expression interval is only caught by the loader itself."""
+    vdoc.set("expression", {"interval": -1})
+    assert any("interval" in e for e in _check(vdoc).errors)
+
+
+def test_temp_file_write_failure_is_an_error(vdoc, monkeypatch):
+    def fail(*_args, **_kwargs):
+        raise PermissionError("denied")
+
+    monkeypatch.setattr("agent.config_editor.tempfile.mkstemp", fail)
+    result = _check(vdoc)
+    assert not result.ok
+    assert any("denied" in e for e in result.errors)
+    assert not any("denied" in w for w in result.warnings)
+
+
+def test_validate_does_not_import_qt():
+    import subprocess
+    import sys
+
+    code = (
+        "import sys; from agent.config_editor import validate, tool_catalog; "
+        "tool_catalog(); "
+        "assert not [m for m in sys.modules if m.startswith(('PySide', 'PyQt'))]"
+    )
+    subprocess.run([sys.executable, "-c", code], check=True,
+                   cwd=Path(__file__).resolve().parents[1])
