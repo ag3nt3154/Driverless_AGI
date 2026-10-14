@@ -19,13 +19,23 @@ Save parses pending raw text, runs the strict ``validate()`` (errors block the
 write, warnings are shown) and writes conflict-checked; a file changed on disk
 offers Reload / Overwrite. ``validate()`` runs synchronously on the GUI thread
 (it may execute a model client script). Changes apply to new sessions only.
+
+A ``QFileSystemWatcher`` watches the config file (re-added after every event
+and save: os.replace drops it on Windows); its parent directory is watched
+only while the file is missing, to notice it being re-created. Events are
+debounced into ``_check_disk``: a missing file or an unchanged hash (own save,
+no-op touch) is ignored; otherwise pending text-field input is committed, then
+a clean view reloads silently and a dirty one shows the conflict banner. The
+conflict banner is sticky (``_conflict``):
+other messages are shown under it and clearing the banner re-shows it, until
+Reload / Revert or a successful Save / Overwrite.
 """
 from __future__ import annotations
 
 from pathlib import Path
 from typing import Any, Callable
 
-from PySide6.QtCore import QEvent, QObject, Qt, QTimer, Signal
+from PySide6.QtCore import QEvent, QFileSystemWatcher, QObject, Qt, QTimer, Signal
 from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
@@ -61,6 +71,9 @@ from services.message_board.lifecycle import DEFAULT_URL as _BOARD_DEFAULT_URL
 from services.message_board.settings import DEFAULT_BIND as _BOARD_DEFAULT_BIND
 
 _SAVED_MS = 2500
+_WATCH_DEBOUNCE_MS = 200
+_WATCH_RETRIES = 10  # re-checks while the file cannot be read (e.g. locked mid-write)
+_CONFLICT_TEXT = "config.yaml changed on disk."
 _FOOTER_TEXT = "Changes apply to new sessions."
 _MISSING: Any = object()
 
@@ -197,6 +210,7 @@ QFrame#settings-banner {
 QFrame#settings-banner[kind="error"] { border: 1px solid @danger; }
 QFrame#settings-banner[kind="warn"] { border: 1px solid @warn; }
 QFrame#settings-banner[kind="info"] { border: 1px solid @success; }
+QFrame#settings-banner[kind="conflict"] { border: 1px solid @danger; }
 QFrame#settings-banner QLabel {
     color: @fg;
     font-family: @font_ui;
@@ -312,6 +326,7 @@ class SettingsView(QWidget):
         self._doc: ConfigDocument  # set by reload()
         self._dirty = False
         self._unreadable = False
+        self._conflict = False  # sticky "changed on disk" banner pending
         self._populating = False
         self._catalog: list[str] | None = None  # tool_catalog(), computed on first use
         self._scroll: QScrollArea | None = None
@@ -384,7 +399,17 @@ class SettingsView(QWidget):
 
         self._banner_timer.timeout.connect(self._clear_banner)
 
+        self._watcher = QFileSystemWatcher(self)
+        self._watcher.fileChanged.connect(self._on_watch_event)
+        self._watcher.directoryChanged.connect(self._on_watch_event)
+        self._watch_timer = QTimer(self)
+        self._watch_timer.setSingleShot(True)
+        self._watch_timer.setInterval(_WATCH_DEBOUNCE_MS)
+        self._watch_timer.timeout.connect(self._check_disk)
+        self._watch_retries = _WATCH_RETRIES
+
         self.reload()
+        self._watch()
 
     # ── Public API ──
 
@@ -399,6 +424,7 @@ class SettingsView(QWidget):
         A file that cannot be read or decoded shows an error and disables
         saving until a later reload succeeds.
         """
+        self._conflict = False
         self._clear_banner()
         self._set_unreadable(False)
         try:
@@ -860,11 +886,14 @@ class SettingsView(QWidget):
         try:
             self._doc.save(force=force)
         except ConfigConflictError:
-            self._show_banner("error", "config.yaml changed on disk.", conflict=True)
+            self._show_banner("conflict", _CONFLICT_TEXT, conflict=True)
             return
         except OSError as exc:
             self._show_banner("error", f"Could not save: {exc}")
             return
+        finally:
+            self._watch()  # os.replace drops the file from the watcher on Windows
+        self._conflict = False
         if self._tabs.currentIndex() == self._raw_index:
             self._set_raw_text(self._doc.text())
         self._set_dirty(False)
@@ -876,6 +905,60 @@ class SettingsView(QWidget):
 
     def _on_overwrite(self) -> None:
         self._save(force=True)
+
+    # ── File watcher ──
+
+    def _watch(self) -> None:
+        """Watch the config file; watch its directory only while the file is missing.
+
+        Re-adds the file after Windows dropped it (os.replace). The directory
+        watch exists only to notice the file being (re)created: kept next to
+        a watched file, it makes ``os.replace`` intermittently fail with
+        "Access is denied" on Windows.
+        """
+        file_s, dir_s = str(self._path), str(self._path.parent)
+        if self._path.exists():
+            if file_s not in self._watcher.files():
+                self._watcher.addPath(file_s)
+            if dir_s in self._watcher.directories():
+                self._watcher.removePath(dir_s)
+        elif dir_s not in self._watcher.directories() and self._path.parent.is_dir():
+            self._watcher.addPath(dir_s)
+
+    def _on_watch_event(self, _path: str) -> None:
+        self._watch()
+        self._watch_retries = _WATCH_RETRIES
+        self._watch_timer.start()  # restarts: a burst of events is checked once
+
+    def _check_disk(self) -> None:
+        """Debounced: react to the file on disk differing from the document."""
+        self._watch()
+        try:
+            disk_hash = file_hash(self._path)
+        except OSError:
+            # Unreadable for now (e.g. locked mid-write): look again shortly.
+            if self._watch_retries > 0:
+                self._watch_retries -= 1
+                self._watch_timer.start()
+            return
+        if disk_hash is None:
+            return  # missing (e.g. mid delete/recreate): wait for it to reappear
+        if disk_hash == self._doc.base_hash:
+            # Own save or a no-op touch — or the file went back to what was
+            # loaded, so Save no longer conflicts.
+            if self._conflict:
+                self._conflict = False
+                self._clear_banner()
+            return
+        if not self._unreadable:
+            # A text field being typed in commits only on editingFinished:
+            # commit it now so it counts as an edit instead of being reloaded over.
+            for key in self._text_fields:
+                self._on_text_committed(key)
+        if self._dirty:
+            self._show_banner("conflict", _CONFLICT_TEXT, conflict=True)
+        else:
+            self.reload()
 
     # ── Banner / dirty state ──
 
@@ -909,16 +992,29 @@ class SettingsView(QWidget):
         return self._banner_wrap
 
     def _show_banner(self, kind: str, text: str, *, conflict: bool = False) -> None:
+        """Show a message; ``conflict=True`` makes the conflict banner sticky.
+
+        While a conflict is pending, other messages appear under its text and
+        its Reload / Overwrite actions stay visible.
+        """
         self._banner_timer.stop()
+        if conflict:
+            self._conflict = True
+        if self._conflict and text != _CONFLICT_TEXT:
+            text = f"{_CONFLICT_TEXT}\n{text}"
         self._banner.setProperty("kind", kind)
         self._banner.style().unpolish(self._banner)
         self._banner.style().polish(self._banner)
         self._banner_label.setText(text)
-        self._reload_btn.setVisible(conflict)
-        self._overwrite_btn.setVisible(conflict)
+        self._reload_btn.setVisible(self._conflict)
+        self._overwrite_btn.setVisible(self._conflict)
         self._banner_wrap.show()
 
     def _clear_banner(self) -> None:
+        """Hide the banner, or fall back to the conflict banner while one is pending."""
+        if self._conflict:
+            self._show_banner("conflict", _CONFLICT_TEXT)
+            return
         self._banner.setProperty("kind", "")
         self._banner_label.setText("")
         self._reload_btn.hide()

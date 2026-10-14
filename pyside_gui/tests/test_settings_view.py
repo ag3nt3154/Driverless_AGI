@@ -492,3 +492,256 @@ def test_form_disabled_while_unreadable(config_path, qtbot):
     config_path.write_text(_CONFIG, encoding="utf-8")
     w._revert_btn.click()
     assert w._form_body.isEnabled()
+
+
+# ── File watcher / conflict banner ──
+
+
+_EXTERNAL = _CONFIG + "reserve_tokens: 7\n"
+
+
+def _count_reloads(view, monkeypatch) -> list[int]:
+    calls: list[int] = []
+    original = view.reload
+
+    def counting() -> None:
+        calls.append(1)
+        original()
+
+    monkeypatch.setattr(view, "reload", counting)
+    return calls
+
+
+def _conflict_shown(view) -> bool:
+    return (
+        not view._banner_wrap.isHidden()
+        and "config.yaml changed on disk." in view._banner_label.text()
+        and not view._reload_btn.isHidden()
+        and not view._overwrite_btn.isHidden()
+    )
+
+
+def test_watcher_watches_config_path(view, config_path):
+    assert str(config_path) in view._watcher.files()
+    # The directory is watched only while the file is missing (a directory
+    # watch next to the file makes os.replace fail intermittently on Windows).
+    assert view._watcher.directories() == []
+
+
+def test_directory_watched_only_while_file_missing(view, config_path):
+    config_path.unlink()
+    view._check_disk()
+    assert str(config_path.parent) in view._watcher.directories()
+    config_path.write_text(_CONFIG, encoding="utf-8")
+    view._check_disk()
+    assert str(config_path) in view._watcher.files()
+    assert view._watcher.directories() == []
+
+
+def test_missing_file_at_start_is_picked_up_when_created(tmp_path, qtbot):
+    path = tmp_path / "config.yaml"
+    w = SettingsView(path)
+    qtbot.addWidget(w)
+    assert str(tmp_path) in w._watcher.directories()
+    path.write_text("context_window: 5\n", encoding="utf-8")
+    qtbot.waitUntil(lambda: w._doc.get("context_window") == 5, timeout=5000)
+    assert str(path) in w._watcher.files()
+    assert w._watcher.directories() == []
+
+
+def test_many_saves_with_real_watcher_all_succeed(view, config_path, qtbot):
+    for i in range(30):
+        edited = _CONFIG.replace("1000", str(2000 + i))
+        _set_raw(view, edited)
+        view._save_btn.click()
+        assert not view.is_dirty(), view._banner_label.text()
+        assert config_path.read_text(encoding="utf-8") == edited
+        qtbot.wait(20)  # let watcher events run between saves
+    qtbot.wait(400)
+    assert view._banner_label.text() == "Saved."
+    assert str(config_path) in view._watcher.files()
+
+
+def test_pending_text_edit_makes_external_change_a_conflict(view, config_path):
+    field = view._text_fields["services.message_board.url"]
+    field.setText("http://h:1")  # typed, not yet committed (no editingFinished)
+    assert not view.is_dirty()
+    config_path.write_text(_EXTERNAL, encoding="utf-8")
+    view._check_disk()
+    assert view.is_dirty()
+    assert _conflict_shown(view)
+    assert view._doc.get("services.message_board.url") == "http://h:1"
+    assert field.text() == "http://h:1"
+
+
+def test_conflict_clears_when_disk_returns_to_loaded_content(view, config_path):
+    _set_raw(view, _CONFIG.replace("1000", "3000"))
+    config_path.write_text(_EXTERNAL, encoding="utf-8")
+    view._check_disk()
+    assert _conflict_shown(view)
+    config_path.write_bytes(_CONFIG.encode("utf-8"))
+    view._check_disk()
+    assert view._banner_wrap.isHidden()
+    assert view._reload_btn.isHidden()
+    assert view.is_dirty()
+
+
+def test_external_write_while_clean_reloads(view, config_path):
+    config_path.write_text(_EXTERNAL, encoding="utf-8")
+    view._check_disk()
+    assert view._raw.toPlainText() == _EXTERNAL
+    assert view._doc.get("reserve_tokens") == 7
+    assert not view.is_dirty()
+    assert view._banner_wrap.isHidden()
+
+
+def test_external_write_while_dirty_shows_banner_and_keeps_edits(view, config_path):
+    edited = _CONFIG.replace("1000", "3000")
+    _set_raw(view, edited)
+    config_path.write_text(_EXTERNAL, encoding="utf-8")
+    view._check_disk()
+    assert _conflict_shown(view)
+    assert view.is_dirty()
+    assert view._raw.toPlainText() == edited
+
+
+def test_external_conflict_reload_discards_edits(view, config_path):
+    _set_raw(view, _CONFIG.replace("1000", "3000"))
+    config_path.write_text(_EXTERNAL, encoding="utf-8")
+    view._check_disk()
+    view._reload_btn.click()
+    assert view._raw.toPlainText() == _EXTERNAL
+    assert not view.is_dirty()
+    assert view._banner_wrap.isHidden()
+
+
+def test_external_conflict_overwrite_saves_edits(view, config_path):
+    edited = _CONFIG.replace("1000", "3000")
+    _set_raw(view, edited)
+    config_path.write_text(_EXTERNAL, encoding="utf-8")
+    view._check_disk()
+    view._overwrite_btn.click()
+    assert config_path.read_text(encoding="utf-8") == edited
+    assert not view.is_dirty()
+    assert view._overwrite_btn.isHidden()
+    assert "Saved." in view._banner_label.text()
+
+
+def test_unchanged_hash_is_ignored(view, monkeypatch):
+    calls = _count_reloads(view, monkeypatch)
+    _set_raw(view, _CONFIG.replace("1000", "3000"))
+    view._check_disk()
+    assert calls == []
+    assert view._banner_wrap.isHidden()
+    assert view.is_dirty()
+
+
+def test_missing_file_is_not_a_change(view, config_path, monkeypatch):
+    calls = _count_reloads(view, monkeypatch)
+    _set_raw(view, _CONFIG.replace("1000", "3000"))
+    config_path.unlink()
+    view._check_disk()
+    assert calls == []
+    assert view._banner_wrap.isHidden()
+    assert view.is_dirty()
+    # When the file reappears with new content, it is a change again.
+    config_path.write_text(_EXTERNAL, encoding="utf-8")
+    view._check_disk()
+    assert _conflict_shown(view)
+    assert str(config_path) in view._watcher.files()
+
+
+def test_own_save_does_not_reload_or_banner(view, config_path, qtbot, monkeypatch):
+    calls = _count_reloads(view, monkeypatch)
+    _set_raw(view, _CONFIG.replace("1000", "2000"))
+    view._save_btn.click()
+    qtbot.wait(600)  # let any watcher event + debounce fire
+    view._check_disk()
+    assert calls == []
+    assert view._banner_label.text() == "Saved."
+    assert view._reload_btn.isHidden()
+
+
+def test_watcher_keeps_path_after_save(view, config_path, qtbot):
+    _set_raw(view, _CONFIG.replace("1000", "2000"))
+    view._save_btn.click()
+    assert str(config_path) in view._watcher.files()
+    qtbot.wait(600)
+    assert str(config_path) in view._watcher.files()
+
+
+def test_conflict_banner_survives_raw_to_form_switch(view, config_path):
+    _set_raw(view, _CONFIG.replace("1000", "3000"))
+    config_path.write_text(_EXTERNAL, encoding="utf-8")
+    view._check_disk()
+    # Raw edited again, then a successful Raw->Form switch must not clear it.
+    view._raw.setPlainText(_CONFIG.replace("1000", "4000"))
+    view._tabs.setCurrentIndex(view._form_index)
+    assert view._tabs.currentIndex() == view._form_index
+    assert _conflict_shown(view)
+
+
+def test_conflict_banner_survives_other_errors(view, config_path):
+    _set_raw(view, _CONFIG.replace("1000", "3000"))
+    config_path.write_text(_EXTERNAL, encoding="utf-8")
+    view._check_disk()
+    view._raw.setPlainText("a: [broken\n")
+    view._tabs.setCurrentIndex(view._form_index)  # blocked, shows parse error
+    assert "line" in view._banner_label.text().lower()
+    assert _conflict_shown(view)
+    view._raw.setPlainText(_CONFIG.replace("1000", "4000"))
+    view._tabs.setCurrentIndex(view._form_index)
+    assert _conflict_shown(view)
+    assert "line" not in view._banner_label.text().lower()
+
+
+def test_save_conflict_uses_same_banner_and_revert_clears(view, config_path):
+    _make_conflict(view, config_path)
+    assert _conflict_shown(view)
+    view._revert_btn.click()
+    assert view._banner_wrap.isHidden()
+    assert not view.is_dirty()
+
+
+def test_unreadable_view_reloads_when_file_fixed(config_path, qtbot):
+    config_path.write_bytes("default_model: m1  # caf\xe9\n".encode("cp1252"))
+    w = SettingsView(config_path)
+    qtbot.addWidget(w)
+    assert not w._save_btn.isEnabled()
+    config_path.write_text(_CONFIG, encoding="utf-8")
+    w._check_disk()
+    assert w._save_btn.isEnabled()
+    assert w._raw.toPlainText() == _CONFIG
+    assert w._banner_wrap.isHidden()
+
+
+def test_debounce_coalesces_bursts(view, config_path, qtbot, monkeypatch):
+    calls = _count_reloads(view, monkeypatch)
+    config_path.write_text(_EXTERNAL, encoding="utf-8")
+    for _ in range(5):
+        view._watcher.fileChanged.emit(str(config_path))
+    assert calls == []  # nothing until the debounce elapses
+    assert view._watch_timer.isActive()
+    qtbot.waitUntil(lambda: not view._watch_timer.isActive(), timeout=2000)
+    qtbot.wait(300)  # real watcher events for the same write also coalesce
+    assert len(calls) == 1
+    assert view._doc.get("reserve_tokens") == 7
+
+
+def test_real_watcher_reloads_clean_view(view, config_path, qtbot):
+    config_path.write_text(_EXTERNAL, encoding="utf-8")
+    qtbot.waitUntil(lambda: view._raw.toPlainText() == _EXTERNAL, timeout=5000)
+    assert not view.is_dirty()
+
+
+def test_real_watcher_sees_atomic_replace(view, config_path, qtbot):
+    import os
+
+    tmp = config_path.with_suffix(".yaml.ext")
+    tmp.write_text(_EXTERNAL, encoding="utf-8")
+    os.replace(tmp, config_path)
+    qtbot.waitUntil(lambda: view._raw.toPlainText() == _EXTERNAL, timeout=5000)
+    second = _EXTERNAL + "keep_recent_tokens: 9\n"
+    tmp.write_text(second, encoding="utf-8")
+    os.replace(tmp, config_path)
+    qtbot.waitUntil(lambda: view._raw.toPlainText() == second, timeout=5000)

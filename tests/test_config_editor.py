@@ -343,6 +343,56 @@ def test_failed_replace_removes_tmp_and_reraises(tmp_path, monkeypatch):
     assert doc.base_hash == file_hash(path)
 
 
+def test_save_retries_replace_on_permission_error(tmp_path, monkeypatch):
+    import agent.config_editor as mod
+
+    path = _copy_fixture(tmp_path)
+    doc = ConfigDocument.load(path)
+    doc.set("context_window", 1000)
+    real_replace = mod.os.replace
+    calls: list[int] = []
+    sleeps: list[float] = []
+
+    def flaky(src, dst):
+        calls.append(1)
+        if len(calls) <= 2:
+            raise PermissionError(5, "Access is denied")
+        real_replace(src, dst)
+
+    monkeypatch.setattr(mod.os, "replace", flaky)
+    monkeypatch.setattr(mod.time, "sleep", sleeps.append)
+    new_hash = doc.save()
+    assert len(calls) == 3
+    assert len(sleeps) == 2
+    assert "context_window: 1000" in path.read_text(encoding="utf-8")
+    assert new_hash == file_hash(path)
+    assert not path.with_suffix(".yaml.tmp").exists()
+
+
+def test_save_gives_up_after_repeated_permission_errors(tmp_path, monkeypatch):
+    import agent.config_editor as mod
+
+    path = _copy_fixture(tmp_path)
+    original = path.read_bytes()
+    doc = ConfigDocument.load(path)
+    base = doc.base_hash
+    doc.set("context_window", 1000)
+    calls: list[int] = []
+
+    def denied(src, dst):
+        calls.append(1)
+        raise PermissionError(5, "Access is denied")
+
+    monkeypatch.setattr(mod.os, "replace", denied)
+    monkeypatch.setattr(mod.time, "sleep", lambda _s: None)
+    with pytest.raises(PermissionError):
+        doc.save()
+    assert len(calls) == 5
+    assert not path.with_suffix(".yaml.tmp").exists()
+    assert path.read_bytes() == original
+    assert doc.base_hash == base
+
+
 def test_save_creates_missing_parent_dir(tmp_path):
     path = tmp_path / "nested" / ".dagi" / "config.yaml"
     doc = ConfigDocument.load(path)

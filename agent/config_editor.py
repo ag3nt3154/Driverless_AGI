@@ -5,7 +5,8 @@ agent/config_editor.py — comment-preserving editor for {DAGI_ROOT}/.dagi/confi
 lines, key order and commented-out alternatives survive load -> edit -> save.
 An unedited document serializes back to the exact text it was loaded from.
 
-Saves are atomic (write `<name>.yaml.tmp`, then `os.replace`) and
+Saves are atomic (write `<name>.yaml.tmp`, then `os.replace`, retried briefly
+on PermissionError) and
 conflict-checked: the on-disk sha256 must still match the hash recorded at
 load time unless the caller forces the write. The file's line endings (LF or
 CRLF) are preserved on save; `text()` always uses LF.
@@ -25,6 +26,7 @@ import io
 import os
 import re
 import tempfile
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -56,6 +58,26 @@ class ConfigParseError(ValueError):
 
 class ConfigConflictError(RuntimeError):
     """The file on disk changed since it was loaded."""
+
+
+_REPLACE_ATTEMPTS = 5
+_REPLACE_DELAY_S = 0.05
+
+
+def _replace_with_retry(src: Path, dst: Path) -> None:
+    """`os.replace`, retried on PermissionError.
+
+    On Windows the replace fails with "Access is denied" while another process
+    (a file watcher, antivirus, an editor) briefly holds the target open.
+    """
+    for attempt in range(1, _REPLACE_ATTEMPTS + 1):
+        try:
+            os.replace(src, dst)
+            return
+        except PermissionError:
+            if attempt == _REPLACE_ATTEMPTS:
+                raise
+            time.sleep(_REPLACE_DELAY_S)
 
 
 def file_hash(path: Path) -> str | None:
@@ -450,7 +472,7 @@ class ConfigDocument:
         tmp = self.path.with_suffix(".yaml.tmp")
         try:
             tmp.write_bytes(payload)
-            os.replace(tmp, self.path)
+            _replace_with_retry(tmp, self.path)
         except BaseException:
             tmp.unlink(missing_ok=True)
             raise
