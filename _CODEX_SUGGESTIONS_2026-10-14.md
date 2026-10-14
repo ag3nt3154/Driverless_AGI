@@ -1,33 +1,33 @@
-# Dagi suggestions — 2026-10-12
+# Dagi suggestions — 2026-10-14
 
 Proposals for sustained agentic work, measured self-improvement and understandable recovery.
-They do not authorize implementation. Reviewed main at **ff18da869a8a1885f3ed7d3851cb3c7d0e40e458**. The October 11 report
-was edited in place and renamed to October 12. Only unbuilt improvements or explicit
-extensions of shipped features remain; none of the existing 14 extensions is fully implemented.
+They do not authorize implementation. Reviewed main at **db8dde97138c3d67b9c44121f8ce2cce07b5bfca**. The latest existing
+October 12 report was edited in place and renamed; no October 13 copy existed. There are
+**16 unbuilt improvements or explicit extensions**: the 15 prior proposals remain unbuilt,
+and S16 connects review findings to candidate selection in the existing improvement workflow.
 
-Already shipped: code-mode scripts (including positional tool arguments), standalone board
-composition/token resolution, member keys and online presence, attachment save/preview,
-image input, board switching, Agents rail and mention wake-ups, owner-scoped child cancellation,
-computer-use tools, recording/compilation, deterministic replay, content-based approval,
-halt evidence, repair patches, and the Workflows rail/cards. Recognize RequestExecutor,
-persisted revisions, child generation checks, output draining, active-plan sidecars,
-process-state events and steering receipts. Extend the existing
-[improve-yourself workflow](C:/Users/alexr/Driverless_AGI/.dagi/workflow/improve-yourself/workflow.md), rather than
-reproposing baseline/after testing. Campaign is absent; reconcile its design before schema reuse.
+Already shipped: code-mode scripts and positional arguments, standalone board composition,
+member keys/presence, launcher admin controls, key/handle bans, replayed purge events,
+reserved @board-admin posts, attachment save/preview, image input, board switching, Agents
+rail/mention wake-ups, owner-scoped child cancellation, computer-use recording/compilation,
+deterministic replay, content-based approval, halt/repair evidence and Workflows rail/cards.
+Basic moderation and the repaired startup presentation are not missing-feature proposals.
+Recognize RequestExecutor, persisted revisions, child generation checks, output draining,
+active-plan sidecars, process-state events and steering receipts. Campaign remains absent;
+reconcile its historical design before introducing a shared schema.
 
-RPA is now implemented, not merely planned. Keep its explicit replay/confirmation contract
-separate from the standing coding harness workflow; no new orchestration language or coding
-approval layer is proposed. The board's five-wake cap was deliberately removed; S13 proposes
-task receipts and scoped work budgets, not restoring that cap. The wiki already tracks @all,
-board moderation, image attachments and startup animation follow-ups; those are not duplicated.
-Reported missed mentions to spawned agents still need diagnosis, independently of R22.
+Extend the [improve-yourself workflow](C:/Users/alexr/Driverless_AGI/.dagi/workflow/improve-yourself/workflow.md)
+and [review-session synthesis](C:/Users/alexr/Driverless_AGI/.dagi/skills/review-session/SKILL.md),
+rather than reproposing baseline/candidate testing. R27 shows their intake contract needs
+alignment with the actual TODO. RPA replay confirmation remains separate from the standing
+coding workflow. Preserve intentionally uncapped board mentions. Existing wiki @all, image
+attachment and admin follow-ups are not duplicated; reported missed spawned-agent mentions
+remain undiagnosed independently of the reproduced old-board event bug.
 
-[Today's review](C:/Users/alexr/Driverless_AGI/_CODEX_CODE_REVIEW_2026-10-12.md) contains 20 open findings, removes
-repaired R20, and adds R23–R26 for replay verification, revision identity, retries and cancellation.
-Final-revision validation: 810 passed, three known R15 failures and 24 skips, including Qt
-controller fixtures. Five offline probe assertions reproduce the four new findings. No live
-desktop, hook or provider validation. The roadmap has **15 unbuilt extensions**, adding S15's
-read-only replay preflight preview and extending existing contracts for the shipped RPA paths.
+[Today's review](C:/Users/alexr/Driverless_AGI/_CODEX_CODE_REVIEW_2026-10-14.md) contains **21 open findings**.
+Focused checks: **379 passed, three known R15 failures, two opt-in skips**. All four RPA
+findings reproduce in offline probes; fresh real Qt delivery also reproduces stale posts
+and purges after switching boards. No live desktop, hook or provider validation.
 
 ## S1 — One owned run with an explicit outcome
 
@@ -79,7 +79,7 @@ yield explicit outcomes. Unknown provider costs remain visible.
 and retained baseline/candidate evidence.
 
 **Issue addressed:** Structural metrics can reward shorter code while adapter semantics
-regress. Core tests passed in this review while boundary probes reproduced defects.
+regress. Focused board/GUI tests pass while controlled boundary probes reproduce defects.
 
 **Smallest useful version:** Retain fixtures for pairing, recovery, scheduler outcome,
 child resume, stdout draining, final delivery, question routing, publication failure,
@@ -134,8 +134,7 @@ notifications occur on meaningful changes or required action.
 **Improvement:** Expose effective environment and working capabilities before dependent tasks.
 
 **Issue addressed:** Earlier reviews found shell and converter retries. Importability does
-not prove working conversion; prior WebEngine checks were sandbox-sensitive. Focused Qt
-controller/feed tests ran this time, but rendered WebEngine interaction was not verified.
+not prove working conversion; prior WebEngine checks were sandbox-sensitive. Focused Qt controller/feed tests ran this time; rendered WebEngine interaction was not verified.
 
 **Smallest useful version:** Report resolved interpreter, shell contract, tool availability
 and converter-service health with bounded smoke fixtures. Reuse configuration introspection
@@ -182,6 +181,8 @@ print-before-timeout/kill fixtures; idle-script timeout tests do not cover these
 Preserve the shipped two-parent cancellation isolation tests and add actual worker exit after session close (R21),
 rather than a mocked stop return alone. Include queued old-board events delivered after
 a switch (R22); checking generation only before emitting is insufficient.
+Extend R22 to queued old-board purge/status events; an obsolete purge cannot remove a new-board
+card. Include current admin identity, reserved-handle and ban/purge behavior in board contracts.
 Add R23/R24 complete coverage and executed-revision verification, R25 post-action
 expectation timeout and R26 per-item cancellation/lock acknowledgment fixtures.
 
@@ -300,12 +301,14 @@ board assignment and its reply. Record accepted/running/result-received/verified
 against the existing run identity. Start with a read-only reviewer in a separate agent,
 with one acceptance check and a bounded token/time budget. Deduplicate deliveries by board
 identity plus post/task ID. Reject old-generation events at GUI delivery (R22) before they
-can admit work on the current board. Keep shared-folder write ownership explicit before allowing
+can admit work on the current board. Apply the same identity check before processing purges.
+Treat @board-admin as the shipped launcher identity; ordinary task assignment must not imply
+authority to ban, clear or shut down a board. Keep shared-folder write ownership explicit before allowing
 editing collaborators. Reuse existing worker/reviewer skills; do not create another agent
 protocol or interpret an ordinary board message as implementation approval.
 
 **Acceptance:** Replaying a mention cannot duplicate an admitted task. Closing or cancelling
-the reviewer leaves other agents alive. A reported result links the exact source revision,
+the reviewer leaves other agents alive. An old-board purge cannot erase current-board task cards. A reported result links the exact source revision,
 checks and artifacts, and the main task remains unverified until its acceptance check passes.
 Exhausted budgets and rejected/stale results remain inspectable in the existing Agents UI.
 
@@ -357,6 +360,30 @@ YAML invalidates the preview. Planned coverage stays visibly separate from execu
 receipts; only a clean complete run earns verification after R23/R24 are repaired. Add preview
 fixtures to S3/S8 and keep replay retry behavior under S14/R25.
 
+## S16 — Turn selected findings into reproducible improvement candidates
+
+**Improvement:** Give the Admiral a small review-to-work intake that hands one current,
+selected finding to the existing improvement workflow with its evidence and acceptance check.
+
+**Issue addressed:** R27 shows missing TODO/Work Queue compatibility. Review-session already
+produces analysis and a plan; improve-yourself already runs baseline/candidate experiments.
+What is missing is a maintained shared intake contract connecting those artifacts and current
+open review IDs, with explicit empty-queue and superseded-finding handling.
+
+**Smallest useful version:** Extend current TODO selection and review-session synthesis with
+stable finding ID, source report/plan, reviewed revision, priority, reproduction command and
+acceptance check. Selecting a candidate rechecks its source and reproduces the issue in a
+scratch workspace before the baseline/candidate stages. Report no eligible work explicitly.
+Carry the same ID into S2/S4 experiment records and retain rejected hypotheses. Use the
+existing normal workflow for planning/approval; publishing a report does not approve a repair.
+Start with one manually selected finding, not an autonomous bulk issue importer or new service.
+
+**Acceptance:** A real current TODO example selects the intended finding. A missing/empty
+queue returns a clear no-candidate result with zero model benchmark or workspace mutation.
+A resolved or irreproducible historical finding is not silently selected. Repeated ingestion
+does not duplicate the same finding. Baseline/candidate artifacts name the selected source
+and evaluator. Applying changes remains the Admiral's existing implementation decision.
+
 ## Sequence and measures
 
 1. Repair R4/R10/R16/R18/R21/R22/R23/R24/R25/R26 and Telegram R11/R12; retain verified R2/R6/R8/R9 contracts.
@@ -370,7 +397,7 @@ fixtures to S3/S8 and keep replay retry behavior under S14/R25.
    capability-preflight opportunity under the project's normal implementation workflow.
    Add S11 once admission and attempt recovery have durable ownership. Prototype S15
    atop the existing RPA detail API after verification/ownership repairs.
-4. Connect S7 checkpoints and extend S3's existing self-improvement workflow. Candidate
+4. Repair R27 and add S16 intake; connect S7 checkpoints and extend S3's existing self-improvement workflow. Candidate
    promotion requires intact evaluator evidence and passing behavioral contracts.
    Measure shipped code mode through S12 before choosing examples to reuse.
 5. Pilot S13 with read-only review once durable attempt ownership is established. Preserve
@@ -379,9 +406,8 @@ fixtures to S3/S8 and keep replay retry behavior under S14/R25.
 Measure verified acceptance, false-success rate, final-delivery failures, question-answer
 latency, cancellation latency, code-mode deadline overrun/partial-output retention, export
 recovery without recomputation, plan-contract rejection, recovery success, duplicate-admission
-rate, exact task-selection accuracy, obsolete-board wake-ups, replay coverage/hash mismatches, repeated post-action mutations,
+rate, exact task-selection accuracy, obsolete-board wake-ups/card removals, review-to-candidate selection errors, replay coverage/hash mismatches, repeated post-action mutations,
 preview-versus-run input drift, retry-without-change rate, stale-result
 rejection and repeated failed hypotheses. Record cost per verified outcome with missing-cost
 cases explicit. Establish
 baselines before choosing numerical targets. No external framework migration is required.
-

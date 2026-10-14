@@ -2,7 +2,7 @@
 title: 'Board switching must reject obsolete queued GUI events'
 description: 'R22: a generation check before emitting a Qt signal cannot reject a post already queued when the GUI switches boards.'
 tags: [BoardController, board_post, Qt, generation, queued-signal, mentions, rebind]
-updated: 2026-10-11
+updated: 2026-10-14
 ---
 
 Review finding R22 remains open at main `3079386f6cc562e584608d97bed0024dfe0c6d8a`.
@@ -30,3 +30,14 @@ contains `review_probes.py`, `review_probe_results.json` and `verification.json`
 Review reports remain one file of each kind, updated in place and renamed daily. Runtime
 reproductions must keep their actual dates when source inspection carries findings forward.
 SQLite now imports as 3.51.2; the October 10 environment blockage is historical.
+
+## October 14 refresh
+
+Still open at main `db8dde97138c3d67b9c44121f8ce2cce07b5bfca`. Added purge events share the same pre-emit generation gap.
+Fresh offline probe queued old post #99 plus all-history purge through #500, switched through
+the actual controller, and seeded new-board card identity #7. Real Qt delivery woke #99;
+the actual MessageBoardView.remove_purged method removed #7 from the fake card storage.
+Clients, settled snapshot and card storage were stubbed; no real cards, traffic or agent work.
+Carry event identity into the GUI slot for purges as well as posts/status before admission.
+Evidence: `C:/Users/alexr/.codex/visualizations/2026/10/14/01a13a2e-5379-7132-8195-5f595075ddad/board_boundary_probes.py` and `board_boundary_results.json`.
+Focused GUI checks: 65 passed. Existing fixtures do not cover this queued switch ordering.

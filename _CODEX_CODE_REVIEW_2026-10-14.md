@@ -1,26 +1,25 @@
-# Dagi code review — 2026-10-12
+# Dagi code review — 2026-10-14
 
 ## Scope and priorities
 
-Reviewed **main**, final revision **ff18da869a8a1885f3ed7d3851cb3c7d0e40e458**. The initial clean revision was
-53b6f7c7; the checkout advanced during review. Changed boundaries and offline probes were
-rechecked at the final revision before reporting. The October 11 reports were edited in
-place and renamed to October 12. This report contains **20 open findings only**, with stable
-IDs: 16 retained and four new RPA findings (R23–R26). R20 was removed after inspecting the
-owner-scoped cancellation repair and passing its regression suite; abandoned metadata (R8)
-and terminal GUI close (R21) remain open.
+Reviewed **main**, revision **db8dde97138c3d67b9c44121f8ce2cce07b5bfca**, from a clean checkout. The latest existing reports
+were dated October 12; no October 13 reports existed. Both originals were edited in place
+and renamed to October 14. This report contains **21 open findings only**: all 20 previous
+findings still have their defective source paths, plus source-inspected process-contract
+finding R27. No verified repair of a listed issue was found. Previously resolved findings
+remain absent.
 
-Computer-use tools, recording, deterministic replay, repair and the Workflows rail are now
-shipped. Board member keys/presence and computer-use tool naming also changed. Basic presence,
-record/replay and plan tracking are not missing-feature findings. The wiki's report that
-mentions fail to reach spawned agents remains unconfirmed; it is separate from R22's dated
-reproduction. This review does not claim live/manual validation of those changes.
+Changes since the prior review are concentrated in board administration, the reserved
+@board-admin identity, bans, purge events, and startup presentation. These capabilities
+are shipped. The fresh R22 probe covers old-board purges as well as posts: an old purge
+can remove new-board cards after a switch. The wiki's report of missed spawned-agent
+mentions still needs separate diagnosis; this review does not assign it a cause.
 
 Prioritize truthful execution/verification and stop ownership (R4/R10/R16/R18/R21/R23/R24/R26),
-then non-idempotent replay retries (R25), Telegram routing/delivery (R11/R12), board event
-provenance (R22), and plan/publication/diagnostic contracts. The new probes use the real RPA
-interpreter/store and fake UI drivers; no real desktop, keyboard hook, provider, user board
-post or external side effect was exercised.
+non-idempotent retries (R25), Telegram routing/delivery (R11/R12), and board provenance (R22).
+R27 connects the current TODO format to the existing improvement workflow. Tests use
+scratch boards, fake providers/drivers and controlled Qt delivery. No live user-board
+moderation, provider, Telegram, desktop input or keyboard hook was exercised.
 
 ## R3 — P2: Record scheduler startup failures
 
@@ -58,7 +57,7 @@ providers, long tools and descendants; a thread join timeout cannot enforce a de
 scheduler/tg/tui/pyside_gui/providers/services, newly shipped rpa, and root entry points,
 excluding nested tests. Seven exceed 500 lines: agent/loop.py (1,117),
 tools/subagent_main.py (744), tools/read/_reader_controller.py (525),
-pyside_gui/prompt_input.py (635), pyside_gui/board_runtime.py (533),
+pyside_gui/prompt_input.py (635), pyside_gui/board_runtime.py (556),
 rpa/drivers/uia.py (518) and rpa/interpreter.py (524). Five functions exceed 100 lines:
 config_loader._build_config_from_entry (108), PySide bridge.build_callbacks (105),
 TUI callbacks.build_callbacks (178), rpa.interpreter.run_workflow (160) and
@@ -277,27 +276,27 @@ with background sessions. Preserve the repaired per-parent child isolation in th
 
 ## R22 — P1: Reject queued events from the previous board at GUI delivery
 
-**Finding:** Switching boards can deliver an old board's queued post as live input on the new board.
+**Finding:** Board switching can admit an old request and apply an old purge to the new board.
 
-**Issue:** The [listener callback](C:/Users/alexr/Driverless_AGI/pyside_gui/board_controller.py:306)
-checks its generation before emitting a Qt signal, but the signal carries only the post.
-The [GUI slot](C:/Users/alexr/Driverless_AGI/pyside_gui/board_controller.py:322) does not check
-generation or board identity. The [switch](C:/Users/alexr/Driverless_AGI/pyside_gui/board_controller.py:210)
-increments generation, clears the feed and rebinds sessions; it cannot retract already queued
-signals. October 11's controlled probe used the real controller, listener callback and Qt queued
-delivery with fake clients. Old-board post #99 was queued in a worker, a switch completed,
-then GUI events were processed: #99 appeared and triggered the mention hook while the
-session client pointed at the new board. The new snapshot baseline was stubbed at zero.
-No real board request, agent dispatch or provider call occurred. Old requests can therefore
-wake agents with board tools now bound to a different board; old attachment cards likewise
-resolve through the current client by source inspection, not a separate download probe.
+**Issue:** The [listener callbacks](C:/Users/alexr/Driverless_AGI/pyside_gui/board_controller.py:306)
+check generation before emitting, but posts, status and the newly added purge signal carry
+no board identity. The [post slot](C:/Users/alexr/Driverless_AGI/pyside_gui/board_controller.py:324)
+does not recheck generation; [purges connect directly to the view](C:/Users/alexr/Driverless_AGI/pyside_gui/board_controller.py:67).
+The October 14 probe queued old-board post #99 and an all-history purge through #500 from
+a worker, completed the real switch to a fake new client, and seeded new-board card #7.
+Processing real Qt events displayed #99 and called the mention hook while tools were bound
+to the new board; the real remove_purged method then removed #7 from the view's card identity
+storage. Clients, snapshot and card storage were fake; controller, queued delivery and purge
+logic were real. No real cards, board traffic, agent work or provider calls were used.
+This refreshes the October 11 post reproduction and proves the new purge boundary. Old
+attachment cards also resolve via the current client by inspection; downloads were not probed.
 
-**Suggested solution:** Carry generation and board/runtime identity with snapshot, stream
-and status events, and reject obsolete events in the GUI slot immediately before rendering
-or waking an agent. Commit snapshot baseline and posts on the GUI thread under the same
-identity. Preserve attachment provenance or invalidate obsolete cards. Add a deterministic
-test that queues an old post, switches before processing Qt events, and proves no display,
-mention wake-up or new-board attachment fetch. Cover pending old snapshots and status too.
+**Suggested solution:** Carry generation and board/runtime identity with snapshots, posts,
+purges and status, then reject obsolete events in GUI slots immediately before rendering,
+removing cards or waking agents. Commit snapshot baseline/posts on the GUI thread under
+that identity. Preserve attachment provenance or invalidate obsolete cards. Add deterministic
+queued-post and queued-purge switch regressions asserting no display, wake, removal or
+new-board fetch. Pre-emit generation checks alone cannot retract an already queued event.
 
 ## R23 — P1: Require complete, clean replay coverage before verification
 
@@ -377,37 +376,55 @@ Report stopping/uncertain activity until acknowledged, and preserve cancelled as
 Add the gated two-owner lock test and zero-wait for_each cancellation regression. Do not
 clear a live run's cancellation flag merely because another tool entry begins.
 
+## R27 — P2: Align self-improvement intake with the current TODO format
+
+**Finding:** The shipped improvement workflow cannot find its documented work queue here.
+
+**Issue:** [Step 1](C:/Users/alexr/Driverless_AGI/.dagi/workflow/improve-yourself/workflow.md:31)
+instructs the agent to scan `## Work Queue` and prioritize `review-item`, `priority:high` and
+`Source:` plan links. The current [TODO](C:/Users/alexr/Driverless_AGI/TODO.md) has no Work Queue
+section or entries with those fields; it uses In progress and prose follow-ups. The workflow
+does not define an empty/missing-queue branch. Review-session synthesis writes its own
+report/plan, but its current instructions do not populate this queue either. An invocation
+therefore needs the model to invent an intake rule or stop before choosing a candidate.
+This is a source-inspected instruction/data contract mismatch, not a reproduced provider
+failure or a claim that the baseline/candidate workflow is absent.
+
+**Suggested solution:** Make selection consume the maintained TODO shape, or establish a
+minimal explicit queue shared by review synthesis and improvement intake. Specify a clear
+no-candidate outcome and stable source identity. Verify examples from the actual TODO and
+empty queue before any candidate run. Preserve user selection/normal implementation approval;
+review publication alone must not authorize editing or applying candidate changes.
+
 ## Verification and limits
 
-- Final-revision focused run: **810 passed, 3 failed, 24 skipped in 68.93s**. Failures are
-  the known R15 missing-template tests. Coverage includes owner-scoped subagents, code scripts,
-  RPA, computer-use tools, image assets, board service/client/tools/runtime, and Qt board/
-  mentions/agent controllers. Real desktop and keyboard-hook fixtures remained disabled;
-  clean-install/network and platform-dependent fixtures also skip. Python was the project
-  dagi interpreter, with pytest-qt/cache disabled and a dedicated temporary test root.
-- The initial sandbox attempt could not create pytest's default temporary directory.
-  An explicit writable base fixed setup; sandbox Python also emits a startup warning that
-  contaminated the empty-script result. The unsandboxed rerun removed that extra failure.
-  Those are environment limitations, not new application findings.
-- All five new assertions (R23 has two) reproduce at the final revision with real interpreter,
-  store and lock and fake drivers. [Probe source](C:/Users/alexr/.codex/visualizations/2026/10/12/01a12ff5-eea2-7331-bb17-fd980fad5b50/review_probes.py),
-  [results and AST inventory](C:/Users/alexr/.codex/visualizations/2026/10/12/01a12ff5-eea2-7331-bb17-fd980fad5b50/review_probe_results.json), and
-  [test log](C:/Users/alexr/.codex/visualizations/2026/10/12/01a12ff5-eea2-7331-bb17-fd980fad5b50/verification-final.log) retain evidence. R24 edits only its temporary
-  workflow; R26 uses a deliberate gate and joins its worker. No live UI or external action.
-- R20's owning-code repair and tests cover concurrent parents, timeout ownership, PID reuse,
-  scope restoration and run/compact/wtf entry points; its open finding is removed. Real
-  multi-parent process-tree termination was not exercised. R8 metadata cleanup remains.
-- R3/R4/R10–R14/R16 reproductions are from **October 8**, R17–R19 from **October 8/9**,
-  R21 from **October 10**, and R22 from **October 11**. Current source preserves those
-  defective paths; fresh tests do not supersede their dated probes. R22's new snapshot-display
-  guard still does not carry provenance in a queued signal. R8 is source-inspected metadata
-  debt. R15 failures and R7 inventory are fresh.
-- [October 11 board-event evidence](C:/Users/alexr/.codex/visualizations/2026/10/11/01a128a5-2829-73f1-a28a-648eb65c6cf3/review_probe_results.json),
-  [October 10 evidence](C:/Users/alexr/.codex/visualizations/2026/10/10/01a1236a-9530-7a20-9210-07bdb703de16/review_probe_results.json),
-  [October 9 evidence](C:/Users/alexr/.codex/visualizations/2026/10/09/01a12093-68e8-7b40-98a4-9682ae3fc5c0/review_probe_results.json),
-  and [October 8 evidence](C:/Users/alexr/.codex/visualizations/2026/10/08/01a11b73-16a4-7810-b1e8-4e890c34d652/)
-  support retained findings. No full suite, rendered GUI, live provider/Telegram, converter,
-  power-loss or live cross-app repair check was run. Campaign remains absent. Only reports,
-  pointers and wiki were edited; no application repairs, staging or commits.
+- October 14 focused board/service/client/runtime/tools/download and plan-format checks:
+  **314 passed, 3 failed, 2 skipped in 61.34s**. All failures are the known R15 missing-template
+  tests; skips are opt-in clean-install/network checks. Focused Qt feed/controller/mention/
+  agents fixtures: **65 passed in 4.05s**. Thus **379 passed, 3 known failures, 2 skipped**;
+  this is a focused selection, not a full-suite or live-provider result.
+- Project interpreter resolved to `C:/Users/alexr/miniconda3/envs/dagi/python.exe`, Python
+  3.14.4, SQLite 3.51.2. The former Anaconda path no longer exists. Board and Qt suites ran
+  outside the sandbox with unrelated pytest plugin autoload disabled, pytest-qt/cache
+  disabled on the CLI, and dedicated writable basetemp directories. The GUI conftest loads
+  its required Qt plugin after DLL bootstrap. The initial sandboxed run stalled before
+  reporting progress and was interrupted; it is not counted as an application failure.
+- All five R23–R26 assertions reproduced today using the real interpreter/store/temporary
+  lock with FakeDriver. R24 edits temporary YAML; R26 gates and joins its worker. Fresh
+  R22 post/purge assertions use real controller and Qt delivery with fake clients/card
+  storage. [RPA probe](C:/Users/alexr/.codex/visualizations/2026/10/14/01a13a2e-5379-7132-8195-5f595075ddad/review_probes.py), [results and AST inventory](C:/Users/alexr/.codex/visualizations/2026/10/14/01a13a2e-5379-7132-8195-5f595075ddad/review_probe_results.json),
+  [board probe](C:/Users/alexr/.codex/visualizations/2026/10/14/01a13a2e-5379-7132-8195-5f595075ddad/board_boundary_probes.py), [board results](C:/Users/alexr/.codex/visualizations/2026/10/14/01a13a2e-5379-7132-8195-5f595075ddad/board_boundary_results.json),
+  [board test log](C:/Users/alexr/.codex/visualizations/2026/10/14/01a13a2e-5379-7132-8195-5f595075ddad/verification-board.log), [Qt test log](C:/Users/alexr/.codex/visualizations/2026/10/14/01a13a2e-5379-7132-8195-5f595075ddad/verification-qt.log).
+- R3/R4/R10–R14/R16 reproductions remain dated **October 8**, R17–R19 **October 8/9**,
+  R21 **October 10**. Source and git diff preserve those paths; they were not rerun today.
+  R8 remains source-inspected abandoned metadata debt. R7 inventory and R15 failures are
+  fresh. R27 is source-inspected workflow/TODO drift with no model invocation.
+- Earlier evidence remains in the [October 8 archive](C:/Users/alexr/.codex/visualizations/2026/10/08/01a11b73-16a4-7810-b1e8-4e890c34d652/),
+  [October 9 results](C:/Users/alexr/.codex/visualizations/2026/10/09/01a12093-68e8-7b40-98a4-9682ae3fc5c0/review_probe_results.json),
+  [October 10 results](C:/Users/alexr/.codex/visualizations/2026/10/10/01a1236a-9530-7a20-9210-07bdb703de16/review_probe_results.json),
+  and [October 11 results](C:/Users/alexr/.codex/visualizations/2026/10/11/01a128a5-2829-73f1-a28a-648eb65c6cf3/review_probe_results.json).
+  No full suite, live Telegram/provider, document converter, power-loss or cross-app repair
+  check was run. RPA desktop/hook tests were not enabled. Campaign remains absent. Only
+  reports, pointers and wiki were edited; application code remains unchanged and uncommitted.
 
-See the [improvement roadmap](C:/Users/alexr/Driverless_AGI/_CODEX_SUGGESTIONS_2026-10-12.md).
+See the [improvement roadmap](C:/Users/alexr/Driverless_AGI/_CODEX_SUGGESTIONS_2026-10-14.md).

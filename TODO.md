@@ -56,27 +56,28 @@
     Add any future user-question tool (e.g. a revived `show_plan`) to `SOLO_TOOLS`.
   - `edit` takes an `edits` list for one file: in order, all-or-nothing, placeholder-tolerant.
 
-- **2026-10-12 review refresh on main.** See
-  [_CODEX_CODE_REVIEW_2026-10-12.md](_CODEX_CODE_REVIEW_2026-10-12.md) and
-  [_CODEX_SUGGESTIONS_2026-10-12.md](_CODEX_SUGGESTIONS_2026-10-12.md).
-  20 open findings: remove verified R20; retain 16 and add R23–R26.
-  - **P1 R23/R24:** failed/partial replay can earn whole-workflow verification, and a
-    mid-run YAML edit can verify unexecuted content. Bind clean coverage to executed hash.
-  - **P1 R25:** expectation timeout repeats an executed click; separate observation retry
-    from mutation retry and retain uncertain outcomes.
-  - **P1 R26:** cancel releases the desktop lock while the action is live; for_each items
-    continue without cancellation checks. Keep ownership until acknowledged stop.
-  - R21 terminal session close and R22 queued board-event provenance remain open.
-  - R8 abandoned child metadata remains after the repaired owner-scoped kill selection.
-  - R7: seven oversized production modules and five long functions (new rpa included).
-  - Final focused verification: 810 passed, three known R15 failures, 24 skipped. No live
-    desktop/hook/provider checks; fake-driver probes reproduce all four new RPA findings.
-  Roadmap: 15 unbuilt extensions, adding S15's replay preview. Shipped recording/replay,
-  repair/Workflows rail, member keys/presence and child isolation are not reproposed.
-  Reports updated in place and renamed; documentation-only changes remain uncommitted.
+- **2026-10-14 review refresh on main.** See
+  [_CODEX_CODE_REVIEW_2026-10-14.md](_CODEX_CODE_REVIEW_2026-10-14.md) and
+  [_CODEX_SUGGESTIONS_2026-10-14.md](_CODEX_SUGGESTIONS_2026-10-14.md).
+  21 open findings: all 20 previous paths remain open; add source-inspected R27.
+  - **P1 R23/R24:** failed/partial replay verifies the whole workflow; mid-run YAML edits
+    verify unexecuted content. Bind complete clean coverage to the admitted hash.
+  - **P1 R25/R26:** expectation timeout repeats mutations; cancellation releases the
+    desktop lock while live and admits later for_each actions. All probes reproduce today.
+  - **P1 R22:** fresh Qt probe admits old post #99 and applies old purge to new-board card #7
+    after switching; check event identity in GUI slots for posts, purges and status.
+  - **P2 R27:** improve-yourself selects a Work Queue that the current TODO does not contain.
+    Align intake and define no-candidate behavior before launching an experiment.
+  - R21 terminal session close and R8 abandoned child metadata remain open.
+  - R7 inventory: 249 production files, seven oversized modules, five long functions.
+  - Focused checks: 379 passed, three known R15 missing-template failures, two opt-in skips.
+    No live desktop/hook/provider or user-board moderation checks.
+  Roadmap: 16 unbuilt extensions, adding S16 review-to-candidate intake. Shipped board admin,
+  bans, purges and @board-admin identity are recognized. Reports updated in place and renamed;
+  documentation-only changes remain uncommitted.
 
 - **2026-10-02 automation review follow-ups.** The review covered `task/iteration-engine`
-  at `6917b131`. The running reports have since been renamed to the current October 12
+  at `6917b131`. The running reports have since been renamed to the current October 14
   files linked above; the October 2 observations remain historical. R2 and R6 are fixed (2026-10-05);
   R7's four targeted function refactors and R8/R9 are done; residuals and other findings
   are tracked in the current report.

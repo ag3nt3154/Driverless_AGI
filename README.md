@@ -13,14 +13,13 @@ Source research (2026-10-08): llama.cpp server prefix caching at upstream commit
 `000bee54a544` is recorded in central memory as `llama-cpp-prefix-cache.md`.
 
 Latest architecture/reliability review:
-[_CODEX_CODE_REVIEW_2026-10-12.md](_CODEX_CODE_REVIEW_2026-10-12.md), with the
-[iterative-work and self-improvement roadmap](_CODEX_SUGGESTIONS_2026-10-12.md).
-The review has 20 open findings: repaired per-parent child cancellation (R20) is removed;
-new R23–R26 cover RPA verification coverage, executed revision, duplicate action retries
-and cancellation/desktop ownership. Validation: 810 passed, three known plan-template
-failures and 24 skips; five offline assertions reproduce the four new findings. The roadmap
-has 15 unbuilt extensions, including a replay preflight preview. Shipped RPA, Workflows,
-member keys and presence are recognized. No live desktop/provider check or application repair.
+[_CODEX_CODE_REVIEW_2026-10-14.md](_CODEX_CODE_REVIEW_2026-10-14.md), with the
+[iterative-work and self-improvement roadmap](_CODEX_SUGGESTIONS_2026-10-14.md).
+The review has 21 open findings. R22 now reproduces stale old-board purges removing new-board
+cards; R27 records the missing self-improvement Work Queue contract. R23–R26 remain reproduced.
+Focused validation: 379 passed, three known plan-template failures, two opt-in skips. The
+roadmap has 16 unbuilt extensions, including selected-review intake. Board moderation and
+@board-admin identity are shipped. No live user-board moderation, provider or desktop input.
 
 A minimal, self-hosted coding agent. Give it a task — it plans, calls tools, reads results, and iterates until done. Ships with a Rich interactive CLI. Supports any OpenAI-compatible API, automatic context compaction for long sessions, extended reasoning, skills-based guidance, and full session logging with auto-named session files and history restore via `/hist`.
 
@@ -194,7 +193,7 @@ export no_proxy="openai.com,openrouter.ai,api.openai.com"
 
 **GUI: "Thinking…" stuck/flashing, handoff or `ask_user` question not shown** — check the conversation pane's markdown engine with `python -m pyside_gui.check_render` (verifies the vendored Vditor files against git, then loads the real page and renders a sample; exit 0 = OK). Page JavaScript errors are written to `.dagi/logs/pyside_worker.log` (logger `dagi.pyside.worker.page`). If rendering fails, messages now fall back to plain text instead of disappearing.
 
-**Running tests / pytest-qt "DLL load failed while importing QtCore"** — `pyproject.toml` disables pytest-qt globally (`-p no:pytest-qt`) because on Windows it imports QtCore before PySide6's DLL directories are registered. `pyside_gui/tests/conftest.py` re-registers the plugin after the `pyside_gui` DLL bootstrap, so `qtbot`/`qapp` work there. Run everything with `C:\Users\alexr\anaconda3\envs\dagi\python.exe -u -m pytest tests pyside_gui/tests -q` (plain `pytest` only runs `tests/`). The same conftest flushes `deleteLater()`'d widgets around every GUI test (no top-level event loop runs, so they would otherwise outlive the test and keep their web views loading).
+**Running tests / pytest-qt "DLL load failed while importing QtCore"** — `pyproject.toml` disables pytest-qt globally (`-p no:pytest-qt`) because on Windows it imports QtCore before PySide6's DLL directories are registered. `pyside_gui/tests/conftest.py` re-registers the plugin after the `pyside_gui` DLL bootstrap, so `qtbot`/`qapp` work there. Run everything with `C:\Users\alexr\miniconda3\envs\dagi\python.exe -u -m pytest tests pyside_gui/tests -q` (plain `pytest` only runs `tests/`). The same conftest flushes `deleteLater()`'d widgets around every GUI test (no top-level event loop runs, so they would otherwise outlive the test and keep their web views loading).
 
 **Slow install tests** — tests marked `slow` (`pyproject.toml` marker) build wheels and clean
 venvs, so they need the network and take minutes. They are opt-in: set `DAGI_RUN_SLOW=1` to

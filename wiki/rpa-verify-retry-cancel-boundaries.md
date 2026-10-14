@@ -2,7 +2,7 @@
 title: 'RPA replay needs coverage, revision and stop ownership'
 description: 'Review R23–R26: partial/failed replay can verify, edits can verify unexecuted YAML, expectation timeout repeats actions, and cancellation releases ownership before stop.'
 tags: [run_workflow, mark_verified, workflow_hash, for_each, DesktopLock, cancel, R23, R24, R25, R26]
-updated: 2026-10-12
+updated: 2026-10-14
 ---
 
 Open review findings at main `ff18da869a8a1885f3ed7d3851cb3c7d0e40e458`.
@@ -36,3 +36,13 @@ Reports were edited in place and renamed from October 11 to October 12. R20 was 
 after owner-scoped cancellation regression verification; R8 metadata and R21 closure remain.
 The 15-item roadmap recognizes shipped RPA and adds a read-only replay preflight preview,
 extending current APIs rather than reproposing recording/replay or the Workflows rail.
+
+## October 14 refresh
+
+All five assertions for R23–R26 still reproduce at main `db8dde97138c3d67b9c44121f8ce2cce07b5bfca` with FakeDriver and
+temporary stores/lock. No live OS input or hook. Source paths are unchanged from October 12.
+Fresh probe and JSON: `C:/Users/alexr/.codex/visualizations/2026/10/14/01a13a2e-5379-7132-8195-5f595075ddad/review_probes.py`, `review_probe_results.json`.
+Reports renamed in place to October 14: 21 open findings and 16 unbuilt extensions; the new
+finding concerns improvement intake (R27), not an RPA repair. Focused board/GUI/plan checks:
+379 passed, three known missing-template failures, two opt-in skips. Project dagi interpreter
+now resolves under miniconda3 rather than the historical anaconda3 directory.
