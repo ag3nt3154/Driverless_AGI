@@ -21,6 +21,7 @@ from pyside_gui.sidebars import (
     MessageBoardView,
     PlanView,
     SessionHistoryView,
+    SettingsView,
     WorkflowsView,
 )
 
@@ -35,6 +36,9 @@ _RAIL = (
     (_WORKFLOWS_NAME, "workflow", "Workflows"),
     ("history", "history", "Session history"),
 )
+# Pinned to the bottom of the rail, below the stretch; last in the stack.
+_SETTINGS = ("settings", "settings", "Settings")
+_SETTINGS_DIRTY_TIP = "Settings (unsaved changes)"
 _RAIL_WIDTH = 44
 
 _RAIL_CSS = qss("""
@@ -64,13 +68,20 @@ class LeftSidebar(QWidget):
     expansion_changed = Signal(bool)
     view_changed = Signal(str)
 
-    def __init__(self, project_path: Path, computer_use: bool = False) -> None:
+    def __init__(
+        self,
+        project_path: Path,
+        computer_use: bool = False,
+        config_path: Path | None = None,
+    ) -> None:
+        """``config_path`` overrides the settings file (default: DAGI_ROOT config)."""
         super().__init__()
         self._project_path = project_path
         self._active_view: str | None = None
         self._expanded = False
 
         entries = [e for e in _RAIL if computer_use or e[0] != _WORKFLOWS_NAME]
+        entries.append(_SETTINGS)
         self._view_names = tuple(name for name, _, _ in entries)
         self._rail_icon_names = tuple(glyph for _, glyph, _ in entries)
         self._rail_tips = tuple(tip for _, _, tip in entries)
@@ -90,6 +101,8 @@ class LeftSidebar(QWidget):
 
         self._rail_buttons: list[QToolButton] = []
         for name, glyph, tip in zip(self._view_names, self._rail_icon_names, self._rail_tips):
+            if name == _SETTINGS[0]:
+                rail_layout.addStretch()
             btn = QToolButton()
             btn.setIcon(icon(glyph, 18))
             btn.setIconSize(QSize(18, 18))
@@ -105,7 +118,6 @@ class LeftSidebar(QWidget):
             rail_layout.addWidget(btn)
             self._rail_buttons.append(btn)
 
-        rail_layout.addStretch()
         root_layout.addWidget(rail)
 
         self._panel = QStackedWidget()
@@ -120,6 +132,7 @@ class LeftSidebar(QWidget):
         self._board_view = MessageBoardView()
         self._agents_view = AgentsView()
         self._workflows_view = WorkflowsView() if computer_use else None
+        self._settings_view = SettingsView(config_path)
         views = {
             "history": self._history_view,
             "files": self._file_tree,
@@ -128,6 +141,7 @@ class LeftSidebar(QWidget):
             "board": self._board_view,
             "agents": self._agents_view,
             _WORKFLOWS_NAME: self._workflows_view,
+            _SETTINGS[0]: self._settings_view,
         }
         for name in self._view_names:  # stack index == rail index
             self._panel.addWidget(views[name])
@@ -139,6 +153,10 @@ class LeftSidebar(QWidget):
         )
         self._history_view.session_selected.connect(
             self.session_selected.emit
+        )
+        settings_btn = self._rail_buttons[self._view_names.index(_SETTINGS[0])]
+        self._settings_view.dirty_changed.connect(
+            lambda dirty: settings_btn.setToolTip(_SETTINGS_DIRTY_TIP if dirty else _SETTINGS[2])
         )
 
         root_layout.addWidget(self._panel, stretch=1)
@@ -165,6 +183,8 @@ class LeftSidebar(QWidget):
                 self._history_view.load_sessions(logs)
         if name == _WORKFLOWS_NAME and self._workflows_view is not None:
             self._workflows_view.refresh()
+        if name == _SETTINGS[0] and not self._settings_view.is_dirty():
+            self._settings_view.reload()
 
     def collapse(self) -> None:
         self._expanded = False
@@ -209,6 +229,10 @@ class LeftSidebar(QWidget):
     def workflows_view(self) -> WorkflowsView | None:
         """The workflows view, or None when `computer_use` is off."""
         return self._workflows_view
+
+    @property
+    def settings_view(self) -> SettingsView:
+        return self._settings_view
 
     def update_plan(self, subtasks: list[dict], title: str = "") -> None:
         """Push plan data to the plan view (delegation for main-window code)."""
