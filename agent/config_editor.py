@@ -18,6 +18,7 @@ from __future__ import annotations
 import hashlib
 import io
 import os
+import re
 from pathlib import Path
 from typing import Any
 
@@ -132,6 +133,91 @@ def _to_commented(value: Any) -> Any:
             value[i] = _to_commented(v)
         return value
     return value
+
+
+# ── List blocks (text level) ───────────────────────────────────────────────
+# Toggling list entries is done on the serialized text, not the ruamel tree:
+# a disabled entry is a comment line `# - name`, which the tree cannot model.
+
+_NAME = r"[A-Za-z_][A-Za-z0-9_.\-]*"
+_ITEM_NAME_RE = re.compile(_NAME)
+# Optional matching quotes around the name: `- bash`, `- "bash"`, `- 'bash'`.
+_ITEM = rf"""(?P<q>["']?)(?P<name>{_NAME})(?P=q)(?:\s+#.*|\s*)$"""
+_ACTIVE_RE = re.compile(rf"^(?P<indent> *)- {_ITEM}")
+_COMMENTED_RE = re.compile(rf"^(?P<indent> *)#\s*- {_ITEM}")
+_NULL_VALUES = {"", "null", "Null", "NULL", "~"}
+
+
+def _uncomment_entry(line: str) -> str:
+    indent = len(line) - len(line.lstrip(" "))
+    # Drop the '#' and the whitespace after it: the dash lands at the '#'
+    # column, so `#   - b` cannot turn into a continuation of the item above.
+    return line[:indent] + line[indent + 1 :].lstrip(" \t")
+
+
+class _ListBlock:
+    """Lines of a top-level `key:` block: from the key line to the next
+    top-level key (column-0 comments and blank lines in between included)."""
+
+    def __init__(self, lines: list[str], start: int, key: str, value: str, comment: str):
+        self.start = start
+        self.key = key
+        self.comment = comment  # inline comment of the key line, with leading space
+        self.null_value = value in _NULL_VALUES and value != ""
+        self.flow = value not in _NULL_VALUES  # `[a, b]` or another non-block value
+        end = start + 1
+        while end < len(lines):
+            line = lines[end]
+            if line == "" or line[0] in " \t#" or line == "-" or line.startswith("- "):
+                end += 1
+            else:
+                break
+        self.end = end
+
+        active: list[tuple[int, str, str]] = []
+        commented: list[tuple[int, str, str]] = []
+        if not self.flow:
+            for i in range(start + 1, end):
+                if m := _ACTIVE_RE.match(lines[i]):
+                    active.append((i, m["name"], m["indent"]))
+                elif m := _COMMENTED_RE.match(lines[i]):
+                    commented.append((i, m["name"], m["indent"]))
+        if active:
+            self.item_indent = active[0][2]
+        elif commented:
+            self.item_indent = commented[0][2]
+        else:
+            self.item_indent = "  "
+        # A `# - x` at another indent (e.g. column 0 after the block)
+        # belongs elsewhere.
+        commented = [c for c in commented if c[2] == self.item_indent]
+        flagged = [(i, n, True) for i, n, _ in active] + [
+            (i, n, False) for i, n, _ in commented
+        ]
+        self.entries: list[tuple[int, str, bool]] = sorted(flagged)
+
+        if self.entries:
+            self.insert_at = self.entries[-1][0] + 1
+        else:
+            # After the key line and its indented comment continuation lines.
+            at = start + 1
+            while at < end and lines[at][:1] in (" ", "\t") and lines[at].lstrip().startswith("#"):
+                at += 1
+            self.insert_at = at
+
+    @classmethod
+    def find(cls, lines: list[str], key: str) -> _ListBlock | None:
+        pattern = re.compile(rf"^{re.escape(key)}\s*:(?=\s|$)(.*)$")
+        for i, line in enumerate(lines):
+            m = pattern.match(line)
+            if m:
+                vm = re.match(r"^\s*(.*?)(\s*#.*)?$", m.group(1))
+                assert vm is not None
+                return cls(lines, i, key, vm.group(1), vm.group(2) or "")
+        return None
+
+    def key_line_without_value(self) -> str:
+        return f"{self.key}:{self.comment}"
 
 
 class ConfigDocument:
@@ -260,6 +346,79 @@ class ConfigDocument:
             self._delete(node, leaf)
         else:
             self._assign(node, leaf, value)
+
+    # ── List items (comment toggling) ──
+
+    def list_items(self, key: str) -> list[tuple[str, bool]]:
+        """Ordered `(name, enabled)` entries of the top-level sequence `key`.
+
+        Commented-out entries (`# - name ...`) inside the block count as
+        disabled. Section headers and other comments are not entries. A
+        missing, empty or null key yields ``[]``. A flow-style list
+        (``key: [a, b]``) is reported from its parsed value, all enabled.
+        """
+        block = _ListBlock.find(self.text().split("\n"), key)
+        if block is None:
+            return []
+        if block.flow:
+            value = self.get(key)
+            return [(str(v), True) for v in value] if isinstance(value, list) else []
+        return [(name, enabled) for _, name, enabled in block.entries]
+
+    def set_item_enabled(self, key: str, name: str, enabled: bool) -> None:
+        """Enable/disable `name` in the top-level sequence `key` via comments.
+
+        Disabling rewrites ``  - name   # note`` to ``  # - name   # note``;
+        enabling reverses that in place, or appends ``- name`` at the end of
+        the block (creating ``key:`` if absent). No-op if already in the
+        requested state. Raises ValueError for flow-style lists or a name that
+        is not a plain identifier.
+        """
+        if not _ITEM_NAME_RE.fullmatch(name):
+            raise ValueError(f"Not a valid list item name: {name!r}")
+        lines = self.text().split("\n")  # text() ends with "\n" -> last is ""
+        block = _ListBlock.find(lines, key)
+        states = [] if block is None else [
+            (i, enabled_) for i, n, enabled_ in block.entries if n == name
+        ]
+        if block is not None and block.flow:
+            value = self.get(key)
+            if (isinstance(value, list) and name in value) == enabled:
+                return
+            raise ValueError(
+                f"Cannot toggle items of {key!r}: its value is not a block list "
+                "(flow-style lists like [a, b] and scalar values are not "
+                "supported); rewrite it as a block list."
+            )
+
+        if enabled:
+            if any(e for _, e in states):
+                return
+            if states:  # uncomment the first commented occurrence
+                i = states[0][0]
+                lines[i] = _uncomment_entry(lines[i])
+            elif block is None:
+                if lines and lines[-1] == "":
+                    lines.pop()
+                lines += [f"{key}:", f"  - {name}", ""]
+            else:
+                if block.null_value:
+                    lines[block.start] = block.key_line_without_value()
+                lines.insert(block.insert_at, f"{block.item_indent}- {name}")
+        else:
+            active = [i for i, e in states if e]
+            if not active:
+                return
+            for i in active:
+                indent = len(lines[i]) - len(lines[i].lstrip(" "))
+                lines[i] = lines[i][:indent] + "# " + lines[i][indent:]
+        self._replace_text("\n".join(lines))
+
+    def _replace_text(self, text: str) -> None:
+        """Re-parse `text` into this document, keeping path, hash and newline."""
+        new = ConfigDocument.from_text(text, self.path, self.base_hash)
+        self._data = new._data
+        self._prefix = new._prefix
 
     # ── Persistence ──
 
