@@ -713,14 +713,14 @@ def test_retries_may_be_zero_but_not_negative(vdoc, key):
 
 
 def test_null_max_output_tokens_is_allowed(vdoc):
-    vdoc._replace_text(vdoc.text() + "max_output_tokens: null\n")
+    vdoc.replace_text(vdoc.text() + "max_output_tokens: null\n")
     assert _check(vdoc).ok
 
 
 @pytest.mark.parametrize("key", ["sandbox_mode", "code_mode", "computer_use"])
 def test_null_flag_is_allowed(vdoc, key):
     vdoc.set(key, None)  # delete, then re-add as an explicit null
-    vdoc._replace_text(vdoc.text() + f"{key}: null\n")
+    vdoc.replace_text(vdoc.text() + f"{key}: null\n")
     assert key in vdoc._data and vdoc.get(key) is None
     assert _check(vdoc).ok
 
@@ -785,7 +785,7 @@ def test_absent_tools_means_all(tmp_path):
 
 def test_scalar_tools_value_is_an_error(vdoc):
     vdoc.set("disabled_tools", None)
-    vdoc._replace_text(vdoc.text() + "disabled_tools: memory_refresh\n")
+    vdoc.replace_text(vdoc.text() + "disabled_tools: memory_refresh\n")
     assert any("disabled_tools" in e for e in _check(vdoc).errors)
 
 
@@ -911,3 +911,24 @@ def test_validate_does_not_import_qt():
     )
     subprocess.run([sys.executable, "-c", code], check=True,
                    cwd=Path(__file__).resolve().parents[1])
+
+
+def test_replace_text_keeps_path_hash_and_line_endings(tmp_path):
+    path = tmp_path / "config.yaml"
+    path.write_bytes(b"a: 1\r\nb: 2\r\n")
+    doc = ConfigDocument.load(path)
+    base = doc.base_hash
+    doc.replace_text("a: 1\nb: 3\n")
+    assert doc.get("b") == 3
+    assert doc.path == path and doc.base_hash == base
+    doc.save()
+    assert path.read_bytes() == b"a: 1\r\nb: 3\r\n"
+
+
+def test_replace_text_invalid_leaves_document_unchanged(tmp_path):
+    doc = ConfigDocument.from_text("a: 1  # keep\n", tmp_path / "c.yaml", "h")
+    with pytest.raises(ConfigParseError) as exc:
+        doc.replace_text("a: [broken\n")
+    assert exc.value.line is not None
+    assert doc.text() == "a: 1  # keep\n"
+    assert doc.base_hash == "h"

@@ -422,10 +422,13 @@ class ConfigDocument:
             for i in active:
                 indent = len(lines[i]) - len(lines[i].lstrip(" "))
                 lines[i] = lines[i][:indent] + "# " + lines[i][indent:]
-        self._replace_text("\n".join(lines))
+        self.replace_text("\n".join(lines))
 
-    def _replace_text(self, text: str) -> None:
-        """Re-parse `text` into this document, keeping path, hash and newline."""
+    def replace_text(self, text: str) -> None:
+        """Re-parse `text` into this document, keeping path, base_hash and line endings.
+
+        Raises ConfigParseError on invalid text; the document is then unchanged.
+        """
         new = ConfigDocument.from_text(text, self.path, self.base_hash)
         self._data = new._data
         self._prefix = new._prefix
