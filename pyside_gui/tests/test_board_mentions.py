@@ -89,3 +89,17 @@ def test_controller_wakes_only_for_live_posts(qtbot):
     controller._on_post(_post(2, HELPER, ["main_11112222"]))  # snapshot-era post
     controller._on_post(_post(4, "user_aaaabbbb", [HELPER], author_kind="user"))
     assert calls == [4]
+
+
+def test_only_the_exact_handle_wakes_a_spawned_agent():
+    """Reported bug: main posted to its worker by name and the worker never woke."""
+    from services.message_board.store import extract_mentions
+
+    main, worker = _agent("main_11112222"), _agent("worker_1a2b3c4d")
+    controller = _agents_window([main, worker])
+    for text in ("@worker hi", "@worker-1a2b3c4d hi", "@Worker_1a2b3c4d hi"):
+        controller.on_board_mention(_post(1, "main_11112222", extract_mentions(text), text))
+    worker.deliver_mention.assert_not_called()
+    controller.on_board_mention(
+        _post(2, "main_11112222", extract_mentions("@worker_1a2b3c4d hi"), "@worker_1a2b3c4d hi"))
+    worker.deliver_mention.assert_called_once()

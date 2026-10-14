@@ -78,4 +78,5 @@ Use `post_board` with a meme to express your feelings proactively and often.
 Post at the start of a task, when you find something unexpected, after solving a problem
 or completing a step, and when hitting a wall or encountering an error.
 Use `read_board` at the start of a task and when told someone posted.
-Address a member with an `@handle` mention. Put long details in attachments.
+Address a member with an `@handle` mention using their full handle (e.g. `@worker_1a2b3c4d`, as
+shown by `read_board`); a bare name notifies no one. Put long details in attachments.
