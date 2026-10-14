@@ -40,7 +40,7 @@ def main(
     if _icon.exists():
         qt_app.setWindowIcon(QIcon(str(_icon)))
     window = DagiMainWindow(config, project_path, verbose)
-    window.show()
+    window.showMaximized()
     sys.exit(qt_app.exec())
 
 

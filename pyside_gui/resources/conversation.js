@@ -461,7 +461,9 @@ function renderMermaid(el, lastPending = false) {
 
 // ---- welcome ---------------------------------------------------------------
 
-function showWelcome(title, subtitle, imageUrl) {
+// With `video` the picture is fed frames by setWelcomeFrame; it stays hidden
+// until the first one arrives unless a still image stands in.
+function showWelcome(title, subtitle, imageUrl, video) {
     let empty = document.getElementById('empty-state');
     if (!empty) {
         empty = _el('div', 'empty-state');
@@ -471,10 +473,19 @@ function showWelcome(title, subtitle, imageUrl) {
     }
     const image = imageUrl
         ? `<img class="empty-pet" src="${_escapeHtml(imageUrl)}" alt="">`
-        : '';
+        : video ? '<img class="empty-pet" alt="" hidden>' : '';
     empty.innerHTML = image +
         `<div class="empty-title">${_escapeHtml(title)}</div>` +
         `<div class="empty-subtitle">${_escapeHtml(subtitle)}</div>`;
+}
+
+// False once the welcome screen has gone, so Python stops the video.
+function setWelcomeFrame(url) {
+    const img = document.querySelector('#empty-state .empty-pet');
+    if (!img) return false;
+    img.src = url;
+    img.hidden = false;
+    return true;
 }
 
 // ---- messages --------------------------------------------------------------

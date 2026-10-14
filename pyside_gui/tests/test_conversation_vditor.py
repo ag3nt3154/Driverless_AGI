@@ -153,6 +153,25 @@ def test_welcome_screen_leaves_with_first_message(view):
     """) == [False, "hi"]
 
 
+def test_welcome_video_feeds_frames_until_the_welcome_leaves(view):
+    from agent import DAGI_ROOT
+    from pyside_gui.welcome_video import idle_videos
+
+    videos = idle_videos(DAGI_ROOT / ".dagi" / "emotes" / "idle")
+    if not videos:
+        pytest.skip("no idle videos in .dagi/emotes/idle")
+    view.show()
+    view.show_welcome("Driverless AGI · m", "C:/proj", None, videos)
+    script = """
+        const img = document.querySelector('#empty-state .empty-pet');
+        return !!img && !img.hidden && img.src.startsWith('data:image/jpeg');
+    """
+    assert poll(view, script, True) is True
+    view.append_user_message("hi")
+    settle(500)
+    assert view._welcome_video is None
+
+
 def test_calls_before_page_load_are_replayed(qapp):
     widget = ConversationView()
     widget.append_info("queued before load")

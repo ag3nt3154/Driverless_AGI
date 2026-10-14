@@ -471,12 +471,15 @@ def resolve_model_config(
 
 def save_config(default_model: str) -> None:
     """Persist default_model back to {DAGI_ROOT}/.dagi/config.yaml.
-    The models catalog is preserved exactly."""
-    raw = load_raw_config()
-    raw["default_model"] = default_model
-    raw.pop("max_iterations", None)  # clean up legacy key if present
-    _CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
-    _CONFIG_PATH.write_text(
-        yaml.dump(raw, default_flow_style=False, allow_unicode=True),
-        encoding="utf-8",
-    )
+
+    Edits the file in place via `config_editor.ConfigDocument`, so comments,
+    blank lines and key order survive, and the `.dagi/model_config/` catalog
+    is never written into config.yaml. Also drops the legacy
+    `max_iterations` key. Last write wins (no conflict check)."""
+    # Lazy import: config_editor lazily imports this module for validation.
+    from agent.config_editor import ConfigDocument
+
+    doc = ConfigDocument.load(_CONFIG_PATH)
+    doc.set("default_model", default_model)
+    doc.set("max_iterations", None)  # clean up legacy key if present
+    doc.save(force=True)

@@ -294,10 +294,8 @@ class DagiMainWindow(QMainWindow):
 
     def _refresh_title(self) -> None:
         self._header.set_folder(self._project_path)
-        title = self._config.display_name
-        if len(self._sessions) > 1:
-            title = f"{self._active.handle} · {title}"
-        self._header.set_title(title)
+        # The model is in the right sidebar; the header only names the agent once there are several.
+        self._header.set_title(self._active.handle if len(self._sessions) > 1 else "")
 
     def _toggle_left_sidebar(self) -> None:
         self._left_sidebar.setVisible(not self._left_sidebar.isVisible())

@@ -5,13 +5,26 @@ from unittest.mock import patch
 
 import pytest
 
+from PySide6.QtWidgets import QSpacerItem
+
 from pyside_gui.left_sidebar import LeftSidebar
+from pyside_gui.sidebars.settings_view import SettingsView
+
+_CONFIG = "agent_model: claude\ncontext_window: 1000  # tokens\n"
 
 
 @pytest.fixture
-def sidebar(qtbot, tmp_path):
+def config_path(tmp_path):
+    p = tmp_path / "dagi_root" / ".dagi" / "config.yaml"
+    p.parent.mkdir(parents=True)
+    p.write_text(_CONFIG, encoding="utf-8")
+    return p
+
+
+@pytest.fixture
+def sidebar(qtbot, tmp_path, config_path):
     (tmp_path / ".dagi" / "logs").mkdir(parents=True)
-    w = LeftSidebar(tmp_path)
+    w = LeftSidebar(tmp_path, config_path=config_path)
     qtbot.addWidget(w)
     w.show()
     return w
@@ -71,9 +84,9 @@ def test_set_project_path(sidebar, tmp_path):
 
 
 def test_rail_has_one_button_per_view(sidebar):
-    # history, files, viewer, plan, board, agents
-    assert len(sidebar._rail_buttons) == 6
-    assert sidebar._panel.count() == 6
+    # board, agents, files, viewer, plan, history, settings
+    assert len(sidebar._rail_buttons) == 7
+    assert sidebar._panel.count() == 7
 
 
 def test_computer_use_false_has_no_workflows_view(sidebar):
@@ -82,22 +95,24 @@ def test_computer_use_false_has_no_workflows_view(sidebar):
 
 
 def test_rail_order(sidebar):
-    assert sidebar._view_names == ("board", "agents", "files", "viewer", "plan", "history")
+    assert sidebar._view_names == (
+        "board", "agents", "files", "viewer", "plan", "history", "settings",
+    )
     for name, btn in zip(sidebar._view_names, sidebar._rail_buttons):
         sidebar.activate_view(name)
         assert btn.isChecked()
-    assert sidebar._panel.currentWidget() is sidebar._history_view
+    assert sidebar._panel.currentWidget() is sidebar.settings_view
 
 
-def test_computer_use_true_adds_workflows_above_history(qtbot, tmp_path):
+def test_computer_use_true_adds_workflows_above_history(qtbot, tmp_path, config_path):
     (tmp_path / ".dagi" / "logs").mkdir(parents=True)
-    w = LeftSidebar(tmp_path, computer_use=True)
+    w = LeftSidebar(tmp_path, computer_use=True, config_path=config_path)
     qtbot.addWidget(w)
     w.show()
 
-    assert len(w._rail_buttons) == 7
-    assert w._panel.count() == 7
-    assert w._view_names[-2:] == ("workflows", "history")
+    assert len(w._rail_buttons) == 8
+    assert w._panel.count() == 8
+    assert w._view_names[-3:] == ("workflows", "history", "settings")
     assert w.workflows_view is not None
 
     w.activate_view("workflows")
@@ -162,3 +177,76 @@ def test_view_changed_fires_for_rail_and_file_viewer(sidebar, tmp_path):
     f.write_text("x", encoding="utf-8")
     sidebar.open_file(str(f))
     assert seen == ["board", "viewer"]
+
+
+# ── Settings ──
+
+
+def test_activate_settings_shows_settings_view(sidebar, config_path):
+    sidebar.activate_view("settings")
+    assert sidebar.is_expanded()
+    assert isinstance(sidebar.settings_view, SettingsView)
+    assert sidebar._panel.currentWidget() is sidebar.settings_view
+    assert sidebar._rail_buttons[-1].isChecked()
+    assert not any(b.isChecked() for b in sidebar._rail_buttons[:-1])
+    assert sidebar.settings_view._path == config_path
+
+
+def test_stack_index_matches_view_name_index(sidebar):
+    for i, name in enumerate(sidebar._view_names):
+        sidebar.activate_view(name)
+        assert sidebar._panel.currentIndex() == i
+
+
+def test_settings_button_pinned_below_stretch(sidebar):
+    layout = sidebar._rail_buttons[0].parentWidget().layout()
+    n = layout.count()
+    assert layout.itemAt(n - 1).widget() is sidebar._rail_buttons[-1]
+    spacer = layout.itemAt(n - 2)
+    assert spacer.widget() is None and isinstance(spacer.spacerItem(), QSpacerItem)
+    # every other rail button sits above the stretch
+    above = [layout.itemAt(i).widget() for i in range(n - 2)]
+    assert above == sidebar._rail_buttons[:-1]
+    btn = sidebar._rail_buttons[-1]
+    assert btn.isCheckable()
+    assert btn.toolTip() == "Settings"
+
+
+def test_settings_button_click_toggles_panel(sidebar):
+    sidebar._rail_buttons[-1].click()
+    assert sidebar.active_view() == "settings"
+    sidebar._rail_buttons[-1].click()
+    assert not sidebar.is_expanded()
+
+
+def test_activate_settings_reloads_when_clean(sidebar):
+    with (
+        patch.object(sidebar.settings_view, "is_dirty", return_value=False),
+        patch.object(sidebar.settings_view, "reload") as mock,
+    ):
+        sidebar.activate_view("settings")
+    mock.assert_called_once_with()
+
+
+def test_activate_settings_keeps_edits_when_dirty(sidebar):
+    with (
+        patch.object(sidebar.settings_view, "is_dirty", return_value=True),
+        patch.object(sidebar.settings_view, "reload") as mock,
+    ):
+        sidebar.activate_view("settings")
+    mock.assert_not_called()
+
+
+def test_settings_tooltip_reflects_dirty_state(sidebar):
+    btn = sidebar._rail_buttons[-1]
+    sidebar.settings_view.dirty_changed.emit(True)
+    assert btn.toolTip() == "Settings (unsaved changes)"
+    sidebar.settings_view.dirty_changed.emit(False)
+    assert btn.toolTip() == "Settings"
+
+
+def test_settings_does_not_write_config(sidebar, config_path):
+    sidebar.activate_view("settings")
+    sidebar.collapse()
+    sidebar.activate_view("settings")
+    assert config_path.read_text(encoding="utf-8") == _CONFIG
