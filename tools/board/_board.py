@@ -1,11 +1,13 @@
 """Session-bound message board tools and shared compact post rendering."""
 from __future__ import annotations
 
+import re
 import stat
 from dataclasses import replace
 from pathlib import Path
 
 from agent._board_files import validate_attachment_id
+from agent.board_client import BoardError
 from agent.base_tool import BaseTool
 from agent.protocol import ToolResult
 from tools._path_guard import validate_path
@@ -13,6 +15,10 @@ from tools._path_guard import validate_path
 _MAX_FILE = 10 * 1024 * 1024
 _MAX_ID = 2**63 - 1
 _SUPPORTED_SUFFIXES = frozenset({".gif", ".png", ".jpg", ".jpeg"})
+# Anything that looks like an @mention, so post_board can flag the ones the board ignored.
+_AT_RE = re.compile(r"(?<![\w.@-])@([A-Za-z0-9][\w-]*)")
+_MAX_LISTED = 10
+_EXAMPLE = "@worker_1a2b3c4d"
 
 
 def _scan_memes(memes_root: Path) -> dict[str, Path]:
@@ -23,7 +29,9 @@ def _scan_memes(memes_root: Path) -> dict[str, Path]:
 
 
 def _build_description(meme_stems: list[str]) -> str:
-    base = "Post a message to the message board, optionally with a meme and attachments."
+    base = ("Post a message to the message board, optionally with a meme and attachments. "
+            f"Mention a member with @ and their full handle, e.g. {_EXAMPLE}; "
+            "a bare name like @worker notifies no one.")
     if not meme_stems:
         return base + " No memes currently available."
     return base + f" Available memes: {', '.join(meme_stems)}."
@@ -43,6 +51,48 @@ def _format_attachment(att: dict) -> str:
         name = name[:40] + "…"
     icon = "🖼" if att["kind"] == "image" else "📎"
     return f"    {icon} {name} ({human_size(att['size'])}) [{att['id']}]"
+
+
+def _online(session) -> list[str] | None:
+    """Online, unbanned member handles (yours first); None when the board can't say."""
+    try:
+        members = session.client.members()
+    except BoardError:
+        return None
+    handles = [m["handle"] for m in members if m.get("online") and not m.get("banned")]
+    return sorted(handles, key=lambda handle: handle != session.handle)
+
+
+def _members_text(handles: list[str], me: str) -> str:
+    names = [f"{h} (you)" if h == me else h for h in handles[:_MAX_LISTED]]
+    if len(handles) > _MAX_LISTED:
+        names.append(f"+{len(handles) - _MAX_LISTED} more")
+    return ", ".join(names) or "none"
+
+
+def _mention_warning(session, text: str, post: dict) -> str | None:
+    """Flag @tokens the board dropped (not full handles) or recorded for an offline handle."""
+    tokens = [t for t in dict.fromkeys(_AT_RE.findall(text)) if t != "board-admin"]
+    if not tokens:
+        return None
+    online = _online(session)
+    if online is None:
+        return None
+    recorded = set(post.get("mentions") or [])
+    dropped = [t for t in tokens if t not in recorded]
+    offline = [t for t in tokens if t in recorded and t not in online]
+    members = _members_text(online, session.handle)
+    lines = []
+    if dropped:
+        others = [h for h in online if h not in (session.handle, "board-admin")]
+        example = f"@{others[0]}" if others else _EXAMPLE
+        lines.append(f"⚠ {', '.join('@' + t for t in dropped)} matched no board member — they "
+                     f"were not notified. Online members: {members}. "
+                     f"Mention with the full handle, e.g. {example}.")
+    if offline:
+        lines.append(f"Note: {', '.join('@' + t for t in offline)} is not online right now; "
+                     f"the mention is recorded. Online members: {members}.")
+    return "\n".join(lines) or None
 
 
 def format_post(post: dict, me: str) -> str:
@@ -76,7 +126,11 @@ class ReadBoardTool(BaseTool):
         posts = self._session.read(limit=limit, mentions_only=mentions_only)
         if not posts:
             return "(no new posts)"
-        result = "\n".join(format_post(p, self._session.handle) for p in posts)
+        me = self._session.handle
+        online = _online(self._session)
+        header = f"You are {me}." + (
+            "" if online is None else f" Online members: {_members_text(online, me)}.")
+        result = "\n".join([header, *(format_post(p, me) for p in posts)])
         if len(posts) == limit:
             result += "\nMore posts may be waiting — call read_board again."
         return result
@@ -127,7 +181,8 @@ class PostBoardTool(BaseTool):
                 raise ValueError(f"Meme {meme!r} not found. Available: {sorted(self._memes)}")
         files = _post_files(attachments if attachments is not None else [], self._cwd, self._roots)
         post = self._session.post(text, meme=meme, reply_to=reply_to, files=files)
-        return f"Posted #{post['id']}."
+        warning = _mention_warning(self._session, text, post)
+        return f"Posted #{post['id']}." + ("" if warning is None else f"\n{warning}")
 
 
 def _check_cache_component(path: Path, *, directory: bool) -> None:

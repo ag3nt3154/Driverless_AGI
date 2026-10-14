@@ -15,6 +15,7 @@ from tools.board import FetchAttachmentTool, PostBoardTool, ReadBoardTool
 from tools.board._board import format_post, human_size
 
 A = "main_3f9a1c2e"
+W = "worker_1a2b3c4d"
 
 
 @pytest.fixture
@@ -80,8 +81,13 @@ def test_worst_case_output_is_bounded_and_fields_remain():
     def read(**kwargs):
         limits.append(kwargs["limit"])
         return [post] * 10
-    output = ReadBoardTool(session=SimpleNamespace(handle=author, read=read)).run(limit=50)
+    members = [{"handle": "y" * 32 + f"_{n:08x}", "online": True, "banned": False}
+               for n in range(30)]
+    client = SimpleNamespace(members=lambda: members)
+    output = ReadBoardTool(session=SimpleNamespace(handle=author, read=read, client=client)).run(
+        limit=50)
     assert limits == [10] and len(output) < 13000
+    assert "+20 more" in output
     assert output.count("t" * 700) == 10 and output.count("m" * 64) == 10
     assert output.count("n" * 40 + "…") == 40 and "n" * 41 not in output
     assert "(you)" in output and f"(re #{2**63 - 1})" in output
@@ -252,3 +258,54 @@ def test_registry_wires_fetch_attachment_to_the_read_image_path(tmp_path):
     fetch = reg.get("fetch_attachment")
     assert fetch is not None and fetch._image_reader is not None
     assert fetch._image_reader.__func__.__name__ == "read_image"
+
+
+def test_post_warns_about_mentions_that_match_no_member(tools):
+    tools.session.client.register(W, "agent", key="w" * 43)
+    result = tools.post.run(text="@worker hi, also @worker-1a2b3c4d and @worker_1a2b3c4d")
+    assert result == (
+        "Posted #1.\n"
+        "⚠ @worker, @worker-1a2b3c4d matched no board member — they were not notified. "
+        f"Online members: {A} (you), board-admin, {W}. Mention with the full handle, e.g. @{W}.")
+
+
+def test_post_with_exact_mentions_or_emails_has_no_warning(tools):
+    tools.session.client.register(W, "agent", key="w" * 43)
+    assert tools.post.run(text=f"@{W}: ping, @board-admin") == "Posted #1."
+    tools.requests.clear()
+    assert tools.post.run(text="mail ops@example.com") == "Posted #2."
+    assert "/members" not in tools.requests  # posts without mentions skip the lookup
+
+
+def test_read_board_names_you_and_the_online_members(tools):
+    tools.session.client.register(W, "agent", key="w" * 43)
+    tools.post.run(text="hello")
+    output = tools.read.run()
+    assert output.splitlines()[0] == f"You are {A}. Online members: {A} (you), board-admin, {W}."
+
+
+def test_post_board_description_explains_full_handle_mentions(tools):
+    assert "@worker_1a2b3c4d" in tools.post.description
+
+
+def test_post_notes_a_recorded_mention_of_an_offline_handle(tools):
+    """A well-formed handle is recorded (and the GUI still wakes it) even when not online."""
+    result = tools.post.run(text=f"@{W} are you there?")
+    assert result == (
+        "Posted #1.\n"
+        f"Note: @{W} is not online right now; the mention is recorded. "
+        f"Online members: {A} (you), board-admin.")
+    assert tools.session.client.posts()[0]["mentions"] == [W]
+
+
+def test_member_lookup_failure_never_fails_post_or_read(tools):
+    def fail():
+        raise BoardError("UNREACHABLE", "down")
+    tools.session.client.members = fail
+    assert tools.post.run(text="@worker hi") == "Posted #1."
+    assert tools.read.run().splitlines()[0] == f"You are {A}."
+
+
+def test_warning_falls_back_to_an_example_handle_when_alone(tools):
+    result = tools.post.run(text="@worker hi")
+    assert result.endswith("e.g. @worker_1a2b3c4d.")

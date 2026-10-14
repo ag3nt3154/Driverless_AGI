@@ -6,4 +6,4 @@ updated: 2026-10-12
 ---
 Next round. Support `@all` on the message board so a post notifies and wakes every participant. Both agents (via the board API/tools) and users (via the GUI) should be able to use it.
 
-Related: `todo-gui-mentions-not-reaching-spawned-agents.md`. Mention delivery to spawned agents needs to work before `@all` can reach them.
+Related: `board-mentions-need-exact-full-handle.md` (mention delivery and the bare-@slug idea).
