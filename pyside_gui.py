@@ -50,10 +50,10 @@ def main(
     window = DagiMainWindow(config, project_path, verbose)
     intro = StartupSplash.from_folder(DAGI_ROOT / ".dagi" / "emotes" / "startup") if splash else None
     if intro is not None:
-        intro.fading.connect(window.show)
+        intro.fading.connect(window.showMaximized)
         intro.start()
     else:
-        window.show()
+        window.showMaximized()
     sys.exit(qt_app.exec())
 
 
