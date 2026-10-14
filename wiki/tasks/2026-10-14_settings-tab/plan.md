@@ -28,7 +28,7 @@
 - **Task folder:** `wiki/tasks/2026-10-14_settings-tab/`
 
 ## Overall Status
-Pending
+Complete — all subtasks reviewed and committed; integrated verification done (2026-10-14).
 
 ## Notes
 - `load_raw_config()` (`agent/config_loader.py:161`) merges `.dagi/model_config/*.yaml` into `raw["models"]`; the old `save_config()` (`:472`) then `yaml.dump`s that dict, which would write the full catalog into config.yaml and strip all comments. `save_config` has no production callers; its tests are `tests/test_config_resolution.py::TestSaveConfig`.
@@ -45,12 +45,26 @@ Pending
 ## Open Issues
 - None.
 
+## Review Notes
+- Subtask 1: `ruamel.yaml==0.19.1`. Test fixture `tests/fixtures/config_editor/config.yaml` is matched by the bare `config.yaml` pattern in `.gitignore` — committed with `git add -f`. `save()` preserves the file's CRLF/LF; `text()` is always LF. Known non-blocking limits: replacing a container value with a different shape misplaces comments (documented in `set()`), a deleted-then-re-set key moves to end of file (Subtask 6: avoid deleting on a transient empty edit), BOM dropped on save.
+- Subtask 2: **disabling every tool leaves `tools:` empty → `get("tools") is None` → loader treats it as ALL tools.** Subtask 3 `validate()` must count enabled entries via `doc.list_items("tools")` whenever the `tools:` key exists, not via `get("tools")`. Appended names are written unquoted; flow/scalar values raise `ValueError` on toggle.
+- Subtask 3: `validate(doc, *, dagi_root=None, catalog=None)`. **Explicit `tools: null` is a save error** (ruamel renders null as bare `key:`, indistinguishable from all-commented) — "all tools" = remove the key; the `.dagi/config.yaml` comment "Omit (or set to null)" is now inaccurate. `resolve_model_config` never raises for missing API keys (only prints) → `_check_api_key` warns instead. Resolve check skipped when earlier errors exist. Real config: 0 errors; warnings `Unknown tool: tmux_bash`, `Unknown tool: enter_plan_mode`. Minor open: fd leak if `os.fdopen` fails; `.dagi/.config.validate.*.yaml` not gitignored.
+- Subtask 4: passed first review. `save_config` now raises `ConfigParseError` on invalid YAML; does not validate (unchanged behaviour). Reviewer saw the conftest RAM watchdog hang at setup in their environment; suites pass with `--noconftest`.
+- Subtask 5: review PASS with polish round (public `ConfigDocument.replace_text`; unreadable/non-UTF-8 file → error banner, Save disabled, Raw read-only; banner wrapper hidden). `validate()` runs synchronously on the GUI thread. **Carry forward:** Subtask 6 must disable Form widgets while `_unreadable` is set; Subtask 7 must give the conflict banner its own kind/flag — `_apply_raw` currently clears any "error" banner on a successful Raw→Form switch. Nit: settings_view imports `CommentedMap` to build empty docs (a `ConfigDocument.empty()` classmethod would keep ruamel inside config_editor).
+- Subtask 6: wheel guard on unfocused spin/combo; text fields commit on editingFinished; empty commit deletes the key. Open (non-blocking): horizontal scroll below ~265px panel width (long tool names); per-model overrides of context keys not reflected in the form.
+- Subtask 7: 200 ms debounce; missing file never treated as a change; OSError on hash retried 10×. Open (non-blocking): half-written external file can flip view to Raw; clearing a conflict on hash-revert also hides any error lines under it.
+- Subtask 8: review PASS first round. `LeftSidebar(..., config_path=None)` added for tests. Settings opens half-width. Pre-existing GUI failures (also on `main`): `test_desktop_pet_notepad.py::test_edits_are_flushed_on_hide`, `test_paste_cards.py::test_ctrl_shift_v_pastes_long_text_inline`. Open (non-blocking): no prompt on app close / panel collapse with unsaved settings; reopen clears post-save warning banner; glyph reads slightly sprocket-like.
+
 ## Attempts and Resolutions
-- (none yet)
+- **Subtask 1, attempt 1:** review ESCALATE — pruning an emptied nested map dropped the comments after the block -> `set()` now deletes the highest container that would become empty in one `_delete`; plain dict/list values converted to Commented* before attaching moved comments; docstring note on container replacement; tests for os.replace failure + missing parent dir. Re-review PASS.
+- **Subtask 2, attempt 1:** review ESCALATE — uncommenting `#   - b` (extra spaces) mis-indented the dash and merged it into the previous item -> `_uncomment_entry` strips all whitespace after `#`; quoted entries recognised; indent filter applied to commented-only blocks; clearer non-block-list error. Re-review PASS.
+- **Subtask 3, attempt 1:** review ESCALATE — OSError from resolve (e.g. missing client_script) was only a warning, so a broken config could save -> every resolve exception is now an error; null bool flags treated as absent; per-call mkstemp temp file; drift test asserts order too (web_search/web_fetch moved after read_notepad). Re-review PASS.
+- **Subtask 6, attempt 1:** review ESCALATE — with no `tools:` key, the first uncheck wrote a snapshot allowlist that silently dropped project-local and future tools -> Tools checklist edits `disabled_tools` when `tools` is absent (never creates `tools:`); `tools: null` shown disabled with note; spin warnings for invalid file values; computer_use_*/rpa_* disabled when computer_use on with a list; failed commit repopulates form. Re-review PASS.
+- **Subtask 7, attempt 1:** review ESCALATE — watching both config.yaml and its directory made ~3–4% of saves fail with WinError 5 on os.replace (also the cause of flaky save tests); clean view reloaded over an uncommitted text field -> watch only the file (dir only while missing); `save()` retries os.replace on PermissionError (5×50 ms); pending text edits committed before deciding reload vs conflict; conflict cleared when disk returns to base_hash. 300-save probe: 0 failures. Re-review PASS.
 
 ---
 
-### Subtask 1: ruamel dependency and `ConfigDocument` core
+### Subtask 1: ruamel dependency and `ConfigDocument` core ✅ (44710d3)
 
 **Goal:** Load, edit and atomically save config.yaml with comments preserved and conflict detection.
 
@@ -117,7 +131,7 @@ def test_save_refuses_when_file_changed_on_disk(tmp_path):
 
 ---
 
-### Subtask 2: Comment-toggle list items (`tools`, `disabled_tools`)
+### Subtask 2: Comment-toggle list items (`tools`, `disabled_tools`) ✅ (bf75d46)
 
 **Goal:** Toggle list entries by commenting/uncommenting their line so annotations and section headers survive.
 
@@ -165,7 +179,7 @@ def test_toggle_bash_round_trips(tmp_path):
 
 ---
 
-### Subtask 3: Tool catalog (`KNOWN_TOOL_NAMES`) and validation
+### Subtask 3: Tool catalog (`KNOWN_TOOL_NAMES`) and validation ✅ (e0645d5)
 
 **Goal:** Provide the checklist's name catalog and the strict Save validation.
 
@@ -202,7 +216,7 @@ Drift test; catalog includes `run_worker` from a tmp subagent dir; one test per 
 
 ---
 
-### Subtask 4: Rewrite `save_config` over `config_editor`
+### Subtask 4: Rewrite `save_config` over `config_editor` ✅ (8692fc7)
 
 **Goal:** Single writer path that preserves comments and never dumps the model catalog.
 
@@ -225,7 +239,7 @@ Drift test; catalog includes `run_worker` from a tmp subagent dir; one test per 
 
 ---
 
-### Subtask 5: `SettingsView` shell — Raw tab, dirty state, Save/Revert
+### Subtask 5: `SettingsView` shell — Raw tab, dirty state, Save/Revert ✅ (de53742)
 
 **Goal:** A working settings view with the Raw YAML editor and save pipeline.
 
@@ -253,7 +267,7 @@ Drift test; catalog includes `run_worker` from a tmp subagent dir; one test per 
 
 ---
 
-### Subtask 6: Form tab
+### Subtask 6: Form tab ✅ (75d50d2)
 
 **Goal:** Form widgets for the agreed keys, bound to the shared document.
 
@@ -277,7 +291,7 @@ Drift test; catalog includes `run_worker` from a tmp subagent dir; one test per 
 
 ---
 
-### Subtask 7: File watcher and conflict banner
+### Subtask 7: File watcher and conflict banner ✅ (28d1cdd)
 
 **Goal:** Handle external changes to config.yaml.
 
@@ -296,7 +310,7 @@ Drift test; catalog includes `run_worker` from a tmp subagent dir; one test per 
 
 ---
 
-### Subtask 8: Rail wiring and settings icon
+### Subtask 8: Rail wiring and settings icon ✅ (1b6c691)
 
 **Goal:** Bottom-pinned gear button opening the Settings view.
 
@@ -325,5 +339,10 @@ Drift test; catalog includes `run_worker` from a tmp subagent dir; one test per 
    - Restore `.dagi/config.yaml` to its original content afterwards (`git checkout -- .dagi/config.yaml`) unless the Admiral wants the change.
 3. `git diff main --stat` touches only the files listed above plus this plan.
 
+## Verification Results (2026-10-14)
+- Non-GUI suite: 2538 passed, 26 skipped, 4 failed — all 4 also fail on `main` (pre-existing): `tests/message_board/test_viewer.py::test_identity_collision_retries_with_new_suffix`, 3× `tests/test_workflow_plan_template.py`.
+- GUI suite (`pyside_gui/tests`, unsandboxed): 447 passed, 2 failed — both pre-existing on `main` (notepad web editor load; Windows clipboard).
+- Visual check: `LeftSidebar` rendered against a temp copy of the real `.dagi/config.yaml`: Form shows real values, Raw shows all comments, view clean and `doc.text()` byte-identical to the file. Real config never written.
+
 ## Next Action
-Await Admiral approval of this plan; then commit it (`plan: approve plan`) and run `deliver` from Subtask 1.
+Ask the Admiral whether to merge `task/settings-tab` into `main`; then record wiki entries.
