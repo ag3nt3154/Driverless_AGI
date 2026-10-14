@@ -13,7 +13,7 @@ from unittest.mock import MagicMock, patch
 from agent import DAGI_ROOT
 from agent.base_tool import BaseTool
 from agent.loop import AgentCallbacks
-from agent.tools import create_tool_registry
+from agent.tools import KNOWN_TOOL_NAMES, create_tool_registry
 
 
 class _FakeTool(BaseTool):
@@ -193,3 +193,24 @@ def test_computer_use_tools_pass_a_tools_allowlist(tmp_path):
     }
     assert ui_and_rpa <= set(on)
     assert not ui_and_rpa & set(off)
+
+
+def test_known_tool_names_match_registry(tmp_path):
+    """KNOWN_TOOL_NAMES (the Settings checklist catalog) lists exactly the built-in
+    names any feature combination can register; discovered subagent and project
+    tools are excluded."""
+    callbacks = AgentCallbacks(board=MagicMock())
+    kwargs = dict(callbacks=callbacks, skill_roots=[tmp_path])
+    maximal = _config(tmp_path, code_mode=True, computer_use=True, advanced_config=object())
+    fakes = {"spawn_alpha", "spawn_beta", "project_x"}
+    registries = [
+        [n for n in _names(maximal, tmp_path, **kwargs) if n not in fakes],
+        # fallback web_search / web_fetch
+        [n for n in _names(None, tmp_path, **kwargs) if n not in fakes],
+    ]
+
+    assert len(KNOWN_TOOL_NAMES) == len(set(KNOWN_TOOL_NAMES))
+    assert set().union(*registries) == set(KNOWN_TOOL_NAMES)
+    # Registration order: each registry is KNOWN_TOOL_NAMES' subsequence.
+    for names in registries:
+        assert [n for n in KNOWN_TOOL_NAMES if n in names] == names

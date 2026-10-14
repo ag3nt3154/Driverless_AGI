@@ -303,3 +303,38 @@ class TestSaveConfig:
 
         raw = yaml.safe_load(cfg_file.read_text(encoding="utf-8"))
         assert "max_iterations" not in raw
+
+    def test_save_config_preserves_comments(self, tmp_path, monkeypatch):
+        cfg_file = _write_config(
+            tmp_path / "config.yaml",
+            "# Top-level header comment\n"
+            "default_model: m1  # the chosen model\n"
+            "# default_model: m3\n"
+            "\n"
+            "stream: true  # stream tokens\n",
+        )
+        monkeypatch.setattr("agent.config_loader._CONFIG_PATH", cfg_file)
+
+        save_config("m2")
+
+        assert cfg_file.read_text(encoding="utf-8") == (
+            "# Top-level header comment\n"
+            "default_model: m2  # the chosen model\n"
+            "# default_model: m3\n"
+            "\n"
+            "stream: true  # stream tokens\n"
+        )
+
+    def test_save_config_does_not_inline_model_catalog(self, tmp_path, monkeypatch):
+        cfg_file = _write_config(tmp_path / "config.yaml", "default_model: m1\nstream: true\n")
+        model_dir = tmp_path / "model_config"
+        model_dir.mkdir()
+        (model_dir / "m2.yaml").write_text("model: model-two\n", encoding="utf-8")
+        monkeypatch.setattr("agent.config_loader._CONFIG_PATH", cfg_file)
+
+        save_config("m2")
+
+        text = cfg_file.read_text(encoding="utf-8")
+        assert "models:" not in text
+        assert "model-two" not in text
+        assert yaml.safe_load(text) == {"default_model": "m2", "stream": True}
