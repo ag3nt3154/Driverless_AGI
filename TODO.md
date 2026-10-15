@@ -56,28 +56,30 @@
     Add any future user-question tool (e.g. a revived `show_plan`) to `SOLO_TOOLS`.
   - `edit` takes an `edits` list for one file: in order, all-or-nothing, placeholder-tolerant.
 
-- **2026-10-14 review refresh on main.** See
-  [_CODEX_CODE_REVIEW_2026-10-14.md](_CODEX_CODE_REVIEW_2026-10-14.md) and
-  [_CODEX_SUGGESTIONS_2026-10-14.md](_CODEX_SUGGESTIONS_2026-10-14.md).
-  21 open findings: all 20 previous paths remain open; add source-inspected R27.
-  - **P1 R23/R24:** failed/partial replay verifies the whole workflow; mid-run YAML edits
-    verify unexecuted content. Bind complete clean coverage to the admitted hash.
-  - **P1 R25/R26:** expectation timeout repeats mutations; cancellation releases the
-    desktop lock while live and admits later for_each actions. All probes reproduce today.
-  - **P1 R22:** fresh Qt probe admits old post #99 and applies old purge to new-board card #7
-    after switching; check event identity in GUI slots for posts, purges and status.
-  - **P2 R27:** improve-yourself selects a Work Queue that the current TODO does not contain.
-    Align intake and define no-candidate behavior before launching an experiment.
-  - R21 terminal session close and R8 abandoned child metadata remain open.
-  - R7 inventory: 249 production files, seven oversized modules, five long functions.
-  - Focused checks: 379 passed, three known R15 missing-template failures, two opt-in skips.
-    No live desktop/hook/provider or user-board moderation checks.
-  Roadmap: 16 unbuilt extensions, adding S16 review-to-candidate intake. Shipped board admin,
-  bans, purges and @board-admin identity are recognized. Reports updated in place and renamed;
-  documentation-only changes remain uncommitted.
+- **2026-10-15 review refresh on main.** See
+  [_CODEX_CODE_REVIEW_2026-10-15.md](_CODEX_CODE_REVIEW_2026-10-15.md) and
+  [_CODEX_SUGGESTIONS_2026-10-15.md](_CODEX_SUGGESTIONS_2026-10-15.md).
+  23 open findings: all 21 previous paths remain; add reproduced R28 and source-inspected R29.
+  - **P1 R23/R24:** failed/partial replay verifies whole workflows; concurrent YAML changes
+    verify unexecuted content. Both still reproduce in scratch workflows.
+  - **P1 R25/R26:** expectation timeout repeats mutations; cancellation releases the lock
+    while execution continues through all for_each items. Both still reproduce with FakeDriver.
+  - **P1 R22:** October 14 queued old-board post/purge evidence remains current by source;
+    full-handle mention warnings are a separate shipped repair.
+  - **P2 R28:** serialize config hash check/write/replace across processes and use per-save
+    temporary files. Controlled saves lose accepted edits and return the wrong byte hash.
+  - **P2 R29:** guard dirty Settings on quit; see existing unsaved-prompt wiki follow-up.
+  - **P2 R27:** align improve-yourself intake with current TODO and handle no candidate.
+  - R21 terminal close and R8 abandoned child metadata remain open.
+  - R7 inventory: 252 production files, nine modules over 500 lines, six functions over 100.
+  - Focused checks: 394 passed, three known missing-template failures, two opt-in skips.
+    Three missing-template failures remain; viewer collision passed. No live desktop/hook/provider.
+  Roadmap: 17 unbuilt extensions; add S17 effective session-configuration provenance.
+  Settings, welcome changes and full-handle warnings are recognized as shipped.
+  Reports updated in place and renamed; documentation changes remain uncommitted.
 
 - **2026-10-02 automation review follow-ups.** The review covered `task/iteration-engine`
-  at `6917b131`. The running reports have since been renamed to the current October 14
+  at `6917b131`. The running reports have since been renamed to the current October 15
   files linked above; the October 2 observations remain historical. R2 and R6 are fixed (2026-10-05);
   R7's four targeted function refactors and R8/R9 are done; residuals and other findings
   are tracked in the current report.

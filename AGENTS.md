@@ -1,6 +1,6 @@
 # AGENTS.md
 
-> Last updated: 2026-10-14 (review refreshed; current dagi interpreter path verified) | [README](README.md) | [TODO](TODO.md) | [Task specs & plans](wiki/tasks/)
+> Last updated: 2026-10-15 (review refreshed; Settings writer and draft ownership reviewed) | [README](README.md) | [TODO](TODO.md) | [Task specs & plans](wiki/tasks/)
 
 ## Overview
 

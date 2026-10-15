@@ -2,7 +2,7 @@
 title: 'Self-improvement selection must match the maintained TODO'
 description: 'R27: improve-yourself scans a Work Queue absent from current TODO; align candidate intake and define empty-queue behavior.'
 tags: [improve-yourself, review-session, TODO, Work-Queue, R27, selection, acceptance]
-updated: 2026-10-14
+updated: 2026-10-15
 ---
 
 Source-inspected at main `db8dde97138c3d67b9c44121f8ce2cce07b5bfca`; no provider or self-improvement run invoked.
@@ -17,5 +17,5 @@ existing flows with selected finding ID, reviewed revision, reproduction/accepta
 and deduplication. These are proposals; report publication does not authorize implementation.
 Use the normal approval workflow and retain the Admiral's final apply decision.
 
-Reports: [open findings](C:/Users/alexr/Driverless_AGI/_CODEX_CODE_REVIEW_2026-10-14.md),
-[improvement suggestions](C:/Users/alexr/Driverless_AGI/_CODEX_SUGGESTIONS_2026-10-14.md).
+Reports: [open findings](C:/Users/alexr/Driverless_AGI/_CODEX_CODE_REVIEW_2026-10-15.md),
+[improvement suggestions](C:/Users/alexr/Driverless_AGI/_CODEX_SUGGESTIONS_2026-10-15.md).

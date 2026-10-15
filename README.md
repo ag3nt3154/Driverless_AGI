@@ -13,13 +13,14 @@ Source research (2026-10-08): llama.cpp server prefix caching at upstream commit
 `000bee54a544` is recorded in central memory as `llama-cpp-prefix-cache.md`.
 
 Latest architecture/reliability review:
-[_CODEX_CODE_REVIEW_2026-10-14.md](_CODEX_CODE_REVIEW_2026-10-14.md), with the
-[iterative-work and self-improvement roadmap](_CODEX_SUGGESTIONS_2026-10-14.md).
-The review has 21 open findings. R22 now reproduces stale old-board purges removing new-board
-cards; R27 records the missing self-improvement Work Queue contract. R23–R26 remain reproduced.
-Focused validation: 379 passed, three known plan-template failures, two opt-in skips. The
-roadmap has 16 unbuilt extensions, including selected-review intake. Board moderation and
-@board-admin identity are shipped. No live user-board moderation, provider or desktop input.
+[_CODEX_CODE_REVIEW_2026-10-15.md](_CODEX_CODE_REVIEW_2026-10-15.md), with the
+[iterative-work and self-improvement roadmap](_CODEX_SUGGESTIONS_2026-10-15.md).
+The review has 23 open findings. New R28 reproduces concurrent configuration-save loss and
+wrong saved-byte hashes; R29 covers unsaved Settings drafts on quit. R23–R26 still reproduce.
+Focused checks: 394 passed, three known missing-template failures, two opt-in skips.
+The roadmap has 17 unbuilt extensions, including effective session-configuration provenance.
+Settings editing, full-handle mention warnings and welcome-video changes are shipped.
+No live provider or desktop input was used.
 
 A minimal, self-hosted coding agent. Give it a task — it plans, calls tools, reads results, and iterates until done. Ships with a Rich interactive CLI. Supports any OpenAI-compatible API, automatic context compaction for long sessions, extended reasoning, skills-based guidance, and full session logging with auto-named session files and history restore via `/hist`.
 

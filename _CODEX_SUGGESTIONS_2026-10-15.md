@@ -1,33 +1,38 @@
-# Dagi suggestions — 2026-10-14
+# Dagi suggestions — 2026-10-15
 
 Proposals for sustained agentic work, measured self-improvement and understandable recovery.
-They do not authorize implementation. Reviewed main at **db8dde97138c3d67b9c44121f8ce2cce07b5bfca**. The latest existing
-October 12 report was edited in place and renamed; no October 13 copy existed. There are
-**16 unbuilt improvements or explicit extensions**: the 15 prior proposals remain unbuilt,
-and S16 connects review findings to candidate selection in the existing improvement workflow.
+They do not authorize implementation. Reviewed main at **6b5b5a9534ce8fbd9af864b4d362cd6774bfc593**. The existing
+October 14 report was edited in place and renamed. There are **17 unbuilt improvements or
+explicit extensions**: all 16 prior proposals remain unbuilt after source/diff inspection;
+S17 adds per-session effective-configuration provenance to the newly shipped Settings editor.
 
-Already shipped: code-mode scripts and positional arguments, standalone board composition,
-member keys/presence, launcher admin controls, key/handle bans, replayed purge events,
-reserved @board-admin posts, attachment save/preview, image input, board switching, Agents
-rail/mention wake-ups, owner-scoped child cancellation, computer-use recording/compilation,
-deterministic replay, content-based approval, halt/repair evidence and Workflows rail/cards.
-Basic moderation and the repaired startup presentation are not missing-feature proposals.
+Already shipped: Settings form/raw YAML editing, comment-preserving writes, file watching,
+conflict banners, tool-catalog drift checks, welcome video rotation/maximized launch and
+full-handle board-mention warnings/member discovery. These are recognized, not reproposed.
+The malformed-handle spawned-agent mention symptom is documented as repaired in 2027e1f;
+R22's old-board event provenance remains a separate open issue. Save races and quit draft
+loss are repairs R28/R29, not reasons to propose another Settings editor. Existing wiki
+@all, attachment and Settings unsaved-prompt follow-ups are not duplicated as new features.
+
+Also present: code-mode scripts/positional arguments, standalone board composition,
+member keys/presence, admin controls, bans/purges, reserved @board-admin posts, attachments,
+image input, board switching, Agents rail/mention wake-ups, owner-scoped child cancellation,
+RPA recording/compilation/replay, content approval, halt/repair evidence and Workflows cards.
 Recognize RequestExecutor, persisted revisions, child generation checks, output draining,
 active-plan sidecars, process-state events and steering receipts. Campaign remains absent;
-reconcile its historical design before introducing a shared schema.
+reconcile its historical schema before introducing a shared store. Preserve intentionally
+uncapped mentions.
 
 Extend the [improve-yourself workflow](C:/Users/alexr/Driverless_AGI/.dagi/workflow/improve-yourself/workflow.md)
-and [review-session synthesis](C:/Users/alexr/Driverless_AGI/.dagi/skills/review-session/SKILL.md),
-rather than reproposing baseline/candidate testing. R27 shows their intake contract needs
-alignment with the actual TODO. RPA replay confirmation remains separate from the standing
-coding workflow. Preserve intentionally uncapped board mentions. Existing wiki @all, image
-attachment and admin follow-ups are not duplicated; reported missed spawned-agent mentions
-remain undiagnosed independently of the reproduced old-board event bug.
+and [review-session synthesis](C:/Users/alexr/Driverless_AGI/.dagi/skills/review-session/SKILL.md) rather than
+reproposing baseline/candidate testing. R27 still shows incompatible TODO intake.
+RPA replay confirmation remains separate from the standing coding workflow.
 
-[Today's review](C:/Users/alexr/Driverless_AGI/_CODEX_CODE_REVIEW_2026-10-14.md) contains **21 open findings**.
-Focused checks: **379 passed, three known R15 failures, two opt-in skips**. All four RPA
-findings reproduce in offline probes; fresh real Qt delivery also reproduces stale posts
-and purges after switching boards. No live desktop, hook or provider validation.
+[Today's review](C:/Users/alexr/Driverless_AGI/_CODEX_CODE_REVIEW_2026-10-15.md) contains **23 open findings**.
+Today's focused checks: core **3 failed, 263 passed, 2 skipped, 67 warnings in 45.99s**; Qt **131 passed in 12.52s**.
+The three plan-template failures remain open; the historical viewer collision fixture passed
+today. All five RPA boundary assertions and both new configuration-save races reproduce
+offline. No real desktop input, global hook or provider was exercised.
 
 ## S1 — One owned run with an explicit outcome
 
@@ -134,7 +139,7 @@ notifications occur on meaningful changes or required action.
 **Improvement:** Expose effective environment and working capabilities before dependent tasks.
 
 **Issue addressed:** Earlier reviews found shell and converter retries. Importability does
-not prove working conversion; prior WebEngine checks were sandbox-sensitive. Focused Qt controller/feed tests ran this time; rendered WebEngine interaction was not verified.
+not prove working conversion; prior WebEngine checks were sandbox-sensitive. Focused offscreen Qt Settings/controller tests passed today; rendered WebEngine interaction was not verified.
 
 **Smallest useful version:** Report resolved interpreter, shell contract, tool availability
 and converter-service health with bounded smoke fixtures. Reuse configuration introspection
@@ -239,7 +244,7 @@ before assigning worker payloads (R17).
 plans preserve constraints and progress through worker/reviewer handoffs. Invalid plans
 name the exact heading or missing field; they never silently appear to have no pending
 work. An exact task title that is a substring of an earlier title still selects the intended task.
-The three stale tests are updated to validate current behavior rather than removed.
+The three stale tests must be updated to validate current behavior rather than removed.
 
 ## S11 — Schedule control and missed-run recovery
 
@@ -384,14 +389,40 @@ A resolved or irreproducible historical finding is not silently selected. Repeat
 does not duplicate the same finding. Baseline/candidate artifacts name the selected source
 and evaluator. Applying changes remains the Admiral's existing implementation decision.
 
+## S17 — Explain each agent's effective configuration and pending changes
+
+**Improvement:** Extend the shipped Settings editor with a read-only comparison between an
+agent's captured configuration and the configuration intended for its next session.
+
+**Issue addressed:** Settings edits root defaults, while project overrides and explicit model
+selection participate in resolution. Existing agents retain their loaded AgentConfig. A saved
+form therefore does not by itself identify the model/tool set that produced a result, or which
+agents will adopt changed defaults. S4 needs those effective inputs for valid comparisons.
+
+**Smallest useful version:** Capture non-secret model/tier IDs, tool availability, limits,
+project/root source paths and revision hashes when constructing each session. In the existing
+Agents/Settings views show that snapshot, overridden values and a concise pending-settings
+diff, with clear instructions for starting a new session. Reuse
+[configuration resolution](C:/Users/alexr/Driverless_AGI/agent/config_loader.py:380) and existing session state;
+do not introduce a second editor or mutate active runs. Passive inspection reads captured
+data and must not execute client scripts. Any explicit candidate-resolution action should
+be bounded and keep its errors visible. Feed the same snapshot into S4 experiment manifests.
+
+**Acceptance:** Two agents with different project overrides show their actual differing
+configuration sources. Saving defaults leaves active-run snapshots unchanged and identifies
+which settings require a new session; the next session records the adopted inputs. Model
+selection and project override precedence are explained. API keys/tokens/client objects are
+excluded, and merely opening the comparison performs no provider request, script execution
+or configuration write. Cover unchanged, overridden, pending and invalid candidate states.
+
 ## Sequence and measures
 
 1. Repair R4/R10/R16/R18/R21/R22/R23/R24/R25/R26 and Telegram R11/R12; retain verified R2/R6/R8/R9 contracts.
-2. Repair R3/R13/R14, add S8 regression fixtures and the minimal S9 retained-export path;
+2. Repair Settings races/draft loss R28/R29. Repair R3/R13/R14, add S8 regression fixtures and the minimal S9 retained-export path;
    repair R19 to retain interrupted script diagnostics.
    Extend S1 ownership to abandoned-child cleanup. Repair R15/R17 and establish S10's plan
    contract before relying on unattended delivery.
-3. Add S2 objectives and S4 manifests; prototype S5 on those records. Extend the shipped Workflows rail with executed/verified/delivered
+3. Add S2 objectives and S4 manifests; prototype S5 on those records. Add S17 configuration provenance to Settings and those manifests. Extend the shipped Workflows rail with executed/verified/delivered
    distinctions. Add S14 once retained
    failure evidence can distinguish recovery changes. S6 remains a bounded
    capability-preflight opportunity under the project's normal implementation workflow.
@@ -407,7 +438,7 @@ Measure verified acceptance, false-success rate, final-delivery failures, questi
 latency, cancellation latency, code-mode deadline overrun/partial-output retention, export
 recovery without recomputation, plan-contract rejection, recovery success, duplicate-admission
 rate, exact task-selection accuracy, obsolete-board wake-ups/card removals, review-to-candidate selection errors, replay coverage/hash mismatches, repeated post-action mutations,
-preview-versus-run input drift, retry-without-change rate, stale-result
+preview-versus-run input drift, configuration-source ambiguity, concurrent-save byte/hash mismatches, retry-without-change rate, stale-result
 rejection and repeated failed hypotheses. Record cost per verified outcome with missing-cost
 cases explicit. Establish
 baselines before choosing numerical targets. No external framework migration is required.
