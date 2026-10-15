@@ -52,9 +52,9 @@ class AgentBridge(QObject):
     process_state_changed = Signal(object)
     continue_injected = Signal(int, int)   # cur, max
     subagent_event = Signal(str, str)      # type, json line
-    board_post = Signal(object)
-    board_purge = Signal(object)           # purge payload from the board stream
-    board_status = Signal(str)
+    board_post = Signal(object)            # (board generation, post)
+    board_purge = Signal(object)           # (board generation, purge payload from the stream)
+    board_status = Signal(object)          # (board generation, text)
     board_ready = Signal(object)
     show_file_requested = Signal(str, object)             # path, line (int | None)
     notepad_flush_requested = Signal(object)              # threading.Event set once flushed
@@ -177,7 +177,7 @@ class AgentBridge(QObject):
         def on_compaction(kept: int, removed: int, summary: str, fallback: bool) -> None:
             self.compaction_done.emit(kept, removed, summary, fallback)
             if loop_ref:
-                self.context_update.emit(_breakdown(loop_ref[0].messages))
+                self.context_update.emit(_context(loop_ref[0].messages))
 
         def on_model_switch(from_name: str, to_name: str) -> None:
             self.model_switched.emit(from_name, to_name)
@@ -188,8 +188,12 @@ class AgentBridge(QObject):
         def on_pause() -> None:
             self.agent_paused.emit()
 
+        def _context(messages: list) -> dict[str, int]:
+            schemas = loop_ref[0].registry.get_openai_tools_list() if loop_ref else None
+            return _breakdown(messages, schemas)
+
         def on_api_call(messages: list) -> None:
-            self.context_update.emit(_breakdown(messages))
+            self.context_update.emit(_context(messages))
 
         def on_continue_injected(cur: int, mx: int) -> None:
             self.continue_injected.emit(cur, mx)

@@ -20,7 +20,7 @@ from pyside_gui.expression_widget import ExpressionWidget
 from pyside_gui.icons import icon
 from pyside_gui.menu_style import MENU_STYLESHEET
 from pyside_gui.theme import SCROLLBAR_QSS, qss, tint
-from tui.utils import _system_breakdown
+from tui.utils import _system_breakdown, _system_other
 
 
 def _path_tail(path: Path | str, max_chars: int = 24) -> str:
@@ -389,22 +389,21 @@ class RightSidebar(QScrollArea):
 
         names = {
             "sys-prompt": "System prompt", "dagi/ag": "DAGI AGENTS.md",
-            "proj/ag": "Project AGENTS.md", "summary": "Summary", "user": "User",
-            "assistant": "Assistant", "tools": "Tools",
+            "proj/ag": "Project AGENTS.md", "sys-other": "System (other)",
+            "schemas": "Tool schemas", "summary": "Summary", "user": "User",
+            "assistant": "Assistant", "reasoning": "Reasoning", "tools": "Tools",
         }
+        counts = dict(sys_parts)
+        counts["sys-other"] = _system_other(sys_parts, self._buckets)
+        counts.update((k, v) for k, v in self._buckets.items() if k != "system")
         rows: list[tuple] = []
-        for key in ("sys-prompt", "dagi/ag", "proj/ag"):
-            n = sys_parts.get(key, 0)
-            rows.append((names[key], f"{n:,}", pct(n)))
-        for key in ("summary", "user", "assistant", "tools"):
-            n = self._buckets.get(key, 0)
+        for key in names:
+            n = counts.get(key, 0)
             rows.append((names[key], f"{n:,}", pct(n)))
         res = self._reserve_tokens
         rows.append(("Reserve", f"{res:,}", pct(res)))
 
-        total = sum(sys_parts.values()) + sum(
-            self._buckets.values()
-        ) + res
+        total = sum(counts.values()) + res
         usage = total / W if W else 0
         rows.append((("Total", "total"), (f"{total:,}", "total"), (f"{usage*100:.0f}%", "total")))
         self._context.set_rows(rows)

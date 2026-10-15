@@ -24,6 +24,8 @@ def compose_worker_task(plan_text: str, subtask_name: str) -> str:
     """Build the worker task body: global plan context + subtask section.
 
     Envelope sections (Instructions/Output) are added later by run_subagent.
+    Raises ``ValueError`` when a plan is loaded but *subtask_name* names no
+    subtask, or several, so nothing is delegated without its assignment.
     """
     from tools._plan_parser import extract_global_sections, extract_subtask
 
@@ -35,7 +37,8 @@ def compose_worker_task(plan_text: str, subtask_name: str) -> str:
             sections.append(f"## Plan Context\n{global_ctx}")
 
         subtask_ctx = extract_subtask(plan_text, subtask_name, include_tests=True)
-        if subtask_ctx:
-            sections.append(f"## Subtask\n{subtask_ctx}")
+        if not subtask_ctx:
+            raise ValueError(f"no subtask in the active plan matches {subtask_name!r}")
+        sections.append(f"## Subtask\n{subtask_ctx}")
 
     return "\n\n---\n\n".join(sections)

@@ -184,7 +184,7 @@ def test_snapshot_failure_is_retried_with_backoff(qtbot, monkeypatch):
     controller._load_snapshot()
     assert client.calls == 2
     assert _Listener.created == [(client, 0)]
-    assert any("service starting" in status for status in statuses)
+    assert any("service starting" in text for _generation, text in statuses)
     controller.close()
 
 
@@ -225,10 +225,9 @@ def test_malformed_snapshot_items_are_skipped(qtbot, monkeypatch):
     )
     _Listener.created = []
     monkeypatch.setattr("pyside_gui.board_controller.StreamListener", _Listener)
-    emitted = []
-    window._bridge.board_post.connect(emitted.append)
     controller._load_snapshot()
-    assert [post["id"] for post in emitted] == [8]
+    assert set(window._left_sidebar.board_view._cards) == {8}
+    assert controller._live_after == 8
     assert _Listener.created == [(client, 8)]
     controller.close()
 
@@ -668,4 +667,77 @@ def test_stream_purges_reach_the_view_only_for_the_current_board(qtbot, monkeypa
     on_purge({"id": 2, "scope": "all", "through": 2})
     qtbot.wait(20)
     assert set(view._cards) == {2}
+    controller.close()
+
+
+def _queued_from_worker(emit):
+    """Emit from a worker thread so Qt queues the event for the GUI thread."""
+    worker = threading.Thread(target=emit)
+    worker.start()
+    worker.join(1)
+
+
+def test_old_board_events_queued_before_a_switch_are_dropped(qtbot):
+    """R22: a post, purge or status queued by the old board must not reach the new one."""
+    window = _window(qtbot)
+    mentions = []
+    window._on_board_mention = mentions.append
+    controller = BoardController(window)
+    controller.runtime = SimpleNamespace(
+        client=FakeClient(), session=SimpleNamespace(handle="main_12345678"),
+    )
+    controller._live_after = 0
+    view = window._left_sidebar.board_view
+    old = controller._generation
+    bridge = window._bridge
+    _queued_from_worker(lambda: (
+        bridge.board_post.emit((old, dict(_post(99), mentions=["main_12345678"]))),
+        bridge.board_purge.emit((old, {"id": 1, "scope": "all", "through": 500})),
+        bridge.board_status.emit((old, "old board status")),
+    ))
+    controller._generation += 1  # the switch lands before the queue is processed
+    view.add_post(_post(7))  # a card from the new board
+    view.set_status("new board")
+    qtbot.wait(50)
+    assert set(view._cards) == {7}
+    assert mentions == []
+    assert view._status.text() == "new board"
+    controller.close()
+
+
+def test_current_board_events_are_delivered_from_the_queue(qtbot):
+    window = _window(qtbot)
+    mentions = []
+    window._on_board_mention = mentions.append
+    controller = BoardController(window)
+    controller.runtime = SimpleNamespace(
+        client=FakeClient(), session=SimpleNamespace(handle="main_12345678"),
+    )
+    controller._live_after = 0
+    view = window._left_sidebar.board_view
+    view.add_post(_post(3))
+    current = controller._generation
+    bridge = window._bridge
+    _queued_from_worker(lambda: (
+        bridge.board_post.emit((current, dict(_post(9), mentions=["main_12345678"]))),
+        bridge.board_purge.emit((current, {"id": 1, "scope": "all", "through": 3})),
+        bridge.board_status.emit((current, "live")),
+    ))
+    qtbot.waitUntil(lambda: view._status.text() == "live")
+    assert set(view._cards) == {9}
+    assert [post["id"] for post in mentions] == [9]
+    controller.close()
+
+
+def test_old_snapshot_queued_before_a_switch_keeps_the_new_cursor(qtbot):
+    """A stale snapshot must neither render old cards nor move the live-post cursor."""
+    window = _window(qtbot)
+    controller = BoardController(window)
+    old = controller._generation
+    _queued_from_worker(lambda: controller._snapshot.emit((old, [_post(40)], 40)))
+    controller._generation += 1
+    controller._live_after = None  # what a switch resets before the new snapshot settles
+    qtbot.wait(50)
+    assert window._left_sidebar.board_view._cards == {}
+    assert controller._live_after is None
     controller.close()

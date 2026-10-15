@@ -26,19 +26,40 @@ The test runner script lives alongside this file:
 
 ## Step 1 — Pick a TODO item
 
-Read `{DAGI_ROOT}/TODO.md`.
+If the user named an item when invoking the workflow, locate it with the rules below
+and use it; if it cannot be found or is not eligible, say why and stop.
 
-Scan `## Work Queue` for incomplete items (bullets that do NOT have a `- [x]` marker
-and whose `Next:` field has not been crossed out or replaced with "done").
+Otherwise read `{DAGI_ROOT}/TODO.md` and build the candidate list from its actual shape:
 
-**Selection priority:**
-1. Prefer items tagged `review-item` — they already have a linked plan file to build on.
-2. Within the same tag, prefer `priority:high` over `priority:medium` over `priority:low`.
-3. Among `review-item` entries at the same priority, prefer those whose `Source:` field
-   links to an existing `.dagi/self-review/plan_*.md` (confirmed analysis to extend).
-4. If no `review-item` entries remain, fall back to any `priority:high` Work Queue item.
+1. **Where:** only the `## In progress` section. Ignore the dated `- [x]` lines above it,
+   `## Completed`, and any `## Self-Improvement Queue` / `## Tested Improvements` entries
+   this workflow wrote earlier.
+2. **What counts as one item:** each top-level `- **Title**` bullet is an item. When a
+   bullet is a group of follow-ups (its nested `- ` bullets are separate pieces of work,
+   e.g. "Multi-agent follow-ups"), each nested bullet is its own item instead.
+   When a bullet points at a review report (`_CODEX_CODE_REVIEW_*.md`), each finding ID it
+   lists (`R17`, `R27`, …) is its own item; read the report section for the details.
+3. **Not eligible:** items marked done or superseded; items waiting on a user decision
+   ("awaiting approval", "decide whether", "pending" a choice); items whose fix needs live
+   external services or hardware the snapshot test cannot exercise (desktop input, Telegram,
+   a remote board); items a recent `## Tested Improvements` entry already covers.
+4. **Source identity:** record each candidate as `TODO.md › {group title} › {item}` or
+   `{report file} › {finding ID}`. Use it verbatim in the plan, the verdict and Step 12.
 
-Extract a **kebab-case slug** from the item name (the bold text after the `- **`):
+**Ranking:** explicit severity first (`P1` before `P2`; unlabelled after both); then items
+with a reproduction or failing test named in their text; then items whose effect shows in
+agent behavior on a short task (the baseline/after comparison can only measure that);
+then smaller scope (one module or one skill/prompt file).
+
+**Choose with the user:** show the top three candidates (source identity, one-line why,
+expected test task) with `ask_user` and continue with the one they pick. Never start a
+candidate run without that choice.
+
+**No eligible candidate:** if the list is empty, report `No eligible improvement candidate in
+TODO.md` with the counts excluded per rule above, and stop. Do not create a plan, snapshot or
+TODO entry.
+
+Extract a **kebab-case slug** from the chosen item's title:
 - `Add path resolution warning to memory-add SKILL.md` → `memory-add-path-warning`
 - `Fix redundant skill-load instruction in memory-add Step 2` → `memory-add-redundant-skill-load`
 - `Error Handling & Retries` → `error-handling-retries`
@@ -345,7 +366,7 @@ Append a new entry to `{DAGI_ROOT}/TODO.md` under `## Self-Improvement Queue`
 ```markdown
 ### [{HIGH/MEDIUM/LOW}] {item-title} — {APPROVED/REJECTED/INCONCLUSIVE}
 
-**Workflow run:** {YYYY-MM-DD} | **Snapshot:** `snapshots/{snapshot_id}`
+**Source:** `{source identity}` | **Workflow run:** {YYYY-MM-DD} | **Snapshot:** `snapshots/{snapshot_id}`
 **Baseline log:** `{baseline_log_path}` | **After log:** `{after_log_path}`
 **Plan:** [{plan filename}](.dagi/plans/improvement_{slug}_{date}.md)
 
@@ -413,8 +434,10 @@ as the "after" — read it and compare against the live file to extract the prec
 **Verdict rationale:** {2–3 sentences from Step 11 critical analysis explaining whether
 the fix is sound, surgical, and generalises to related items}
 
-**To implement:** Apply the diffs above, then remove the originating Work Queue entry
-for `{item-title}` (or move it to `## Done` with a `- [x]` checkbox and a one-line summary).
+**Source:** `{source identity from Step 1}`
+
+**To implement:** Apply the diffs above, then mark the originating entry
+(`{source identity}`) done in TODO.md: move it to `## Completed` with a one-line summary.
 ```
 
 Use a **single `edit` call** to append the entry. Do not make multiple partial edits.
@@ -430,5 +453,6 @@ Use a **single `edit` call** to append the entry. Do not make multiple partial e
 | parse_jsonl_logs.py not found | The review-session skill is at `.dagi/skills/review-session/`. If missing, fall back to reading both raw JSONL files with the `read` tool and counting errors manually. |
 | No `session_end` record in log | Session was interrupted. Use tool call counts from what exists; mark task_completion as `no`. |
 | TODO.md has no `## Self-Improvement Queue` section | Create it before appending, with header and a one-line description. |
+| No eligible candidate in TODO.md | Report it with the exclusion counts and stop (Step 1). No plan, snapshot or TODO entry. |
 | Plan says to edit a file not in SNAPSHOT_PATHS | The snapshot won't have it. Extend the snapshot: manually copy the file into the snapshot directory with `bash cp`. |
 | User wants to test a different item mid-workflow | Stop, restart from Step 1 with the new item. Don't mix artifacts between items. |

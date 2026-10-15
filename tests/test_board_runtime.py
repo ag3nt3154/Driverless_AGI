@@ -65,7 +65,7 @@ def test_loopback_url_classification():
 
 
 def test_temp_board_api_is_available():
-    from pyside_gui.board_runtime import DAGI_ROOT, TempBoard, sweep_stale
+    from pyside_gui.board_temp import DAGI_ROOT, TempBoard, sweep_stale
 
     assert callable(TempBoard.start) and callable(sweep_stale)
     assert TempBoard.start.__func__.__defaults__[0] == DAGI_ROOT / ".dagi" / "board" / "temp"
@@ -74,7 +74,7 @@ def test_temp_board_api_is_available():
 def test_temp_board_setup_failure_removes_partial_run_and_releases_lifecycle_lock(
     monkeypatch, tmp_path,
 ):
-    import pyside_gui.board_runtime as runtime
+    import pyside_gui.board_temp as runtime
     from services.message_board.runtime_records import lock_file, open_lock
 
     root = tmp_path / "temp"
@@ -102,7 +102,7 @@ def test_temp_board_setup_failure_removes_partial_run_and_releases_lifecycle_loc
 def test_temp_board_uuid_collision_preserves_existing_run_and_releases_lifecycle_lock(
     monkeypatch, tmp_path,
 ):
-    import pyside_gui.board_runtime as runtime
+    import pyside_gui.board_temp as runtime
     from services.message_board.runtime_records import lock_file, open_lock
 
     root = tmp_path / "temp"
@@ -286,7 +286,7 @@ def test_failure_after_temp_start_closes_temp(tmp_path):
 
 
 def test_temp_board_lifecycle_live(tmp_path, monkeypatch):
-    from pyside_gui.board_runtime import TempBoard
+    from pyside_gui.board_temp import TempBoard
 
     # The GUI loads .env, so the child inherits a board token; the temp board must ignore it.
     monkeypatch.setenv("DAGI_BOARD_TOKEN", "central-token")
@@ -307,7 +307,7 @@ def test_temp_board_lifecycle_live(tmp_path, monkeypatch):
 
 
 def test_temp_board_exits_when_parent_pipe_closes(tmp_path):
-    from pyside_gui.board_runtime import TempBoard
+    from pyside_gui.board_temp import TempBoard
 
     temp = TempBoard.start(root=tmp_path / "temp", wait_s=10)
     process = temp.process
@@ -319,7 +319,7 @@ def test_temp_board_exits_when_parent_pipe_closes(tmp_path):
 
 def test_sweep_stale_removes_only_unlocked_runs(tmp_path):
     from services.message_board.runtime_records import lock_file, open_lock
-    from pyside_gui.board_runtime import sweep_stale
+    from pyside_gui.board_temp import sweep_stale
 
     root = tmp_path / "temp"
     stale, active = root / "stale", root / "active"
@@ -356,7 +356,7 @@ def test_runtime_record_discovery_and_nonblocking_lock(tmp_path):
 
 
 def test_concurrent_start_cannot_sweep_new_owned_run(tmp_path):
-    from pyside_gui.board_runtime import TempBoard
+    from pyside_gui.board_temp import TempBoard
 
     root = tmp_path / "temp"
     results, errors = [], []
@@ -381,7 +381,7 @@ def test_concurrent_start_cannot_sweep_new_owned_run(tmp_path):
 
 
 def test_parse_sse_ignores_ping_and_combines_split_data():
-    from pyside_gui.board_runtime import parse_sse
+    from pyside_gui.board_stream import parse_sse
 
     lines = [": ping", "", "event: post", 'data: {"id": 1,',
              'data: "text": "one"}', "", "event: other", 'data: {"id": 9}', "",
@@ -430,7 +430,7 @@ class StreamClient:
 
 
 def test_listener_reconnects_and_dedupes_overlapping_posts():
-    from pyside_gui.board_runtime import StreamListener
+    from pyside_gui.board_stream import StreamListener
 
     replay = ClosableLines(["event: post", 'data: {"id": 2}', "",
                             "event: post", 'data: {"id": 3}', ""])
@@ -449,7 +449,7 @@ def test_listener_reconnects_and_dedupes_overlapping_posts():
 
 
 def test_listener_stop_closes_active_iterator_promptly():
-    from pyside_gui.board_runtime import StreamListener
+    from pyside_gui.board_stream import StreamListener
 
     entered = threading.Event()
     lines = ClosableLines([], block=entered)
@@ -462,7 +462,7 @@ def test_listener_stop_closes_active_iterator_promptly():
 
 
 def test_listener_stop_during_stream_entry_closes_before_callback():
-    from pyside_gui.board_runtime import StreamListener
+    from pyside_gui.board_stream import StreamListener
 
     entered, release = threading.Event(), threading.Event()
     lines, statuses = ClosableLines([]), []
@@ -487,7 +487,7 @@ def test_listener_stop_during_stream_entry_closes_before_callback():
 
 
 def test_listener_increases_backoff_for_repeated_empty_disconnects():
-    from pyside_gui.board_runtime import StreamListener
+    from pyside_gui.board_stream import StreamListener
 
     client = StreamClient([ClosableLines([]) for _ in range(3)])
     listener = StreamListener(client, 0, lambda post: None, lambda status: None)

@@ -35,8 +35,8 @@ class RunWorkerTool(BaseTool):
             "subtask_name": {
                 "type": "string",
                 "description": (
-                    "Name of the subtask to execute — must match the "
-                    "heading in the plan."
+                    "Subtask to execute: its exact name or number from the "
+                    "plan heading (e.g. 'Validate input' or '2')."
                 ),
             },
             "custom_instructions": {
@@ -71,7 +71,10 @@ class RunWorkerTool(BaseTool):
         )
 
         plan_text = _plan_utils_mod.load_plan_text(self._config)
-        task_body = _plan_utils_mod.compose_worker_task(plan_text, subtask_name)
+        try:
+            task_body = _plan_utils_mod.compose_worker_task(plan_text, subtask_name)
+        except ValueError as exc:  # missing or ambiguous subtask: do not delegate blind
+            return f"Error: {exc}"
 
         on_event = None
         if self._callbacks and self._callbacks.on_subagent_event_factory:

@@ -10,11 +10,9 @@ from agent.config_editor import (
     ConfigConflictError,
     ConfigDocument,
     ConfigParseError,
-    ValidationResult,
     file_hash,
-    tool_catalog,
-    validate,
 )
+from agent.config_validate import ValidationResult, tool_catalog, validate
 
 FIXTURES = Path(__file__).parent / "fixtures" / "config_editor"
 
@@ -296,10 +294,12 @@ def test_from_text_keeps_given_base_hash(tmp_path):
 
 
 def test_no_qt_import():
-    import agent.config_editor as mod
+    import agent.config_editor as editor
+    import agent.config_validate as validation
 
-    src = Path(mod.__file__).read_text(encoding="utf-8")
-    assert "import PySide" not in src and "from PySide" not in src
+    for mod in (editor, validation):
+        src = Path(mod.__file__).read_text(encoding="utf-8")
+        assert "import PySide" not in src and "from PySide" not in src
 
 
 def test_pruning_emptied_map_keeps_following_comments(tmp_path):
@@ -943,7 +943,7 @@ def test_temp_file_write_failure_is_an_error(vdoc, monkeypatch):
     def fail(*_args, **_kwargs):
         raise PermissionError("denied")
 
-    monkeypatch.setattr("agent.config_editor.tempfile.mkstemp", fail)
+    monkeypatch.setattr("agent.config_validate.tempfile.mkstemp", fail)
     result = _check(vdoc)
     assert not result.ok
     assert any("denied" in e for e in result.errors)
@@ -955,7 +955,7 @@ def test_validate_does_not_import_qt():
     import sys
 
     code = (
-        "import sys; from agent.config_editor import validate, tool_catalog; "
+        "import sys; from agent.config_validate import validate, tool_catalog; "
         "tool_catalog(); "
         "assert not [m for m in sys.modules if m.startswith(('PySide', 'PyQt'))]"
     )

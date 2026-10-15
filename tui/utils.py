@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 # ── Constants ─────────────────────────────────────────────────────────────────
@@ -32,18 +33,30 @@ def _truncate(text: str, n: int = 120) -> str:
     return text if len(text) <= n else text[:n] + "…"
 
 
-def _breakdown(messages: list) -> dict[str, int]:
-    """Estimate token counts for user/assistant/tools/summary buckets (chars // 4).
-    System messages are excluded — accounted for by _system_breakdown() from source files.
-    Compaction summaries (role=user, content starts with '[CONTEXT SUMMARY') are broken out
-    into a separate 'summary' bucket so they don't inflate the user row."""
+def _breakdown(messages: list, tool_schemas: list | None = None) -> dict[str, int]:
+    """Estimate token counts for the request's context buckets (chars // 4).
+
+    'system' is the real system message as sent; sidebars split it against the file-based
+    _system_breakdown() rows via _system_other(). 'reasoning' is the reasoning_content echoed
+    back on assistant messages, and 'schemas' is the tool JSON sent alongside the messages —
+    both are billed as prompt tokens. Compaction summaries (role=user, content starts with
+    '[CONTEXT SUMMARY') are broken out into a separate 'summary' bucket so they don't
+    inflate the user row."""
     _TOKENS_PER_IMAGE = 1024
-    buckets: dict[str, int] = {"summary": 0, "user": 0, "assistant": 0, "tools": 0}
-    role_map = {"user": "user", "assistant": "assistant", "tool": "tools"}
+    buckets: dict[str, int] = {
+        "system": 0, "summary": 0, "user": 0, "assistant": 0, "reasoning": 0,
+        "tools": 0, "schemas": 0,
+    }
+    if tool_schemas:
+        buckets["schemas"] = len(json.dumps(tool_schemas, ensure_ascii=False)) // 4
+    role_map = {"system": "system", "user": "user", "assistant": "assistant", "tool": "tools"}
     for m in messages:
         bucket = role_map.get(m.get("role", ""))
         if bucket is None:
             continue
+        reasoning = m.get("reasoning_content") or ""
+        if reasoning:
+            buckets["reasoning"] += max(1, len(reasoning) // 4)
         content = m.get("content") or ""
         img_count = 0
         if isinstance(content, list):
@@ -94,6 +107,15 @@ def _system_breakdown(dagi_root: Path, project_path: Path) -> dict[str, int]:
         "dagi/ag": _toks(dagi_agents),
         "proj/ag": 0 if same_file else _toks(project_agents),
     }
+
+
+def _system_other(sys_parts: dict[str, int], buckets: dict[str, int]) -> int:
+    """System-message tokens the file rows don't explain (tool/skill list, prompt sections).
+
+    The real system message contains the files _system_breakdown() reads, so only the
+    remainder is added on top; before the first request there is no real message yet.
+    """
+    return max(0, buckets.get("system", 0) - sum(sys_parts.values()))
 
 
 # ── Stats ─────────────────────────────────────────────────────────────────────

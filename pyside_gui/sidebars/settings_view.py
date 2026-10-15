@@ -63,9 +63,8 @@ from agent.config_editor import (
     ConfigDocument,
     ConfigParseError,
     file_hash,
-    tool_catalog,
-    validate,
 )
+from agent.config_validate import tool_catalog, validate
 from pyside_gui.theme import qss
 from services.message_board.lifecycle import DEFAULT_URL as _BOARD_DEFAULT_URL
 from services.message_board.settings import DEFAULT_BIND as _BOARD_DEFAULT_BIND

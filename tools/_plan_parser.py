@@ -108,31 +108,85 @@ def extract_global_sections(plan_text: str) -> str:
     return "\n\n".join(parts)
 
 
-def extract_subtask(plan_text: str, subtask_name: str, include_tests: bool = True) -> str:
-    """Return the ``### Subtask N: <name>`` block that contains *subtask_name*.
+class SubtaskLookupError(ValueError):
+    """*subtask_name* names more than one ``###`` heading, so the target is ambiguous."""
 
-    Matching is case-insensitive substring: the function checks whether
-    *subtask_name* appears anywhere in the ``###`` heading line.
+
+_TASK_HEADING = re.compile(r'^###\s+(?:Subtask|Task)\s+(\d+):\s*(?:\[[ ~x!]\]\s*)?(.*?)\s*$')
+_TASK_REFERENCE = re.compile(
+    r'^\s*(?:(?:sub)?task\s+)?(\d+)\s*(?::\s*(?:\[[ ~x!]\]\s*)?(.*?))?\s*$', re.IGNORECASE,
+)
+
+
+def _normalize(text: str) -> str:
+    return " ".join(text.casefold().split())
+
+
+def _find_subtask_heading(headings: list[str], subtask_name: str) -> int | None:
+    """Index into *headings* of the ``###`` heading *subtask_name* names, else None.
+
+    Resolution order: a task number (``3``, ``Subtask 3``, ``Task 3: name``), then an
+    exact normalized task name or heading, then a case-insensitive substring that only
+    one heading contains.  Raises :class:`SubtaskLookupError` when two headings tie.
+    """
+    candidates = [(i, line) for i, line in enumerate(headings) if line.startswith('###')]
+    parsed = {i: _TASK_HEADING.match(line) for i, line in candidates}
+
+    def unique(found: list[int], how: str) -> int | None:
+        if len(found) > 1:
+            names = "; ".join(headings[i].lstrip('#').strip() for i in found)
+            raise SubtaskLookupError(
+                f"{subtask_name!r} {how} {len(found)} subtasks ({names}); "
+                "name one exactly or use its number"
+            )
+        return found[0] if found else None
+
+    reference = _TASK_REFERENCE.match(subtask_name)
+    if reference is not None:
+        number = reference.group(1)
+        found = [i for i, m in parsed.items() if m is not None and m.group(1) == number]
+        hit = unique(found, "is the number of")
+        if hit is not None:
+            return hit
+        # "Subtask 3: name" whose number drifted: fall through and match the name part.
+        if reference.group(2):
+            subtask_name = reference.group(2)
+
+    wanted = _normalize(subtask_name)
+    if not wanted:
+        return None
+    exact = [
+        i for i, line in candidates
+        if (parsed[i] is not None and _normalize(parsed[i].group(2)) == wanted)
+        or _normalize(line.lstrip('#')) == wanted
+    ]
+    hit = unique(exact, "exactly names")
+    if hit is not None:
+        return hit
+    partial = [i for i, line in candidates if wanted in _normalize(line)]
+    return unique(partial, "partially matches")
+
+
+def extract_subtask(plan_text: str, subtask_name: str, include_tests: bool = True) -> str:
+    """Return the ``### Subtask N: <name>`` block that *subtask_name* identifies.
+
+    *subtask_name* may be the task number, the exact task name (case and spacing
+    ignored, status marker excluded), or a fragment that only one ``###`` heading
+    contains.  An exact name wins over a longer heading that merely contains it.
 
     When *include_tests* is ``False``, the ``#### Tests`` subsection (and
     everything under it up to the next ``####``, ``###``, ``##`` heading or
     EOF) is stripped before returning.
 
-    Returns an empty string if no matching subtask is found.
+    Returns an empty string if no subtask matches; raises
+    :class:`SubtaskLookupError` if the name matches several equally well.
     """
     # Split on ### headings; ## headings also terminate a subtask block
     # Strategy: find all ### or ## heading positions and extract the block.
     heading_pattern = re.compile(r'^(#{2,3}\s+.+)$', re.MULTILINE)
     matches = list(heading_pattern.finditer(plan_text))
 
-    target_idx: int | None = None
-    for i, match in enumerate(matches):
-        line = match.group(1)
-        # Only consider ### headings that contain subtask_name (case-insensitive)
-        if line.startswith('###') and subtask_name.lower() in line.lower():
-            target_idx = i
-            break
-
+    target_idx = _find_subtask_heading([m.group(1) for m in matches], subtask_name)
     if target_idx is None:
         return ""
 

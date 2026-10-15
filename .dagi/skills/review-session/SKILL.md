@@ -27,7 +27,8 @@ The helper scripts live alongside this file:
 and used for both the report filename and the plan filename. It is **not** a session ID.
 
 This skill does not write to `TODO.md`. It only produces the review report — turning
-findings into work-queue items is a separate, manual decision.
+findings into `## In progress` entries in `TODO.md` (which `improve-yourself` reads) is a
+separate, manual decision.
 
 ---
 
