@@ -9,7 +9,7 @@ from textual.widget import Widget
 
 from agent.process_state import ProcessSnapshot
 
-from .utils import _system_breakdown
+from .utils import _system_breakdown, _system_other
 
 
 def _path_tail(path: Path | str, max_chars: int = 36) -> str:
@@ -157,20 +157,23 @@ class Sidebar(Widget):
         ctx.add_column(justify="right", width=7)
         ctx.add_column(justify="right", width=4)
 
-        SYS_COLOURS = {"sys-prompt": "white", "dagi/ag": "magenta", "proj/ag": "bright_magenta"}
-        for key, col in SYS_COLOURS.items():
-            n = sys_parts.get(key, 0)
-            ctx.add_row(key, f"[{col}]~{n:,}[/{col}]", f"[dim]{_pct(n)}[/dim]")
+        counts = dict(sys_parts)
+        counts["sys-other"] = _system_other(sys_parts, self._buckets)
+        counts.update((k, v) for k, v in self._buckets.items() if k != "system")
 
-        MSG_COLOURS = {"summary": "cyan", "user": "blue", "assistant": "green", "tools": "yellow"}
-        for key, col in MSG_COLOURS.items():
-            n = self._buckets.get(key, 0)
+        COLOURS = {
+            "sys-prompt": "white", "dagi/ag": "magenta", "proj/ag": "bright_magenta",
+            "sys-other": "white", "schemas": "white", "summary": "cyan", "user": "blue",
+            "assistant": "green", "reasoning": "magenta", "tools": "yellow",
+        }
+        for key, col in COLOURS.items():
+            n = counts.get(key, 0)
             ctx.add_row(key, f"[{col}]~{n:,}[/{col}]", f"[dim]{_pct(n)}[/dim]")
 
         res = self._reserve_tokens
         ctx.add_row("reserve", f"[dim]~{res:,}[/dim]", f"[dim]{_pct(res)}[/dim]")
 
-        total = sum(sys_parts.values()) + sum(self._buckets.values()) + res
+        total = sum(counts.values()) + res
         usage = total / W if W else 0
         uc = "red" if usage >= 0.95 else ("yellow" if usage >= 0.80 else "green")
         ctx.add_row(

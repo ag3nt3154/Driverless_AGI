@@ -111,7 +111,7 @@ def build_callbacks(app: DagiApp, loop_ref: list) -> AgentCallbacks:
         app.call_from_thread(conv.append_info,
             f"[yellow]⚡ Context compacted — removed {removed} messages, kept {kept}[/yellow]")
         if loop_ref:
-            app.call_from_thread(sidebar.update_context, _breakdown(loop_ref[0].messages))
+            app.call_from_thread(sidebar.update_context, _context(loop_ref[0].messages))
 
     def on_model_switch(from_name, to_name):
         app.call_from_thread(conv.append_info,
@@ -128,8 +128,12 @@ def build_callbacks(app: DagiApp, loop_ref: list) -> AgentCallbacks:
             "Send a message to retry when the server is back.[/yellow]")
         app.call_from_thread(app._enable_input)
 
+    def _context(messages):
+        schemas = loop_ref[0].registry.get_openai_tools_list() if loop_ref else None
+        return _breakdown(messages, schemas)
+
     def on_api_call(messages):
-        app.call_from_thread(sidebar.update_context, _breakdown(messages))
+        app.call_from_thread(sidebar.update_context, _context(messages))
 
     def on_ask_user(question, options, timeout):
         notify("DAGI has a question", question)
