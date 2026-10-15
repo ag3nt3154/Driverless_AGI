@@ -1,6 +1,12 @@
-"""Behavioral checks for the canonical workflow plan template."""
+"""Contract checks: plans written from the write-plan skill's inline format feed delivery.
+
+The skill documents the plan format as fenced examples in its SKILL.md (the header,
+the subtask structure and the runtime sections). These tests assemble a plan from
+exactly those examples, so changing the writer format incompatibly fails here.
+"""
 
 from pathlib import Path
+import re
 import runpy
 
 from tools._plan_parser import (
@@ -11,116 +17,126 @@ from tools._plan_parser import (
 )
 
 
-TEMPLATE = (
-    Path(__file__).parents[1]
-    / ".dagi"
-    / "skills"
-    / "write-plan"
-    / "references"
-    / "plan-template.md"
-)
+ROOT = Path(__file__).parents[1]
+SKILL = ROOT / ".dagi" / "skills" / "write-plan" / "SKILL.md"
 
 
-def _render_template() -> str:
-    """Fill the documented slots with two concrete subtasks."""
-    text = TEMPLATE.read_text(encoding="utf-8")
-    replacements = {
-        "[Feature Name]": "Widget Import",
-        "[One sentence describing what this builds]": "Import widgets safely.",
-        "[2-3 sentences about approach]": "Validate input, then persist widgets.",
-        "[Key technologies/libraries]": "Python and SQLite",
-        "[path to spec.md in the same artifact directory]": "wiki/tasks/2026-09-26_widget/spec.md",
-        "Project-wide requirements from the spec — one line each.": "Python 3.11 or newer.",
-        "Uncovered failure modes — one line each with owning task's test.": (
-            "Malformed input is rejected."
-        ),
-        "`<task-branch>`": "`dagi/widget-import`",
-        "`<parent-branch>`": "`main`",
-        "`<commit-hash>`": "`abc1234`",
-        "`wiki/tasks/YYYY-MM-DD_<task>/`": "`wiki/tasks/2026-09-26_widget/`",
-        "Pending / In Progress / Verification / Complete / Blocked": "Pending",
-        "One sentence.": "Validate each widget before persistence.",
-        "- Bulleted list of what must be true.": "- Reject malformed widget records.",
-        "- Bulleted list of checkable conditions.": "- Invalid records produce a clear error.",
-        "Test file paths and one-line description of what each verifies.": (
-            "tests/test_widgets.py — validates rejection."
-        ),
-        "Unresolved questions or blockers not yet addressed.": "None.",
-        (
-            "One block per rework cycle:\n- **Subtask N, attempt N:** "
-            "blocker summary → resolution (or link to handoff)"
-        ): (
-            "None."
-        ),
-        "End-to-end verification commands and expected outcomes.": (
-            "Run the focused test suite; all tests pass."
-        ),
-        "One sentence: what happens next after reading this plan.": (
-            "Obtain approval, then deliver."
-        ),
-    }
-    for old, new in replacements.items():
-        text = text.replace(old, new)
-    text = text.replace("### Subtask 1: [ ] <name>", "### Subtask 1: [ ] Validate widgets")
-    second = (
-        "### Subtask 2: [ ] Persist widgets\n"
-        "**Goal:** Persist validated widgets.\n"
-        "**Requirements:**\n- Store the validated record.\n"
-        "**Acceptance Criteria:**\n- Stored records can be retrieved.\n"
-        "#### Tests\n"
-        "tests/test_persistence.py — checks retrieval.\n\n"
-    )
-    text = text.replace("## Notes", second + "## Notes")
-    return text
+def _skill_examples() -> dict[str, str]:
+    """Return the skill's fenced markdown examples keyed by the ``##`` section they sit in."""
+    examples: dict[str, str] = {}
+    section = None
+    fence = None  # the opening backticks while inside a fenced block
+    body: list[str] = []
+    for line in SKILL.read_text(encoding="utf-8").splitlines():
+        if fence is None:
+            opening = re.match(r"^(`{3,})markdown\s*$", line)
+            if opening:
+                fence, body = opening.group(1), []
+            elif line.startswith("## "):
+                section = line[3:].strip()
+        elif line.strip() == fence:
+            examples.setdefault(section, "\n".join(body) + "\n")
+            fence = None
+        else:
+            body.append(line)
+    return examples
 
 
-def test_rendered_template_feeds_parser_and_worker_payloads():
-    plan = _render_template()
+def _subtask(number: int, name: str, requirement: str, test_file: str) -> str:
+    block = _skill_examples()["Subtask Structure"]
+    block = block.replace("### Subtask N: [ ] <Component Name>",
+                          f"### Subtask {number}: [ ] {name}")
+    block = block.replace("- Bulleted list of what must be true.", f"- {requirement}")
+    return block.replace("Test file paths and one-line description of what each verifies.",
+                         f"{test_file} — verifies {name.lower()}.")
 
-    statuses = parse_subtask_statuses(plan)
-    assert statuses == [
-        {"name": "Validate widgets", "status": "pending"},
-        {"name": "Persist widgets", "status": "pending"},
+
+def _render_plan() -> str:
+    """Assemble a two-subtask plan from the skill's own examples."""
+    examples = _skill_examples()
+    header = examples["Plan Document Header"]
+    header = header.replace("[Feature Name]", "Widget Import")
+    header = header.replace("[One sentence describing what this builds]", "Import widgets safely.")
+    header = re.sub(r"\[The spec's project-wide requirements.*?\]", "Python 3.11 or newer.",
+                    header, flags=re.DOTALL)
+    return "\n".join([
+        header.rstrip().removesuffix("---").rstrip(),
+        "",
+        "## Subtasks",
+        "",
+        _subtask(1, "Validate widgets", "Reject malformed widget records.",
+                 "tests/test_widgets.py"),
+        _subtask(2, "Validate", "Validate the import manifest.", "tests/test_manifest.py"),
+        examples["Plan template (runtime sections)"],
+    ])
+
+
+def test_skill_documents_every_format_example():
+    assert {"Plan Document Header", "Subtask Structure",
+            "Plan template (runtime sections)"} <= set(_skill_examples())
+
+
+def test_skill_subtask_heading_carries_a_pending_marker():
+    """The writer's heading must parse as a known status, never ``unknown``."""
+    heading = _skill_examples()["Subtask Structure"].splitlines()[0]
+    assert heading == "### Subtask N: [ ] <Component Name>"
+    assert parse_subtask_statuses(heading.replace(" N:", " 1:")) == [
+        {"name": "<Component Name>", "status": "pending"},
     ]
 
+
+def test_rendered_plan_feeds_parser_and_worker_payloads():
+    plan = _render_plan()
+
+    assert parse_subtask_statuses(plan) == [
+        {"name": "Validate widgets", "status": "pending"},
+        {"name": "Validate", "status": "pending"},
+    ]
     global_context = extract_global_sections(plan)
-    first = extract_subtask(plan, "Validate widgets")
+    assert "Import widgets safely." in global_context
     assert "Python 3.11 or newer." in global_context
+    assert "## Notes" in global_context
+
+    first = extract_subtask(plan, "Validate widgets")
     assert "Reject malformed widget records." in first
-    assert "Invalid records produce a clear error." in first
     assert "tests/test_widgets.py" in first
-    assert "Persist validated widgets" not in first
-    assert "tests/test_persistence.py" not in first
+    assert "#### Tests" in first
+    assert "import manifest" not in first
+
+    # The second subtask's name is a prefix of the first's: the exact name must win.
+    second = extract_subtask(plan, "Validate")
+    assert second.startswith("### Subtask 2: [ ] Validate\n")
+    assert "Validate the import manifest." in second
+    assert "## Workspace" not in second
 
 
 def test_marker_round_trip_preserves_subtask_bodies(tmp_path):
     plan_path = tmp_path / "plan.md"
-    original = _render_template()
+    original = _render_plan()
     plan_path.write_text(original, encoding="utf-8")
 
-    original_first = extract_subtask(original, "Validate widgets")
-    statuses = update_task_marker(plan_path, task_number=1, new_status="in_progress")
-    update_task_marker(plan_path, task_number=1, new_status="complete")
-    update_task_marker(plan_path, task_number=1, new_status="pending")
-    updated = plan_path.read_text(encoding="utf-8")
+    original_second = extract_subtask(original, "2")
+    statuses = update_task_marker(plan_path, task_number=2, new_status="in_progress")
+    assert [s["status"] for s in statuses] == ["pending", "in_progress"]
+    statuses = update_task_marker(plan_path, task_number=1, new_status="complete")
+    assert [s["status"] for s in statuses] == ["complete", "in_progress"]
+    update_task_marker(plan_path, task_number=2, new_status="failed")
+    assert "### Subtask 2: [!] Validate" in plan_path.read_text(encoding="utf-8")
 
-    assert statuses[0]["status"] == "in_progress"
-    assert "### Subtask 1: [ ] Validate widgets" in updated
-    assert extract_subtask(updated, "Validate widgets") == original_first
-    assert "Reject malformed widget records." in updated
-    assert "tests/test_persistence.py" in updated
-    assert "## Notes" in updated
+    update_task_marker(plan_path, task_number=1, new_status="pending")
+    update_task_marker(plan_path, task_number=2, new_status="pending")
+    updated = plan_path.read_text(encoding="utf-8")
+    assert extract_subtask(updated, "2") == original_second
     assert updated == original
 
 
-def test_rendered_template_composes_real_worker_assignment():
-    worker_path = Path(__file__).parents[1] / ".dagi/subagents/worker/plan_utils.py"
+def test_rendered_plan_composes_real_worker_assignment():
+    worker_path = ROOT / ".dagi/subagents/worker/plan_utils.py"
     compose_worker_task = runpy.run_path(str(worker_path))["compose_worker_task"]
-    assignment = compose_worker_task(_render_template(), "Validate widgets")
+    assignment = compose_worker_task(_render_plan(), "Validate")
 
     assert "Import widgets safely." in assignment
     assert "Python 3.11 or newer." in assignment
-    assert "Reject malformed widget records." in assignment
-    assert "Invalid records produce a clear error." in assignment
-    assert "tests/test_widgets.py" in assignment
-    assert "tests/test_persistence.py" not in assignment
+    assert "Validate the import manifest." in assignment
+    assert "tests/test_manifest.py" in assignment
+    assert "tests/test_widgets.py" not in assignment

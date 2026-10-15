@@ -50,8 +50,14 @@ include this section.]
 
 ## Subtask Structure
 
+Number subtasks from 1 and give each a unique name. Every heading carries a status
+marker right after the colon: `[ ]` pending (always used when writing the plan),
+`[~]` in progress, `[x]` complete, `[!]` failed. Delivery updates the marker in place
+with `update_task_status`; the plan view reads it. Workers are dispatched by the exact
+name or the number.
+
 ````markdown
-### Subtask N: [Component Name]
+### Subtask N: [ ] <Component Name>
 
 **Goal:** One sentence.
 **Requirements:**

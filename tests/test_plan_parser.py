@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import pytest
 
-from tools._plan_parser import extract_global_sections, extract_subtask
+from tools._plan_parser import SubtaskLookupError, extract_global_sections, extract_subtask
 
 
 # ---------------------------------------------------------------------------
@@ -550,3 +550,89 @@ class TestUpdateTaskMarker:
         assert statuses[0]["status"] == "complete"   # was already [x]
         assert statuses[1]["status"] == "complete"   # just updated
         assert statuses[2]["status"] == "pending"    # unchanged
+
+
+# ---------------------------------------------------------------------------
+# Subtask identity (review R17): exact names and numbers beat substrings
+# ---------------------------------------------------------------------------
+
+SUBSTRING_PLAN = """# Plan: Input
+
+## Subtasks
+
+### Subtask 1: [ ] Validate input
+**Goal:** Check the input.
+#### Tests
+tests/test_input.py
+
+### Subtask 2: [~] Validate
+**Goal:** Validate everything else.
+#### Tests
+tests/test_validate.py
+
+### Subtask 3: Persist input
+**Goal:** Store it.
+
+## Notes
+### Validate later
+Not a task.
+"""
+
+
+class TestSubtaskIdentity:
+    def test_exact_name_later_in_plan_beats_earlier_superstring(self):
+        result = extract_subtask(SUBSTRING_PLAN, "Validate")
+        assert result.startswith("### Subtask 2: [~] Validate")
+        assert "Validate everything else" in result
+        assert "Check the input" not in result
+        assert "tests/test_input.py" not in result
+
+    def test_exact_name_ignores_case_and_spacing(self):
+        result = extract_subtask(SUBSTRING_PLAN, "  validate   INPUT ")
+        assert result.startswith("### Subtask 1:")
+
+    def test_number_selects_task(self):
+        for reference in ("2", "Subtask 2", "task 2", "Subtask 2: Validate"):
+            assert "Validate everything else" in extract_subtask(SUBSTRING_PLAN, reference)
+
+    def test_unique_fragment_still_matches(self):
+        assert "Store it" in extract_subtask(SUBSTRING_PLAN, "persist")
+
+    def test_ambiguous_fragment_raises(self):
+        with pytest.raises(SubtaskLookupError, match="partially matches 3"):
+            extract_subtask(SUBSTRING_PLAN, "valid")
+
+    def test_duplicate_exact_names_raise(self):
+        plan = "## Subtasks\n\n### Subtask 1: Build\nA\n\n### Subtask 2: Build\nB\n"
+        with pytest.raises(SubtaskLookupError, match="exactly names 2"):
+            extract_subtask(plan, "Build")
+        assert extract_subtask(plan, "2").endswith("B")
+
+    def test_missing_number_falls_back_to_name(self):
+        result = extract_subtask(SUBSTRING_PLAN, "Subtask 9: Persist input")
+        assert "Store it" in result
+
+
+def _compose():
+    import runpy
+    from pathlib import Path
+
+    path = Path(__file__).parents[1] / ".dagi/subagents/worker/plan_utils.py"
+    return runpy.run_path(str(path))["compose_worker_task"]
+
+
+class TestWorkerAssignment:
+    def test_worker_gets_the_exact_subtask(self):
+        assignment = _compose()(SUBSTRING_PLAN, "Validate")
+        assert "tests/test_validate.py" in assignment
+        assert "tests/test_input.py" not in assignment
+
+    def test_worker_refuses_missing_or_ambiguous_subtask(self):
+        compose = _compose()
+        with pytest.raises(ValueError, match="no subtask"):
+            compose(SUBSTRING_PLAN, "Deploy")
+        with pytest.raises(ValueError, match="partially matches"):
+            compose(SUBSTRING_PLAN, "valid")
+
+    def test_no_plan_still_composes_empty(self):
+        assert _compose()("", "anything") == ""
