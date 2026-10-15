@@ -2,7 +2,7 @@
 title: 'Board switching must reject obsolete queued GUI events'
 description: 'R22: a generation check before emitting a Qt signal cannot reject a post already queued when the GUI switches boards.'
 tags: [BoardController, board_post, Qt, generation, queued-signal, mentions, rebind]
-updated: 2026-10-14
+updated: 2026-10-15
 ---
 
 Review finding R22 remains open at main `3079386f6cc562e584608d97bed0024dfe0c6d8a`.
@@ -41,3 +41,14 @@ Clients, settled snapshot and card storage were stubbed; no real cards, traffic 
 Carry event identity into the GUI slot for purges as well as posts/status before admission.
 Evidence: `C:/Users/alexr/.codex/visualizations/2026/10/14/01a13a2e-5379-7132-8195-5f595075ddad/board_boundary_probes.py` and `board_boundary_results.json`.
 Focused GUI checks: 65 passed. Existing fixtures do not cover this queued switch ordering.
+
+## Resolved 2026-10-15
+
+`bridge.board_post`, `board_purge` and `board_status` now carry `(generation, payload)`.
+`BoardController._on_*_event` slots drop any event whose generation is not current before
+rendering, waking agents or removing cards. Snapshot posts and the live cursor commit together
+on the GUI thread via `_snapshot`, so a stale snapshot cannot move `_live_after`. Worker error
+statuses are tagged with the generation at `_run_worker` time. Regressions in
+`pyside_gui/tests/test_board_controller.py` queue old post/purge/status/snapshot from a worker,
+bump the generation, then process events. In-flight attachment downloads from cleared old
+cards still resolve via the current client (not addressed).

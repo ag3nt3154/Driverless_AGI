@@ -30,6 +30,7 @@ PRESENCE_MS = 30_000  # re-register every agent so the board shows it online (90
 class BoardController(QObject):
     _switch_done = Signal(object)  # (attempt, url, token, BoardRuntime | BoardError)
     _central_state = Signal(object)  # (url, reachable)
+    _snapshot = Signal(object)  # (generation, posts, live-after id)
 
     def __init__(self, window) -> None:
         super().__init__(window)
@@ -58,13 +59,16 @@ class BoardController(QObject):
         self._presence_timer.timeout.connect(self._heartbeat)
         self._switch_done.connect(self._on_switched)
         self._central_state.connect(self._on_central_state)
+        self._snapshot.connect(self._on_snapshot)
         self.downloads = DownloadPool(self._download)
         bridge = window._bridge
         bridge.board_ready.connect(self._on_ready)
-        bridge.board_post.connect(self._on_post)
-        bridge.board_status.connect(self._on_status)
+        # Board events carry the generation that produced them: a switch cannot withdraw
+        # signals already queued, so the GUI slots drop anything from an earlier board.
+        bridge.board_post.connect(self._on_post_event)
+        bridge.board_status.connect(self._on_status_event)
+        bridge.board_purge.connect(self._on_purge_event)
         view = window._left_sidebar.board_view
-        bridge.board_purge.connect(view.remove_purged)
         view.open_file_requested.connect(lambda path: window._left_sidebar.open_file(path, None))
         view.connect_requested.connect(self.switch)
 
@@ -113,7 +117,7 @@ class BoardController(QObject):
         if hook is not None:
             hook()
         generation = self._generation
-        self._run_worker(lambda: self._load_snapshot(generation), "board-snapshot")
+        self._run_worker(lambda: self._load_snapshot(generation, runtime), "board-snapshot")
 
     # ── extra agents ────────────────────────────────────────────────────────────────────
 
@@ -271,7 +275,7 @@ class BoardController(QObject):
         if reachable and not self._switch_in_flight and url not in self._auto_switch_blocked_urls:
             self.switch(url, resolve_token(), _automatic=True)
 
-    def _fetch_snapshot(self, runtime) -> list | None:
+    def _fetch_snapshot(self, runtime, generation: int) -> list | None:
         """Load recent posts, retrying with backoff until success, close or a switch."""
         failures = 0
         while not self.cancel.is_set() and self.runtime is runtime:
@@ -280,28 +284,30 @@ class BoardController(QObject):
             except Exception as error:
                 delay = _BACKOFF[min(failures, len(_BACKOFF) - 1)]
                 failures += 1
-                self.window._bridge.board_status.emit(
-                    f"Board snapshot failed — {error_text(error)}; retrying in {delay:g}s"
-                )
+                self.window._bridge.board_status.emit((
+                    generation,
+                    f"Board snapshot failed — {error_text(error)}; retrying in {delay:g}s",
+                ))
                 if self.cancel.wait(delay):
                     return None
         return None
 
-    def _load_snapshot(self, generation: int | None = None) -> None:
+    def _load_snapshot(self, generation: int | None = None, runtime=None) -> None:
         generation = self._generation if generation is None else generation
-        runtime = self.runtime
-        raw = self._fetch_snapshot(runtime)
+        runtime = self.runtime if runtime is None else runtime
+        raw = self._fetch_snapshot(runtime, generation)
         if raw is None or self.closing or generation != self._generation:
             return
         posts, is_list = _valid_snapshot(raw)
         if not is_list:
             self.window._bridge.board_status.emit(
-                "Board snapshot was malformed; showing live posts"
+                (generation, "Board snapshot was malformed; showing live posts")
             )
-        for post in posts:
-            self.window._bridge.board_post.emit(post)
         after = max((post["id"] for post in posts), default=0)
-        self._live_after = after
+        # One event, so the posts and the live cursor are committed together on the GUI
+        # thread, and only if the board has not switched meanwhile. It is queued before the
+        # listener starts, so it lands ahead of every streamed post.
+        self._snapshot.emit((generation, posts, after))
         bridge = self.window._bridge
 
         def current() -> bool:
@@ -309,9 +315,9 @@ class BoardController(QObject):
 
         listener = StreamListener(
             runtime.client, after,
-            lambda post: current() and bridge.board_post.emit(post),
-            lambda text: current() and bridge.board_status.emit(text),
-            on_purge=lambda purge: current() and bridge.board_purge.emit(purge),
+            lambda post: current() and bridge.board_post.emit((generation, post)),
+            lambda text: current() and bridge.board_status.emit((generation, text)),
+            on_purge=lambda purge: current() and bridge.board_purge.emit((generation, purge)),
         )
         with self._listener_lock:
             if self.closing or not current():
@@ -320,7 +326,36 @@ class BoardController(QObject):
             self.window._board_listener = listener
             listener.start()
 
+    def _current_event(self, event) -> bool:
+        """True for a (generation, payload) event from the live board while still open."""
+        return (not self.closing and isinstance(event, tuple) and len(event) >= 2
+                and event[0] == self._generation)
+
     @Slot(object)
+    def _on_snapshot(self, event) -> None:
+        if not self._current_event(event):
+            return
+        _generation, posts, after = event
+        view = self.window._left_sidebar.board_view
+        for post in posts:
+            view.add_post(post)  # snapshot: board panel only, so a new chat opens empty
+        self._live_after = after
+
+    @Slot(object)
+    def _on_post_event(self, event) -> None:
+        if self._current_event(event):
+            self._on_post(event[1])
+
+    @Slot(object)
+    def _on_status_event(self, event) -> None:
+        if self._current_event(event):
+            self._on_status(event[1])
+
+    @Slot(object)
+    def _on_purge_event(self, event) -> None:
+        if self._current_event(event):
+            self.window._left_sidebar.board_view.remove_purged(event[1])
+
     def _on_post(self, post: dict) -> None:
         if self.closing or not isinstance(post, dict):
             return
@@ -349,7 +384,6 @@ class BoardController(QObject):
         return [(s._board_session.handle, s._conversation)
                 for s in sessions if s._board_session is not None]
 
-    @Slot(str)
     def _on_status(self, text: str) -> None:
         if not self.closing:
             self.window._left_sidebar.board_view.set_status(text)
@@ -366,12 +400,13 @@ class BoardController(QObject):
         with self._active_lock:
             self._active += 1
             self._idle.clear()
+        generation = self._generation
 
         def guarded() -> None:
             try:
                 target()
             except Exception as error:
-                self.window._bridge.board_status.emit(error_text(error))
+                self.window._bridge.board_status.emit((generation, error_text(error)))
             finally:
                 with self._active_lock:
                     self._active -= 1
