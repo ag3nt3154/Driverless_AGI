@@ -476,7 +476,7 @@ def save_config(default_model: str) -> None:
     blank lines and key order survive, and the `.dagi/model_config/` catalog
     is never written into config.yaml. Also drops the legacy
     `max_iterations` key. Last write wins (no conflict check)."""
-    # Lazy import: config_editor lazily imports this module for validation.
+    # Lazy import: config_validate (beside config_editor) lazily imports this module.
     from agent.config_editor import ConfigDocument
 
     doc = ConfigDocument.load(_CONFIG_PATH)

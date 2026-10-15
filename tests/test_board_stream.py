@@ -100,7 +100,7 @@ _PURGE_LINES = [
 
 
 def test_parse_sse_events_yields_posts_and_purges_in_order():
-    from pyside_gui.board_runtime import parse_sse_events
+    from pyside_gui.board_stream import parse_sse_events
 
     assert list(parse_sse_events(_PURGE_LINES)) == [
         ("post", {"id": 1, "author": "a"}),
@@ -111,7 +111,7 @@ def test_parse_sse_events_yields_posts_and_purges_in_order():
 
 
 def test_parse_sse_still_yields_only_posts():
-    from pyside_gui.board_runtime import parse_sse
+    from pyside_gui.board_stream import parse_sse
 
     assert list(parse_sse(_PURGE_LINES)) == [{"id": 1, "author": "a"}, {"id": 4, "author": "c"}]
 
@@ -142,7 +142,7 @@ class _OneStream:
 
 
 def test_listener_forwards_purges_without_advancing_after():
-    from pyside_gui.board_runtime import StreamListener
+    from pyside_gui.board_stream import StreamListener
 
     purge = {"id": 7, "scope": "all", "through": 50, "created_at": "t"}
     client = _OneStream(["event: purge", 'data: {"id": 7, "scope": "all", "through": 50, '
@@ -155,7 +155,7 @@ def test_listener_forwards_purges_without_advancing_after():
 
 
 def test_listener_without_purge_callback_ignores_purges_and_keeps_posts():
-    from pyside_gui.board_runtime import StreamListener
+    from pyside_gui.board_stream import StreamListener
 
     client = _OneStream(["event: purge", 'data: {"id": 7, "scope": "all", "through": 50}', "",
                          "event: post", 'data: {"id": 4}', ""])

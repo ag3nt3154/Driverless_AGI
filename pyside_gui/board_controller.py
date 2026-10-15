@@ -9,9 +9,9 @@ from agent import DAGI_ROOT
 from agent.board_client import BoardClient, BoardError, BoardSession, new_key
 from pyside_gui.board_downloads import DownloadPool
 from pyside_gui.board_runtime import (
-    _BACKOFF, StreamListener, error_text, probe, register_runtime, should_render_inline,
-    start_board,
+    error_text, probe, register_runtime, should_render_inline, start_board,
 )
+from pyside_gui.board_stream import _BACKOFF, StreamListener
 from services.message_board.settings import board_settings, resolve_token
 
 
