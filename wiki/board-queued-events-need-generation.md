@@ -1,8 +1,8 @@
 ---
 title: 'Board switching must reject obsolete queued GUI events'
-description: 'R22: a generation check before emitting a Qt signal cannot reject a post already queued when the GUI switches boards.'
+description: 'R22 queued board events repaired and verified; R30 still needs source-board identity for attachment jobs and completions.'
 tags: [BoardController, board_post, Qt, generation, queued-signal, mentions, rebind]
-updated: 2026-10-15
+updated: 2026-10-16
 ---
 
 Review finding R22 remains open at main `3079386f6cc562e584608d97bed0024dfe0c6d8a`.
@@ -52,3 +52,18 @@ statuses are tagged with the generation at `_run_worker` time. Regressions in
 `pyside_gui/tests/test_board_controller.py` queue old post/purge/status/snapshot from a worker,
 bump the generation, then process events. In-flight attachment downloads from cleared old
 cards still resolve via the current client (not addressed).
+
+## October 16 verification and attachment residual
+
+At `a53f6eabe9d684b884ec14c98aab3f8312d4abac`, the focused controller regressions pass for obsolete queued post/purge/status
+and snapshot events. R22 is removed from the open report. R30 remains separate: downloads
+queue only attachment IDs and choose runtime.client at execution; completion resolves the
+current card by post ID. A real pool/controller-method probe with fake clients routed an
+old queued request to the new board. A real offscreen view/future probe delivered an old
+path to a replacement card with colliding post/attachment IDs while its future was pending.
+No network, input or real files; all pool threads joined. Collisions were constructed.
+
+Proposed repair: bind source client/board generation and expected metadata at submission;
+cancel obsolete queued work, retain client ownership through active completion, and check
+generation plus card identity before delivery. Existing event guards must remain intact.
+[Probe](C:/Users/alexr/.codex/visualizations/2026/10/16/01a144a3-a300-71c0-ae87-57f26f2608ca/attachment_probe.py), [results](C:/Users/alexr/.codex/visualizations/2026/10/16/01a144a3-a300-71c0-ae87-57f26f2608ca/attachment_results.json).

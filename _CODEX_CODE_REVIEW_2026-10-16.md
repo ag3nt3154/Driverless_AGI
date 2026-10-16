@@ -1,26 +1,23 @@
-# Dagi code review — 2026-10-15
+# Dagi code review — 2026-10-16
 
 ## Scope and priorities
 
-Reviewed **main**, revision **6b5b5a9534ce8fbd9af864b4d362cd6774bfc593**, from a clean checkout.
-The October 14 reports were edited in place and renamed to October 15. This report contains
-**23 open findings only**: all 21 previous findings remain open after source/diff inspection;
-R28 adds reproduced concurrent configuration-save corruption, and R29 records the shipped
-Settings editor's unguarded loss of drafts on quit. No listed repair was verified, so none
-was removed. Previously resolved findings remain absent.
-
-Changes since the prior reviewed revision db8dde97 include the comment-preserving Settings
-editor, tool-catalog checks, welcome videos/maximized launch and board full-handle warnings.
-These are shipped capabilities. The spawned-agent mention symptom now has a documented cause
-and repair (2027e1f): malformed/bare handles were ignored; tools now warn and list handles.
-It is separate from still-open R22's queued old-board events after switching.
+Reviewed **main**, revision **a53f6eabe9d684b884ec14c98aab3f8312d4abac**, from a clean checkout.
+During review, HEAD advanced to **cce300e862194fcb52e6af574e7a1ab5f387cf88** through
+two benchmark-planning wiki additions. Their diff changes no application or test code;
+the tested source revision above remains the basis for findings and runtime evidence.
+The October 15 report was edited in place and renamed. This report contains **20 open
+findings only**, verified against current source. Historical reproductions keep their dates.
+Today's changed-code review covers plan parsing/worker assignment, current skill examples,
+TODO improvement intake, board event delivery, configuration/board module extraction and
+context accounting. Shipped capabilities are excluded from proposed repairs.
 
 Prioritize execution/verification truth and stop ownership (R4/R10/R16/R18/R21/R23/R24/R26),
-non-idempotent retries (R25), Telegram routing/delivery (R11/R12), and board provenance (R22).
-Protect Settings writes/drafts with R28/R29. R27 remains an intake-contract gap in the existing
-self-improvement workflow. Today's offline probes reproduce all five R23–R26 assertions and
-two R28 save races; controlled fake drivers and scratch YAML perform no real desktop input.
-Tests and dated historical evidence are distinguished below.
+non-idempotent retries (R25), and Telegram routing/delivery (R11/R12). Protect Settings writes
+and drafts with R28/R29. R30 adds reproduced attachment provenance gaps across board switches.
+Today's offline probes reproduce five R23–R26 assertions, both R28 save races and both R30
+attachment boundaries. Fake drivers/clients, scratch YAML and offscreen widgets perform no
+real desktop input or provider requests.
 
 ## R3 — P2: Record scheduler startup failures
 
@@ -52,20 +49,21 @@ providers, long tools and descendants; a thread join timeout cannot enforce a de
 
 ## R7 — P2: Reduce remaining orchestration complexity behind supported seams
 
-**Finding:** Nine production modules and six functions exceed the review's size thresholds.
+**Finding:** Eight production modules and six functions exceed the review's size thresholds.
 
-**Issue:** Today's AST inventory selects 252 tracked production Python files under
+**Issue:** Today's AST inventory selects 256 tracked production Python files under
 agent/tools/scheduler/tg/tui/pyside_gui/providers/services/rpa and root entry points,
-excluding nested tests. Nine exceed 500 lines: agent/config_editor.py (770), agent/loop.py
+excluding nested tests. Eight exceed 500 lines: agent/config_editor.py (517), agent/loop.py
 (1,117), tools/subagent_main.py (744), tools/read/_reader_controller.py (525),
-pyside_gui/prompt_input.py (635), pyside_gui/board_runtime.py (556),
-pyside_gui/sidebars/settings_view.py (1,033), rpa/drivers/uia.py (518) and rpa/interpreter.py
-(524). Six functions exceed 100 lines: config_loader._build_config_from_entry (108),
-PySide bridge.build_callbacks (105), SettingsView._build_form (121), TUI callbacks.build_callbacks
-(178), rpa.interpreter.run_workflow (160) and rpa.workflow.parse_workflow (117).
-Counts include comments/docstrings; selection matches yesterday's roots. Cyclomatic
-complexity was not measured. R23–R26 and R28 show ownership/acceptance contracts needing
-attention before more extraction; size alone does not establish a behavioral defect.
+pyside_gui/prompt_input.py (635), pyside_gui/sidebars/settings_view.py (1,032),
+rpa/drivers/uia.py (518) and rpa/interpreter.py (524). Six functions exceed 100 lines:
+config_loader._build_config_from_entry (108), PySide bridge.build_callbacks (109),
+SettingsView._build_form (121), TUI callbacks.build_callbacks (182),
+rpa.interpreter.run_workflow (160) and rpa.workflow.parse_workflow (117).
+Configuration validation and board identity/stream/temp lifecycle have been extracted;
+board_runtime no longer exceeds the threshold. Counts include comments/docstrings;
+cyclomatic complexity was not measured. Size alone does not establish a behavioral defect.
+R23–R26/R28 still expose acceptance and ownership contracts needing attention.
 
 **Suggested solution:** Define terminal outcomes, verification coverage, revision identity,
 stop/wait contracts and serialized configuration writes first. Extract at supported public
@@ -158,21 +156,6 @@ record final status after publication. Use temporary-file replacement where feas
 export retry with a corrected destination without rerunning tools. Keep later jobs runnable.
 Test unwritable destinations, replace failure and successful publication with real temp files.
 
-## R15 — P2: Restore verification of the current plan format
-
-**Finding:** Plan-format tests still target an intentionally removed template.
-
-**Issue:** Three [contract tests](C:/Users/alexr/Driverless_AGI/tests/test_workflow_plan_template.py:15)
-still target a missing file and fail with FileNotFoundError for .dagi/skills/write-plan/references/plan-template.md.
-The [inline writer format](C:/Users/alexr/Driverless_AGI/.dagi/skills/write-plan/SKILL.md:48)
-omits status markers; the parser reports unmarked headings as unknown. The writer/parser
-contract is inconsistent. No live generated plan or delivery run was tested.
-
-**Suggested solution:** Validate current inline skill examples or a small repository-owned
-format fixture, rather than the deleted template or a personal global skill. Specify marker
-rules consistently. Exercise constraints, subtask isolation, assignment and marker round-trip.
-Do not restore removed content merely to satisfy stale tests.
-
 ## R16 — P1: Claim scheduled work before execution
 
 **Finding:** Independent scheduler launches can execute the same due task concurrently.
@@ -191,24 +174,6 @@ owned execution stops. Reject overlapping launches explicitly. If per-task concu
 needed, use durable attempt identity and atomic claims, with recovery that verifies the previous
 owner stopped. Add a two-process regression plus killed-owner recovery. A thread lock or a
 finished-only JSONL record cannot coordinate independent launches.
-
-## R17 — P2: Select the exact requested plan subtask
-
-**Finding:** Worker assignment silently picks an earlier task whose title contains the request.
-
-**Issue:** [extract_subtask](C:/Users/alexr/Driverless_AGI/tools/_plan_parser.py:111) returns
-the first case-insensitive substring match in any level-three heading. The real
-[worker composer](C:/Users/alexr/Driverless_AGI/.dagi/subagents/worker/plan_utils.py:37),
-given Subtask 1: Validate input and Subtask 2: Validate, assigned the first task's body/tests
-when asked for Validate on October 8. October 9's direct parser probe again selected the
-wrong block; their assignment logic remains unchanged. The requested second task's content was absent. Existing tests allow
-partial-name lookup but do not protect an exact match later in the plan. No model call is needed
-to reproduce incorrect delegation.
-
-**Suggested solution:** Parse numbered task headings and prefer an exact normalized task name
-or stable task number. If partial-name lookup remains supported, allow only a unique match and
-report ambiguity. Reject duplicate identities or missing matches before delegation. Test exact
-names that are substrings of earlier titles, ambiguous fragments and unrelated level-three headings.
 
 ## R18 — P1: Give code-mode execution one cancellation and deadline owner
 
@@ -274,30 +239,6 @@ and release session/widgets only after confirmed worker termination. Show stoppi
 acknowledgment. Reap completed retired sessions; do not resume hidden work just to close it.
 Test running, already-paused and starting agents, repeated closes, and application shutdown
 with background sessions. Preserve the repaired per-parent child isolation in this path.
-
-## R22 — P1: Reject queued events from the previous board at GUI delivery
-
-**Finding:** Board switching can admit an old request and apply an old purge to the new board.
-
-**Issue:** The [listener callbacks](C:/Users/alexr/Driverless_AGI/pyside_gui/board_controller.py:306)
-check generation before emitting, but posts, status and the newly added purge signal carry
-no board identity. The [post slot](C:/Users/alexr/Driverless_AGI/pyside_gui/board_controller.py:324)
-does not recheck generation; [purges connect directly to the view](C:/Users/alexr/Driverless_AGI/pyside_gui/board_controller.py:67).
-The October 14 probe queued old-board post #99 and an all-history purge through #500 from
-a worker, completed the real switch to a fake new client, and seeded new-board card #7.
-Processing real Qt events displayed #99 and called the mention hook while tools were bound
-to the new board; the real remove_purged method then removed #7 from the view's card identity
-storage. Clients, snapshot and card storage were fake; controller, queued delivery and purge
-logic were real. No real cards, board traffic, agent work or provider calls were used.
-That October 14 reproduction extends the October 11 post probe to purges; the affected code is unchanged today. Old
-attachment cards also resolve via the current client by inspection; downloads were not probed.
-
-**Suggested solution:** Carry generation and board/runtime identity with snapshots, posts,
-purges and status, then reject obsolete events in GUI slots immediately before rendering,
-removing cards or waking agents. Commit snapshot baseline/posts on the GUI thread under
-that identity. Preserve attachment provenance or invalidate obsolete cards. Add deterministic
-queued-post and queued-purge switch regressions asserting no display, wake, removal or
-new-board fetch. Pre-emit generation checks alone cannot retract an already queued event.
 
 ## R23 — P1: Require complete, clean replay coverage before verification
 
@@ -377,31 +318,11 @@ Report stopping/uncertain activity until acknowledged, and preserve cancelled as
 Add the gated two-owner lock test and zero-wait for_each cancellation regression. Do not
 clear a live run's cancellation flag merely because another tool entry begins.
 
-## R27 — P2: Align self-improvement intake with the current TODO format
-
-**Finding:** The shipped improvement workflow cannot find its documented work queue here.
-
-**Issue:** [Step 1](C:/Users/alexr/Driverless_AGI/.dagi/workflow/improve-yourself/workflow.md:31)
-instructs the agent to scan `## Work Queue` and prioritize `review-item`, `priority:high` and
-`Source:` plan links. The current [TODO](C:/Users/alexr/Driverless_AGI/TODO.md) has no Work Queue
-section or entries with those fields; it uses In progress and prose follow-ups. The workflow
-does not define an empty/missing-queue branch. Review-session synthesis writes its own
-report/plan, but its current instructions do not populate this queue either. An invocation
-therefore needs the model to invent an intake rule or stop before choosing a candidate.
-This is a source-inspected instruction/data contract mismatch, not a reproduced provider
-failure or a claim that the baseline/candidate workflow is absent.
-
-**Suggested solution:** Make selection consume the maintained TODO shape, or establish a
-minimal explicit queue shared by review synthesis and improvement intake. Specify a clear
-no-candidate outcome and stable source identity. Verify examples from the actual TODO and
-empty queue before any candidate run. Preserve user selection/normal implementation approval;
-review publication alone must not authorize editing or applying candidate changes.
-
 ## R28 — P2: Serialize conflict checking and configuration publication
 
 **Finding:** Concurrent saves can lose accepted edits or report success for another writer's bytes.
 
-**Issue:** [ConfigDocument.save](C:/Users/alexr/Driverless_AGI/agent/config_editor.py:460) checks the disk hash before
+**Issue:** [ConfigDocument.save](C:/Users/alexr/Driverless_AGI/agent/config_editor.py:454) checks the disk hash before
 writing and gives every writer the same config.yaml.tmp. There is no ownership spanning
 the check, temporary write and replace. Today's first scratch-file probe completed B's save
 after A read the old hash: A also succeeded and silently restored the old model, losing B's
@@ -439,46 +360,71 @@ Cancel, invalid YAML, conflicts and write errors must preserve both draft and li
 Include text fields not yet committed on editingFinished. Test clean close, each decision,
 pending text, malformed raw YAML, conflicts and failed saves with scratch configuration.
 
+## R30 — P2: Preserve board identity through attachment downloads
+
+**Finding:** Attachment jobs and completions can cross a board switch.
+
+**Issue:** [Submission](C:/Users/alexr/Driverless_AGI/pyside_gui/sidebars/message_board.py:253) queues only an
+attachment ID. [The worker](C:/Users/alexr/Driverless_AGI/pyside_gui/board_controller.py:391) chooses
+`self.runtime.client` when the job starts, so an old-board job delayed in the shared pool
+fetches from the newly adopted board. The October 16 gated probe through the real
+DownloadPool and _download method reproduced that routing with fake clients.
+Separately, [completion](C:/Users/alexr/Driverless_AGI/pyside_gui/sidebars/message_board.py:299) looks up the
+current card by post ID without board/generation identity. The real view/future probe
+cleared old cards, inserted a new-board card with the same post and attachment IDs, then
+completed the old future: the new card received the old path while its own future was
+pending. IDs are scoped to individual boards; this collision was constructed, not measured
+in real usage. Distinct attachment IDs generally make stale delivery a no-op, but a queued
+request can still fetch from the wrong server or fail there. The repaired post/purge/status
+generation guards do not cover this attachment path. No network, real files or agent work
+were used; pool workers were joined.
+
+**Suggested solution:** Capture board/generation, source client and expected attachment
+metadata at submission. Cancel obsolete queued jobs on switch; retain a source client until
+its active downloads finish or acknowledge cancellation. Tag completion with generation
+and exact card identity, then reject obsolete results before updating widgets. Verify the
+downloaded content against the originating card's metadata. Add deterministic queued-job
+and late-completion switch regressions, including colliding IDs and normal current delivery.
+
 ## Verification and limits
 
-- October 15 focused configuration editor/resolution, tool-registry, board tools, plan-format
-  and browser-harness checks: **3 failed, 263 passed, 2 skipped, 67 warnings in 45.99s**. The three missing-template failures
-  remain R15. The previously reported viewer collision fixture passed today.
-  Focused offscreen Qt Settings/sidebar/mentions/agents/board-controller checks:
-  **131 passed in 12.52s**. These are focused selections, not a full-suite result.
-- Project interpreter: C:/Users/alexr/miniconda3/envs/dagi/python.exe. Runs disabled unrelated
-  pytest plugin autoload and pytest-qt/cache on the CLI; the GUI conftest registers its
-  required plugin after DLL bootstrap. All completed selections ran outside the sandbox
-  with dedicated scratch basetemp directories. The initial sandboxed core selection stalled
-  after partial progress and was interrupted; it is excluded from totals. An initial Qt
-  command named a nonexistent test file and collected nothing; the corrected command passed.
-- R23–R26: all five October 14 assertions reproduced October 15 using the real interpreter,
-  store and temporary lock with FakeDriver. Workers were released/joined. R28's two controlled
-  saves use real ConfigDocument and scratch YAML; all writer threads were joined. R7's AST
-  inventory is fresh. R27/R29 are source-inspected contracts, not provider or live-quit tests.
-- The viewer identity-collision fixture, previously recorded in
-  [the test follow-up](C:/Users/alexr/Driverless_AGI/wiki/todo-preexisting-failing-tests.md), passed today.
-  That failure is not reproduced in this run; passing once does not establish a repaired
-  cause. Clean-install/network fixtures remain opt-in skips. No notepad/clipboard checks
-  were selected.
-- Earlier reproductions retain their actual dates: R3/R4/R10–R14/R16 October 8;
-  R17–R19 October 8/9; R21 October 10; R22 posts/purges October 14. Affected sources are
-  unchanged since yesterday, apart from unrelated welcome rendering in agent_session.py.
-  R8 remains source-inspected abandoned metadata debt. No old runtime claim is relabeled fresh.
-- Today's evidence: [RPA/AST probe](C:/Users/alexr/.codex/visualizations/2026/10/15/01a13f5a-19f1-7461-9e3f-f162eba00e3d/review_probes.py),
-  [RPA/AST results](C:/Users/alexr/.codex/visualizations/2026/10/15/01a13f5a-19f1-7461-9e3f-f162eba00e3d/review_probe_results.json),
-  [configuration save probe](C:/Users/alexr/.codex/visualizations/2026/10/15/01a13f5a-19f1-7461-9e3f-f162eba00e3d/config_save_probes.py),
-  [configuration save results](C:/Users/alexr/.codex/visualizations/2026/10/15/01a13f5a-19f1-7461-9e3f-f162eba00e3d/config_save_results.json),
-  [core test log](C:/Users/alexr/.codex/visualizations/2026/10/15/01a13f5a-19f1-7461-9e3f-f162eba00e3d/verification-core-outside.log),
-  [Qt test log](C:/Users/alexr/.codex/visualizations/2026/10/15/01a13f5a-19f1-7461-9e3f-f162eba00e3d/verification-qt.log).
-  The [October 14 archive](C:/Users/alexr/.codex/visualizations/2026/10/14/01a13a2e-5379-7132-8195-5f595075ddad/)
-  retains R22 queued delivery and the earlier RPA evidence. The
-  [October 8 archive](C:/Users/alexr/.codex/visualizations/2026/10/08/01a11b73-16a4-7810-b1e8-4e890c34d652/),
-  [October 9 results](C:/Users/alexr/.codex/visualizations/2026/10/09/01a12093-68e8-7b40-98a4-9682ae3fc5c0/review_probe_results.json)
-  and [October 10 results](C:/Users/alexr/.codex/visualizations/2026/10/10/01a1236a-9530-7a20-9210-07bdb703de16/review_probe_results.json)
-  retain older evidence.
-- No full suite, live Telegram/provider, converter, power-loss, OS input/hook, real user
-  board moderation or cross-app repair check. Campaign remains absent. Application code,
-  configuration and HEAD are unchanged; documentation changes remain uncommitted.
+- October 16 focused plan parser/current writer contract, TODO intake, configuration
+  editor/loader/resolution, board runtime/stream/downloads and TUI context/system/sidebar:
+  **328 passed, 4 failed in 55.82s** inside the sandbox. Failures were three temporary-board
+  startup checks and one blocked loopback socket (`WinError 10013`). Rerunning exactly
+  those four outside the sandbox: **4 passed in 5.14s**. All **332 distinct core tests**
+  passed across the completed runs; the initial sandbox failures remain documented.
+- Focused offscreen Qt board-controller, Settings, left-sidebar, bridge and header:
+  **139 passed in 13.05s**, outside the sandbox. Combined: **471 distinct tests passed**;
+  this is a focused selection, not a full-suite result. Current plan-format examples,
+  exact/ambiguous task selection, TODO intake, and obsolete queued board events have passing
+  regressions. No missing-template failure remains in the selected tests.
+- Project interpreter: C:/Users/alexr/miniconda3/envs/dagi/python.exe. Plugin autoload and
+  CLI pytest-qt/cache were disabled; GUI conftest registers its plugin after DLL bootstrap.
+  Tests use dedicated scratch basetemp paths. Qt runs use QT_QPA_PLATFORM=offscreen.
+- R23–R26: five assertions reproduced October 16 with real interpreter/store/temporary
+  lock and FakeDriver. R28: two real ConfigDocument scratch-file save interleavings
+  reproduced. R30: real pool/controller method and real view/future completion with fake
+  clients/paths. All gated threads were released/joined. R7 inventory is fresh. R29 remains
+  source-inspected; no real user window was closed.
+- Unchanged findings retain earlier runtime evidence: R3/R4/R10–R14/R16 October 8,
+  R18/R19 October 9, R21 October 10. Their affected paths were inspected and the revision
+  diff does not repair them. R8 is source-inspected metadata ownership debt. No historical
+  runtime evidence is relabeled as freshly executed.
+- Today's evidence: [core log](C:/Users/alexr/.codex/visualizations/2026/10/16/01a144a3-a300-71c0-ae87-57f26f2608ca/verification-core.log),
+  [loopback rerun](C:/Users/alexr/.codex/visualizations/2026/10/16/01a144a3-a300-71c0-ae87-57f26f2608ca/verification-loopback.log),
+  [Qt log](C:/Users/alexr/.codex/visualizations/2026/10/16/01a144a3-a300-71c0-ae87-57f26f2608ca/verification-qt.log),
+  [RPA/AST probe](C:/Users/alexr/.codex/visualizations/2026/10/16/01a144a3-a300-71c0-ae87-57f26f2608ca/review_probes.py),
+  [RPA/AST results](C:/Users/alexr/.codex/visualizations/2026/10/16/01a144a3-a300-71c0-ae87-57f26f2608ca/review_probe_results.json),
+  [save probe](C:/Users/alexr/.codex/visualizations/2026/10/16/01a144a3-a300-71c0-ae87-57f26f2608ca/config_save_probes.py),
+  [save results](C:/Users/alexr/.codex/visualizations/2026/10/16/01a144a3-a300-71c0-ae87-57f26f2608ca/config_save_results.json),
+  [attachment probe](C:/Users/alexr/.codex/visualizations/2026/10/16/01a144a3-a300-71c0-ae87-57f26f2608ca/attachment_probe.py),
+  [attachment results](C:/Users/alexr/.codex/visualizations/2026/10/16/01a144a3-a300-71c0-ae87-57f26f2608ca/attachment_results.json).
+  Historical evidence remains in the October 8–10 directories referenced in automation
+  memory and the [October 15 archive](C:/Users/alexr/.codex/visualizations/2026/10/15/01a13f5a-19f1-7461-9e3f-f162eba00e3d/).
+- No full suite, live Telegram/provider, converter, power-loss, OS input/hook, real
+  user-board moderation or cross-app repair check. Application code and configuration
+  are unchanged by this review; concurrent wiki commits are recorded above. Review
+  documentation remains uncommitted.
 
-See the [improvement roadmap](C:/Users/alexr/Driverless_AGI/_CODEX_SUGGESTIONS_2026-10-15.md).
+See the [improvement roadmap](C:/Users/alexr/Driverless_AGI/_CODEX_SUGGESTIONS_2026-10-16.md).

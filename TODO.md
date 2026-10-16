@@ -56,30 +56,28 @@
     Add any future user-question tool (e.g. a revived `show_plan`) to `SOLO_TOOLS`.
   - `edit` takes an `edits` list for one file: in order, all-or-nothing, placeholder-tolerant.
 
-- **2026-10-15 review refresh on main.** See
-  [_CODEX_CODE_REVIEW_2026-10-15.md](_CODEX_CODE_REVIEW_2026-10-15.md) and
-  [_CODEX_SUGGESTIONS_2026-10-15.md](_CODEX_SUGGESTIONS_2026-10-15.md).
-  23 open findings: all 21 previous paths remain; add reproduced R28 and source-inspected R29.
+- **2026-10-16 review refresh on main.** See
+  [_CODEX_CODE_REVIEW_2026-10-16.md](_CODEX_CODE_REVIEW_2026-10-16.md) and
+  [_CODEX_SUGGESTIONS_2026-10-16.md](_CODEX_SUGGESTIONS_2026-10-16.md).
+  20 open findings; removed verified repairs R15/R17/R22/R27 and added R30.
   - **P1 R23/R24:** failed/partial replay verifies whole workflows; concurrent YAML changes
     verify unexecuted content. Both still reproduce in scratch workflows.
   - **P1 R25/R26:** expectation timeout repeats mutations; cancellation releases the lock
-    while execution continues through all for_each items. Both still reproduce with FakeDriver.
-  - **P1 R22:** October 14 queued old-board post/purge evidence remains current by source;
-    full-handle mention warnings are a separate shipped repair.
-  - **P2 R28:** serialize config hash check/write/replace across processes and use per-save
-    temporary files. Controlled saves lose accepted edits and return the wrong byte hash.
+    while execution continues through for_each items. Both reproduce with FakeDriver.
+  - **P2 R28:** serialize config hash check/write/replace and use per-save temporary files.
+    Controlled saves still lose accepted edits and return the wrong byte hash.
   - **P2 R29:** guard dirty Settings on quit; see existing unsaved-prompt wiki follow-up.
-  - **P2 R27:** align improve-yourself intake with current TODO and handle no candidate.
+  - **P2 R30:** bind attachment jobs/completions to the source board and exact card identity.
+    A queued job fetched from a new client; an old future updated a new colliding-ID card.
   - R21 terminal close and R8 abandoned child metadata remain open.
-  - R7 inventory: 252 production files, nine modules over 500 lines, six functions over 100.
-  - Focused checks: 394 passed, three known missing-template failures, two opt-in skips.
-    Three missing-template failures remain; viewer collision passed. No live desktop/hook/provider.
-  Roadmap: 17 unbuilt extensions; add S17 effective session-configuration provenance.
-  Settings, welcome changes and full-handle warnings are recognized as shipped.
-  Reports updated in place and renamed; documentation changes remain uncommitted.
+  - R7 inventory: 256 production files, eight modules over 500 lines, six functions over 100.
+  - Focused checks: 332 distinct core tests passed after four sandbox failures passed
+    targeted unsandboxed reruns; 139 Qt tests passed. No live desktop/hook/provider.
+  Roadmap: 17 unbuilt extensions; S10/S16 retain only runtime preflight/evidence extensions
+  beyond the shipped plan and intake contracts. Reports renamed in place; uncommitted.
 
 - **2026-10-02 automation review follow-ups.** The review covered `task/iteration-engine`
-  at `6917b131`. The running reports have since been renamed to the current October 15
+  at `6917b131`. The running reports have since been renamed to the current October 16
   files linked above; the October 2 observations remain historical. R2 and R6 are fixed (2026-10-05);
   R7's four targeted function refactors and R8/R9 are done; residuals and other findings
   are tracked in the current report.
@@ -195,12 +193,12 @@
   four-field frontmatter, layout, stale todos and duplicates
   (`black_grimoire/src/migrate_wiki/validate.py` is a starting point).
 
-- **Production review (R5, R8, R11, R17)** — remaining deferred findings from
+- **Legacy production review (R5, R8, R11, R17)** — separate ID namespace; deferred findings from
   `projects/driverless-agi/production-review-2026-09-15.md` in the central memory
   wiki. R5 (session filename
   collisions) and R8 (pipe subagent prompt loss) deferred pending design
   decisions; R11 (interrupted restore from events) deferred for complexity;
-  R17 (orderly GUI shutdown) deferred — needs design for worker cancellation,
+  Legacy R17 (orderly GUI shutdown) deferred — needs design for worker cancellation,
   process-tree cleanup, and state persistence.
 
 - **Grep tool hardening** — grep now excludes `.dagi/`, `__pycache__/`, `.git/`,

@@ -1,38 +1,36 @@
-# Dagi suggestions — 2026-10-15
+# Dagi suggestions — 2026-10-16
 
 Proposals for sustained agentic work, measured self-improvement and understandable recovery.
-They do not authorize implementation. Reviewed main at **6b5b5a9534ce8fbd9af864b4d362cd6774bfc593**. The existing
-October 14 report was edited in place and renamed. There are **17 unbuilt improvements or
-explicit extensions**: all 16 prior proposals remain unbuilt after source/diff inspection;
-S17 adds per-session effective-configuration provenance to the newly shipped Settings editor.
+They do not authorize implementation. Reviewed main at **a53f6eabe9d684b884ec14c98aab3f8312d4abac**.
+HEAD later advanced to **cce300e862194fcb52e6af574e7a1ab5f387cf88** with two wiki-only
+benchmark planning additions; application code is unchanged between these revisions.
+The existing October 15 report was edited in place and renamed. There are **17 unbuilt
+improvements or explicit extensions**. Implemented portions have been removed from proposals;
+S10 now covers runtime plan preflight, and S16 covers revision-bound reproduction evidence.
 
-Already shipped: Settings form/raw YAML editing, comment-preserving writes, file watching,
-conflict banners, tool-catalog drift checks, welcome video rotation/maximized launch and
-full-handle board-mention warnings/member discovery. These are recognized, not reproposed.
-The malformed-handle spawned-agent mention symptom is documented as repaired in 2027e1f;
-R22's old-board event provenance remains a separate open issue. Save races and quit draft
-loss are repairs R28/R29, not reasons to propose another Settings editor. Existing wiki
-@all, attachment and Settings unsaved-prompt follow-ups are not duplicated as new features.
+Already shipped: Settings form/raw YAML editing, comment-preserving writes/watch/conflicts,
+tool-catalog checks, welcome video/maximized launch, full-handle mention warnings/member
+discovery, exact/numbered task lookup with ambiguity rejection, live writer-example contracts,
+TODO-based candidate selection/source identity/no-candidate handling, queued board-event
+generation rejection, and reasoning/schema/system context estimates. These are not proposals.
+Configuration validation and board identity/stream/temp lifecycle are now extracted modules.
 
-Also present: code-mode scripts/positional arguments, standalone board composition,
-member keys/presence, admin controls, bans/purges, reserved @board-admin posts, attachments,
-image input, board switching, Agents rail/mention wake-ups, owner-scoped child cancellation,
-RPA recording/compilation/replay, content approval, halt/repair evidence and Workflows cards.
-Recognize RequestExecutor, persisted revisions, child generation checks, output draining,
-active-plan sidecars, process-state events and steering receipts. Campaign remains absent;
-reconcile its historical schema before introducing a shared store. Preserve intentionally
-uncapped mentions.
+Also present: code mode, standalone board/member/admin/moderation/attachment features, image
+input, board switching, Agents rail/mention wake-ups, owner-scoped child cancellation,
+RPA recording/compilation/replay/approval/repair evidence and Workflows cards. Build on
+RequestExecutor, persisted revisions, child generation checks, output draining, active-plan
+sidecars, process-state events and steering receipts. Campaign remains absent; reconcile its
+historical schema before introducing another store. Preserve intentionally uncapped mentions.
 
-Extend the [improve-yourself workflow](C:/Users/alexr/Driverless_AGI/.dagi/workflow/improve-yourself/workflow.md)
-and [review-session synthesis](C:/Users/alexr/Driverless_AGI/.dagi/skills/review-session/SKILL.md) rather than
-reproposing baseline/candidate testing. R27 still shows incompatible TODO intake.
-RPA replay confirmation remains separate from the standing coding workflow.
+Extend [improve-yourself](C:/Users/alexr/Driverless_AGI/.dagi/workflow/improve-yourself/workflow.md) and
+[review-session](C:/Users/alexr/Driverless_AGI/.dagi/skills/review-session/SKILL.md). Existing baseline/candidate
+testing and compatible TODO intake are not missing features. Save/draft issues R28/R29 and
+attachment provenance R30 are repairs, not proposals for replacement editors/boards.
 
-[Today's review](C:/Users/alexr/Driverless_AGI/_CODEX_CODE_REVIEW_2026-10-15.md) contains **23 open findings**.
-Today's focused checks: core **3 failed, 263 passed, 2 skipped, 67 warnings in 45.99s**; Qt **131 passed in 12.52s**.
-The three plan-template failures remain open; the historical viewer collision fixture passed
-today. All five RPA boundary assertions and both new configuration-save races reproduce
-offline. No real desktop input, global hook or provider was exercised.
+[Today's review](C:/Users/alexr/Driverless_AGI/_CODEX_CODE_REVIEW_2026-10-16.md) contains **20 open findings**.
+Focused verification: 332 distinct core tests passed across sandbox and targeted unsandboxed
+reruns; 139 Qt checks passed. Four initial sandbox board/socket failures are documented there.
+R23–R26, R28 and R30 boundary probes reproduce offline. No real desktop input or provider.
 
 ## S1 — One owned run with an explicit outcome
 
@@ -40,7 +38,7 @@ offline. No real desktop input, global hook or provider was exercised.
 start/status/steer/cancel/await-stopped contract and explicit terminal outcome.
 
 **Issue addressed:** R4/R10/R18/R21/R26 show incompatible meanings of timeout, completion and failure.
-R22 adds input provenance; R23/R24 add verification coverage and executed-revision identity.
+R30 adds attachment provenance; R23/R24 add verification coverage and executed-revision identity.
 R8 now preserves branch/generation through resume; its abandoned metadata remains ownership
 debt. A PID alone cannot prove stopped execution or own all cleanup.
 
@@ -54,7 +52,7 @@ scheduler, code mode, child resume and RPA replay before migrating all UIs. Incl
 the same generation check; no owned execution survives reported deadline enforcement;
 no selected code-mode mutation begins after acknowledged cancellation; cancelling one
 parent preserves other parents' children, and closing a session terminates/reaps its worker;
-queued events from a previous board cannot admit new work after a switch;
+attachment jobs and results cannot cross board identities after a switch;
 RPA cancellation holds ownership until stopped, verification names executed revision and
 coverage, and post-action timeout cannot duplicate a mutation. Preserve R9 tests proving
 output drains when its diagnostic log is unavailable. Per-parent child cancellation and
@@ -93,6 +91,9 @@ from evaluator code/holdouts. Include code_mode and the callable registry in com
 Compare the same effective configuration and retain commands,
 exits, artifacts and failure classifications. Build on
 [dagi_eval](C:/Users/alexr/Driverless_AGI/benchmarks/dagi_eval/harness.py) and improve-yourself.
+The existing [budget-capped ALE pilot TODO](C:/Users/alexr/Driverless_AGI/wiki/todo-ale-bench-budget-pilot.md)
+is pending planning, not a built evaluator; connect its evidence to these same manifests
+if implemented. No benchmark installation, paid run or suitability claim is added here.
 
 **Acceptance:** A lifecycle or delivery regression rejects a candidate even if code size or
 cost improves. Evaluator modification is an integrity failure. Setup failures are distinct
@@ -139,7 +140,7 @@ notifications occur on meaningful changes or required action.
 **Improvement:** Expose effective environment and working capabilities before dependent tasks.
 
 **Issue addressed:** Earlier reviews found shell and converter retries. Importability does
-not prove working conversion; prior WebEngine checks were sandbox-sensitive. Focused offscreen Qt Settings/controller tests passed today; rendered WebEngine interaction was not verified.
+not prove working conversion; prior WebEngine checks were sandbox-sensitive. Focused offscreen Qt Settings/controller tests passed October 16; rendered WebEngine interaction was not verified.
 
 **Smallest useful version:** Report resolved interpreter, shell contract, tool availability
 and converter-service health with bounded smoke fixtures. Reuse configuration introspection
@@ -179,15 +180,15 @@ omit runtime execution, and Telegram delivery/dispatch defects survived previous
 Promote still-open scheduler/Telegram/publication probes as their repairs land. Use a fake
 provider, delivery sink and controlled worker to drive real adapters. Assert outcomes,
 delivery counts, answer routing, cleanup and disk/live equivalence. Use existing pytest;
-link review IDs to fixtures. Add the R16 two-process admission scenario and R17 exact-name
-worker-selection scenario, plus skill-format checks from S10. Add R18
+link review IDs to fixtures. Add the R16 two-process admission scenario. Preserve the shipped exact-name
+worker-selection and live skill-format fixtures; extend them for S10 runtime preflight. Add R18
 controlled admission-versus-cancellation and nested-budget fixtures, and R19
 print-before-timeout/kill fixtures; idle-script timeout tests do not cover these boundaries.
 Preserve the shipped two-parent cancellation isolation tests and add actual worker exit after session close (R21),
-rather than a mocked stop return alone. Include queued old-board events delivered after
-a switch (R22); checking generation only before emitting is insufficient.
-Extend R22 to queued old-board purge/status events; an obsolete purge cannot remove a new-board
-card. Include current admin identity, reserved-handle and ban/purge behavior in board contracts.
+rather than a mocked stop return alone. Preserve the shipped queued old-board
+post/purge/status/snapshot regressions. Extend attachment coverage with R30's queued jobs
+and late completions across switches. Include current admin identity, reserved-handle and
+ban/purge behavior in board contracts.
 Add R23/R24 complete coverage and executed-revision verification, R25 post-action
 expectation timeout and R26 per-item cancellation/lock acknowledgment fixtures.
 
@@ -220,31 +221,26 @@ File receipts identify the published bytes; Telegram receipts track successful m
 where available. A timeout with unknown delivery status stays explicit, since remote
 exactly-once delivery cannot be guaranteed by a local flag. Resume preserves receipt history.
 
-## S10 — Executable contracts for skill-produced plans
+## S10 — Validate an attached plan before delivery starts
 
-**Improvement:** Validate plans before they enter delivery, and catch skill-format drift
-with a small repository-owned contract suite.
+**Improvement:** Add runtime preflight to the existing active-plan association and worker flow.
 
-**Issue addressed:** R15 shows that deleting a template can break verification while the
-writer's inline format and runtime parser evolve independently. The current writer example
-omits status markers, which the parser reports as unknown. R17 additionally shows that
-substring selection assigns the wrong subtask even when its exact name exists. Both
-undermine the iterative harness.
+**Issue addressed:** The writer now documents markers, its real examples feed contract tests,
+and worker lookup prefers exact names/numbers and rejects ambiguous names. Those capabilities
+are shipped. [set_active_plan](C:/Users/alexr/Driverless_AGI/tools/active_plan/_active_plan.py:78) currently validates
+path/containment and writes a pointer, without checking the attached document's task structure
+or acceptance criteria. A valid writer example does not validate every user-authored plan.
 
-**Smallest useful version:** Define the supported plan heading/marker/global-constraint
-contract in one maintained fixture or format specification. Test the current inline skill
-examples against parsing, subtask isolation, worker assignment and progress round-trip.
-At plan association, report missing markers, empty criteria or unextractable subtasks as
-precise diagnostics before work starts. Keep backward compatibility explicit for existing
-plans; avoid loading personal global skills as test fixtures. Use the existing parser with
-exact task identity or task number. Reject ambiguous partial names and duplicate identities
-before assigning worker payloads (R17).
+**Smallest useful version:** At association or before first dispatch, reuse the parser to
+report duplicate task numbers/names, unknown markers, missing requirements or empty acceptance
+checks with heading-specific diagnostics. Keep legacy-plan compatibility explicit. Preserve
+the current writer/example, exact-selection and marker-round-trip regression suite; do not
+introduce another plan format, deleted template or personal-global-skill test dependency.
 
-**Acceptance:** Changing the writer example incompatibly fails a contract test. Valid
-plans preserve constraints and progress through worker/reviewer handoffs. Invalid plans
-name the exact heading or missing field; they never silently appear to have no pending
-work. An exact task title that is a substring of an earlier title still selects the intended task.
-The three stale tests must be updated to validate current behavior rather than removed.
+**Acceptance:** A well-formed plan attaches and dispatches normally. Malformed or ambiguous
+plans show precise actionable diagnostics before a worker starts; a rejected association
+preserves the previous usable plan. Tests use actual skill examples plus invalid runtime
+documents and confirm no worker/provider execution on failed preflight.
 
 ## S11 — Schedule control and missed-run recovery
 
@@ -299,14 +295,14 @@ so an @mention starts useful bounded work without losing ownership or replaying 
 Agent-to-agent wake-ups are intentionally uncapped. Existing messages do not carry the
 delegated objective, acceptance command, execution budget or returned evidence. R21
 shows why hidden or cancelled agents need terminal ownership before unattended teamwork;
-R22 adds event provenance across board switches.
+R30 adds attachment provenance across board switches; queued post/purge/status guards already exist.
 
-**Smallest useful version:** After S1/S2 and R21/R22, attach a task/attempt reference to a
+**Smallest useful version:** After S1/S2 and R21/R30, attach a task/attempt reference to a
 board assignment and its reply. Record accepted/running/result-received/verified states
 against the existing run identity. Start with a read-only reviewer in a separate agent,
 with one acceptance check and a bounded token/time budget. Deduplicate deliveries by board
-identity plus post/task ID. Reject old-generation events at GUI delivery (R22) before they
-can admit work on the current board. Apply the same identity check before processing purges.
+identity plus post/task ID. Preserve the shipped old-generation event rejection before events
+can admit work on the current board. Keep those guards around new assignment/receipt handling.
 Treat @board-admin as the shipped launcher identity; ordinary task assignment must not imply
 authority to ban, clear or shut down a board. Keep shared-folder write ownership explicit before allowing
 editing collaborators. Reuse existing worker/reviewer skills; do not create another agent
@@ -325,8 +321,7 @@ spending another automatic attempt on the same failure.
 **Issue addressed:** RequestExecutor already bounds ghost-response retries and the loop
 guards consecutive empty replies. Those controls do not connect identical tool, capability,
 publication or acceptance failures across objective attempts. S2 budgets bound total work;
-S14 explains what needs to change to make the next attempt useful. The historical SQLite setup failure and still-missing plan template illustrate distinct
-recovery causes. R25 shows why post-action uncertainty must not trigger an automatic mutation retry.
+S14 explains what needs to change to make the next attempt useful. Setup failures and evaluator/application failures require different recovery actions. R25 shows why post-action uncertainty must not trigger an automatic mutation retry.
 
 **Smallest useful version:** Extend S2's journal with a normalized failure signature, affected
 operation and relevant input/environment revision. Retain the diagnostic/artifact under S9.
@@ -365,29 +360,27 @@ YAML invalidates the preview. Planned coverage stays visibly separate from execu
 receipts; only a clean complete run earns verification after R23/R24 are repaired. Add preview
 fixtures to S3/S8 and keep replay retry behavior under S14/R25.
 
-## S16 — Turn selected findings into reproducible improvement candidates
+## S16 — Revalidate evidence before an improvement experiment
 
-**Improvement:** Give the Admiral a small review-to-work intake that hands one current,
-selected finding to the existing improvement workflow with its evidence and acceptance check.
+**Improvement:** Enrich the shipped TODO-based selection with a reproducible candidate packet.
 
-**Issue addressed:** R27 shows missing TODO/Work Queue compatibility. Review-session already
-produces analysis and a plan; improve-yourself already runs baseline/candidate experiments.
-What is missing is a maintained shared intake contract connecting those artifacts and current
-open review IDs, with explicit empty-queue and superseded-finding handling.
+**Issue addressed:** Current intake already understands In progress, nested follow-ups and
+review IDs, records source identity, ranks candidates, asks the user to choose and stops on
+no eligible candidate. Review-session already produces analysis/plans; improve-yourself
+already compares baseline/candidate runs. The remaining opportunity is binding selection to
+the current source revision and executable evidence, rather than a dated prose observation.
 
-**Smallest useful version:** Extend current TODO selection and review-session synthesis with
-stable finding ID, source report/plan, reviewed revision, priority, reproduction command and
-acceptance check. Selecting a candidate rechecks its source and reproduces the issue in a
-scratch workspace before the baseline/candidate stages. Report no eligible work explicitly.
-Carry the same ID into S2/S4 experiment records and retain rejected hypotheses. Use the
-existing normal workflow for planning/approval; publishing a report does not approve a repair.
-Start with one manually selected finding, not an autonomous bulk issue importer or new service.
+**Smallest useful version:** Attach reviewed revision, stable finding ID, reproduction command,
+expected failure and independent acceptance check to one user-selected candidate. Recheck
+whether it remains open and reproduce it in the snapshot before baseline/candidate stages.
+If the defect is repaired or the reproduction is inconclusive, record that result and return
+to selection. Carry the candidate identity into S2/S4 manifests and retained hypotheses.
+Use the existing implementation approval workflow when applying a candidate.
 
-**Acceptance:** A real current TODO example selects the intended finding. A missing/empty
-queue returns a clear no-candidate result with zero model benchmark or workspace mutation.
-A resolved or irreproducible historical finding is not silently selected. Repeated ingestion
-does not duplicate the same finding. Baseline/candidate artifacts name the selected source
-and evaluator. Applying changes remains the Admiral's existing implementation decision.
+**Acceptance:** A repaired historical finding cannot start an obsolete experiment. A valid
+candidate records its source revision, reproduced failure and evaluator before comparison.
+Repeated ingestion preserves identity without duplicate experiments. Failed reproduction is
+distinct from a rejected candidate. Applying changes remains the Admiral's decision.
 
 ## S17 — Explain each agent's effective configuration and pending changes
 
@@ -417,28 +410,25 @@ or configuration write. Cover unchanged, overridden, pending and invalid candida
 
 ## Sequence and measures
 
-1. Repair R4/R10/R16/R18/R21/R22/R23/R24/R25/R26 and Telegram R11/R12; retain verified R2/R6/R8/R9 contracts.
-2. Repair Settings races/draft loss R28/R29. Repair R3/R13/R14, add S8 regression fixtures and the minimal S9 retained-export path;
-   repair R19 to retain interrupted script diagnostics.
-   Extend S1 ownership to abandoned-child cleanup. Repair R15/R17 and establish S10's plan
-   contract before relying on unattended delivery.
-3. Add S2 objectives and S4 manifests; prototype S5 on those records. Add S17 configuration provenance to Settings and those manifests. Extend the shipped Workflows rail with executed/verified/delivered
-   distinctions. Add S14 once retained
-   failure evidence can distinguish recovery changes. S6 remains a bounded
-   capability-preflight opportunity under the project's normal implementation workflow.
-   Add S11 once admission and attempt recovery have durable ownership. Prototype S15
-   atop the existing RPA detail API after verification/ownership repairs.
-4. Repair R27 and add S16 intake; connect S7 checkpoints and extend S3's existing self-improvement workflow. Candidate
-   promotion requires intact evaluator evidence and passing behavioral contracts.
-   Measure shipped code mode through S12 before choosing examples to reuse.
-5. Pilot S13 with read-only review once durable attempt ownership is established. Preserve
-   repaired per-parent cancellation; expand collaboration when receipts prove admission/results.
+1. Repair R4/R10/R16/R18/R21/R23/R24/R25/R26 and Telegram R11/R12; preserve existing
+   owner-scoped cancellation, resume/drain and stale board-event regression contracts.
+2. Repair R28/R29 Settings writes/drafts and R30 attachment provenance. Repair R3/R13/R14,
+   add S8 adapter fixtures and the minimal S9 retained-export path; repair R19 to retain
+   interrupted diagnostics. Extend S1 to abandoned-child cleanup. Pilot S10 runtime plan
+   preflight on the shipped format/lookup contracts.
+3. Add S2 objectives/S4 manifests and prototype S5 task recovery. Add S17 configuration
+   provenance; distinguish executed/verified/delivered in Workflows. Add S14 when retained
+   failures can identify relevant recovery changes. S6 preflight, S11 schedule recovery and
+   S15 replay preview can extend existing APIs once admission/verification ownership is sound.
+4. Add S16 evidence revalidation to existing TODO intake; connect S7 checkpoints and extend
+   S3 experiments. Promotion requires intact evaluators and passing behavioral contracts.
+   Measure code-mode effectiveness through S12 before choosing examples to reuse.
+5. Pilot S13 with read-only review once durable attempt ownership exists. Expand collaboration
+   when receipts demonstrate admission, provenance and result acceptance.
 
-Measure verified acceptance, false-success rate, final-delivery failures, question-answer
-latency, cancellation latency, code-mode deadline overrun/partial-output retention, export
-recovery without recomputation, plan-contract rejection, recovery success, duplicate-admission
-rate, exact task-selection accuracy, obsolete-board wake-ups/card removals, review-to-candidate selection errors, replay coverage/hash mismatches, repeated post-action mutations,
-preview-versus-run input drift, configuration-source ambiguity, concurrent-save byte/hash mismatches, retry-without-change rate, stale-result
-rejection and repeated failed hypotheses. Record cost per verified outcome with missing-cost
-cases explicit. Establish
-baselines before choosing numerical targets. No external framework migration is required.
+Measure verified acceptance, false-success rate, delivery failures, answer/cancellation latency,
+deadline overrun, partial-output retention, export recovery without recomputation, runtime plan
+rejection, duplicate admission, review-candidate reproduction, stale attachment delivery,
+replay coverage/hash mismatches, post-action duplicates, preview/input drift, configuration
+ambiguity, save byte/hash mismatches and retry-without-change rate. Record cost per verified
+outcome with missing-cost cases explicit. Establish baselines before numerical targets.

@@ -13,13 +13,13 @@ Source research (2026-10-08): llama.cpp server prefix caching at upstream commit
 `000bee54a544` is recorded in central memory as `llama-cpp-prefix-cache.md`.
 
 Latest architecture/reliability review:
-[_CODEX_CODE_REVIEW_2026-10-15.md](_CODEX_CODE_REVIEW_2026-10-15.md), with the
-[iterative-work and self-improvement roadmap](_CODEX_SUGGESTIONS_2026-10-15.md).
-The review has 23 open findings. New R28 reproduces concurrent configuration-save loss and
-wrong saved-byte hashes; R29 covers unsaved Settings drafts on quit. R23–R26 still reproduce.
-Focused checks: 394 passed, three known missing-template failures, two opt-in skips.
-The roadmap has 17 unbuilt extensions, including effective session-configuration provenance.
-Settings editing, full-handle mention warnings and welcome-video changes are shipped.
+[_CODEX_CODE_REVIEW_2026-10-16.md](_CODEX_CODE_REVIEW_2026-10-16.md), with the
+[iterative-work and self-improvement roadmap](_CODEX_SUGGESTIONS_2026-10-16.md).
+The review has 20 open findings. R30 reproduces attachment jobs/results crossing board
+switches; R23–R26 and R28 still reproduce. Plan-format, subtask-selection, queued board-event
+and TODO-intake repairs are verified and removed. Focused checks: 332 distinct core tests
+passed after four sandbox board/socket failures passed targeted unsandboxed reruns; 139 Qt
+checks passed. The roadmap has 17 unbuilt extensions; shipped portions are removed.
 No live provider or desktop input was used.
 
 A minimal, self-hosted coding agent. Give it a task — it plans, calls tools, reads results, and iterates until done. Ships with a Rich interactive CLI. Supports any OpenAI-compatible API, automatic context compaction for long sessions, extended reasoning, skills-based guidance, and full session logging with auto-named session files and history restore via `/hist`.
@@ -1440,7 +1440,7 @@ only when the user types a slash command in the interactive CLI.
 
 | Workflow | Command | What it does |
 |----------|---------|-------------|
-| `improve-yourself` | `/improve-yourself` | End-to-end self-improvement loop: picks a `review-item` from the Work Queue, researches prior art, runs baseline and after tests in an isolated snapshot, compares structural metrics, and writes a verdict + ready-to-apply implementation description to `TODO.md` |
+| `improve-yourself` | `/improve-yourself` | End-to-end self-improvement loop: selects an eligible item from TODO's In progress section with the user, researches prior art, runs baseline and after tests in an isolated snapshot, compares structural metrics, and writes a verdict + ready-to-apply implementation description to `TODO.md` |
 
 Add a custom workflow by creating `.dagi/workflow/<name>/workflow.md`. Any sibling `.py`,
 `.sh`, or other script files in the workflow directory are listed in the injected task

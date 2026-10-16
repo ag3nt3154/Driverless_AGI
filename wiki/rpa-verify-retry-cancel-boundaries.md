@@ -2,7 +2,7 @@
 title: 'RPA replay needs coverage, revision and stop ownership'
 description: 'Review R23–R26: partial/failed replay can verify, edits can verify unexecuted YAML, expectation timeout repeats actions, and cancellation releases ownership before stop.'
 tags: [run_workflow, mark_verified, workflow_hash, for_each, DesktopLock, cancel, R23, R24, R25, R26]
-updated: 2026-10-15
+updated: 2026-10-16
 ---
 
 Open review findings at main `ff18da869a8a1885f3ed7d3851cb3c7d0e40e458`.
@@ -57,3 +57,9 @@ and [results](C:/Users/alexr/.codex/visualizations/2026/10/15/01a13f5a-19f1-7461
 retain the evidence. Reports were updated/renamed in place to October 15: 23 open findings,
 17 unbuilt improvements. Focused config/board/plan and Qt checks: 394 passed, three known
 plan-template failures, two opt-in skips. No RPA implementation changed.
+
+## October 16 refresh
+
+All five R23–R26 assertions reproduce at `a53f6eabe9d684b884ec14c98aab3f8312d4abac` with the real interpreter/store/lock
+and FakeDriver. No input/hooks/providers; gated workers joined.
+[Results](C:/Users/alexr/.codex/visualizations/2026/10/16/01a144a3-a300-71c0-ae87-57f26f2608ca/review_probe_results.json).

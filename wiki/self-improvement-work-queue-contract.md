@@ -1,8 +1,8 @@
 ---
 title: 'Self-improvement selection must match the maintained TODO'
-description: 'R27: improve-yourself scans a Work Queue absent from current TODO; align candidate intake and define empty-queue behavior.'
+description: 'R27 TODO intake repaired; October 16 checks verify current sections, source identity and no-candidate handling.'
 tags: [improve-yourself, review-session, TODO, Work-Queue, R27, selection, acceptance]
-updated: 2026-10-15
+updated: 2026-10-16
 ---
 
 Source-inspected at main `db8dde97138c3d67b9c44121f8ce2cce07b5bfca`; no provider or self-improvement run invoked.
@@ -17,8 +17,8 @@ existing flows with selected finding ID, reviewed revision, reproduction/accepta
 and deduplication. These are proposals; report publication does not authorize implementation.
 Use the normal approval workflow and retain the Admiral's final apply decision.
 
-Reports: [open findings](C:/Users/alexr/Driverless_AGI/_CODEX_CODE_REVIEW_2026-10-15.md),
-[improvement suggestions](C:/Users/alexr/Driverless_AGI/_CODEX_SUGGESTIONS_2026-10-15.md).
+Reports: [open findings](C:/Users/alexr/Driverless_AGI/_CODEX_CODE_REVIEW_2026-10-16.md),
+[improvement suggestions](C:/Users/alexr/Driverless_AGI/_CODEX_SUGGESTIONS_2026-10-16.md).
 
 ## Resolved 2026-10-15
 
@@ -27,3 +27,11 @@ follow-ups and review finding IDs are candidates, with stated exclusions, a sour
 (`TODO.md › group › item` or `report › R##`), ranking, an `ask_user` choice of the top three,
 and a stop on no eligible candidate. Step 12 records the source and moves it to `## Completed`.
 `tests/test_improve_yourself_intake.py` fails if the workflow names a section TODO.md lacks.
+
+## October 16 verification
+
+At `a53f6eabe9d684b884ec14c98aab3f8312d4abac`, current TODO intake and live plan-format/worker-selection regressions pass.
+R27/R15/R17 are removed from the open report. S16 now proposes revision-bound reproduction
+and acceptance evidence beyond the shipped selection rules; S10 proposes runtime validation
+of arbitrary attached plans beyond the shipped writer-example contracts. No candidate run
+or implementation was authorized by report publication.

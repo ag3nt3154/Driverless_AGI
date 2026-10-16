@@ -2,7 +2,7 @@
 title: 'Configuration saves need serialized conflict checking and unique temporary files'
 description: 'R28: concurrent ConfigDocument saves lose accepted edits or publish another writer''s bytes while returning their own hash.'
 tags: [ConfigDocument, ConfigConflictError, config_editor, os.replace, concurrent-save, R28]
-updated: 2026-10-15
+updated: 2026-10-16
 ---
 
 Open at main `6b5b5a9534ce8fbd9af864b4d362cd6774bfc593`; no application repair was made.
@@ -34,3 +34,9 @@ implementing. This proposal does not authorize implementation.
 
 Evidence: [probe](C:/Users/alexr/.codex/visualizations/2026/10/15/01a13f5a-19f1-7461-9e3f-f162eba00e3d/config_save_probes.py),
 [results](C:/Users/alexr/.codex/visualizations/2026/10/15/01a13f5a-19f1-7461-9e3f-f162eba00e3d/config_save_results.json).
+
+## October 16 refresh
+
+Both controlled interleavings reproduce at `a53f6eabe9d684b884ec14c98aab3f8312d4abac` after validation extraction;
+ConfigDocument.save still shares the temporary filename and checks the hash before writing.
+All scratch writer threads joined. [Results](C:/Users/alexr/.codex/visualizations/2026/10/16/01a144a3-a300-71c0-ae87-57f26f2608ca/config_save_results.json).
