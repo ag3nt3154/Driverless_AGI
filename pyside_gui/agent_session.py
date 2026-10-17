@@ -17,7 +17,7 @@ import threading
 import time
 from pathlib import Path
 
-from PySide6.QtCore import QMetaObject, QObject, Q_ARG, Qt, Signal, Slot
+from PySide6.QtCore import QMetaObject, QObject, Q_ARG, Qt, QTimer, Signal, Slot
 
 from agent.board_client import BoardError
 from agent.loop import AgentConfig
@@ -27,7 +27,7 @@ from pyside_gui.bridge import AgentBridge
 from pyside_gui.commands import SlashCommandHandler, UIWidgets
 from pyside_gui.conversation import ConversationView
 from pyside_gui.overlays import CopyPicker
-from pyside_gui.peers import task_post
+from pyside_gui.peers import report_post, task_post
 from pyside_gui.rpa_cards import parse_rpa_halt
 from pyside_gui.steer_queue import SteerQueue
 from pyside_gui.utils import idle_emote_path
@@ -67,6 +67,9 @@ class AgentSession(QObject):
         self.last_outcome: str | None = None
         self._turn_handoff: str | None = None
         self._turn_done_seen = False
+        self._turn_error: str | None = None
+        self._turn_last_text: str = ""
+        self._close_for_submission: int | None = None
         self.status = "idle"
         self.running = False
         self._last_tokens: tuple | None = None
@@ -149,6 +152,7 @@ class AgentSession(QObject):
         cv.rpa_repair_requested.connect(self._on_rpa_repair_requested)
         b.assistant_text.connect(self._on_assistant_text)
         b.handoff_text.connect(cv.append_assistant)
+        b.handoff_text.connect(self._on_turn_handoff)
         b.stream_started.connect(self._on_stream_started)
         b.reasoning_received.connect(self._on_reasoning)
         b.stream_text_delta.connect(lambda c: cv.stream_delta("text", c))
@@ -160,6 +164,7 @@ class AgentSession(QObject):
         b.compaction_done.connect(self._on_compaction)
         b.model_switched.connect(self._on_model_switched)
         b.error_occurred.connect(cv.append_error)
+        b.error_occurred.connect(self._on_turn_error)
         b.agent_done.connect(self._on_agent_done)
         b.agent_paused.connect(self._on_agent_paused)
         b.ask_user_requested.connect(self._on_ask_user)
@@ -361,6 +366,11 @@ class AgentSession(QObject):
     def _show_running(self) -> None:
         self.running = True
         self._run_start_time = time.monotonic()
+        self._turn_handoff = None
+        self._turn_done_seen = False
+        self._turn_error = None
+        self._turn_last_text = ""
+        self.last_active = time.monotonic()
         if self.is_active:
             self.win._apply_running(self)
 
@@ -399,6 +409,8 @@ class AgentSession(QObject):
 
     @Slot(str)
     def _on_assistant_text(self, markdown: str) -> None:
+        if markdown.strip():
+            self._turn_last_text = markdown
         if self._stream_had_content:
             self._stream_had_content = False
             return
@@ -440,6 +452,7 @@ class AgentSession(QObject):
     @Slot(str)
     def _on_agent_done(self, result: str) -> None:
         self._pending_ask = self._pending_ask_container = None
+        self._turn_done_seen = True
         self._conversation.append_info("— turn complete —")
         if result: self._notify("DAGI is done", result)
         self._enable_input()
@@ -451,6 +464,9 @@ class AgentSession(QObject):
         self._set_status("paused")
         self._conversation.append_info("Server error — session paused. Send a message to retry.")
         self._enable_input()
+        if self.spawned_by is not None:
+            self.last_outcome = "error"
+            self._post_report("error", "paused after a server error", close_after=False)
 
     @Slot(str, str)
     def _on_tool_ended_rpa(self, name: str, result: str) -> None:
@@ -482,6 +498,82 @@ class AgentSession(QObject):
 
     @Slot()
     def _enable_input_slot(self) -> None: self._enable_input()
+
+    @Slot(str)
+    def _on_turn_handoff(self, text: str) -> None:
+        self._turn_handoff = text
+
+    @Slot(str)
+    def _on_turn_error(self, text: str) -> None:
+        self._turn_error = text
+
+    @Slot()
+    def _turn_finished_slot(self) -> None:
+        self._report_turn_end()
+
+    # ── peer turn-end reporting (D4, D5, D12) ──────────────────────────────────────────
+
+    def _report_turn_end(self) -> None:
+        """Post a report to this peer's spawner, unless this session was user-spawned."""
+        if self.spawned_by is None:
+            return
+        if self._turn_handoff is not None:
+            outcome = "done"
+        elif self._turn_done_seen:
+            outcome = "max-continuations"
+        else:
+            outcome = "error"
+        self.last_outcome = outcome
+        self.last_active = time.monotonic()
+        body = self._turn_handoff if outcome == "done" else (self._turn_last_text or self._turn_error or "")
+        self._post_report(outcome, body, close_after=(outcome == "done" and self.close_on_done))
+
+    def _post_report(self, tag: str, body: str, close_after: bool) -> None:
+        board = self._board_session
+        if board is None:
+            self._conversation.append_error(
+                f"Board offline — could not report to {self.spawned_by}."
+            )
+            return
+        spawner, handle = self.spawned_by, self.handle
+        text = report_post(spawner, tag, body)
+        self._close_for_submission = self._submission_seq if close_after else None
+
+        def work() -> None:
+            try:
+                files: tuple = ()
+                if tag == "done":
+                    path = DAGI_ROOT / ".dagi" / "temp" / "peers" / handle / f"handoff_{handle}.md"
+                    path.parent.mkdir(parents=True, exist_ok=True)
+                    path.write_text(body, encoding="utf-8")
+                    files = (path,)
+                board.post(text, files=files)
+            except Exception as exc:
+                self._invoke_on_main(
+                    "_report_failed_slot", f"Could not report to {spawner}: {exc}"
+                )
+                return
+            if close_after:
+                self._invoke_on_main("_close_after_done_slot")
+
+        self.win._board_controller._run_worker(work, "peer-report")
+
+    @Slot(str)
+    def _report_failed_slot(self, text: str) -> None:
+        """The spawner never got the report: keep this peer and never evict it."""
+        self.last_outcome = "unreported"
+        self._close_for_submission = None
+        self._conversation.append_error(text)
+
+    @Slot()
+    def _close_after_done_slot(self) -> None:
+        """close_on_done: close only if no newer turn started since the clean done."""
+        if self._close_for_submission != self._submission_seq or self.last_outcome != "done":
+            return
+        if self.busy:  # the finished turn's worker thread is still exiting
+            QTimer.singleShot(50, self._close_after_done_slot)
+            return
+        self.win._agents.close_agent(self.handle)
 
     @Slot()
     def _clear_pending_ask_slot(self) -> None:

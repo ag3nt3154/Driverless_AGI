@@ -52,6 +52,9 @@ class StubSession(AgentSession):
         self.last_outcome: str | None = None
         self._turn_handoff: str | None = None
         self._turn_done_seen = False
+        self._turn_error: str | None = None
+        self._turn_last_text: str = ""
+        self._close_for_submission = None
         self.status = "idle"
         self.running = False
         self._last_tokens = None

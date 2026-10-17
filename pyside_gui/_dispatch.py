@@ -239,6 +239,8 @@ def agent_work(win, task: str | UserSubmission, callbacks: object, loop_ref: lis
             except Exception: pass
         win._invoke_on_main("_clear_pending_ask_slot")
         log("finally: idle"); win._invoke_on_main("_set_status_slot", "idle")
+        if hasattr(win, "_turn_finished_slot"):
+            win._invoke_on_main("_turn_finished_slot")
         win._invoke_on_main("_enable_input_slot")
         queue = getattr(win, "_steer_queue", None)
         if queue is not None:
@@ -284,6 +286,8 @@ def on_stream_ended(win, stream_text: str, stream_reasoning: str) -> None:
         win._stream_had_reasoning = True
     if text:
         win._stream_had_content = True
+        if hasattr(win, "_turn_last_text"):
+            win._turn_last_text = text
     win._conversation.stream_end(text)
     win._streaming_active = False
 
