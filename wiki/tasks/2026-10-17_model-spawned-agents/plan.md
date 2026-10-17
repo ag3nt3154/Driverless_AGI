@@ -159,7 +159,7 @@ FastAPI board service (tests only), pytest + local `qtbot` (`pyside_gui/tests/co
 
 ---
 
-### Subtask 5: Peer state on `AgentSession` and `AgentsController.spawn_peer` (D7, D11)
+### Subtask 5: Peer state on `AgentSession` and `AgentsController.spawn_peer` (D7, D11) ✅ (`8eb197d0`)
 
 **Goal:** Create model-spawned peers on the GUI thread, with limit and eviction.
 **Requirements:**
@@ -309,7 +309,7 @@ Use `StubSession` with `spawned_by="main_11112222"`, a fake `_board_session` tha
 - **Task folder:** `wiki/tasks/2026-10-17_model-spawned-agents/`
 
 ## Overall Status
-In Progress — Subtasks 1–4 done; Subtask 5 next
+In Progress — Subtasks 1–5 done; Subtask 6 next
 
 ## Notes
 - Hook points found during exploration:
@@ -330,6 +330,7 @@ In Progress — Subtasks 1–4 done; Subtask 5 next
 - **Subtask 2, attempt 1:** PASS. Main agent also added `board_members` to `config.example.yaml` board-tools comment and `pyside_gui/tool_labels.py`. Note: the offline-member test back-dates `last_seen` through `store._conn` (works; `_clock` monkeypatch in `tests/message_board/test_store.py:485` is the cleaner pattern).
 - **Subtask 3, attempt 1:** PASS. Note: the v2 inherited fork (`agent/inherited_registry.py:42-54`, used by compaction) copies the parent's tool schemas, so a forked child sees the `spawn_agent` schema, but `allowed_names` blocks execution (same as other frontend tools). No capability leaks.
 - **Subtask 4, attempt 1:** ESCALATE — `report_post` let a 501–680-char body through uncut, which breaks the D12 ≤500 head. -> Main agent fixed it: the head is always cut to 500 + `…`, `active_notice` reuses `_word`, and the Qt guard is now a subprocess `sys.modules` check. **Attempt 2:** PASS.
+- **Subtask 5, attempt 1:** ESCALATE — eviction ran before slug and model-config validation, so a failed spawn could close a peer for nothing. -> Main agent split `_create` into `_validate` (no side effects) + `_build`. `spawn_peer` now validates first, then evicts, then builds. The regression test `test_failed_spawn_at_the_limit_closes_no_peer` fails on the old order. **Attempt 2:** PASS. Edge: a new slug equal to the victim's slug is refused as a duplicate (accepted: the model can follow up with that peer instead).
 
 ## Verification
 1. Unit + GUI suites (unsandboxed):
