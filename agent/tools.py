@@ -218,6 +218,9 @@ def _register_frontend_tools(
     if callbacks.on_show_file is not None:
         from tools.show_file import ShowFileTool
         reg.register(ShowFileTool(on_show_file=callbacks.on_show_file, project_path=project_path))
+    if callbacks.spawn_agent is not None:
+        from tools.spawn_agent import SpawnAgentTool
+        reg.register(SpawnAgentTool(spawn=callbacks.spawn_agent))
 
 
 def _ask_user_tool(config: "AgentConfig | None", callbacks: "AgentCallbacks | None") -> BaseTool:
@@ -387,6 +390,7 @@ KNOWN_TOOL_NAMES: tuple[str, ...] = (
     "reload_skills",
     "read_board", "post_board", "fetch_attachment", "board_members",  # callbacks.board
     "show_file",  # callbacks.on_show_file
+    "spawn_agent",  # callbacks.spawn_agent
     "read_notepad",
     # _register_fallback_tools (no config; then `skill` below)
     "web_search", "web_fetch",

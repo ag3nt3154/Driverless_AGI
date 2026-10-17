@@ -214,6 +214,8 @@ class AgentCallbacks:
     on_assistant_text_delta: Callable[[str], None] = field(default=lambda t: None)
     on_reasoning_delta:      Callable[[str], None] = field(default=lambda t: None)
     board: "BoardSession | None" = None
+    # GUI main agent only: (slug, task, close_on_done) -> result text. None everywhere else.
+    spawn_agent: "Callable[[str, str, bool], str] | None" = None
     # Show file in the GUI viewer (path, optional line number)
     on_show_file: Callable[[str, int | None], None] = field(
         default=lambda path, line: None

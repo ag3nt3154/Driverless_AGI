@@ -87,6 +87,21 @@ def test_full_interactive_config_order(tmp_path):
     ]
 
 
+def test_spawn_agent_tool_follows_show_file_when_callback_set(tmp_path):
+    config = _config(tmp_path, advanced_config=object())
+    callbacks = AgentCallbacks(spawn_agent=lambda slug, task, close_on_done: "")
+
+    names = _names(config, tmp_path, callbacks=callbacks, skill_roots=[tmp_path])
+
+    assert names == _FILE_TOOLS + _SESSION_TOOLS + [
+        "switch_model", "reload_skills", "show_file", "spawn_agent", "read_notepad",
+        "spawn_alpha", "spawn_beta", "extend_subagent_timeout", "project_x",
+        "skill", "run_skill_script",
+        "schedule_task", "list_scheduled_tasks", "remove_scheduled_task",
+        "write_handoff",
+    ]
+
+
 def test_autonomous_without_callbacks_hides_interactive_tools(tmp_path):
     names = _names(_config(tmp_path, autonomous=True), tmp_path)
 
@@ -200,7 +215,7 @@ def test_known_tool_names_match_registry(tmp_path):
     """KNOWN_TOOL_NAMES (the Settings checklist catalog) lists exactly the built-in
     names any feature combination can register; discovered subagent and project
     tools are excluded."""
-    callbacks = AgentCallbacks(board=MagicMock())
+    callbacks = AgentCallbacks(board=MagicMock(), spawn_agent=lambda slug, task, close_on_done: "")
     kwargs = dict(callbacks=callbacks, skill_roots=[tmp_path])
     maximal = _config(tmp_path, code_mode=True, computer_use=True, advanced_config=object())
     fakes = {"spawn_alpha", "spawn_beta", "project_x"}
