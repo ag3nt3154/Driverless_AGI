@@ -30,6 +30,8 @@ _LABELS: dict[str, tuple[str, tuple[str, ...]]] = {
     "post_board": ("Posted", ("text",)),
     "read_board": ("Read board", ()),
     "fetch_attachment": ("Fetched", ("attachment_id",)),
+    "board_members": ("Board members", ()),
+    "spawn_agent": ("Spawned", ("slug",)),
     "switch_model": ("Switched model to", ("model", "model_id")),
     "create_plan": ("Created a plan", ()),
     "show_plan": ("Showed the plan", ()),

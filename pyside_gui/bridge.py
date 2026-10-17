@@ -141,6 +141,7 @@ class AgentBridge(QObject):
         self,
         loop_ref: list | None = None,
         board=None,
+        spawn_agent=None,
     ) -> AgentCallbacks:
         stats = self._stats
 
@@ -245,4 +246,5 @@ class AgentBridge(QObject):
             on_flush_notepad=self._flush_notepad,
             on_user_injected=self.user_injected.emit,
             board=board,
+            spawn_agent=spawn_agent,
         )

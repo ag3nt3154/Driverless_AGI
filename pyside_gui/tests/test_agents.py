@@ -42,6 +42,7 @@ class FakeWindow(QObject):
         self._active = None
         self.chrome = stub_window(_active=None)
         main = self.add_session(None, Path("C:/work"), "main")
+        main._board_session = SimpleNamespace(handle="main_11112222")
         self._activate(main)
         self.titles = 0
 
@@ -52,7 +53,8 @@ class FakeWindow(QObject):
     def add_session(self, config, project_path, handle):
         session = StubSession(self.chrome, active=False, handle=handle)
         session._project_path = project_path
-        session._config = SimpleNamespace(model_id="m", display_name="M", project_path=None)
+        session._config = SimpleNamespace(model_id="m", display_name="M", project_path=None,
+                                           max_spawned_agents=4)
         session.show_welcome = MagicMock()
         self._sessions.append(session)
         return session
@@ -223,6 +225,107 @@ def test_real_window_routes_prompt_to_active_agent_and_streams_background_turn(
     assert seen == [(helper._conversation, "echo: hello")]
     qtbot.waitUntil(lambda: not helper.busy, timeout=10000)
     window.close()
+
+
+def test_spawn_peer_does_not_activate_and_records_spawner(setup):
+    window, controller = setup
+    peer = controller.spawn_peer("fixer", True, "main_11112222")
+    assert window._active is window._main
+    assert peer.spawned_by == "main_11112222"
+    assert peer.close_on_done is True
+    assert window._board_controller.added[-1] == peer.handle
+
+
+def test_spawn_peer_evicts_lru_idle_done_peer(setup):
+    window, controller = setup
+    window._main._config.max_spawned_agents = 2
+    first = controller.spawn_peer("fixer", False, "main_11112222")
+    first.last_outcome = "done"
+    first.last_active = 100.0
+    second = controller.spawn_peer("docs", False, "main_11112222")
+    second.last_outcome = "done"
+    second.last_active = 200.0
+
+    third = controller.spawn_peer("probe", False, "main_11112222")
+
+    assert first not in window._sessions
+    assert second in window._sessions
+    assert not isinstance(third, str) and third in window._sessions
+    window._main._conversation.append_info.assert_any_call(
+        f"Closed idle peer {first.handle} to make room (max_spawned_agents=2).")
+
+
+def test_spawn_peer_refuses_when_no_peer_is_evictable(setup):
+    window, controller = setup
+    window._main._config.max_spawned_agents = 2
+    running = controller.spawn_peer("fixer", False, "main_11112222")
+    running._worker = SimpleNamespace(is_alive=lambda: True)
+    running._current_loop_ref = [SimpleNamespace(is_paused=False)]
+    erroring = controller.spawn_peer("docs", False, "main_11112222")
+    erroring.last_outcome = "error"
+    before = len(window._sessions)
+
+    result = controller.spawn_peer("probe", False, "main_11112222")
+
+    assert isinstance(result, str) and result.startswith("Error: 2 spawned agents are open")
+    assert len(window._sessions) == before
+
+
+def test_paused_peer_is_not_evicted(setup):
+    window, controller = setup
+    window._main._config.max_spawned_agents = 1
+    paused = controller.spawn_peer("fixer", False, "main_11112222")
+    paused._worker = SimpleNamespace(is_alive=lambda: True)
+    paused._current_loop_ref = [SimpleNamespace(is_paused=True)]
+    paused.last_outcome = "done"
+
+    result = controller.spawn_peer("docs", False, "main_11112222")
+
+    assert isinstance(result, str) and result.startswith("Error: 1 spawned agents are open")
+    assert paused in window._sessions
+
+
+def test_user_spawned_agents_do_not_count_toward_limit(setup):
+    window, controller = setup
+    window._main._config.max_spawned_agents = 1
+    user_agent = controller.spawn("helper")
+
+    peer = controller.spawn_peer("fixer", False, "main_11112222")
+
+    assert not isinstance(peer, str)
+    assert peer in window._sessions and user_agent in window._sessions
+
+
+def test_failed_spawn_at_the_limit_closes_no_peer(setup, monkeypatch):
+    window, controller = setup
+    window._main._config.max_spawned_agents = 1
+    done = controller.spawn_peer("fixer", False, "main_11112222")
+    done.last_outcome = "done"
+
+    duplicate = controller.spawn_peer("fixer", False, "main_11112222")
+    monkeypatch.setattr("agent.config_loader.resolve_model_config",
+                        lambda *a, **k: (_ for _ in ()).throw(RuntimeError("bad model")))
+    broken = controller.spawn_peer("probe", False, "main_11112222")
+
+    assert duplicate.startswith("Error: ") and broken.startswith("Error: Cannot spawn probe")
+    assert done in window._sessions and controller._retired == []
+
+
+def test_spawn_peer_needs_the_board(setup):
+    window, controller = setup
+    window._main._board_session = None
+    before = len(window._sessions)
+
+    result = controller.spawn_peer("fixer", False, "main_11112222")
+
+    assert isinstance(result, str) and result.startswith("Error: the message board is offline")
+    assert len(window._sessions) == before
+
+
+def test_user_spawn_still_activates(setup):
+    window, controller = setup
+    helper = controller.spawn("helper")
+    assert window._active is helper
 
 
 def test_agents_is_the_second_rail_view():

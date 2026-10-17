@@ -8,10 +8,15 @@ Driverless AGI (dagi) is a Python agentic coding assistant with tool use, subage
 session persistence, and multi-UI support (TUI, PySide desktop, Telegram).
 The message board is a standalone browser app; the desktop GUI shows a read-only feed and owns a
 private throwaway board only while the configured central board is unavailable.
+In the GUI, the main agent can also `spawn_agent` visible, steerable peer agents that take tasks
+and report results over the board; typed subagents stay the headless/isolated path
+([wiki](wiki/model-spawned-gui-peers.md)).
 
 ## Rules
 
 - Knowledge (architecture, decisions, errors, notes, todos) goes to `wiki`, including `tasks/` (specs and plans).
+- ESC / pause only pauses the targeted agent: no board posts, wake-ups, closes or cascades;
+  only user-facing info/displays may be added ([wiki](wiki/esc-pause-only-pauses.md)).
 
 ### Behavioral guidelines
 
@@ -41,6 +46,7 @@ private throwaway board only while the configured central board is unavailable.
 - Tests: `C:\Users\alexr\miniconda3\envs\dagi\python.exe -u -m pytest -q -p no:pytest-qt`.
   `conda run` fully buffers stdout when not on a TTY (looks like a hang) — call the env's
   interpreter directly with `-u`. pytest-qt must be disabled as `-p no:pytest-qt` (not `no:qt`).
+  `testpaths = ["tests"]`: a bare run skips the GUI suite; also run `pyside_gui/tests` (unsandboxed).
 - Hooks use `envs/dagi/python.exe` directly (`conda run` drops stdin).
 - RPA desktop tests (`desktop` marker; real UI, global keyboard hook) are skipped unless
   `DAGI_DESKTOP_TESTS=1`; run them unsandboxed and only with the Admiral's consent.

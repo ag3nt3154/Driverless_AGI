@@ -206,7 +206,7 @@ def _register_frontend_tools(
     if callbacks is None:
         return
     if callbacks.board is not None:
-        from tools.board import FetchAttachmentTool, PostBoardTool, ReadBoardTool
+        from tools.board import BoardMembersTool, FetchAttachmentTool, PostBoardTool, ReadBoardTool
         board = callbacks.board
         reg.register(ReadBoardTool(session=board))
         reg.register(PostBoardTool(session=board,
@@ -214,9 +214,13 @@ def _register_frontend_tools(
                                   cwd=cwd, allowed_roots=roots))
         reg.register(FetchAttachmentTool(session=board, cwd=cwd, allowed_roots=roots,
                                          image_reader=image_reader))
+        reg.register(BoardMembersTool(session=board))
     if callbacks.on_show_file is not None:
         from tools.show_file import ShowFileTool
         reg.register(ShowFileTool(on_show_file=callbacks.on_show_file, project_path=project_path))
+    if callbacks.spawn_agent is not None:
+        from tools.spawn_agent import SpawnAgentTool
+        reg.register(SpawnAgentTool(spawn=callbacks.spawn_agent))
 
 
 def _ask_user_tool(config: "AgentConfig | None", callbacks: "AgentCallbacks | None") -> BaseTool:
@@ -384,8 +388,9 @@ KNOWN_TOOL_NAMES: tuple[str, ...] = (
     "set_active_plan", "check_active_plan", "update_task_status", "ask_user",
     "switch_model",  # worker or advanced tier configured
     "reload_skills",
-    "read_board", "post_board", "fetch_attachment",  # callbacks.board
+    "read_board", "post_board", "fetch_attachment", "board_members",  # callbacks.board
     "show_file",  # callbacks.on_show_file
+    "spawn_agent",  # callbacks.spawn_agent
     "read_notepad",
     # _register_fallback_tools (no config; then `skill` below)
     "web_search", "web_fetch",

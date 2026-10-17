@@ -63,10 +63,11 @@ def _online(session) -> list[str] | None:
     return sorted(handles, key=lambda handle: handle != session.handle)
 
 
-def _members_text(handles: list[str], me: str) -> str:
-    names = [f"{h} (you)" if h == me else h for h in handles[:_MAX_LISTED]]
-    if len(handles) > _MAX_LISTED:
-        names.append(f"+{len(handles) - _MAX_LISTED} more")
+def _members_text(handles: list[str], me: str, *, limit: int | None = _MAX_LISTED) -> str:
+    shown = handles if limit is None else handles[:limit]
+    names = [f"{h} (you)" if h == me else h for h in shown]
+    if limit is not None and len(handles) > limit:
+        names.append(f"+{len(handles) - limit} more")
     return ", ".join(names) or "none"
 
 
@@ -134,6 +135,25 @@ class ReadBoardTool(BaseTool):
         if len(posts) == limit:
             result += "\nMore posts may be waiting — call read_board again."
         return result
+
+
+class BoardMembersTool(BaseTool):
+    name = "board_members"
+    description = (
+        "List the handles of members online on the message board now. Use a full handle to "
+        "@mention one. Presence lags by up to about 30 seconds."
+    )
+    _parameters = {"type": "object", "properties": {}}
+
+    def __init__(self, *, session):
+        self._session = session
+
+    def run(self) -> str:
+        online = _online(self._session)
+        if online is None:
+            return "Error: the message board is not reachable right now."
+        me = self._session.handle
+        return f"You are {me}. Online members: {_members_text(online, me, limit=None)}."
 
 
 def _post_files(paths, cwd: Path, roots) -> list[Path]:

@@ -295,6 +295,7 @@ def _build_config_from_entry(
     max_output_tokens: int | None = int(_mot) if _mot is not None else None
     null_response_retries = int(raw.get("null_response_retries", 3))
     max_continuations = int(raw.get("max_continuations", 10))
+    max_spawned_agents = int(raw.get("max_spawned_agents", 4))
     api_error_retries = int(raw.get("api_error_retries", 3))
     thinking = entry.get("thinking") or raw.get("thinking", "none") or "none"
 
@@ -350,6 +351,7 @@ def _build_config_from_entry(
         truncate_edge_chars=truncate_edge_chars,
         null_response_retries=null_response_retries,
         max_continuations=max_continuations,
+        max_spawned_agents=max_spawned_agents,
         api_error_retries=api_error_retries,
         memory_root=memory_root,
         cache_prompt=_flag(entry, raw, "cache_prompt"),

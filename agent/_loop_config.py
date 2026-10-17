@@ -67,6 +67,9 @@ class AgentConfig:
     model_id: str = ""
     # Continuation: max times the harness injects "continue" before giving up
     max_continuations: int = 10
+    # GUI only: max open model-spawned peer agents; at the limit the LRU idle
+    # done peer is closed.
+    max_spawned_agents: int = 4
     # Ghost-response retries: how many times to silently retry an API call that
     # returns content=None with zero token usage before surfacing an error.
     null_response_retries: int = 3
@@ -211,6 +214,8 @@ class AgentCallbacks:
     on_assistant_text_delta: Callable[[str], None] = field(default=lambda t: None)
     on_reasoning_delta:      Callable[[str], None] = field(default=lambda t: None)
     board: "BoardSession | None" = None
+    # GUI main agent only: (slug, task, close_on_done) -> result text. None everywhere else.
+    spawn_agent: "Callable[[str, str, bool], str] | None" = None
     # Show file in the GUI viewer (path, optional line number)
     on_show_file: Callable[[str, int | None], None] = field(
         default=lambda path, line: None
