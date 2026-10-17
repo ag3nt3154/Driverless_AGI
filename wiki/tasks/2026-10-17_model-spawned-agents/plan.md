@@ -309,7 +309,7 @@ Use `StubSession` with `spawned_by="main_11112222"`, a fake `_board_session` tha
 - **Task folder:** `wiki/tasks/2026-10-17_model-spawned-agents/`
 
 ## Overall Status
-Verification — Subtasks 1–8 done; integrated verification next
+Verification — Subtasks 1–8 done. Automated verification passed: full suite 2605 passed, 27 skipped, 0 failed (2026-10-17). Manual GUI check (Verification step 3) waits for the Admiral.
 
 ## Notes
 - Hook points found during exploration:
@@ -343,4 +343,4 @@ Verification — Subtasks 1–8 done; integrated verification next
 3. Manual GUI check (Admiral): start the GUI with a board. Ask main to "spawn a peer `probe` that writes a one-line handoff". See the row in Agents, the `[task]` post, then the `[done]` post with `handoff_probe_….md`, and main waking on it. Repeat with `close_on_done=true`, and the row disappears. Press ESC on main while a peer runs, and the notice line appears.
 
 ## Next Action
-Admiral reviews and approves this plan. Then commit it as `plan: approve plan` and start Subtask 1 with `deliver`.
+The Admiral runs the manual GUI check (Verification step 3), then decides whether to merge `task/model-spawned-agents` into `main`.
