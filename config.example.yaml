@@ -56,6 +56,12 @@ max_continuations: 10   # Maximum number of times the harness auto-injects "cont
                         # value allows longer uninterrupted tool chains; a lower value
                         # surfaces stalled tasks sooner. Resets per run() call.
 
+max_spawned_agents: 4   # GUI only. Max open peer agents spawned by the model with
+                        # spawn_agent (counts only those, not user-spawned agents). At
+                        # the limit, the least-recently-active idle peer that finished
+                        # with write_handoff is closed; if none can be closed,
+                        # spawn_agent returns an error.
+
 null_response_retries: 3  # How many times to silently retry an API call that returns
                           # an empty/null response (HTTP 200 but content=None, usage=None).
                           # Increase for flaky providers (e.g. 5). Each retry replays the

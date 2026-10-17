@@ -67,6 +67,9 @@ class AgentConfig:
     model_id: str = ""
     # Continuation: max times the harness injects "continue" before giving up
     max_continuations: int = 10
+    # GUI only: max open model-spawned peer agents; at the limit the LRU idle
+    # done peer is closed.
+    max_spawned_agents: int = 4
     # Ghost-response retries: how many times to silently retry an API call that
     # returns content=None with zero token usage before surfacing an error.
     null_response_retries: int = 3

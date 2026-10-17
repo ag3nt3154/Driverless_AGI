@@ -74,7 +74,7 @@ def tool_catalog(dagi_root: Path = DAGI_ROOT) -> list[str]:
 
 _POSITIVE_INT_KEYS = (
     "context_window", "keep_recent_tokens", "reserve_tokens", "max_output_tokens",
-    "max_continuations", "truncate_edge_chars",
+    "max_continuations", "truncate_edge_chars", "max_spawned_agents",
 )
 _NON_NEGATIVE_INT_KEYS = ("null_response_retries", "api_error_retries")
 _NULLABLE_KEYS = {"max_output_tokens"}  # null = no output cap (loader default)

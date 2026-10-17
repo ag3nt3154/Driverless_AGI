@@ -743,7 +743,7 @@ def test_validate_leaves_no_temp_file(vdoc):
 
 @pytest.mark.parametrize("key", [
     "context_window", "keep_recent_tokens", "reserve_tokens", "max_output_tokens",
-    "max_continuations", "truncate_edge_chars",
+    "max_continuations", "truncate_edge_chars", "max_spawned_agents",
 ])
 @pytest.mark.parametrize("value", [0, -5, "big", 1.5, True])
 def test_non_positive_int_is_an_error(vdoc, key, value):
