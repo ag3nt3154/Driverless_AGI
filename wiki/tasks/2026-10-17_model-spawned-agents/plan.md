@@ -99,7 +99,7 @@ FastAPI board service (tests only), pytest + local `qtbot` (`pyside_gui/tests/co
 
 ---
 
-### Subtask 3: `spawn_agent` tool and callback seam (D1, D2, D3, D6)
+### Subtask 3: `spawn_agent` tool and callback seam (D1, D2, D3, D6) ✅ (`89bbbd6a`)
 
 **Goal:** Add a frontend-gated `spawn_agent` tool that forwards to `AgentCallbacks.spawn_agent`.
 **Requirements:**
@@ -309,7 +309,7 @@ Use `StubSession` with `spawned_by="main_11112222"`, a fake `_board_session` tha
 - **Task folder:** `wiki/tasks/2026-10-17_model-spawned-agents/`
 
 ## Overall Status
-In Progress — Subtasks 1–2 done; Subtask 3 next
+In Progress — Subtasks 1–3 done; Subtask 4 next
 
 ## Notes
 - Hook points found during exploration:
@@ -328,6 +328,7 @@ In Progress — Subtasks 1–2 done; Subtask 3 next
 ## Attempts and Resolutions
 - **Subtask 1, attempt 1:** PASS. Note: `pyside_gui/sidebars/settings_view.py:79-85` `_SPIN_FIELDS` is a curated subset (no `max_continuations` either), so the new key is not added to the Settings tab.
 - **Subtask 2, attempt 1:** PASS. Main agent also added `board_members` to `config.example.yaml` board-tools comment and `pyside_gui/tool_labels.py`. Note: the offline-member test back-dates `last_seen` through `store._conn` (works; `_clock` monkeypatch in `tests/message_board/test_store.py:485` is the cleaner pattern).
+- **Subtask 3, attempt 1:** PASS. Note: the v2 inherited fork (`agent/inherited_registry.py:42-54`, used by compaction) copies the parent's tool schemas, so a forked child sees the `spawn_agent` schema, but `allowed_names` blocks execution (same as other frontend tools). No capability leaks.
 
 ## Verification
 1. Unit + GUI suites (unsandboxed):
