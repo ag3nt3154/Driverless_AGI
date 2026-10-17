@@ -235,7 +235,7 @@ Extend `FakeWindow`: `_main._config.max_spawned_agents`, `_main._board_session =
 
 ---
 
-### Subtask 7: Peer turn-end reporting and `close_on_done` (D4, D5, D12)
+### Subtask 7: Peer turn-end reporting and `close_on_done` (D4, D5, D12) ✅ (`855db6ee`)
 
 **Goal:** When a peer's turn ends, or a server error pauses it, post a report to its spawner, and close the peer after a clean `done` if it was asked to. ESC posts nothing (D14).
 **Requirements:**
@@ -309,7 +309,7 @@ Use `StubSession` with `spawned_by="main_11112222"`, a fake `_board_session` tha
 - **Task folder:** `wiki/tasks/2026-10-17_model-spawned-agents/`
 
 ## Overall Status
-In Progress — Subtasks 1–6 done; Subtask 7 next
+In Progress — Subtasks 1–7 done; Subtask 8 next
 
 ## Notes
 - Hook points found during exploration:
@@ -332,6 +332,7 @@ In Progress — Subtasks 1–6 done; Subtask 7 next
 - **Subtask 4, attempt 1:** ESCALATE — `report_post` let a 501–680-char body through uncut, which breaks the D12 ≤500 head. -> Main agent fixed it: the head is always cut to 500 + `…`, `active_notice` reuses `_word`, and the Qt guard is now a subprocess `sys.modules` check. **Attempt 2:** PASS.
 - **Subtask 5, attempt 1:** ESCALATE — eviction ran before slug and model-config validation, so a failed spawn could close a peer for nothing. -> Main agent split `_create` into `_validate` (no side effects) + `_build`. `spawn_peer` now validates first, then evicts, then builds. The regression test `test_failed_spawn_at_the_limit_closes_no_peer` fails on the old order. **Attempt 2:** PASS. Edge: a new slug equal to the victim's slug is refused as a duplicate (accepted: the model can follow up with that peer instead).
 - **Subtask 6, attempt 1:** ESCALATE — after the 15 s timeout, the queued GUI call could still create a peer with no task. -> Main agent added `future.cancel()` on timeout and a `set_running_or_notify_cancel()` guard in `_spawn_on_main`. If the spawn has already started, the worker waits for the real result. The regression test `test_late_spawn_after_timeout_creates_no_peer` fails without the guard. **Attempt 2:** PASS. Accepted deviations: `Q_ARG("QVariant")`/`@Slot("QVariant")` (PySide6 has no QMetaType for `object`); the spawner falls back to `self.handle` only when the main board is `None`, and then `spawn_peer` refuses anyway. Unrelated flake: `test_settings_view.py::test_real_watcher_sees_atomic_replace` ([[qfilesystemwatcher-dir-watch-breaks-os-replace]]).
+- **Subtask 7, attempt 1:** ESCALATE — (1) a pending close_on_done could close a peer after a newer turn had failed; (2) a failed handoff-file write was not reported. -> Main agent added a `_close_for_submission` guard against `_submission_seq` (generation check). The file write moved inside the post try. A failed report sets `last_outcome = "unreported"` (never evictable). Both regression tests fail on the old code. **Attempt 2:** PASS.
 
 ## Verification
 1. Unit + GUI suites (unsandboxed):
