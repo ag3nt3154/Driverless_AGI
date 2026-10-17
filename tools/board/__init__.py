@@ -1,3 +1,3 @@
-from ._board import FetchAttachmentTool, PostBoardTool, ReadBoardTool
+from ._board import BoardMembersTool, FetchAttachmentTool, PostBoardTool, ReadBoardTool
 
-__all__ = ["ReadBoardTool", "PostBoardTool", "FetchAttachmentTool"]
+__all__ = ["ReadBoardTool", "PostBoardTool", "FetchAttachmentTool", "BoardMembersTool"]

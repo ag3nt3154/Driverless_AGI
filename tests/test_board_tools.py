@@ -11,7 +11,7 @@ from agent.board_client import BoardClient, BoardError, BoardSession
 from agent.registry import ToolRegistry
 from services.message_board.app import create_app
 from services.message_board.store import BoardStore, MAX_ATTACHMENT
-from tools.board import FetchAttachmentTool, PostBoardTool, ReadBoardTool
+from tools.board import BoardMembersTool, FetchAttachmentTool, PostBoardTool, ReadBoardTool
 from tools.board._board import format_post, human_size
 
 A = "main_3f9a1c2e"
@@ -41,7 +41,9 @@ def tools(tmp_path):
                               read=ReadBoardTool(session=session),
                               fetch=FetchAttachmentTool(session=session, cwd=project,
                                                         allowed_roots=[project]),
-                              session=session, project=project, memes=memes, requests=requests)
+                              members=BoardMembersTool(session=session),
+                              session=session, project=project, memes=memes, requests=requests,
+                              store=store)
     store.close()
 
 
@@ -309,3 +311,35 @@ def test_member_lookup_failure_never_fails_post_or_read(tools):
 def test_warning_falls_back_to_an_example_handle_when_alone(tools):
     result = tools.post.run(text="@worker hi")
     assert result.endswith("e.g. @worker_1a2b3c4d.")
+
+
+def test_board_members_lists_online_handles_only(tools):
+    from datetime import datetime, timedelta, timezone
+
+    tools.session.client.register(W, "agent", key="w" * 43)
+    X = "worker_0ffab1de"
+    tools.session.client.register(X, "agent", key="x" * 43)
+    stale = (datetime.now(timezone.utc) - timedelta(seconds=200)).isoformat(
+        timespec="seconds").replace("+00:00", "Z")
+    tools.store._conn.execute("UPDATE members SET last_seen=? WHERE handle=?", (stale, X))
+
+    assert tools.members.run() == (
+        f"You are {A}. Online members: {A} (you), board-admin, {W}.")
+
+
+def test_board_members_reports_unreachable_board(tools):
+    def fail():
+        raise BoardError("UNREACHABLE", "down")
+    tools.session.client.members = fail
+    assert tools.members.run() == "Error: the message board is not reachable right now."
+
+
+def test_registry_registers_board_members_only_with_a_board(tmp_path):
+    from agent._loop_config import AgentCallbacks
+    from agent.tools import create_tool_registry
+
+    reg = create_tool_registry(cwd=tmp_path, callbacks=AgentCallbacks(board=object()))
+    assert reg.get("board_members") is not None
+
+    reg_without = create_tool_registry(cwd=tmp_path, callbacks=AgentCallbacks())
+    assert reg_without.get("board_members") is None

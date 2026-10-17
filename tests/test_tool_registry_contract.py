@@ -173,7 +173,8 @@ def test_computer_use_with_code_mode_puts_ui_tools_after_code(tmp_path):
 def test_board_tools_take_emote_slot_before_show_file(tmp_path):
     names = _names(_config(tmp_path), tmp_path, callbacks=AgentCallbacks(board=MagicMock()))
     assert names == _FILE_TOOLS + _SESSION_TOOLS + [
-        "reload_skills", "read_board", "post_board", "fetch_attachment", "show_file",
+        "reload_skills", "read_board", "post_board", "fetch_attachment", "board_members",
+        "show_file",
         "read_notepad", "spawn_alpha", "spawn_beta", "extend_subagent_timeout", "project_x",
         "schedule_task", "list_scheduled_tasks", "remove_scheduled_task", "write_handoff",
     ]
