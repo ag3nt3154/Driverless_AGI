@@ -309,7 +309,7 @@ Use `StubSession` with `spawned_by="main_11112222"`, a fake `_board_session` tha
 - **Task folder:** `wiki/tasks/2026-10-17_model-spawned-agents/`
 
 ## Overall Status
-Verification — Subtasks 1–8 done. Automated verification passed (2026-10-17): `tests/` 2605 passed, 27 skipped; `pyside_gui/tests` 488 passed (run separately: `testpaths = ["tests"]` does not collect it). Manual GUI check done by the Admiral: the feature works, but there were too many posting rounds (7 posts for one task). A prompt-only fix followed, see Attempts.
+Complete — merged into `main` as `db4dd59b` (2026-10-17). Post-merge: `tests/` 2605 passed, 27 skipped; `pyside_gui/tests` 488 passed.
 
 ## Notes
 - Hook points found during exploration:
@@ -344,4 +344,4 @@ Verification — Subtasks 1–8 done. Automated verification passed (2026-10-17)
 3. Manual GUI check (Admiral): start the GUI with a board. Ask main to "spawn a peer `probe` that writes a one-line handoff". See the row in Agents, the `[task]` post, then the `[done]` post with `handoff_probe_….md`, and main waking on it. Repeat with `close_on_done=true`, and the row disappears. Press ESC on main while a peer runs, and the notice line appears.
 
 ## Next Action
-The Admiral runs the manual GUI check (Verification step 3), then decides whether to merge `task/model-spawned-agents` into `main`.
+None. The task is closed.
