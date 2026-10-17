@@ -56,10 +56,10 @@
     Add any future user-question tool (e.g. a revived `show_plan`) to `SOLO_TOOLS`.
   - `edit` takes an `edits` list for one file: in order, all-or-nothing, placeholder-tolerant.
 
-- **2026-10-16 review refresh on main.** See
-  [_CODEX_CODE_REVIEW_2026-10-16.md](_CODEX_CODE_REVIEW_2026-10-16.md) and
-  [_CODEX_SUGGESTIONS_2026-10-16.md](_CODEX_SUGGESTIONS_2026-10-16.md).
-  20 open findings; removed verified repairs R15/R17/R22/R27 and added R30.
+- **2026-10-17 review refresh on main.** See
+  [_CODEX_CODE_REVIEW_2026-10-17.md](_CODEX_CODE_REVIEW_2026-10-17.md) and
+  [_CODEX_SUGGESTIONS_2026-10-17.md](_CODEX_SUGGESTIONS_2026-10-17.md).
+  21 open findings; prior repairs stay excluded. No application changes since last review.
   - **P1 R23/R24:** failed/partial replay verifies whole workflows; concurrent YAML changes
     verify unexecuted content. Both still reproduce in scratch workflows.
   - **P1 R25/R26:** expectation timeout repeats mutations; cancellation releases the lock
@@ -68,16 +68,19 @@
     Controlled saves still lose accepted edits and return the wrong byte hash.
   - **P2 R29:** guard dirty Settings on quit; see existing unsaved-prompt wiki follow-up.
   - **P2 R30:** bind attachment jobs/completions to the source board and exact card identity.
-    A queued job fetched from a new client; an old future updated a new colliding-ID card.
+    October 16 probes routed a queued job/new client and an old future/new colliding-ID card.
+  - **P2 R31:** preserve child-process failure in improvement baseline/candidate runs;
+    the real wrapper exits 0 after child exit 7 if a session log exists.
   - R21 terminal close and R8 abandoned child metadata remain open.
   - R7 inventory: 256 production files, eight modules over 500 lines, six functions over 100.
-  - Focused checks: 332 distinct core tests passed after four sandbox failures passed
-    targeted unsandboxed reruns; 139 Qt tests passed. No live desktop/hook/provider.
+  - Focused checks: 390 tests passed. Scheduler/Telegram, RPA, config-save and runner
+    probes reproduce offline; the adapter probe needed a local socket outside the sandbox.
+    No Qt runtime checks today; no live desktop/hook/provider.
   Roadmap: 17 unbuilt extensions; S10/S16 retain only runtime preflight/evidence extensions
   beyond the shipped plan and intake contracts. Reports renamed in place; uncommitted.
 
 - **2026-10-02 automation review follow-ups.** The review covered `task/iteration-engine`
-  at `6917b131`. The running reports have since been renamed to the current October 16
+  at `6917b131`. The running reports have since been renamed to the current October 17
   files linked above; the October 2 observations remain historical. R2 and R6 are fixed (2026-10-05);
   R7's four targeted function refactors and R8/R9 are done; residuals and other findings
   are tracked in the current report.

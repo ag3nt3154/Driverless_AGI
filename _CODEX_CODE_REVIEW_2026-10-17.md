@@ -1,30 +1,30 @@
-# Dagi code review — 2026-10-16
+# Dagi code review — 2026-10-17
 
 ## Scope and priorities
 
-Reviewed **main**, revision **a53f6eabe9d684b884ec14c98aab3f8312d4abac**, from a clean checkout.
-During review, HEAD advanced to **cce300e862194fcb52e6af574e7a1ab5f387cf88** through
-two benchmark-planning wiki additions. Their diff changes no application or test code;
-the tested source revision above remains the basis for findings and runtime evidence.
-The October 15 report was edited in place and renamed. This report contains **20 open
-findings only**, verified against current source. Historical reproductions keep their dates.
-Today's changed-code review covers plan parsing/worker assignment, current skill examples,
-TODO improvement intake, board event delivery, configuration/board module extraction and
-context accounting. Shipped capabilities are excluded from proposed repairs.
+Reviewed **main**, revision **902a083b782a725f929d91719512d46119e52fa9**, from a clean checkout.
+All committed changes since the previous reviewed source `a53f6eab` are Markdown only;
+application, workflow and test code are unchanged. The October 16 report was edited in
+place and renamed. This report contains **21 open findings only**. No prior finding
+was resolved in this interval; repaired items remain excluded.
 
 Prioritize execution/verification truth and stop ownership (R4/R10/R16/R18/R21/R23/R24/R26),
-non-idempotent retries (R25), and Telegram routing/delivery (R11/R12). Protect Settings writes
-and drafts with R28/R29. R30 adds reproduced attachment provenance gaps across board switches.
-Today's offline probes reproduce five R23–R26 assertions, both R28 save races and both R30
-attachment boundaries. Fake drivers/clients, scratch YAML and offscreen widgets perform no
-real desktop input or provider requests.
+non-idempotent retries (R25), and Telegram routing/delivery (R11/R12). Protect Settings
+writes/drafts with R28/R29 and attachment provenance with R30. New **R31** concerns masked
+child-process failure in the existing self-improvement runner.
+
+October 17 verification: **390 tests passed**. Fresh offline probes reproduce scheduler
+startup/timeout/outcome/publication defects, two-process duplicate admission, Telegram
+handoff/dispatch/busy-state defects, five R23–R26 assertions, both R28 save races, and R31.
+No live provider, Telegram traffic, desktop input or user configuration was used.
+R18/R19/R21/R30 retain dated earlier runtime evidence plus current source inspection.
 
 ## R3 — P2: Record scheduler startup failures
 
 **Finding:** Initialization sits outside the per-task error boundary.
 
 **Issue:** [Startup](C:/Users/alexr/Driverless_AGI/scheduler/runner.py:93) constructs the
-tracker and loop after a config-only exception handler. October 8's injected loop constructor
+tracker and loop after a config-only exception handler. October 17's injected loop constructor
 failure escaped with zero recorded attempts. The due-task loop has no outer per-job boundary,
 so later jobs are interrupted. Tracker construction and finish can also escape by inspection.
 
@@ -38,7 +38,7 @@ through the real scheduler with fake execution.
 **Finding:** A scheduler timeout ends the wait while owned execution remains active.
 
 **Issue:** [Timeout handling](C:/Users/alexr/Driverless_AGI/scheduler/runner.py:111) joins a
-daemon thread, calls finish, then checks liveness. The October 8 controlled-worker probe reproduced
+daemon thread, calls finish, then checks liveness. The October 17 controlled-worker probe reproduced
 finish while live and a timeout record. The probe released and waited for its worker afterward.
 Real task tools can continue writing after finalization or during a later task.
 
@@ -91,7 +91,7 @@ elapsed waiting alone must not imply confirmed exit.
 **Finding:** Both adapters classify a normally returned terminal error as successful execution.
 
 **Issue:** [Scheduler execution](C:/Users/alexr/Driverless_AGI/scheduler/runner.py:102)
-selects success from liveness and Python exceptions. The October 8 real-loop probe with mocked null responses
+selects success from liveness and Python exceptions. The October 17 real-loop probe with mocked null responses
 ended with TURN_END error, while the scheduler recorded success and an empty summary.
 The [benchmark path](C:/Users/alexr/Driverless_AGI/benchmarks/dagi_eval/harness.py:171)
 likewise returned stats.error=None and timed_out=False for a real loop terminal error.
@@ -107,7 +107,7 @@ continuation limits, handoff and exceptions without classifying text prefixes.
 **Finding:** A tool-only completed handoff produces no Telegram message.
 
 **Issue:** [Callbacks](C:/Users/alexr/Driverless_AGI/tg/callbacks.py:88) discard on_done and
-tool results. October 8's real loop with these callbacks, fake bot and mocked provider returned
+tool results. October 17's real loop with these callbacks, fake bot and mocked provider returned
 FINAL REPORT with zero send_message calls. The defect is reproduced without Telegram traffic.
 
 **Suggested solution:** Deliver the final outcome and track already delivered text to avoid
@@ -120,7 +120,7 @@ text-only completion plus delivery failure. Keep uncertain remote delivery statu
 
 **Issue:** [Application setup](C:/Users/alexr/Driverless_AGI/tg/bot.py:58) uses sequential
 PTB dispatch; [the handler](C:/Users/alexr/Driverless_AGI/tg/bot.py:143) awaits the executor
-job. In the October 8 probe through the local PTB update fetcher, a synthetic answer was dispatched only after
+job. In the October 17 probe through the local PTB update fetcher, a synthetic answer was dispatched only after
 the waiting handler was released. Concurrency=1 and a blocking handler were confirmed.
 No network calls occurred.
 
@@ -134,7 +134,7 @@ through real dispatch with mocked delivery.
 **Finding:** Failure of optional typing notification leaves the session permanently busy.
 
 **Issue:** [_run_agent_task](C:/Users/alexr/Driverless_AGI/tg/bot.py:150) sets busy and awaits
-typing before entering try/finally. The October 8 typing-exception probe left busy=true; current ordering is unchanged. Finish
+typing before entering try/finally. The October 17 typing-exception probe left busy=true; current ordering is unchanged. Finish
 also precedes the busy reset by source inspection; finish failure was not separately injected.
 
 **Suggested solution:** Cover the full acquired lifetime with outer try/finally and reset
@@ -146,7 +146,7 @@ and preserve original error context. Test typing, finish and cancellation failur
 **Finding:** The scheduler records success before delivering the configured output file.
 
 **Issue:** [record_run](C:/Users/alexr/Driverless_AGI/scheduler/runner.py:127) precedes
-[publication](C:/Users/alexr/Driverless_AGI/scheduler/runner.py:129). The October 8 fake successful loop
+[publication](C:/Users/alexr/Driverless_AGI/scheduler/runner.py:129). The October 17 fake successful loop
 with an existing directory as output_file produced a success record followed by an
 uncaught PermissionError. No requested file was published. Interval advancement and later-job
 interruption follow this ordering; no external scheduled task was run.
@@ -162,7 +162,7 @@ Test unwritable destinations, replace failure and successful publication with re
 
 **Issue:** [main](C:/Users/alexr/Driverless_AGI/scheduler/runner.py:146) reads due times into
 each process and starts work without a claim or lock. [RunTracker](C:/Users/alexr/Driverless_AGI/scheduler/tracker.py:38)
-knows only completed attempts. On October 8, two actual Python processes invoking the real scheduler against
+knows only completed attempts. On October 17, two actual Python processes invoking the real scheduler against
 one temporary history both entered the same task before either finished, then wrote two success
 records. Provider execution was replaced with a controlled fake loop; the race is in scheduler
 admission. A later launch during a long task can duplicate tools and workspace changes. The
@@ -386,45 +386,66 @@ and exact card identity, then reject obsolete results before updating widgets. V
 downloaded content against the originating card's metadata. Add deterministic queued-job
 and late-completion switch regressions, including colliding IDs and normal current delivery.
 
+## R31 — P2: Preserve child failure in self-improvement test runs
+
+**Finding:** The improvement runner exits successfully after a failed child if a log exists.
+
+**Issue:** [run_test_task.run](C:/Users/alexr/Driverless_AGI/.dagi/workflow/improve-yourself/run_test_task.py:45)
+captures `subprocess.run`'s return code but checks it only when no new log exists.
+It otherwise returns the newest log, and [main](C:/Users/alexr/Driverless_AGI/.dagi/workflow/improve-yourself/run_test_task.py:84)
+prints `LOG:` and exits 0. October 17's real CLI probe used a scratch snapshot whose main.py
+wrote one session log then exited 7: the wrapper printed `LOG:` and exited 0. The child's
+stderr remained visible, but callers cannot distinguish failure from success by exit status.
+Steps 6/8 consume that marker, while Step 6 directs error recovery only on wrapper exit 1.
+A crash after tracker/log initialization can therefore enter comparison without a failed-run
+status. This proves the runner contract defect; no actual improvement was approved or scored.
+It is a separate adapter from scheduler/benchmark R10 and from repaired TODO selection.
+
+**Suggested solution:** Retain the log for diagnostics while propagating nonzero child
+status or a structured failed-run outcome. Carry exit, terminal reason and log identity into
+both baseline and candidate records; missing logs are a separate evidence failure. Update
+workflow consumers to classify expected baseline failures separately from infrastructure
+failure, and require independent acceptance before a candidate verdict. Cover nonzero-with-log,
+nonzero-without-log, zero-with-log and zero-without-log through the actual runner CLI.
+
 ## Verification and limits
 
-- October 16 focused plan parser/current writer contract, TODO intake, configuration
-  editor/loader/resolution, board runtime/stream/downloads and TUI context/system/sidebar:
-  **328 passed, 4 failed in 55.82s** inside the sandbox. Failures were three temporary-board
-  startup checks and one blocked loopback socket (`WinError 10013`). Rerunning exactly
-  those four outside the sandbox: **4 passed in 5.14s**. All **332 distinct core tests**
-  passed across the completed runs; the initial sandbox failures remain documented.
-- Focused offscreen Qt board-controller, Settings, left-sidebar, bridge and header:
-  **139 passed in 13.05s**, outside the sandbox. Combined: **471 distinct tests passed**;
-  this is a focused selection, not a full-suite result. Current plan-format examples,
-  exact/ambiguous task selection, TODO intake, and obsolete queued board events have passing
-  regressions. No missing-template failure remains in the selected tests.
-- Project interpreter: C:/Users/alexr/miniconda3/envs/dagi/python.exe. Plugin autoload and
-  CLI pytest-qt/cache were disabled; GUI conftest registers its plugin after DLL bootstrap.
-  Tests use dedicated scratch basetemp paths. Qt runs use QT_QPA_PLATFORM=offscreen.
-- R23–R26: five assertions reproduced October 16 with real interpreter/store/temporary
-  lock and FakeDriver. R28: two real ConfigDocument scratch-file save interleavings
-  reproduced. R30: real pool/controller method and real view/future completion with fake
-  clients/paths. All gated threads were released/joined. R7 inventory is fresh. R29 remains
-  source-inspected; no real user window was closed.
-- Unchanged findings retain earlier runtime evidence: R3/R4/R10–R14/R16 October 8,
-  R18/R19 October 9, R21 October 10. Their affected paths were inspected and the revision
-  diff does not repair them. R8 is source-inspected metadata ownership debt. No historical
-  runtime evidence is relabeled as freshly executed.
-- Today's evidence: [core log](C:/Users/alexr/.codex/visualizations/2026/10/16/01a144a3-a300-71c0-ae87-57f26f2608ca/verification-core.log),
-  [loopback rerun](C:/Users/alexr/.codex/visualizations/2026/10/16/01a144a3-a300-71c0-ae87-57f26f2608ca/verification-loopback.log),
-  [Qt log](C:/Users/alexr/.codex/visualizations/2026/10/16/01a144a3-a300-71c0-ae87-57f26f2608ca/verification-qt.log),
-  [RPA/AST probe](C:/Users/alexr/.codex/visualizations/2026/10/16/01a144a3-a300-71c0-ae87-57f26f2608ca/review_probes.py),
-  [RPA/AST results](C:/Users/alexr/.codex/visualizations/2026/10/16/01a144a3-a300-71c0-ae87-57f26f2608ca/review_probe_results.json),
-  [save probe](C:/Users/alexr/.codex/visualizations/2026/10/16/01a144a3-a300-71c0-ae87-57f26f2608ca/config_save_probes.py),
-  [save results](C:/Users/alexr/.codex/visualizations/2026/10/16/01a144a3-a300-71c0-ae87-57f26f2608ca/config_save_results.json),
-  [attachment probe](C:/Users/alexr/.codex/visualizations/2026/10/16/01a144a3-a300-71c0-ae87-57f26f2608ca/attachment_probe.py),
-  [attachment results](C:/Users/alexr/.codex/visualizations/2026/10/16/01a144a3-a300-71c0-ae87-57f26f2608ca/attachment_results.json).
-  Historical evidence remains in the October 8–10 directories referenced in automation
-  memory and the [October 15 archive](C:/Users/alexr/.codex/visualizations/2026/10/15/01a13f5a-19f1-7461-9e3f-f162eba00e3d/).
-- No full suite, live Telegram/provider, converter, power-loss, OS input/hook, real
-  user-board moderation or cross-app repair check. Application code and configuration
-  are unchanged by this review; concurrent wiki commits are recorded above. Review
-  documentation remains uncommitted.
+- October 17 focused pytest selection: **390 passed in 9.61s**. Selected scheduler models/
+  tracker/tools, subagent API/owner/runner, plan parser, live writer contract, TODO intake,
+  configuration editor, board download pool, RPA interpreter and store. This is not a full
+  suite. Passing tests coexist with the reproduced defects; runtime scheduler and Telegram
+  boundaries lack equivalent maintained regressions.
+- Interpreter: `C:/Users/alexr/miniconda3/envs/dagi/python.exe`; plugin autoload and CLI
+  pytest-qt/cache disabled; dedicated scratch basetemp. Desktop/hook tests stayed disabled.
+- Fresh probes: R3/R4/R10/R11/R12/R13/R14 adapter outcomes; R16 two actual scheduler
+  processes against one temporary history; R23–R26 five assertions with real interpreter/
+  store/temporary lock and FakeDriver; R28 two controlled real ConfigDocument saves;
+  R31 actual wrapper/child processes in a scratch snapshot. Controlled interleavings prove
+  ordering, not encounter rates. Gated workers were released/waited and subprocesses reaped.
+  Existing stale-child resume rejection and stdout-drain behavior also passed probe checks.
+- The first adapter attempt stalled during asyncio's local socket-pair initialization in
+  the sandbox, before Telegram fixtures. It was interrupted. The complete bounded probe
+  then passed outside the sandbox in 2.68s, using mocked delivery and no network requests.
+  The stalled attempt is an environment limitation, not an application failure.
+- R7's tracked production AST inventory is fresh: 256 files, eight modules over 500 lines,
+  six functions over 100. The adapter probe's smaller legacy inventory is not the report's
+  selection. R8 and R29 remain source-inspected ownership/draft defects.
+- Unchanged R18/R19 keep October 9 runtime evidence; R21 keeps October 10; R30 keeps
+  October 16. Their code and callers were re-inspected today. No Qt runtime checks were
+  run today; October 16's 139 passing Qt checks and attachment probes remain historical.
+- Evidence: [test log](C:/Users/alexr/.codex/visualizations/2026/10/17/01a14762-55a6-7d40-81ec-501147369932/verification-core.log),
+  [adapter results](C:/Users/alexr/.codex/visualizations/2026/10/17/01a14762-55a6-7d40-81ec-501147369932/adapter_results.json),
+  [sandbox stall](C:/Users/alexr/.codex/visualizations/2026/10/17/01a14762-55a6-7d40-81ec-501147369932/adapter-probes.log),
+  [completed adapter log](C:/Users/alexr/.codex/visualizations/2026/10/17/01a14762-55a6-7d40-81ec-501147369932/adapter-probes-unsandboxed.log),
+  [scheduler overlap](C:/Users/alexr/.codex/visualizations/2026/10/17/01a14762-55a6-7d40-81ec-501147369932/scheduler_overlap_results.json),
+  [RPA/AST results](C:/Users/alexr/.codex/visualizations/2026/10/17/01a14762-55a6-7d40-81ec-501147369932/rpa_results.json),
+  [save results](C:/Users/alexr/.codex/visualizations/2026/10/17/01a14762-55a6-7d40-81ec-501147369932/config_save_results.json),
+  [improvement-runner probe](C:/Users/alexr/.codex/visualizations/2026/10/17/01a14762-55a6-7d40-81ec-501147369932/improvement_exit_probe.py),
+  [runner results](C:/Users/alexr/.codex/visualizations/2026/10/17/01a14762-55a6-7d40-81ec-501147369932/improvement_exit_results.json).
+  Retained probe scripts are alongside these results; historical attachment evidence is
+  in the [October 16 directory](C:/Users/alexr/.codex/visualizations/2026/10/16/01a144a3-a300-71c0-ae87-57f26f2608ca/).
+- No full suite, live provider/Telegram, rendered GUI, converter, power-loss, real desktop/
+  hook, user-board moderation or cross-app repair check. Application code/configuration
+  are unchanged. Report documentation remains uncommitted; no implementation was performed.
 
-See the [improvement roadmap](C:/Users/alexr/Driverless_AGI/_CODEX_SUGGESTIONS_2026-10-16.md).
+See the [improvement roadmap](C:/Users/alexr/Driverless_AGI/_CODEX_SUGGESTIONS_2026-10-17.md).

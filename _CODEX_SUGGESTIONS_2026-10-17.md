@@ -1,12 +1,12 @@
-# Dagi suggestions — 2026-10-16
+# Dagi suggestions — 2026-10-17
 
 Proposals for sustained agentic work, measured self-improvement and understandable recovery.
-They do not authorize implementation. Reviewed main at **a53f6eabe9d684b884ec14c98aab3f8312d4abac**.
-HEAD later advanced to **cce300e862194fcb52e6af574e7a1ab5f387cf88** with two wiki-only
-benchmark planning additions; application code is unchanged between these revisions.
-The existing October 15 report was edited in place and renamed. There are **17 unbuilt
-improvements or explicit extensions**. Implemented portions have been removed from proposals;
-S10 now covers runtime plan preflight, and S16 covers revision-bound reproduction evidence.
+They do not authorize implementation. Reviewed main at **902a083b782a725f929d91719512d46119e52fa9**.
+Committed changes since the previous reviewed source are Markdown only. The existing
+October 16 report was edited in place and renamed. There are **17 unbuilt improvements
+or explicit extensions**; no newly completed proposal was found. Shipped portions remain
+excluded. New review R31 adds a concrete prerequisite for trustworthy self-improvement
+experiments, rather than a proposal to rebuild the existing workflow.
 
 Already shipped: Settings form/raw YAML editing, comment-preserving writes/watch/conflicts,
 tool-catalog checks, welcome video/maximized launch, full-handle mention warnings/member
@@ -27,10 +27,11 @@ Extend [improve-yourself](C:/Users/alexr/Driverless_AGI/.dagi/workflow/improve-y
 testing and compatible TODO intake are not missing features. Save/draft issues R28/R29 and
 attachment provenance R30 are repairs, not proposals for replacement editors/boards.
 
-[Today's review](C:/Users/alexr/Driverless_AGI/_CODEX_CODE_REVIEW_2026-10-16.md) contains **20 open findings**.
-Focused verification: 332 distinct core tests passed across sandbox and targeted unsandboxed
-reruns; 139 Qt checks passed. Four initial sandbox board/socket failures are documented there.
-R23–R26, R28 and R30 boundary probes reproduce offline. No real desktop input or provider.
+[Today's review](C:/Users/alexr/Driverless_AGI/_CODEX_CODE_REVIEW_2026-10-17.md) contains **21 open findings**.
+October 17: **390 focused tests passed**; offline scheduler/Telegram, RPA and config-save
+probes still reproduce defects. A new actual CLI probe shows the self-improvement wrapper
+returning exit 0 after child exit 7 when a log exists (R31). No Qt checks ran today;
+October 16 attachment/GUI evidence remains dated there. No live provider or desktop input.
 
 ## S1 — One owned run with an explicit outcome
 
@@ -79,7 +80,7 @@ yield explicit outcomes. Unknown provider costs remain visible.
 ## S3 — Measured self-improvement with retained evaluators
 
 **Improvement:** Extend the existing improvement workflow with fixed behavioral fixtures
-and retained baseline/candidate evidence.
+and retained baseline/candidate evidence. Repair R31's lost child exit status first.
 
 **Issue addressed:** Structural metrics can reward shorter code while adapter semantics
 regress. Focused board/GUI tests pass while controlled boundary probes reproduce defects.
@@ -88,7 +89,10 @@ regress. Focused board/GUI tests pass while controlled boundary probes reproduce
 child resume, stdout draining, final delivery, question routing, publication failure,
 code-mode nested timeouts/cancellation and interrupted output capture. Separate candidate work
 from evaluator code/holdouts. Include code_mode and the callable registry in comparisons.
-Compare the same effective configuration and retain commands,
+Capture the actual improvement child exit and terminal outcome alongside its log; a
+log marker alone is not success. Classify expected baseline failure separately from a
+broken experiment, and require independent candidate acceptance. Compare the same
+effective configuration and retain commands,
 exits, artifacts and failure classifications. Build on
 [dagi_eval](C:/Users/alexr/Driverless_AGI/benchmarks/dagi_eval/harness.py) and improve-yourself.
 The existing [budget-capped ALE pilot TODO](C:/Users/alexr/Driverless_AGI/wiki/todo-ale-bench-budget-pilot.md)
@@ -194,6 +198,8 @@ expectation timeout and R26 per-item cancellation/lock acknowledgment fixtures.
 
 **Acceptance:** A fixture fails on the current defect and passes only with correct behavior.
 Adapters agree on the same core scenario. Infrastructure errors report separately.
+Cover R31 through the actual improvement runner CLI: child failure with/without a log,
+and successful exit with/without evidence must remain distinct.
 Future reviews can check verified closure rather than rediscovering the defect.
 
 ## S9 — Retained results and retryable artifact delivery
@@ -373,6 +379,8 @@ the current source revision and executable evidence, rather than a dated prose o
 **Smallest useful version:** Attach reviewed revision, stable finding ID, reproduction command,
 expected failure and independent acceptance check to one user-selected candidate. Recheck
 whether it remains open and reproduce it in the snapshot before baseline/candidate stages.
+Preserve failed subprocess status even when a session log exists (R31); a retained log
+does not establish a completed or accepted experiment.
 If the defect is repaired or the reproduction is inconclusive, record that result and return
 to selection. Carry the candidate identity into S2/S4 manifests and retained hypotheses.
 Use the existing implementation approval workflow when applying a candidate.
@@ -413,7 +421,8 @@ or configuration write. Cover unchanged, overridden, pending and invalid candida
 1. Repair R4/R10/R16/R18/R21/R23/R24/R25/R26 and Telegram R11/R12; preserve existing
    owner-scoped cancellation, resume/drain and stale board-event regression contracts.
 2. Repair R28/R29 Settings writes/drafts and R30 attachment provenance. Repair R3/R13/R14,
-   add S8 adapter fixtures and the minimal S9 retained-export path; repair R19 to retain
+   repair R31 in the improvement runner, add S8 adapter fixtures and the minimal S9
+   retained-export path; repair R19 to retain
    interrupted diagnostics. Extend S1 to abandoned-child cleanup. Pilot S10 runtime plan
    preflight on the shipped format/lookup contracts.
 3. Add S2 objectives/S4 manifests and prototype S5 task recovery. Add S17 configuration

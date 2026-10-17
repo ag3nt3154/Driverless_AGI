@@ -1,6 +1,6 @@
 # AGENTS.md
 
-> Last updated: 2026-10-16 (review refreshed; board attachment provenance reviewed) | [README](README.md) | [TODO](TODO.md) | [Task specs & plans](wiki/tasks/)
+> Last updated: 2026-10-17 (review refreshed; self-improvement exit status reviewed) | [README](README.md) | [TODO](TODO.md) | [Task specs & plans](wiki/tasks/)
 
 ## Overview
 
