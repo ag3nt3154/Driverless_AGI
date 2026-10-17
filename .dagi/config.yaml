@@ -68,8 +68,10 @@ tools:                      # Restrict the main agent to a specific subset of to
   - read_board
   - post_board
   - fetch_attachment
+  - board_members           # List the handles of members online on the board now
   # ── GUI tools ────────────────────────────────────────────────────────────────
   - show_file               # Open a file in the GUI file viewer with optional line highlight
+  - spawn_agent             # GUI main agent only: start a visible, steerable peer agent
 sandbox_mode: false     # true = file tools have no path restrictions (allowed_roots=None)
 code_mode: true         # false = the `code` tool is not registered
 computer_use: true      # register computer_use_list_windows/computer_use_inspect_window/computer_use_interact_with_window/computer_use_wait_for_window_state (they pass the tools: allowlist)

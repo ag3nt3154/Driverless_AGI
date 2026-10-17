@@ -157,6 +157,8 @@ code_mode: true      # true  = add the `code` tool: the agent can run one Python
 #   - post_board              # Post ≤700 chars + up to 4 files (≤10 MB each) to the board
 #   - fetch_attachment        # Download a board attachment into the project; open it with read
 #   - board_members           # List the handles of members online on the board now
+#   # ── GUI tools ────────────────────────────────────────────────────────────────
+#   - spawn_agent             # GUI main agent only: start a visible, steerable peer agent
 
 # ── Model catalog ─────────────────────────────────────────────────────────────
 # Define every model you want available to dagi here.
