@@ -10,7 +10,7 @@ import pytest
 from agent.board_client import BoardError
 from pyside_gui import agent_session
 from pyside_gui.peers import report_post
-from pyside_gui.tests.session_stub import StubSession
+from pyside_gui.tests.session_stub import StubSession, stub_window
 
 
 class FakeBoard:
@@ -192,6 +192,87 @@ def test_server_error_pause_posts_error(qtbot, tmp_path, monkeypatch):
     assert len(board.calls) == 1
     assert board.calls[0][0].startswith("@main_11112222 [error] paused after a server error")
     assert s.last_outcome == "error"
+
+
+def _busy(session) -> None:
+    """Make ``session.stop()`` proceed: a running worker with an interruptible loop."""
+    loop = MagicMock()
+    loop.interrupt.return_value = True
+    loop.is_paused = False
+    session._worker = SimpleNamespace(is_alive=lambda: True)
+    session._current_loop_ref = [loop]
+    session._pending_ask = None
+    session._streaming_active = False
+    session._enable_input = MagicMock()
+
+
+def _peer_view(handle, *, spawned_by, running=False, waiting=False):
+    s = StubSession(win=stub_window(), handle=handle)
+    s.spawned_by = spawned_by
+    if waiting:
+        s._pending_ask = object()
+    elif running:
+        loop = MagicMock()
+        loop.is_paused = False
+        s._worker = SimpleNamespace(is_alive=lambda: True)
+        s._current_loop_ref = [loop]
+    return s
+
+
+def test_esc_on_main_lists_active_peers_only(qtbot, tmp_path, monkeypatch):
+    monkeypatch.setattr(agent_session, "DAGI_ROOT", tmp_path)
+    main = StubSession(handle="main_11112222")
+    main._board_session = SimpleNamespace(handle="main_11112222")
+    _busy(main)
+
+    p_running = _peer_view("fixer_aaaa1111", spawned_by="main_11112222", running=True)
+    p_waiting = _peer_view("docs_bbbb2222", spawned_by="main_11112222", waiting=True)
+    p_idle = _peer_view("idle_cccc3333", spawned_by="main_11112222")
+    p_user = _peer_view("user_dddd4444", spawned_by=None, running=True)
+
+    main.win._main = main
+    main.win._sessions = [main, p_running, p_waiting, p_idle, p_user]
+
+    assert main.stop() is True
+
+    main._conversation.append_info.assert_any_call(
+        "⏹ Stopped. Peers still active: fixer_aaaa1111 (running), "
+        "docs_bbbb2222 (waiting for you). See the Agents view."
+    )
+    for peer in (p_running, p_waiting, p_idle, p_user):
+        assert not peer._current_loop_ref or not peer._current_loop_ref[0].interrupt.called
+
+
+def test_esc_on_main_without_active_peers_adds_nothing(qtbot, tmp_path, monkeypatch):
+    monkeypatch.setattr(agent_session, "DAGI_ROOT", tmp_path)
+    main = StubSession(handle="main_11112222")
+    main._board_session = SimpleNamespace(handle="main_11112222")
+    _busy(main)
+
+    p_idle = _peer_view("idle_cccc3333", spawned_by="main_11112222")
+
+    main.win._main = main
+    main.win._sessions = [main, p_idle]
+
+    assert main.stop() is True
+
+    main._conversation.append_info.assert_called_once_with(
+        "Interrupted — type a message to continue"
+    )
+
+
+def test_esc_on_a_peer_shows_no_notice(qtbot, tmp_path, monkeypatch):
+    s, board = _peer(tmp_path, monkeypatch)
+    _busy(s)
+    main = StubSession(win=s.win, handle="main_11112222")
+    s.win._main = main
+    s.win._sessions = [main, s]
+
+    assert s.stop() is True
+
+    s._conversation.append_info.assert_called_once_with(
+        "Interrupted — type a message to continue"
+    )
 
 
 def test_bridge_handoff_reaches_session(qtbot, tmp_path, monkeypatch):

@@ -16,6 +16,7 @@ import socket
 import threading
 import time
 from pathlib import Path
+from types import SimpleNamespace
 
 from PySide6.QtCore import QMetaObject, QObject, Q_ARG, Qt, QTimer, Signal, Slot
 
@@ -27,7 +28,7 @@ from pyside_gui.bridge import AgentBridge
 from pyside_gui.commands import SlashCommandHandler, UIWidgets
 from pyside_gui.conversation import ConversationView
 from pyside_gui.overlays import CopyPicker
-from pyside_gui.peers import report_post, task_post
+from pyside_gui.peers import active_notice, report_post, task_post
 from pyside_gui.rpa_cards import parse_rpa_halt
 from pyside_gui.steer_queue import SteerQueue
 from pyside_gui.utils import idle_emote_path
@@ -313,6 +314,18 @@ class AgentSession(QObject):
             self._conversation.interrupt_stream()
         self._set_status("paused")
         self._conversation.append_info("Interrupted — type a message to continue")
+        if self is getattr(self.win, "_main", None) and self._board_session is not None:
+            from pyside_gui.agents_controller import agent_state
+
+            me = self._board_session.handle
+            peers = [
+                SimpleNamespace(handle=s.handle, state=agent_state(s))
+                for s in getattr(self.win, "_sessions", [])
+                if s.spawned_by == me
+            ]
+            notice = active_notice(peers)
+            if notice:
+                self._conversation.append_info(notice)
         self._enable_input()
         return True
 
