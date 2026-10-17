@@ -198,7 +198,7 @@ Extend `FakeWindow`: `_main._config.max_spawned_agents`, `_main._board_session =
 
 ---
 
-### Subtask 6: Worker-thread spawn flow and task delivery (D2, D13)
+### Subtask 6: Worker-thread spawn flow and task delivery (D2, D13) ✅ (`da5f0919`)
 
 **Goal:** Connect the main session's `AgentCallbacks.spawn_agent` to `spawn_peer`, then register the peer and post its task **in that order**.
 **Requirements:**
@@ -309,7 +309,7 @@ Use `StubSession` with `spawned_by="main_11112222"`, a fake `_board_session` tha
 - **Task folder:** `wiki/tasks/2026-10-17_model-spawned-agents/`
 
 ## Overall Status
-In Progress — Subtasks 1–5 done; Subtask 6 next
+In Progress — Subtasks 1–6 done; Subtask 7 next
 
 ## Notes
 - Hook points found during exploration:
@@ -331,6 +331,7 @@ In Progress — Subtasks 1–5 done; Subtask 6 next
 - **Subtask 3, attempt 1:** PASS. Note: the v2 inherited fork (`agent/inherited_registry.py:42-54`, used by compaction) copies the parent's tool schemas, so a forked child sees the `spawn_agent` schema, but `allowed_names` blocks execution (same as other frontend tools). No capability leaks.
 - **Subtask 4, attempt 1:** ESCALATE — `report_post` let a 501–680-char body through uncut, which breaks the D12 ≤500 head. -> Main agent fixed it: the head is always cut to 500 + `…`, `active_notice` reuses `_word`, and the Qt guard is now a subprocess `sys.modules` check. **Attempt 2:** PASS.
 - **Subtask 5, attempt 1:** ESCALATE — eviction ran before slug and model-config validation, so a failed spawn could close a peer for nothing. -> Main agent split `_create` into `_validate` (no side effects) + `_build`. `spawn_peer` now validates first, then evicts, then builds. The regression test `test_failed_spawn_at_the_limit_closes_no_peer` fails on the old order. **Attempt 2:** PASS. Edge: a new slug equal to the victim's slug is refused as a duplicate (accepted: the model can follow up with that peer instead).
+- **Subtask 6, attempt 1:** ESCALATE — after the 15 s timeout, the queued GUI call could still create a peer with no task. -> Main agent added `future.cancel()` on timeout and a `set_running_or_notify_cancel()` guard in `_spawn_on_main`. If the spawn has already started, the worker waits for the real result. The regression test `test_late_spawn_after_timeout_creates_no_peer` fails without the guard. **Attempt 2:** PASS. Accepted deviations: `Q_ARG("QVariant")`/`@Slot("QVariant")` (PySide6 has no QMetaType for `object`); the spawner falls back to `self.handle` only when the main board is `None`, and then `spawn_peer` refuses anyway. Unrelated flake: `test_settings_view.py::test_real_watcher_sees_atomic_replace` ([[qfilesystemwatcher-dir-watch-breaks-os-replace]]).
 
 ## Verification
 1. Unit + GUI suites (unsandboxed):
