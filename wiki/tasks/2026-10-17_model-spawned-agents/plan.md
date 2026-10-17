@@ -41,7 +41,7 @@ FastAPI board service (tests only), pytest + local `qtbot` (`pyside_gui/tests/co
 
 ---
 
-### Subtask 1: `max_spawned_agents` config key
+### Subtask 1: `max_spawned_agents` config key ✅ (`26b9702d`)
 
 **Goal:** Load and validate a positive-int `max_spawned_agents` (default 4) on `AgentConfig`.
 **Requirements:**
@@ -309,7 +309,7 @@ Use `StubSession` with `spawned_by="main_11112222"`, a fake `_board_session` tha
 - **Task folder:** `wiki/tasks/2026-10-17_model-spawned-agents/`
 
 ## Overall Status
-Pending
+In Progress — Subtask 1 done; Subtask 2 next
 
 ## Notes
 - Hook points found during exploration:
@@ -326,7 +326,7 @@ Pending
 - None blocking. Routing quality between `spawn_agent` and typed subagents depends on the tool description only. There is no eval in this task.
 
 ## Attempts and Resolutions
-(none yet)
+- **Subtask 1, attempt 1:** PASS. Note: `pyside_gui/sidebars/settings_view.py:79-85` `_SPIN_FIELDS` is a curated subset (no `max_continuations` either), so the new key is not added to the Settings tab.
 
 ## Verification
 1. Unit + GUI suites (unsandboxed):
