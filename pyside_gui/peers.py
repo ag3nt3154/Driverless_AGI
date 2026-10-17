@@ -23,6 +23,26 @@ def report_post(spawner: str, tag: str, body: str) -> str:
     return f"@{spawner} [{tag}] {head}"[:MAX_POST]  # the full text is attached
 
 
+def peer_footer(spawner: str) -> str:
+    """Wake-message footer for a peer woken by its spawner: the handoff is posted for it."""
+    return (
+        f"You are a peer agent spawned by @{spawner}. When this work is complete, call "
+        f"write_handoff with your report: it is posted to @{spawner} automatically as [done] "
+        "with the full report attached. Do not post your result, progress or acknowledgements "
+        f"with post_board, and do not @mention @{spawner}: a mention starts a new turn for it. "
+        "Use fetch_attachment for any attachment you need (task.md holds a task that was cut)."
+    )
+
+
+def spawner_footer(peer: str) -> str:
+    """Wake-message footer for a spawner woken by its peer's automatic report."""
+    return (
+        f"This is the automatic report of your peer @{peer}; use fetch_attachment for the full "
+        f"handoff. Do not reply on the board or @mention @{peer} unless you give it new work: "
+        "a mention starts a new turn for it."
+    )
+
+
 def pick_eviction(peers):
     """The eligible idle+done peer with the oldest ``last_active``, or None."""
     eligible = [p for p in peers if p.state == "idle" and p.last_outcome == "done"]

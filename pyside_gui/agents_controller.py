@@ -7,19 +7,17 @@ from types import SimpleNamespace
 
 from PySide6.QtCore import QObject
 
-from pyside_gui.peers import limit_error, pick_eviction
+from pyside_gui.peers import limit_error, peer_footer, pick_eviction, spawner_footer
 from pyside_gui.sidebars.agents_view import slug_error
 from tools.board._board import format_post
 
+_PLAIN_FOOTER = ("Reply on the board with post_board if a reply is needed; use fetch_attachment "
+                 "for any attachment you need.")
 
-def mention_message(post: dict, handle: str) -> str:
+
+def mention_message(post: dict, handle: str, footer: str = _PLAIN_FOOTER) -> str:
     """The user message an @mention becomes: the post in read_board's line format."""
-    return (
-        "[Message board] You were mentioned in this post:\n"
-        f"{format_post(post, handle)}\n"
-        "Reply on the board with post_board if a reply is needed; use fetch_attachment for "
-        "any attachment you need."
-    )
+    return f"[Message board] You were mentioned in this post:\n{format_post(post, handle)}\n{footer}"
 
 
 def agent_state(session) -> str:
@@ -162,11 +160,19 @@ class AgentsController(QObject):
         """Deliver a live post to every agent it @mentions (never to its own author)."""
         mentions = post.get("mentions") or []
         author = post.get("author")
+        peers_of = {s.handle: s.spawned_by for s in self.window._sessions}
         for session in list(self.window._sessions):
             board = session._board_session
             if board is None or board.handle not in mentions or board.handle == author:
                 continue
-            session.deliver_mention(mention_message(post, board.handle))
+            # Spawner <-> peer traffic gets the protocol, so neither side chats back.
+            if session.spawned_by is not None and author == session.spawned_by:
+                footer = peer_footer(author)
+            elif peers_of.get(author) == board.handle:
+                footer = spawner_footer(author)
+            else:
+                footer = _PLAIN_FOOTER
+            session.deliver_mention(mention_message(post, board.handle, footer))
         self.refresh()
 
     def refresh(self, *_args) -> None:

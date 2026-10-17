@@ -73,6 +73,42 @@ def test_mention_message_uses_read_board_format():
     assert "#7" in text and f"@{HELPER} look" in text
 
 
+def test_peer_woken_by_its_spawner_is_told_the_handoff_is_posted_for_it():
+    """Observed 2026-10-17: a peer posted its result by hand and then write_handoff posted it again."""
+    main, peer = _agent("main_11112222"), _agent("probe_0d68a910")
+    peer.spawned_by = "main_11112222"
+    controller = _agents_window([main, peer])
+    controller.on_board_mention(_post(1, "main_11112222", ["probe_0d68a910"],
+                                      text="@probe_0d68a910 [task] add 2+2"))
+    text = peer.deliver_mention.call_args.args[0]
+    assert "#1" in text and "[task] add 2+2" in text
+    assert "write_handoff" in text and "posted to @main_11112222 automatically" in text
+    assert "Do not post your result, progress or acknowledgements" in text
+    assert "Reply on the board" not in text
+
+
+def test_spawner_woken_by_its_peer_is_told_not_to_mention_it_back():
+    """Observed 2026-10-17: main thanked @probe, which woke probe for a second [done]."""
+    main, peer = _agent("main_11112222"), _agent("probe_0d68a910")
+    peer.spawned_by = "main_11112222"
+    controller = _agents_window([main, peer])
+    controller.on_board_mention(_post(4, "probe_0d68a910", ["main_11112222"],
+                                      text="@main_11112222 [done] 2+2=4"))
+    text = main.deliver_mention.call_args.args[0]
+    assert "automatic report of your peer @probe_0d68a910" in text
+    assert "unless you give it new work" in text and "Reply on the board" not in text
+
+
+def test_unrelated_agents_keep_the_plain_mention_message():
+    main, helper = _agent("main_11112222"), _agent(HELPER)
+    controller = _agents_window([main, helper])  # helper is user-spawned: spawned_by None
+    controller.on_board_mention(_post(2, "main_11112222", [HELPER]))
+    controller.on_board_mention(_post(3, HELPER, ["main_11112222"]))
+    expected = mention_message(_post(2, "main_11112222", [HELPER]), HELPER)
+    assert helper.deliver_mention.call_args.args[0] == expected
+    assert "Reply on the board" in main.deliver_mention.call_args.args[0]
+
+
 def test_controller_wakes_only_for_live_posts(qtbot):
     from pyside_gui.board_controller import BoardController
     from pyside_gui.tests.test_board_controller import _window

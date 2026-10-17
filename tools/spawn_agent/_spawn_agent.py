@@ -12,7 +12,9 @@ class SpawnAgentTool(BaseTool):
         "folder and tools. The call returns at once with its handle. The peer's result "
         "arrives later as a board message to you: [done] with the handoff attached, or "
         "[max-continuations] / [error]. Use typed subagents instead for short, isolated "
-        "jobs that must return a result in this turn. Follow up with post_board @<handle>."
+        "jobs that must return a result in this turn. An @mention of the peer starts a new turn "
+        "for it: post_board @<handle> only to give it new work, never to announce, thank or "
+        "acknowledge it."
     )
 
     _parameters = {

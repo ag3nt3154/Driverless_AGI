@@ -268,7 +268,8 @@ class AgentSession(QObject):
         return (
             f"Spawned {peer.handle} (close_on_done={close_on_done}). "
             f"Its task is on the board as post #{post['id']}. "
-            "Its result will arrive as a board message to you; do not wait for it in this turn."
+            "Its result will arrive as a board message to you; do not wait for it in this turn. "
+            "Do not post about the spawn, and @mention the peer only to give it new work."
         )
 
     @Slot("QVariant")

@@ -84,6 +84,7 @@ def test_spawn_registers_before_posting_task(qtbot):
     expected_text, _attach = task_post(peer.handle, "do it")
     assert calls[1][1] == expected_text
     assert text.startswith("Spawned ")
+    assert "@mention the peer only to give it new work" in text
 
 
 def test_long_task_is_attached_as_task_md(qtbot, tmp_path, monkeypatch):
