@@ -309,7 +309,7 @@ Use `StubSession` with `spawned_by="main_11112222"`, a fake `_board_session` tha
 - **Task folder:** `wiki/tasks/2026-10-17_model-spawned-agents/`
 
 ## Overall Status
-Verification — Subtasks 1–8 done. Automated verification passed: full suite 2605 passed, 27 skipped, 0 failed (2026-10-17). Manual GUI check (Verification step 3) waits for the Admiral.
+Verification — Subtasks 1–8 done. Automated verification passed (2026-10-17): `tests/` 2605 passed, 27 skipped; `pyside_gui/tests` 488 passed (run separately: `testpaths = ["tests"]` does not collect it). Manual GUI check done by the Admiral: the feature works, but there were too many posting rounds (7 posts for one task). A prompt-only fix followed, see Attempts.
 
 ## Notes
 - Hook points found during exploration:
@@ -334,6 +334,7 @@ Verification — Subtasks 1–8 done. Automated verification passed: full suite 
 - **Subtask 6, attempt 1:** ESCALATE — after the 15 s timeout, the queued GUI call could still create a peer with no task. -> Main agent added `future.cancel()` on timeout and a `set_running_or_notify_cancel()` guard in `_spawn_on_main`. If the spawn has already started, the worker waits for the real result. The regression test `test_late_spawn_after_timeout_creates_no_peer` fails without the guard. **Attempt 2:** PASS. Accepted deviations: `Q_ARG("QVariant")`/`@Slot("QVariant")` (PySide6 has no QMetaType for `object`); the spawner falls back to `self.handle` only when the main board is `None`, and then `spawn_peer` refuses anyway. Unrelated flake: `test_settings_view.py::test_real_watcher_sees_atomic_replace` ([[qfilesystemwatcher-dir-watch-breaks-os-replace]]).
 - **Subtask 7, attempt 1:** ESCALATE — (1) a pending close_on_done could close a peer after a newer turn had failed; (2) a failed handoff-file write was not reported. -> Main agent added a `_close_for_submission` guard against `_submission_seq` (generation check). The file write moved inside the post try. A failed report sets `last_outcome = "unreported"` (never evictable). Both regression tests fail on the old code. **Attempt 2:** PASS.
 - **Subtask 8, attempt 1:** PASS. ESC with main idle collapses the sidebar and shows no notice (consistent with D10). `test_paste_cards.py::test_ctrl_shift_v_pastes_long_text_inline` fails on clean `main` too (Windows `OpenClipboard Failed`, so the cause is the environment).
+- **Manual check, attempt 1:** works end to end, but there was ping-pong: main announced and thanked `@probe`, and probe posted its result by hand and then acked, so a second `[done]` woke main for 8 steps. -> The Admiral chose prompt fixes only. There are now role-based wake footers (`peers.peer_footer` / `spawner_footer`) and the rule is in the `spawn_agent` description and result. Review PASS.
 
 ## Verification
 1. Unit + GUI suites (unsandboxed):

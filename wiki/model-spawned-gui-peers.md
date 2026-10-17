@@ -47,6 +47,17 @@ Code: `tools/spawn_agent/`, `pyside_gui/peers.py` (pure formats + eviction rule)
 - **Generation-guard deferred actions.** `close_on_done` is queued after the async post. It runs only
   if `_close_for_submission == _submission_seq and last_outcome == "done"`, so a newer turn
   cancels it. A failed report sets `last_outcome = "unreported"` (never evicted).
+- **A courtesy @mention re-wakes an idle peer, which ends that turn with another `[done]`.** Agent-
+  to-agent mentions are never capped (`test_agent_mentions_always_wake`), so a main↔peer ack
+  ping-pong is bounded only by the models' judgment. Observed 2026-10-17 on the manual check: an
+  "@probe nice work" reply woke the idle probe, which posted a second `[done]` (and read the ack as
+  praise from the Admiral). In total that one trivial task produced 7 posts and 5 turns (the minimum
+  is 2 posts). The peer also posted its result by hand before `write_handoff` posted it again.
+  **Fix (Admiral: prompt only, no code guard):** `on_board_mention` picks a wake footer by
+  role. Spawner→peer posts get `peers.peer_footer` ("your handoff is posted for you; do not post
+  results or acks; do not @mention the spawner"). Peer→spawner posts get `peers.spawner_footer`
+  ("automatic report; @mention the peer only for new work"). The `spawn_agent` description and
+  its success text carry the same rule. Residual: this relies on the models obeying the prompt.
 - The spawner identity is `_board_session.handle`. The main session's `handle` stays `"main"`
   until the board connects.
 - The v2 inherited fork (compaction) copies the parent's tool schemas, so it can see

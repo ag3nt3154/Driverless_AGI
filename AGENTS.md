@@ -46,6 +46,7 @@ and report results over the board; typed subagents stay the headless/isolated pa
 - Tests: `C:\Users\alexr\miniconda3\envs\dagi\python.exe -u -m pytest -q -p no:pytest-qt`.
   `conda run` fully buffers stdout when not on a TTY (looks like a hang) — call the env's
   interpreter directly with `-u`. pytest-qt must be disabled as `-p no:pytest-qt` (not `no:qt`).
+  `testpaths = ["tests"]`: a bare run skips the GUI suite; also run `pyside_gui/tests` (unsandboxed).
 - Hooks use `envs/dagi/python.exe` directly (`conda run` drops stdin).
 - RPA desktop tests (`desktop` marker; real UI, global keyboard hook) are skipped unless
   `DAGI_DESKTOP_TESTS=1`; run them unsandboxed and only with the Admiral's consent.
