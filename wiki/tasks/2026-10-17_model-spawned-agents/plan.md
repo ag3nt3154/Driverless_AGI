@@ -69,7 +69,7 @@ FastAPI board service (tests only), pytest + local `qtbot` (`pyside_gui/tests/co
 
 ---
 
-### Subtask 2: `board_members` tool (D9)
+### Subtask 2: `board_members` tool (D9) ✅ (`d466ca8b`)
 
 **Goal:** Let any board-connected agent list online board members.
 **Requirements:**
@@ -309,7 +309,7 @@ Use `StubSession` with `spawned_by="main_11112222"`, a fake `_board_session` tha
 - **Task folder:** `wiki/tasks/2026-10-17_model-spawned-agents/`
 
 ## Overall Status
-In Progress — Subtask 1 done; Subtask 2 next
+In Progress — Subtasks 1–2 done; Subtask 3 next
 
 ## Notes
 - Hook points found during exploration:
@@ -327,6 +327,7 @@ In Progress — Subtask 1 done; Subtask 2 next
 
 ## Attempts and Resolutions
 - **Subtask 1, attempt 1:** PASS. Note: `pyside_gui/sidebars/settings_view.py:79-85` `_SPIN_FIELDS` is a curated subset (no `max_continuations` either), so the new key is not added to the Settings tab.
+- **Subtask 2, attempt 1:** PASS. Main agent also added `board_members` to `config.example.yaml` board-tools comment and `pyside_gui/tool_labels.py`. Note: the offline-member test back-dates `last_seen` through `store._conn` (works; `_clock` monkeypatch in `tests/message_board/test_store.py:485` is the cleaner pattern).
 
 ## Verification
 1. Unit + GUI suites (unsandboxed):
