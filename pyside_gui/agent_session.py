@@ -11,12 +11,15 @@ session is active; the window re-applies the session's state when it becomes act
 """
 from __future__ import annotations
 
+import concurrent.futures
+import socket
 import threading
 import time
 from pathlib import Path
 
 from PySide6.QtCore import QMetaObject, QObject, Q_ARG, Qt, Signal, Slot
 
+from agent.board_client import BoardError
 from agent.loop import AgentConfig
 
 from pyside_gui import _dispatch
@@ -24,11 +27,14 @@ from pyside_gui.bridge import AgentBridge
 from pyside_gui.commands import SlashCommandHandler, UIWidgets
 from pyside_gui.conversation import ConversationView
 from pyside_gui.overlays import CopyPicker
+from pyside_gui.peers import task_post
 from pyside_gui.rpa_cards import parse_rpa_halt
 from pyside_gui.steer_queue import SteerQueue
 from pyside_gui.utils import idle_emote_path
 from pyside_gui.welcome_video import idle_videos
 from agent import DAGI_ROOT
+
+SPAWN_TIMEOUT_S = 15
 
 
 class AgentSession(QObject):
@@ -201,6 +207,76 @@ class AgentSession(QObject):
 
     def _agent_work(self, task: object, callbacks: object, loop_ref: list) -> None:
         _dispatch.agent_work(self, task, callbacks, loop_ref)
+
+    # ── spawn_agent (D6: main agent only) ───────────────────────────────────────────────
+
+    @property
+    def _spawn_agent(self):
+        """``_spawn_from_worker`` for the main session only; peers never get it (D6)."""
+        if self is getattr(self.win, "_main", None):
+            return self._spawn_from_worker
+        return None
+
+    def _spawn_from_worker(self, slug: str, task: str, close_on_done: bool) -> str:
+        """Worker thread: ask the GUI to create a peer, then register + post its task."""
+        future: concurrent.futures.Future = concurrent.futures.Future()
+        QMetaObject.invokeMethod(
+            self, "_spawn_on_main", Qt.ConnectionType.QueuedConnection,
+            Q_ARG("QVariant", (slug, close_on_done, future)),
+        )
+        try:
+            try:
+                peer = future.result(timeout=SPAWN_TIMEOUT_S)
+            except concurrent.futures.TimeoutError:
+                if future.cancel():  # the queued call will see this and create nothing
+                    return "Error: the GUI did not answer the spawn request in 15 s."
+                peer = future.result()  # the GUI thread already started it: take its answer
+        except Exception as exc:
+            return f"Error: could not spawn {slug}: {exc}"
+        if isinstance(peer, str):
+            return peer
+        peer_board = peer._board_session
+        main_board = self._board_session
+        if peer_board is None or main_board is None:
+            return (
+                f"Error: spawned {peer.handle} but the board is offline, so it has no task. "
+                f"Post it with post_board @{peer.handle} when the board is back."
+            )
+        try:
+            peer_board.client.register(
+                peer.handle, "agent", host=socket.gethostname(), key=peer_board.key,
+            )
+            text, attach = task_post(peer.handle, task)
+            files: tuple = ()
+            if attach:
+                path = DAGI_ROOT / ".dagi" / "temp" / "peers" / peer.handle / "task.md"
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text(task, encoding="utf-8")
+                files = (path,)
+            post = main_board.post(text, files=files)
+        except BoardError as exc:
+            return (
+                f"Error: spawned {peer.handle} but could not post its task: {exc}. "
+                f"Post it yourself with post_board @{peer.handle}."
+            )
+        return (
+            f"Spawned {peer.handle} (close_on_done={close_on_done}). "
+            f"Its task is on the board as post #{post['id']}. "
+            "Its result will arrive as a board message to you; do not wait for it in this turn."
+        )
+
+    @Slot("QVariant")
+    def _spawn_on_main(self, payload: object) -> None:
+        slug, close_on_done, future = payload
+        if not future.set_running_or_notify_cancel():
+            return  # the worker timed out and cancelled: no peer without a task
+        try:
+            spawner = self._board_session.handle if self._board_session else self.handle
+            result = self.win._agents.spawn_peer(slug, close_on_done, spawner=spawner)
+        except Exception as exc:
+            future.set_exception(exc)
+            return
+        future.set_result(result)
 
     def _do_wtf(self, description: str | None) -> None:
         _dispatch.run_wtf(self, description)

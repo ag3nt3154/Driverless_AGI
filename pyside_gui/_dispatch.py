@@ -190,7 +190,8 @@ def dispatch_agent(win, task: str | UserSubmission, show: bool = True) -> None:
     win._show_running()
     win._current_loop_ref = []
     callbacks = win._bridge.build_callbacks(
-        win._current_loop_ref, board=getattr(win, "_board_session", None)
+        win._current_loop_ref, board=getattr(win, "_board_session", None),
+        spawn_agent=getattr(win, "_spawn_agent", None),
     )
     win._worker = threading.Thread(
         target=win._agent_work, args=(task, callbacks, win._current_loop_ref), daemon=True)
