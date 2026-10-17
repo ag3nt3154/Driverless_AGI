@@ -12,6 +12,8 @@ private throwaway board only while the configured central board is unavailable.
 ## Rules
 
 - Knowledge (architecture, decisions, errors, notes, todos) goes to `wiki`, including `tasks/` (specs and plans).
+- ESC / pause only pauses the targeted agent: no board posts, wake-ups, closes or cascades;
+  only user-facing info/displays may be added ([wiki](wiki/esc-pause-only-pauses.md)).
 
 ### Behavioral guidelines
 
