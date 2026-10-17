@@ -132,7 +132,7 @@ FastAPI board service (tests only), pytest + local `qtbot` (`pyside_gui/tests/co
 
 ---
 
-### Subtask 4: Pure peer helpers
+### Subtask 4: Pure peer helpers ✅ (`402705fd`)
 
 **Goal:** Keep the text formats and the selection rules in one Qt-free module, so that they are easy to test.
 **Requirements:** Create `pyside_gui/peers.py` with:
@@ -309,7 +309,7 @@ Use `StubSession` with `spawned_by="main_11112222"`, a fake `_board_session` tha
 - **Task folder:** `wiki/tasks/2026-10-17_model-spawned-agents/`
 
 ## Overall Status
-In Progress — Subtasks 1–3 done; Subtask 4 next
+In Progress — Subtasks 1–4 done; Subtask 5 next
 
 ## Notes
 - Hook points found during exploration:
@@ -329,6 +329,7 @@ In Progress — Subtasks 1–3 done; Subtask 4 next
 - **Subtask 1, attempt 1:** PASS. Note: `pyside_gui/sidebars/settings_view.py:79-85` `_SPIN_FIELDS` is a curated subset (no `max_continuations` either), so the new key is not added to the Settings tab.
 - **Subtask 2, attempt 1:** PASS. Main agent also added `board_members` to `config.example.yaml` board-tools comment and `pyside_gui/tool_labels.py`. Note: the offline-member test back-dates `last_seen` through `store._conn` (works; `_clock` monkeypatch in `tests/message_board/test_store.py:485` is the cleaner pattern).
 - **Subtask 3, attempt 1:** PASS. Note: the v2 inherited fork (`agent/inherited_registry.py:42-54`, used by compaction) copies the parent's tool schemas, so a forked child sees the `spawn_agent` schema, but `allowed_names` blocks execution (same as other frontend tools). No capability leaks.
+- **Subtask 4, attempt 1:** ESCALATE — `report_post` let a 501–680-char body through uncut, which breaks the D12 ≤500 head. -> Main agent fixed it: the head is always cut to 500 + `…`, `active_notice` reuses `_word`, and the Qt guard is now a subprocess `sys.modules` check. **Attempt 2:** PASS.
 
 ## Verification
 1. Unit + GUI suites (unsandboxed):
