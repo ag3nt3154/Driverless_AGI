@@ -27,6 +27,10 @@ Code: `tools/spawn_agent/`, `pyside_gui/peers.py` (pure formats + eviction rule)
 
 ## Gotchas
 
+- **The `tools:` allow-list in `.dagi/config.yaml` removes new tools without a message.** `filter_to`
+  drops any registered tool that is not listed, so `spawn_agent` and `board_members` must be in
+  the list (fixed 2026-10-17). Any new tool needs the same entry.
+
 - **Register the peer before the `[task]` post.** The board records a mention only for a
   registered member, and `BoardController.add_session` registers on a background worker, so the
   post can race it. `_spawn_from_worker` calls `client.register` synchronously first (it is
