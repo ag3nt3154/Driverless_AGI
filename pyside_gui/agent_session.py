@@ -55,6 +55,12 @@ class AgentSession(QObject):
         self._streaming_active = False
         self._submission_seq = 0
         self._board_session = None
+        self.spawned_by: str | None = None
+        self.close_on_done = False
+        self.last_active = time.monotonic()
+        self.last_outcome: str | None = None
+        self._turn_handoff: str | None = None
+        self._turn_done_seen = False
         self.status = "idle"
         self.running = False
         self._last_tokens: tuple | None = None

@@ -1,6 +1,7 @@
 """A lightweight AgentSession for tests: real slots and properties, stub window chrome."""
 from __future__ import annotations
 
+import time
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
@@ -45,6 +46,12 @@ class StubSession(AgentSession):
         self._streaming_active = False
         self._submission_seq = 0
         self._board_session = None
+        self.spawned_by: str | None = None
+        self.close_on_done = False
+        self.last_active = time.monotonic()
+        self.last_outcome: str | None = None
+        self._turn_handoff: str | None = None
+        self._turn_done_seen = False
         self.status = "idle"
         self.running = False
         self._last_tokens = None
