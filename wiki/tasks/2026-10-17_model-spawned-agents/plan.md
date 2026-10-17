@@ -281,7 +281,7 @@ Use `StubSession` with `spawned_by="main_11112222"`, a fake `_board_session` tha
 
 ---
 
-### Subtask 8: ESC peer notice on the main agent (D10)
+### Subtask 8: ESC peer notice on the main agent (D10) ✅ (`a2df76f9`)
 
 **Goal:** After ESC stops the main agent, list its active peers in the chat.
 **Requirements:**
@@ -309,7 +309,7 @@ Use `StubSession` with `spawned_by="main_11112222"`, a fake `_board_session` tha
 - **Task folder:** `wiki/tasks/2026-10-17_model-spawned-agents/`
 
 ## Overall Status
-In Progress — Subtasks 1–7 done; Subtask 8 next
+Verification — Subtasks 1–8 done; integrated verification next
 
 ## Notes
 - Hook points found during exploration:
@@ -333,6 +333,7 @@ In Progress — Subtasks 1–7 done; Subtask 8 next
 - **Subtask 5, attempt 1:** ESCALATE — eviction ran before slug and model-config validation, so a failed spawn could close a peer for nothing. -> Main agent split `_create` into `_validate` (no side effects) + `_build`. `spawn_peer` now validates first, then evicts, then builds. The regression test `test_failed_spawn_at_the_limit_closes_no_peer` fails on the old order. **Attempt 2:** PASS. Edge: a new slug equal to the victim's slug is refused as a duplicate (accepted: the model can follow up with that peer instead).
 - **Subtask 6, attempt 1:** ESCALATE — after the 15 s timeout, the queued GUI call could still create a peer with no task. -> Main agent added `future.cancel()` on timeout and a `set_running_or_notify_cancel()` guard in `_spawn_on_main`. If the spawn has already started, the worker waits for the real result. The regression test `test_late_spawn_after_timeout_creates_no_peer` fails without the guard. **Attempt 2:** PASS. Accepted deviations: `Q_ARG("QVariant")`/`@Slot("QVariant")` (PySide6 has no QMetaType for `object`); the spawner falls back to `self.handle` only when the main board is `None`, and then `spawn_peer` refuses anyway. Unrelated flake: `test_settings_view.py::test_real_watcher_sees_atomic_replace` ([[qfilesystemwatcher-dir-watch-breaks-os-replace]]).
 - **Subtask 7, attempt 1:** ESCALATE — (1) a pending close_on_done could close a peer after a newer turn had failed; (2) a failed handoff-file write was not reported. -> Main agent added a `_close_for_submission` guard against `_submission_seq` (generation check). The file write moved inside the post try. A failed report sets `last_outcome = "unreported"` (never evictable). Both regression tests fail on the old code. **Attempt 2:** PASS.
+- **Subtask 8, attempt 1:** PASS. ESC with main idle collapses the sidebar and shows no notice (consistent with D10). `test_paste_cards.py::test_ctrl_shift_v_pastes_long_text_inline` fails on clean `main` too (Windows `OpenClipboard Failed`, so the cause is the environment).
 
 ## Verification
 1. Unit + GUI suites (unsandboxed):
