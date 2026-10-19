@@ -2,7 +2,7 @@
 title: 'Model-spawned GUI peers (spawn_agent): design and gotchas'
 description: 'Main GUI agent spawns visible, steerable peer AgentSessions; task and result travel on the board. Register before the [task] post, cancel timed-out spawns, generation-guard close_on_done.'
 tags: [spawn_agent, spawn_peer, AgentsController, AgentSession, board_members, close_on_done, max_spawned_agents, QVariant, Q_ARG, peers.py]
-updated: 2026-10-17
+updated: 2026-10-19
 ---
 ## Decision (Admiral, 2026-10-17)
 
@@ -68,3 +68,48 @@ Code: `tools/spawn_agent/`, `pyside_gui/peers.py` (pure formats + eviction rule)
 Typed subagents in headless runs are still not steerable or visible. There is no eval of
 peer-vs-subagent routing; the tool description carries it. Peers are not persisted across GUI
 restarts.
+
+## October 18 review: report workers need per-turn identity and immutable evidence
+
+Reviewed main `918041c2cc085398691c5564fe23792393dd30c2`; no implementation repair made.
+Open **R32**: an older successful report callback can read a newer turn's shared close
+marker and request its closure before its report is posted. An older failed callback can overwrite
+a successfully delivered newer turn as unreported. The board-none branch leaves done
+eligible for eviction despite no delivery. Carry originating submission identity through
+every callback and track computed/delivered separately; reject stale updates and preserve
+undelivered reports for retry. ESC must remain target-only pause with no board side effects.
+
+Open **R33**: all turns write the same handoff path. A gated actual BoardSession.post
+with fake upload read FIRST's path after SECOND overwrote it, producing FIRST's preview
+with SECOND's attachment. Use immutable per-submission bytes/paths and delivery receipts;
+callback guards alone cannot fix the file race. These are proposals, not approved repairs.
+
+[Probe](C:/Users/alexr/.codex/visualizations/2026/10/18/01a14c89-816a-7cd3-8b0e-c7a49008ee44/peer_report_probes.py),
+[results](C:/Users/alexr/.codex/visualizations/2026/10/18/01a14c89-816a-7cd3-8b0e-c7a49008ee44/peer_report_results.json). Four controlled assertions reproduced with
+real AgentSession methods and fake queues/clients; scratch files removed, worker joined.
+396 core and 76 offscreen GUI/controller tests passed. No external board/provider or desktop
+input. Simple existing report tests pass while these overlap cases are not covered.
+The roadmap now extends the shipped spawning/task/result flow with attempt/acceptance
+receipts (S13) and retained retryable reports (S9); it does not propose rebuilding the feature.
+
+## October 19 review: task admission and post destination need stable boundaries
+
+At unchanged main `918041c2`, new **R34** reproduces a successful spawn before the initial
+snapshot settles: its task enters the snapshot, which never wakes agents, and the live
+cursor skips it. A task posted after snapshot setup delivers through the same mention hook.
+Preserve current-session assignments across setup and distinguish posted from accepted;
+do not start replaying historical mentions or cap live agent conversation.
+
+New **R35** reproduces `BoardSession.post` uploading to A, rebinding to B, then publishing
+the A attachment ID to B, which rejects UNKNOWN_ATTACHMENT. Bind all uploads and publication
+to one client/generation lease; keep it alive through completion or acknowledged cancellation.
+Retain report bytes for explicit retry. This differs from R30 downloads and R33 file reuse.
+Both are proposed repairs, not approved implementation. ESC remains a target-only pause.
+
+[Probe](C:/Users/alexr/.codex/visualizations/2026/10/19/01a154aa-60bd-7760-9ec1-7a7c4cacde39/board_boundary_probes.py),
+[results](C:/Users/alexr/.codex/visualizations/2026/10/19/01a154aa-60bd-7760-9ec1-7a7c4cacde39/board_boundary_results.json).
+Actual spawn/snapshot/mention and post/rebind methods used independent in-process boards,
+stub peer creation, fake stream transport and a controlled upload gate; successful controls covered later tasks
+and stable-board posts. Workers joined and scratch data removed. 158 core and 76 offscreen
+Qt tests passed; no external traffic, provider or desktop input. R32/R33 remain open with
+October 18 evidence. S8/S9/S13 now include these boundaries without duplicating built features.

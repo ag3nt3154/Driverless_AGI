@@ -2,7 +2,7 @@
 title: 'Self-improvement selection must match the maintained TODO'
 description: 'R27 intake remains repaired; open R31 masks a failing improvement subprocess when a session log exists.'
 tags: [improve-yourself, review-session, TODO, Work-Queue, R27, selection, acceptance]
-updated: 2026-10-17
+updated: 2026-10-19
 ---
 
 Source-inspected at main `db8dde97138c3d67b9c44121f8ce2cce07b5bfca`; no provider or self-improvement run invoked.
@@ -17,8 +17,8 @@ existing flows with selected finding ID, reviewed revision, reproduction/accepta
 and deduplication. These are proposals; report publication does not authorize implementation.
 Use the normal approval workflow and retain the Admiral's final apply decision.
 
-Reports: [open findings](C:/Users/alexr/Driverless_AGI/_CODEX_CODE_REVIEW_2026-10-17.md),
-[improvement suggestions](C:/Users/alexr/Driverless_AGI/_CODEX_SUGGESTIONS_2026-10-17.md).
+Reports: [open findings](C:/Users/alexr/Driverless_AGI/_CODEX_CODE_REVIEW_2026-10-19.md),
+[improvement suggestions](C:/Users/alexr/Driverless_AGI/_CODEX_SUGGESTIONS_2026-10-19.md).
 
 ## Resolved 2026-10-15
 
@@ -52,3 +52,20 @@ exit/log combinations. This extends S3/S8/S16 and does not reopen repaired intak
 [results](C:/Users/alexr/.codex/visualizations/2026/10/17/01a14762-55a6-7d40-81ec-501147369932/improvement_exit_results.json).
 Reports were updated/renamed in place: 21 open findings, 17 unbuilt extensions; 390 focused
 tests passed. No Qt runtime checks today; documentation remains uncommitted.
+
+## October 18 refresh
+
+The improvement runner source is unchanged; R31 remains open with October 17 CLI evidence.
+Current TODO-intake and writer/parser contract tests pass in the focused 396-test core run.
+No improvement experiment, provider call or candidate approval was performed. Report
+links above now target the October 18 in-place renames; the review contains 23 open findings
+after adding peer-report R32/R33, and the roadmap retains 17 extensions beyond shipped work.
+
+## October 19 refresh
+
+HEAD and application sources remain at `918041c2`; no finding repair or remaining roadmap
+extension shipped since October 18. Current report links target the October 19 in-place
+renames: 25 open findings, 17 extensions. New R34/R35 concern snapshot-time peer-task loss
+and upload/publication across a board switch; S8/S9/S13 extend their existing contracts.
+234 focused board/peer tests passed. R31 retains its October 17 CLI evidence; no improvement
+experiment, candidate verdict or implementation was performed.

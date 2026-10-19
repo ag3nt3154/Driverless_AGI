@@ -1,37 +1,39 @@
-# Dagi suggestions — 2026-10-17
+# Dagi suggestions — 2026-10-19
 
 Proposals for sustained agentic work, measured self-improvement and understandable recovery.
-They do not authorize implementation. Reviewed main at **902a083b782a725f929d91719512d46119e52fa9**.
-Committed changes since the previous reviewed source are Markdown only. The existing
-October 16 report was edited in place and renamed. There are **17 unbuilt improvements
-or explicit extensions**; no newly completed proposal was found. Shipped portions remain
-excluded. New review R31 adds a concrete prerequisite for trustworthy self-improvement
-experiments, rather than a proposal to rebuild the existing workflow.
+They do not authorize implementation. Reviewed main at **918041c2cc085398691c5564fe23792393dd30c2**.
+The October 18 report was edited in place and renamed. There are **17 unbuilt improvements
+or explicit extensions**. Application source is unchanged since the last review; no complete
+proposal or remaining extension has shipped since then. Built portions remain excluded.
+S8/S9/S13 now include snapshot-time task acceptance and board-bound publication (R34/R35).
 
-Already shipped: Settings form/raw YAML editing, comment-preserving writes/watch/conflicts,
-tool-catalog checks, welcome video/maximized launch, full-handle mention warnings/member
-discovery, exact/numbered task lookup with ambiguity rejection, live writer-example contracts,
-TODO-based candidate selection/source identity/no-candidate handling, queued board-event
-generation rejection, and reasoning/schema/system context estimates. These are not proposals.
-Configuration validation and board identity/stream/temp lifecycle are now extracted modules.
+Already shipped: main-only GUI `spawn_agent`, steerable visible peers, automatic board task
+posts and handoff attachments, `close_on_done`, LRU idle-done peer eviction, configured peer
+limits, full online `board_members`, and role-specific wake prompts. Keep typed isolated
+subagents alongside GUI peers. ESC only pauses its target and adds permitted display info;
+it never posts, wakes or closes peers. Agent-to-agent mentions remain intentionally uncapped.
 
-Also present: code mode, standalone board/member/admin/moderation/attachment features, image
-input, board switching, Agents rail/mention wake-ups, owner-scoped child cancellation,
-RPA recording/compilation/replay/approval/repair evidence and Workflows cards. Build on
-RequestExecutor, persisted revisions, child generation checks, output draining, active-plan
-sidecars, process-state events and steering receipts. Campaign remains absent; reconcile its
-historical schema before introducing another store. Preserve intentionally uncapped mentions.
+Also shipped: Settings form/raw YAML editing, comment-preserving writes/watch/conflicts,
+tool-catalog checks, welcome video/maximized launch, full-handle mention warnings, exact/
+numbered task lookup with ambiguity rejection, live writer-example contracts, TODO-based
+candidate selection/source identity/no-candidate handling, queued board-event generation
+rejection, reasoning/schema/system context estimates, code mode, standalone board/admin/
+moderation/attachments, image input, board switching, owner-scoped child cancellation,
+RPA recording/compilation/replay/approval/repair evidence and Workflows cards.
+
+Build on RequestExecutor, persisted revisions, child generation checks, output draining,
+active-plan sidecars, process-state events and steering receipts. Campaign remains absent;
+reconcile its historical schema before introducing another store.
 
 Extend [improve-yourself](C:/Users/alexr/Driverless_AGI/.dagi/workflow/improve-yourself/workflow.md) and
 [review-session](C:/Users/alexr/Driverless_AGI/.dagi/skills/review-session/SKILL.md). Existing baseline/candidate
-testing and compatible TODO intake are not missing features. Save/draft issues R28/R29 and
-attachment provenance R30 are repairs, not proposals for replacement editors/boards.
+testing and compatible TODO intake are not missing features. R28/R29 Settings, R30 download
+provenance, R31 runner status and R32–R35 peer/board delivery require repairs within existing flows.
 
-[Today's review](C:/Users/alexr/Driverless_AGI/_CODEX_CODE_REVIEW_2026-10-17.md) contains **21 open findings**.
-October 17: **390 focused tests passed**; offline scheduler/Telegram, RPA and config-save
-probes still reproduce defects. A new actual CLI probe shows the self-improvement wrapper
-returning exit 0 after child exit 7 when a log exists (R31). No Qt checks ran today;
-October 16 attachment/GUI evidence remains dated there. No live provider or desktop input.
+[Today's review](C:/Users/alexr/Driverless_AGI/_CODEX_CODE_REVIEW_2026-10-19.md) contains **25 open findings**.
+October 19: **234 tests passed**, including 76 offscreen GUI/controller tests. New offline
+boundary probes reproduce R34/R35 despite those passing tests. Earlier runtime evidence,
+including R32/R33, retains its original date. No live provider, external board or desktop input.
 
 ## S1 — One owned run with an explicit outcome
 
@@ -54,6 +56,7 @@ the same generation check; no owned execution survives reported deadline enforce
 no selected code-mode mutation begins after acknowledged cancellation; cancelling one
 parent preserves other parents' children, and closing a session terminates/reaps its worker;
 attachment jobs and results cannot cross board identities after a switch;
+peer delivery callbacks and handoff bytes retain the originating submission (R32/R33);
 RPA cancellation holds ownership until stopped, verification names executed revision and
 coverage, and post-action timeout cannot duplicate a mutation. Preserve R9 tests proving
 output drains when its diagnostic log is unavailable. Per-parent child cancellation and
@@ -128,7 +131,8 @@ and the next useful recovery action.
 completion appears without verification evidence.
 
 **Smallest useful version:** Extend the shipped Agents rail and AgentSession state with a
-compact task panel and milestone timeline on existing
+compact task panel and milestone timeline, extending the shipped peer state and
+automatic task/report posts, on existing
 [process-state events](C:/Users/alexr/Driverless_AGI/agent/process_state.py) and steering,
 bound to S1/S2 identities. Display wait timeout, cancellation, stale context and failure
 distinctly. Keep artifact/diagnostic links after failure. Give Telegram the same concise
@@ -193,6 +197,10 @@ rather than a mocked stop return alone. Preserve the shipped queued old-board
 post/purge/status/snapshot regressions. Extend attachment coverage with R30's queued jobs
 and late completions across switches. Include current admin identity, reserved-handle and
 ban/purge behavior in board contracts.
+Add overlapping peer-report callback/attachment fixtures for R32/R33; existing simple
+close guards and synchronous fake report workers do not cover these interleavings.
+Add R34 pending-snapshot spawn and R35 upload/rebind/publication fixtures, with later-task
+and stable-board controls; preserve display-only historical snapshots and uncapped live mentions.
 Add R23/R24 complete coverage and executed-revision verification, R25 post-action
 expectation timeout and R26 per-item cancellation/lock acknowledgment fixtures.
 
@@ -209,11 +217,17 @@ without paying for another agent run or repeating its tools.
 
 **Issue addressed:** R14 records success before file publication; R11 drops the final
 Telegram handoff. R19 additionally loses printed code-mode evidence on kill/timeout.
-Computation, acceptance and delivery have different failure modes.
+R32/R33 show peer handoffs also need submission-bound delivery state and immutable
+attachments. Computation, acceptance and delivery have different failure modes.
 
 **Smallest useful version:** Retain final text and artifact references under S1's stable
 run identity. Record a delivery receipt with destination, attempt, status and diagnostic.
 Offer retry export with a new path and redelivery of the retained final message.
+Extend the shipped peer reporter with a small retained outbox keyed by submission, immutable
+handoff bytes and pending/delivered/failed receipts. Bind each upload/publication attempt to
+one board identity and retained client lease (R35); an explicit retry on a new board uploads
+fresh target-scoped IDs. Retry its report without rerunning the peer; stale callbacks cannot
+change newer outcomes, and undelivered work remains inspectable.
 Extend existing RPA run.json evidence with executed revision, per-item coverage and unknown
 side-effect status; retain its existing halt/repair artifacts rather than rebuilding them. Show
 computed / verified / delivered separately in S5. Keep scheduler jobs runnable after an
@@ -292,32 +306,37 @@ measured savings. If prompt/tool configuration differs between runs, disclose it
 scripts retain partial evidence without replaying mutations. No automatic recipe promotion
 or new tool-chain language is needed.
 
-## S13 — Bounded collaboration receipts on the existing board
+## S13 — Add attempt and acceptance receipts to shipped GUI peer collaboration
 
-**Improvement:** Connect board collaboration to a concrete task/attempt and retained result,
-so an @mention starts useful bounded work without losing ownership or replaying it.
+**Improvement:** Connect existing peer assignments/results to an owned task attempt, budget
+and independent acceptance evidence.
 
-**Issue addressed:** Agent spawning, board messages and mention wake-up are already built.
-Agent-to-agent wake-ups are intentionally uncapped. Existing messages do not carry the
-delegated objective, acceptance command, execution budget or returned evidence. R21
-shows why hidden or cancelled agents need terminal ownership before unattended teamwork;
-R30 adds attachment provenance across board switches; queued post/purge/status guards already exist.
+**Issue addressed:** GUI `spawn_agent`, full task text/attachments, steerable peer chats,
+automatic done/error/continuation reports, handoff attachments and peer-limit eviction are
+built. Do not rebuild them or describe delegated task text as missing. Posts still lack a
+stable attempt identity, source revision, execution budget and independently verified
+acceptance receipt. R21 concerns terminal close; R30/R32/R33 expose board/report provenance.
+The role-specific prompt fix discourages acknowledgement ping-pong without capping mentions.
 
-**Smallest useful version:** After S1/S2 and R21/R30, attach a task/attempt reference to a
-board assignment and its reply. Record accepted/running/result-received/verified states
-against the existing run identity. Start with a read-only reviewer in a separate agent,
-with one acceptance check and a bounded token/time budget. Deduplicate deliveries by board
-identity plus post/task ID. Preserve the shipped old-generation event rejection before events
-can admit work on the current board. Keep those guards around new assignment/receipt handling.
-Treat @board-admin as the shipped launcher identity; ordinary task assignment must not imply
-authority to ban, clear or shut down a board. Keep shared-folder write ownership explicit before allowing
-editing collaborators. Reuse existing worker/reviewer skills; do not create another agent
-protocol or interpret an ordinary board message as implementation approval.
+**Smallest useful version:** After R21/R30/R32–R35 and S1/S2, associate the existing `[task]`
+post and automatic report with one durable attempt. Add source revision, one acceptance
+command and a bounded token/time budget; expose accepted/running/result-received/verified
+states in the existing Agents view. Preserve newly submitted tasks across pending snapshot
+setup (R34), and distinguish board-posted from peer-accepted. Bind upload/publication to one
+board connection (R35). Start with read-only review. Deduplicate by board and post/attempt
+identity while retaining ordinary uncapped conversation and the current wake
+prompts. Use existing worker/reviewer skills and board APIs. Make shared-folder write
+ownership explicit before enabling editing collaborators; a board assignment is not
+implementation approval or authority to use board-admin moderation.
 
-**Acceptance:** Replaying a mention cannot duplicate an admitted task. Closing or cancelling
-the reviewer leaves other agents alive. An old-board purge cannot erase current-board task cards. A reported result links the exact source revision,
-checks and artifacts, and the main task remains unverified until its acceptance check passes.
-Exhausted budgets and rejected/stale results remain inspectable in the existing Agents UI.
+**Acceptance:** A new task posted while a snapshot is pending reaches its peer once;
+historical snapshot posts remain quiet. Redelivery cannot duplicate the admitted attempt.
+An in-flight handoff cannot upload on one board and publish on another. A result names
+the source revision, checks and exact handoff bytes; the parent stays
+unverified until its acceptance check passes. A stale report cannot close a newer turn or
+overwrite its outcome, and failed delivery is retryable without model execution. Budgets,
+rejected/stale results and interrupted attempts remain inspectable. Terminal reviewer close
+leaves other agents alive; ESC remains a target-only pause with no board side effects.
 
 ## S14 — Retry only when the next attempt changes something relevant
 
@@ -421,8 +440,8 @@ or configuration write. Cover unchanged, overridden, pending and invalid candida
 1. Repair R4/R10/R16/R18/R21/R23/R24/R25/R26 and Telegram R11/R12; preserve existing
    owner-scoped cancellation, resume/drain and stale board-event regression contracts.
 2. Repair R28/R29 Settings writes/drafts and R30 attachment provenance. Repair R3/R13/R14,
-   repair R31 in the improvement runner, add S8 adapter fixtures and the minimal S9
-   retained-export path; repair R19 to retain
+   repair R31 in the improvement runner and R32–R35 peer/board delivery, add S8 adapter fixtures
+   and the minimal S9 retained-export path; repair R19 to retain
    interrupted diagnostics. Extend S1 to abandoned-child cleanup. Pilot S10 runtime plan
    preflight on the shipped format/lookup contracts.
 3. Add S2 objectives/S4 manifests and prototype S5 task recovery. Add S17 configuration
@@ -432,12 +451,14 @@ or configuration write. Cover unchanged, overridden, pending and invalid candida
 4. Add S16 evidence revalidation to existing TODO intake; connect S7 checkpoints and extend
    S3 experiments. Promotion requires intact evaluators and passing behavioral contracts.
    Measure code-mode effectiveness through S12 before choosing examples to reuse.
-5. Pilot S13 with read-only review once durable attempt ownership exists. Expand collaboration
-   when receipts demonstrate admission, provenance and result acceptance.
+5. Extend the shipped peer flow through S13 with read-only review and durable attempt receipts.
+   Expand collaboration when receipts demonstrate admission, provenance and result acceptance.
 
 Measure verified acceptance, false-success rate, delivery failures, answer/cancellation latency,
 deadline overrun, partial-output retention, export recovery without recomputation, runtime plan
 rejection, duplicate admission, review-candidate reproduction, stale attachment delivery,
 replay coverage/hash mismatches, post-action duplicates, preview/input drift, configuration
-ambiguity, save byte/hash mismatches and retry-without-change rate. Record cost per verified
-outcome with missing-cost cases explicit. Establish baselines before numerical targets.
+ambiguity, save byte/hash mismatches, stale peer callback effects, handoff byte mismatches,
+unaccepted posted assignments, cross-board publication failures and retry-without-change rate.
+Record cost per verified outcome with missing-cost cases explicit.
+Establish baselines before numerical targets.

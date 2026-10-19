@@ -56,31 +56,29 @@
     Add any future user-question tool (e.g. a revived `show_plan`) to `SOLO_TOOLS`.
   - `edit` takes an `edits` list for one file: in order, all-or-nothing, placeholder-tolerant.
 
-- **2026-10-17 review refresh on main.** See
-  [_CODEX_CODE_REVIEW_2026-10-17.md](_CODEX_CODE_REVIEW_2026-10-17.md) and
-  [_CODEX_SUGGESTIONS_2026-10-17.md](_CODEX_SUGGESTIONS_2026-10-17.md).
-  21 open findings; prior repairs stay excluded. No application changes since last review.
-  - **P1 R23/R24:** failed/partial replay verifies whole workflows; concurrent YAML changes
-    verify unexecuted content. Both still reproduce in scratch workflows.
-  - **P1 R25/R26:** expectation timeout repeats mutations; cancellation releases the lock
-    while execution continues through for_each items. Both reproduce with FakeDriver.
-  - **P2 R28:** serialize config hash check/write/replace and use per-save temporary files.
-    Controlled saves still lose accepted edits and return the wrong byte hash.
-  - **P2 R29:** guard dirty Settings on quit; see existing unsaved-prompt wiki follow-up.
-  - **P2 R30:** bind attachment jobs/completions to the source board and exact card identity.
-    October 16 probes routed a queued job/new client and an old future/new colliding-ID card.
-  - **P2 R31:** preserve child-process failure in improvement baseline/candidate runs;
-    the real wrapper exits 0 after child exit 7 if a session log exists.
-  - R21 terminal close and R8 abandoned child metadata remain open.
-  - R7 inventory: 256 production files, eight modules over 500 lines, six functions over 100.
-  - Focused checks: 390 tests passed. Scheduler/Telegram, RPA, config-save and runner
-    probes reproduce offline; the adapter probe needed a local socket outside the sandbox.
-    No Qt runtime checks today; no live desktop/hook/provider.
-  Roadmap: 17 unbuilt extensions; S10/S16 retain only runtime preflight/evidence extensions
-  beyond the shipped plan and intake contracts. Reports renamed in place; uncommitted.
+- **2026-10-19 review refresh on main.** See
+  [_CODEX_CODE_REVIEW_2026-10-19.md](_CODEX_CODE_REVIEW_2026-10-19.md) and
+  [_CODEX_SUGGESTIONS_2026-10-19.md](_CODEX_SUGGESTIONS_2026-10-19.md).
+  25 open findings: all prior 23 retained in unchanged source; new board-boundary R34/R35.
+  Prior repairs stay excluded; report publication does not authorize implementation.
+  - **P2 R34:** preserve newly accepted peer tasks while snapshot/listener setup is pending.
+    Spawn can return success while its task is absorbed into the display-only snapshot.
+  - **P2 R35:** bind all uploads and final publication to one board client/identity.
+    Rebinding during upload sends an old-board attachment ID to the new board.
+  - **P2 R32/R33:** retain per-turn callback/delivery state and immutable handoff bytes.
+  - **P1 R4/R10/R16/R18/R23–R26/R11/R12:** execution, acceptance, admission,
+    cancellation and Telegram routing/delivery remain priorities.
+  - **P2 R28/R29/R30/R31:** config-save races, unsaved drafts, download identity and
+    masked improvement child exit remain open. R21 terminal close and R8 abandoned metadata
+    remain open; ESC must retain target-only pause behavior.
+  - 234 focused tests passed (158 core, 76 offscreen Qt); two new offline boundary scenarios
+    reproduce R34/R35 with successful controls. Historical runtime dates are preserved.
+  Roadmap: 17 extensions; S8/S9/S13 now cover snapshot-time task acceptance and operation-
+  bound board publication beyond shipped peer flow. Reports renamed in place;
+  preexisting documentation edits preserved and left uncommitted.
 
 - **2026-10-02 automation review follow-ups.** The review covered `task/iteration-engine`
-  at `6917b131`. The running reports have since been renamed to the current October 17
+  at `6917b131`. The running reports have since been renamed to the current October 19
   files linked above; the October 2 observations remain historical. R2 and R6 are fixed (2026-10-05);
   R7's four targeted function refactors and R8/R9 are done; residuals and other findings
   are tracked in the current report.

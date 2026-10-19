@@ -13,13 +13,13 @@ Source research (2026-10-08): llama.cpp server prefix caching at upstream commit
 `000bee54a544` is recorded in central memory as `llama-cpp-prefix-cache.md`.
 
 Latest architecture/reliability review:
-[_CODEX_CODE_REVIEW_2026-10-17.md](_CODEX_CODE_REVIEW_2026-10-17.md), with the
-[iterative-work and self-improvement roadmap](_CODEX_SUGGESTIONS_2026-10-17.md).
-The review has 21 open findings. New R31 reproduces a self-improvement runner returning
-success after its child fails. Scheduler/Telegram, RPA and configuration-save boundary
-probes still reproduce; 390 focused tests passed October 17. Historical attachment/GUI
-evidence keeps its original date. The roadmap retains 17 unbuilt extensions.
-No live provider or desktop input was used.
+[_CODEX_CODE_REVIEW_2026-10-19.md](_CODEX_CODE_REVIEW_2026-10-19.md), with the
+[iterative-work and self-improvement roadmap](_CODEX_SUGGESTIONS_2026-10-19.md).
+The review has 25 open findings. New R34/R35 reproduce accepted peer tasks lost during
+snapshot setup and attachment upload/publication crossing a board switch. The prior 23
+issues remain open in unchanged source; their runtime evidence keeps its original date.
+October 19: 234 focused tests passed, including 76 offscreen GUI/controller tests. The
+roadmap retains 17 extensions beyond shipped features. No live provider or desktop input.
 
 A minimal, self-hosted coding agent. Give it a task — it plans, calls tools, reads results, and iterates until done. Ships with a Rich interactive CLI. Supports any OpenAI-compatible API, automatic context compaction for long sessions, extended reasoning, skills-based guidance, and full session logging with auto-named session files and history restore via `/hist`.
 
