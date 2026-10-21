@@ -56,10 +56,10 @@
     Add any future user-question tool (e.g. a revived `show_plan`) to `SOLO_TOOLS`.
   - `edit` takes an `edits` list for one file: in order, all-or-nothing, placeholder-tolerant.
 
-- **2026-10-19 review refresh on main.** See
-  [_CODEX_CODE_REVIEW_2026-10-19.md](_CODEX_CODE_REVIEW_2026-10-19.md) and
-  [_CODEX_SUGGESTIONS_2026-10-19.md](_CODEX_SUGGESTIONS_2026-10-19.md).
-  25 open findings: all prior 23 retained in unchanged source; new board-boundary R34/R35.
+- **2026-10-21 review refresh on main.** See
+  [_CODEX_CODE_REVIEW_2026-10-21.md](_CODEX_CODE_REVIEW_2026-10-21.md) and
+  [_CODEX_SUGGESTIONS_2026-10-21.md](_CODEX_SUGGESTIONS_2026-10-21.md).
+  25 open findings retained: HEAD and application sources are unchanged since October 20.
   Prior repairs stay excluded; report publication does not authorize implementation.
   - **P2 R34:** preserve newly accepted peer tasks while snapshot/listener setup is pending.
     Spawn can return success while its task is absorbed into the display-only snapshot.
@@ -71,14 +71,14 @@
   - **P2 R28/R29/R30/R31:** config-save races, unsaved drafts, download identity and
     masked improvement child exit remain open. R21 terminal close and R8 abandoned metadata
     remain open; ESC must retain target-only pause behavior.
-  - 234 focused tests passed (158 core, 76 offscreen Qt); two new offline boundary scenarios
-    reproduce R34/R35 with successful controls. Historical runtime dates are preserved.
-  Roadmap: 17 extensions; S8/S9/S13 now cover snapshot-time task acceptance and operation-
-  bound board publication beyond shipped peer flow. Reports renamed in place;
-  preexisting documentation edits preserved and left uncommitted.
+  - 364 focused contract tests passed. The expanded board-client attempt was interrupted
+    without a completed result. Historical probes/Qt counts retain their dates.
+  Roadmap: 17 extensions beyond shipped work, including S8 adapter fixtures, S9 retained
+  delivery and S13 task/acceptance receipts. Reports edited and renamed in place;
+  documentation remains uncommitted.
 
 - **2026-10-02 automation review follow-ups.** The review covered `task/iteration-engine`
-  at `6917b131`. The running reports have since been renamed to the current October 19
+  at `6917b131`. The running reports have since been renamed to the current October 21
   files linked above; the October 2 observations remain historical. R2 and R6 are fixed (2026-10-05);
   R7's four targeted function refactors and R8/R9 are done; residuals and other findings
   are tracked in the current report.

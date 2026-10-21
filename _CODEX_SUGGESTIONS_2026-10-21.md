@@ -1,11 +1,11 @@
-# Dagi suggestions — 2026-10-19
+# Dagi suggestions — 2026-10-21
 
 Proposals for sustained agentic work, measured self-improvement and understandable recovery.
-They do not authorize implementation. Reviewed main at **918041c2cc085398691c5564fe23792393dd30c2**.
-The October 18 report was edited in place and renamed. There are **17 unbuilt improvements
-or explicit extensions**. Application source is unchanged since the last review; no complete
-proposal or remaining extension has shipped since then. Built portions remain excluded.
-S8/S9/S13 now include snapshot-time task acceptance and board-bound publication (R34/R35).
+They do not authorize implementation. Reviewed main at **ae9eea1a60941112c275fbdc51b4f0ca81b7f0c6**.
+The October 20 report was edited in place and renamed. There are **17 unbuilt improvements
+or explicit extensions**. HEAD and application sources are unchanged since October 20;
+no complete proposal or remaining extension shipped. Built portions remain excluded.
+No additional proposal was added solely to refresh the date.
 
 Already shipped: main-only GUI `spawn_agent`, steerable visible peers, automatic board task
 posts and handoff attachments, `close_on_done`, LRU idle-done peer eviction, configured peer
@@ -30,10 +30,13 @@ Extend [improve-yourself](C:/Users/alexr/Driverless_AGI/.dagi/workflow/improve-y
 testing and compatible TODO intake are not missing features. R28/R29 Settings, R30 download
 provenance, R31 runner status and R32–R35 peer/board delivery require repairs within existing flows.
 
-[Today's review](C:/Users/alexr/Driverless_AGI/_CODEX_CODE_REVIEW_2026-10-19.md) contains **25 open findings**.
-October 19: **234 tests passed**, including 76 offscreen GUI/controller tests. New offline
-boundary probes reproduce R34/R35 despite those passing tests. Earlier runtime evidence,
-including R32/R33, retains its original date. No live provider, external board or desktop input.
+[Today's review](C:/Users/alexr/Driverless_AGI/_CODEX_CODE_REVIEW_2026-10-21.md) contains **25 open findings**.
+October 21: **364 focused contract tests passed**, including plan/writer, TODO-intake,
+child-owner, configuration-editor and peer-helper contracts. No source repair closes the
+separately reproduced boundary defects. Earlier runtime evidence, including October 19's
+R34/R35 probes and 234 board/GUI tests, keeps its original date. An expanded board-client
+attempt was interrupted without a completed result; see review limits. No live provider,
+external board, Qt runtime or desktop input today.
 
 ## S1 — One owned run with an explicit outcome
 

@@ -1,26 +1,29 @@
-# Dagi code review — 2026-10-19
+# Dagi code review — 2026-10-21
 
 ## Scope and priorities
 
-Reviewed **main**, revision **918041c2cc085398691c5564fe23792393dd30c2**.
-HEAD and application source are unchanged since October 18; the checkout already contained
-the prior automation's uncommitted report/documentation updates. Those changes were preserved.
-The October 18 report was edited in place and renamed. This report contains **25 open
-findings only**: all 23 retained issues plus new R34/R35. No existing finding was resolved;
-previous repairs remain excluded. No application code was changed by this review.
+Reviewed **main**, revision **ae9eea1a60941112c275fbdc51b4f0ca81b7f0c6**. HEAD is unchanged
+since the October 20 review. The checkout contains that run's uncommitted documentation;
+this refresh preserves and extends it. All 259 production Python files in the established
+review scope and all 26 Python files linked across both reports match `918041c2` after
+newline normalization. The October 20 report was edited in place and renamed.
+This report contains **25 open findings only**. No finding has a source repair to justify
+removal, and no new finding was added. Previously resolved issues remain excluded.
+No application code was changed by this review.
 
 Prioritize execution/verification truth and stop ownership (R4/R10/R16/R18/R21/R23/R24/R26),
 non-idempotent retries (R25), and Telegram routing/delivery (R11/R12). Protect Settings
 writes/drafts with R28/R29, attachment provenance with R30/R33/R35, and improvement-run
-outcomes with R31. R32 concerns stale peer callbacks; new **R34/R35** concern accepted tasks
-lost during snapshot setup and upload/post operations crossing a board switch.
+outcomes with R31. R32 concerns stale peer callbacks; R34/R35 concern tasks lost during
+snapshot setup and upload/post operations crossing a board switch.
 
-October 19 verification: **234 tests passed** (158 core board/peer contracts, 76 offscreen
-GUI/controller tests). Two new controlled offline scenarios reproduce R34/R35 with actual
-application methods and in-process boards; each includes a successful control. All 22 Python
-files linked by yesterday's findings match the reviewed revision after newline normalization.
-Retained runtime evidence keeps its original date; it was not rerun or counted today.
-No live provider, external board/Telegram traffic or desktop input was used.
+October 21 verification: **364 focused contract tests passed**. Re-inspected scheduler
+execution/publication, Telegram dispatch/finalization, replay acceptance/retry/cancellation,
+code-mode dispatch/output, board adoption/posting/downloads, peer report callbacks,
+configuration saves and GUI close. Passing tests do not close the separately reproduced
+missing boundary cases. Retained runtime evidence keeps its original date; no historical
+probe or Qt suite was rerun today. No live provider, external board/Telegram traffic or
+desktop input was used. The expanded board-client test attempt did not complete; see limits.
 
 ## R3 — P2: Record scheduler startup failures
 
@@ -54,7 +57,7 @@ providers, long tools and descendants; a thread join timeout cannot enforce a de
 
 **Finding:** Nine production modules and six functions exceed the review's size thresholds.
 
-**Issue:** October 19's AST inventory selects 259 tracked production Python files under
+**Issue:** October 21's AST inventory selects 259 tracked production Python files under
 agent/tools/scheduler/tg/tui/pyside_gui/providers/services/rpa and root entry points,
 excluding nested tests. Nine exceed 500 lines: agent/config_editor.py (517), agent/loop.py
 (1,117), tools/subagent_main.py (744), tools/read/_reader_controller.py (525),
@@ -509,42 +512,50 @@ Add gated rebind tests for single/multiple attachments, source retirement, failu
 
 ## Verification and limits
 
-- October 19: **158 core tests passed in 10.99s**, covering BoardClient/session attachment
-  handling, stream parsing, board runtime, peer formats/eviction, spawn tool/config and board tools.
-- **76 offscreen Qt tests passed in 5.33s**, covering agents, mentions, peer reports, spawn
-  flow and board controller. Qt ran outside the sandbox with the local DLL bootstrap.
-  Tests used fake clients or in-process TestClient. Dependency deprecation warnings were
-  emitted; no test failed. Desktop tests and global hooks remained disabled.
-- Two new controlled scenarios reproduce R34/R35, with successful later-task/stable-board
-  controls. Actual spawn/snapshot/mention methods reproduced a successful but undelivered
-  task; peer creation and stream transport were stubbed. Real BoardSession post/rebind and independent local
-  board APIs reproduced cross-board publication failure after a successful upload. Temporary
-  stores/files were removed and workers joined. No production tests or application files added.
-- Fresh source audit: all **22 linked Python files** from yesterday's report are unchanged
-  since `918041c2`. HEAD is unchanged and working-tree changes are Markdown only. Inspected
-  peer callbacks, board adoption/stream/mention flow, session rebind, scheduler finalization,
-  RPA acceptance/retry/cancellation, improvement exit, GUI close and abandoned-child ownership.
-  No existing finding has a source repair to justify removal. R7 inventory remains 259
-  production files, nine modules over 500 lines and six functions over 100. No cyclomatic
-  complexity or retained-heap measurement was performed.
-- Retained runtime evidence: R3/R4/R10/R11/R12/R13/R14/R16/R23–R26/R28/R31 use October 17;
-  R18/R19 October 9; R21 October 10; R30 October 16; R32/R33 October 18. These controlled
-  reproductions were not rerun today because their defect sources are unchanged.
-  October 18's 472 tests and October 17's 390 are historical, excluded from today's 234.
-- Fresh evidence: [core test log](C:/Users/alexr/.codex/visualizations/2026/10/19/01a154aa-60bd-7760-9ec1-7a7c4cacde39/verification-core.log),
-  [GUI test log](C:/Users/alexr/.codex/visualizations/2026/10/19/01a154aa-60bd-7760-9ec1-7a7c4cacde39/verification-gui.log),
-  [board boundary probe](C:/Users/alexr/.codex/visualizations/2026/10/19/01a154aa-60bd-7760-9ec1-7a7c4cacde39/board_boundary_probes.py),
-  [probe results](C:/Users/alexr/.codex/visualizations/2026/10/19/01a154aa-60bd-7760-9ec1-7a7c4cacde39/board_boundary_results.json),
-  [source/AST audit](C:/Users/alexr/.codex/visualizations/2026/10/19/01a154aa-60bd-7760-9ec1-7a7c4cacde39/source_audit.json).
-  Historical [peer-report evidence](C:/Users/alexr/.codex/visualizations/2026/10/18/01a14c89-816a-7cd3-8b0e-c7a49008ee44/peer_report_results.json)
+- October 21: **364 tests passed in 8.04s**, using the documented `dagi` interpreter.
+  The focused run covers scheduler models/history/tools, replay interpreter/store, active-plan
+  association, plan parsing/writer examples, improvement TODO intake, child-owner isolation,
+  configuration editing/validation and peer helpers. Command: `python -u -m pytest -q
+  --tb=short -p no:pytest-qt -p no:cacheprovider --basetemp <writable-scratch>
+  tests/test_scheduler.py tests/rpa/test_interpreter.py tests/rpa/test_store.py
+  tests/test_active_plan.py tests/test_plan_parser.py tests/test_workflow_plan_template.py
+  tests/test_improve_yourself_intake.py tests/test_subagent_owner.py
+  tests/test_config_editor.py tests/test_peers.py` with plugin autoload disabled,
+  `PYTHONUTF8=1` and `PYTHONDONTWRITEBYTECODE=1`. RPA uses fake drivers;
+  desktop tests/global hooks remained disabled. Existing contracts do not exercise every
+  open failure case; runtime admission, cancellation and verification gaps remain open.
+- An earlier expanded selection additionally included board-client/download tests. It stopped
+  progressing with the first board-client test's scratch directory as the latest created
+  test directory, and was interrupted without a completed pytest summary. Captured output
+  was unavailable after interruption; no pass count or application failure is inferred.
+  The completed focused run above excludes those two files. Board-client/download and Qt
+  runtime behavior therefore have no completed fresh test result this run.
+- Fresh source/AST audit: HEAD is unchanged since October 20. All **259 production Python
+  files** in the established scope and **26 linked Python files across both reports**
+  (22 in this review) match `918041c2` after newline normalization. Inventory remains nine
+  modules over 500 lines and six functions over 100. Size is a maintainability signal;
+  no cyclomatic-complexity or retained-heap measurement was performed.
+- Historical runtime evidence, not rerun October 21: R3/R4/R10/R11/R12/R13/R14/R16/
+  R23–R26/R28/R31 use October 17; R18/R19 October 9; R21 October 10; R30 October 16;
+  R32/R33 October 18; R34/R35 October 19. Source comparison supports retention, not a
+  claim of fresh runtime reproduction. October 20's 188 tests, October 19's 234,
+  October 18's 472 and October 17's 390 are historical and excluded from today's 364.
+- Current evidence: [source/AST comparison](C:/Users/alexr/.codex/visualizations/2026/10/21/01a15bf6-efb3-7f53-99d0-51c2e76d3e5f/source_audit.json),
+  [passing contract log](C:/Users/alexr/.codex/visualizations/2026/10/21/01a15bf6-efb3-7f53-99d0-51c2e76d3e5f/verification-contracts.log),
+  [exact test command](C:/Users/alexr/.codex/visualizations/2026/10/21/01a15bf6-efb3-7f53-99d0-51c2e76d3e5f/test_run.json) and
+  [interrupted-attempt note](C:/Users/alexr/.codex/visualizations/2026/10/21/01a15bf6-efb3-7f53-99d0-51c2e76d3e5f/interrupted_attempt.json).
+  Retained [board-boundary results](C:/Users/alexr/.codex/visualizations/2026/10/19/01a154aa-60bd-7760-9ec1-7a7c4cacde39/board_boundary_results.json),
+  [peer-report results](C:/Users/alexr/.codex/visualizations/2026/10/18/01a14c89-816a-7cd3-8b0e-c7a49008ee44/peer_report_results.json)
   and [October 17 evidence](C:/Users/alexr/.codex/visualizations/2026/10/17/01a14762-55a6-7d40-81ec-501147369932/)
-  retain their original dates.
-- No full suite, rendered GUI/WebEngine, live provider/Telegram, external board, converter,
-  power-loss, desktop input/hooks or cross-app repair checks. No application repair, config
-  edit, experiment, install, staging, commit or push. Documentation remains uncommitted.
-- Independent Luna reviewer: PASS after checking source, new evidence and documentation.
-  Structural validation: 25 complete finding triples, 17 complete roadmap proposals,
-  60 existing absolute links, exactly two reports, unchanged behavioral guidelines and HEAD,
-  no staged changes, and clean `git diff --check`.
+  keep their original dates.
+- No full suite, completed board-client/download suite, Qt runtime/rendered GUI/WebEngine,
+  live provider/Telegram, external board, converter, power-loss, desktop input/hooks or
+  cross-app repair checks this run. No application repair, configuration edit, improvement
+  experiment, install, staging, commit or push. Documentation remains uncommitted.
 
-See the [improvement roadmap](C:/Users/alexr/Driverless_AGI/_CODEX_SUGGESTIONS_2026-10-19.md).
+- Independent Luna medium review: **PASS**. Structural validation confirms 25 complete
+  finding triples, 17 unchanged proposal blocks, existing absolute links and valid line
+  bounds, exactly two current reports, unchanged behavioral guidelines and HEAD,
+  no staged files and clean `git diff --check`. Prior uncommitted documentation is retained.
+
+See the [improvement roadmap](C:/Users/alexr/Driverless_AGI/_CODEX_SUGGESTIONS_2026-10-21.md).
