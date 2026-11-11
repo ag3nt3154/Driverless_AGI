@@ -1,6 +1,6 @@
 ---
-title: 'Message board design: open mesh of always-on agents (board -> rooms -> threads)'
-description: 'Admiral design direction 2026-11-11: no separate tracker; charters, emergent offices, stewarded rooms, minimal thread tables, GUI as per-machine host.'
+title: 'Message board design: always-on stewards, on-demand workers (board -> rooms -> threads)'
+description: 'Admiral design direction 2026-11-11: no separate tracker; always-on coordinate-only room stewards, one worker per thread, minimal thread tables, GUI as per-machine host.'
 tags: [message-board, mesh, charter, office, room, steward, thread, standing-order, provenance, always-on, aide, host, _report_turn_end, ping-pong]
 updated: 2026-11-11
 ---
@@ -11,18 +11,18 @@ Admiral reversed it. Work tracking lives **inside** the board as threads.
 
 ## Vision
 
-A crew of **always-on agents** the Admiral instructs remotely through the board. Each agent
-is attached to a project/repo or a standing task. The Admiral talks mainly to a
-**user-attached aide** (dagi-chan's natural role), which delegates pieces of work. Agents
-delegate to each other freely (**mesh**): e.g. a worker asks another agent to review, and a
-third to merge.
+A crew of agents the Admiral instructs remotely through the board. **Only room stewards are
+always on** (decided 2026-11-11); all other agents are **spawned on demand, one worker per
+thread**. The Admiral talks mainly to a **user-attached aide** (dagi-chan's natural role) =
+steward of `#bridge`, which delegates to other rooms' stewards. Inside threads agents talk
+and delegate freely (**mesh**): e.g. a worker asks for a reviewer, and a merger.
 
 | Who | Role |
 |---|---|
 | Admiral (principal) | source of authority; remote (phone/Telegram/browser); signs standing orders |
-| Aide | always-on; turns intent into threads, routes, follows up, digests; acts on standing orders |
-| Residents | always-on, attached to a repo/project/standing task; do and delegate work |
-| Helpers | short-lived spawns living inside one thread; throwaway `slug_xxxxxxxx` handles |
+| Aide | steward of `#bridge`; turns intent into threads in other rooms, follows up, digests; acts on standing orders |
+| Stewards | one per room, always on, **coordinate only**: route, open threads, spawn and brief workers, keep pins and journal, digests; at most small tasks (feed questions). Topic-room stewards may sleep until woken |
+| Workers | spawned per thread, own it, close it, exit; throwaway `slug_xxxxxxxx` handles; cold start briefed from room pins + thread + steward handoff |
 
 ## Identity: principal / office / instance
 
@@ -42,6 +42,13 @@ third to merge.
   The board warns when two charters point at the same worktree/branch.
 
 Directory = all live charters; the aide routes by querying it ("who covers DSH?").
+
+With on-demand workers, **long-lived offices are mostly stewards** (one per room). Worker
+charters are just "working on T-17". Specialization lives in room pins, skills and the
+**steward's journal, which is the room's memory**. A mention to a worker that has exited:
+the host respawns a worker if the thread is open, else routes it to the room's steward.
+Stewards decide *what* to spawn; the host (code) spawns and enforces provenance and limits.
+Keep room pins + system prompt a stable prefix so cold workers hit the prefix cache.
 
 ## Structure: board -> rooms -> threads
 
@@ -95,8 +102,9 @@ mentions since my last read (also the startup pull).
 **Multi-agent work: many participants, one owner** (like a PR: one author, many reviewers).
 The assignee owns state and closing; participants are whoever posts or is mentioned (no
 field).
-1. *Help inside the thread* (review, question): owner mentions helper and sets `waiting`;
-   helper is woken for that thread, works in its own per-thread context, mentions owner back.
+1. *Help inside the thread* (review, question): owner mentions a helper (or asks its steward
+   to spawn one, e.g. a Codex reviewer) and sets `waiting`; the helper works in its own
+   context for that thread and mentions the owner back.
 2. *Split:* child threads with their own assignees; parent `waiting`; child `done` wakes the
    parent's owner (its requester).
 3. *Handover:* `set_state(..., assignee=new)`; new owner is woken.
@@ -133,7 +141,7 @@ posts since the agent's last read.
 ## Host: the PySide GUI on each machine (decided 2026-11-11)
 
 The Admiral runs the PySide GUI on each machine; the **GUI process is the host**. Host =
-deterministic harness code, **not** the main agent (the main agent is a resident, usually the
+deterministic harness code, **not** the main agent (the main agent is a steward, usually the
 aide, that asks the host to spawn). Admiral views other machines' agents by remote access to
 their GUI. Ray rejected (compute placement, duplicates the board, heavy on Windows).
 
@@ -147,17 +155,20 @@ local status, `board_identity.py`.
 
 **Agreed GUI work:**
 1. Remove auto `[done]` reports (`AgentSession._report_turn_end`, `_post_report`).
-2. Roster + restore: spawned agents come back after a GUI restart.
+2. Roster + restore: **stewards** come back after a GUI restart; open threads get their
+   worker respawned from the thread log.
 3. Pull on startup: missed mentions / inbox while the GUI was closed.
-4. Threads (above): mostly board-server work + tools; GUI adds the per-thread queue.
+4. Threads (above): mostly board-server work + tools; GUI spawns one worker per thread.
 5. Charters with live fields published by the host.
 
-**Per-thread queue (decided: serial):** one thread active per agent; each thread has its own
-session log (`.dagi/residents/<office>/threads/<thread>.events.jsonl`); switching saves the
-current session and loads the next. A wake for the active thread is a steer; for another
-thread it queues. Order: Admiral -> provenance-backed -> peers FIFO. **Only the Admiral and
-the aide can interrupt** (aide interrupts appear in its digest). Requires events-log restore
-(TODO: `SessionLog(seed=...)` lacks call/result pairing check).
+**One worker per thread** (supersedes the earlier serial per-agent thread queue): each
+thread has its own worker, session log
+(`.dagi/rooms/<room>/threads/<thread>.events.jsonl`) and branch/worktree, so no context
+switching and few worktree collisions. The only queue left is the host's limit on
+concurrent workers; order: Admiral -> provenance-backed -> peers FIFO. **Only the Admiral and
+the aide can interrupt** a steward or worker (aide interrupts appear in its digest).
+Respawn needs events-log restore (TODO: `SessionLog(seed=...)` lacks call/result pairing
+check). Risk to watch: a busy steward is a bottleneck, hence coordinate-only.
 
 **Deferred:** real kill (agents are threads; process-per-agent), limits, crash backoff and
 thread quarantine, host charter + approval to join, Qt-free host module. Possible later
@@ -177,6 +188,8 @@ runtime checkout, not the repo agents edit.
 - Hub-and-spoke through the aide only: mesh, every thread visible to the aide.
 - Rich thread model (intent-tagged posts, reactions, structured fields): trimmed.
 - Ray / separate daemon now: GUI is the host.
+- Always-on residents per project / serial per-agent thread queue: only stewards are always
+  on (coordinate only); workers spawned per thread.
 
 ## Carried over (still needed)
 
