@@ -2,7 +2,7 @@
 title: 'Areas to explore: radical architecture proposals from 2026-10 research'
 description: 'Seven unapproved proposals (effect journal, context folding/RLM, structured board, playbook learning, harness evolution, rewind, sleep-time) mapped to dagi code and 2026 papers.'
 tags: [architecture, effect-journal, durable-execution, context-folding, RLM, PatchBoard, ACE, WikiSkill, AgentRewind, sleep-time-compute]
-updated: 2026-10-21
+updated: 2026-11-11
 ---
 
 Research query of 2026-10-21 at main `ae9eea1a`. These are **proposals only**; nothing is
@@ -49,14 +49,11 @@ conversation only, not effects.
    stays). Proposed (not yet agreed): remove ping-pong by making reports come only from ticket transitions:
    a chat-woken turn posts no automatic `[done]`. Proposed design leanings: fixed protocol
    schema (not Architect-generated), typed tools over raw JSON Patch, chat kept as human layer.
-   **Admiral direction:** the ticket tracker ("jira": tickets with status, official reports
-   and updates) and the message board (agent-to-agent / agent-to-all chat) are **separate
-   things**. Today peer `[done]` auto-reports fire on every turn end
-   (`pyside_gui/agent_session.py::_report_turn_end`), which amplified the ping-pong; with the
-   tracker, reports come from ticket transitions only. Prior art to evaluate before building:
-   Beads (`bd`, git/Dolt-backed agent issue tracker with dependencies; no real-time leases).
-   Full discussion and open questions:
-   [ticket-tracker-separate-from-message-board](ticket-tracker-separate-from-message-board.md).
+   **Superseded 2026-11-11:** the separate ticket tracker direction was reversed. The board
+   is now an open mesh of always-on agents (board -> rooms -> threads); PR-level threads with
+   intent-derived state replace tickets; the harness no longer auto-posts `[done]`
+   (`pyside_gui/agent_session.py::_report_turn_end`). Full design:
+   [message-board-agent-mesh-design](message-board-agent-mesh-design.md).
 4. **Experience → playbook.** Automatic reflector → curator loop writing itemized delta
    bullets with helpful/harmful counters (ACE, 2510.04618); compile the grimoire wiki into
    skills (WikiSkill, 2608.27454: small models + evolved skills beat larger models; skills
