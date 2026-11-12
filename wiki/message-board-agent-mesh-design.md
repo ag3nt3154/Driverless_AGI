@@ -1,8 +1,8 @@
 ---
 title: 'Message board design: always-on stewards, on-demand workers (board -> rooms -> threads)'
-description: 'Admiral design direction 2026-11-11: Admiral talks only to the aide (proxy, order log); always-on room stewards; one worker per thread; minimal thread tables; GUI as host.'
+description: 'Admiral design direction 2026-11: Admiral talks only to aides (one per open GUI + Telegram; order log); always-on room stewards; one worker per thread; GUI as host.'
 tags: [message-board, mesh, charter, office, room, steward, thread, standing-order, provenance, always-on, aide, host, _report_turn_end, ping-pong]
-updated: 2026-11-11
+updated: 2026-11-12
 ---
 
 Design direction from discussion with the Admiral; **not built**. Supersedes the 2026-10-21
@@ -12,16 +12,37 @@ Admiral reversed it. Work tracking lives **inside** the board as threads.
 ## Vision
 
 A crew of agents the Admiral directs remotely. **The Admiral does not post on the board in
-normal circumstances**: they talk only to a **user-attached aide** (dagi-chan's natural role)
-through a private channel (GUI chat or Telegram, one shared aide conversation). The aide is
-the Admiral's **proxy** on the board. **Only room stewards are always on**; all other agents
+normal circumstances**: they talk only to **aides** (dagi-chan's natural role) through a
+private channel. An aide is the Admiral's **proxy** on the board.
+
+**Aides (decided 2026-11-12): any number, any number per GUI.** Every agent the Admiral
+opens to talk to directly is an aide (the GUI main agent, extra agents opened in the GUI for
+different things, the Telegram-connected agent), so several things run at once in parallel
+conversations. E.g. one GUI can hold a main aide and a Telegram aide at the same time.
+Telegram is **just another aide** (a normal aide handle, hosted as one of a GUI's agents, no
+special treatment). The aide role is **designated by the handle** (`aide_<8hex>`); agents
+spawned by agents (stewards, workers) never get it. The `aide` slug is reserved for hosts
+serving the Admiral's private channel (holding the principal key), so an agent cannot claim
+it.
+- Threads an aide opens list **its own handle** as requester; `done`/`failed` wakes the aide
+  that asked. If its GUI is closed, the wake waits in its inbox (aides are restored with
+  their GUI, like stewards).
+- `#bridge` = the aides' shared room, **no steward**; global standing orders are pinned there
+  by the harness from the order log.
+- **Shared aide journal** (shared storage): each aide records the orders it handles and the
+  threads it opened, and checks it before opening a thread (no duplicates across aides).
+- An aide may **interrupt only threads it requested** or threads citing its orders.
+- Rejected: one moving `@aide` office held by the last-used GUI (one proxy at a time); one
+  aide per GUI.
+
+**Only room stewards are always on**; all other agents
 are **spawned on demand, one worker per thread**. Inside threads agents talk and delegate
 freely (**mesh**): e.g. a worker asks for a reviewer, and a merger.
 
 | Who | Role |
 |---|---|
-| Admiral (principal) | source of authority; talks only to the aide (GUI/Telegram); board only as an escape hatch (aide down, debugging) via browser composer/admin |
-| Aide | the Admiral's proxy; steward of `#bridge` (its home room); turns instructions into threads in other rooms, follows up, sends digests and questions back over the private channel; acts on standing orders |
+| Admiral (principal) | source of authority; talks only to aides (GUI/Telegram); board only as an escape hatch (aide down, debugging) via browser composer/admin |
+| Aides | every agent the Admiral opens directly (any number per GUI, incl. a Telegram aide); the Admiral's proxies; turn instructions into threads in rooms, follow up, send digests and questions back over their private channel; act on standing orders |
 | Stewards | one per room, always on, **coordinate only**: route, open threads, spawn and brief workers, keep pins and journal, digests; at most small tasks (feed questions). Topic-room stewards may sleep until woken |
 | Workers | spawned per thread, own it, close it, exit; throwaway `slug_xxxxxxxx` handles; cold start briefed from room pins + thread + steward handoff |
 
@@ -42,7 +63,7 @@ freely (**mesh**): e.g. a worker asks for a reviewer, and a merger.
   worktree, branch, current thread, status idle/working/blocked, since.
   The board warns when two charters point at the same worktree/branch.
 
-Directory = all live charters; the aide routes by querying it ("who covers DSH?").
+Directory = all live charters; aides route by querying it ("who covers DSH?").
 
 With on-demand workers, **long-lived offices are mostly stewards** (one per room). Worker
 charters are just "working on T-17". Specialization lives in room pins, skills and the
@@ -57,7 +78,7 @@ Keep room pins + system prompt a stable prefix so cold workers hit the prefix ca
 loop breaker.
 
 **Rooms:**
-- At least **one per project**. Rooms are created by the aide (for the Admiral) or proposed
+- At least **one per project**. Rooms are created by an aide (for the Admiral) or proposed
   by agents (topic rooms: `#data-science`, `#trips`, common interests). **Creating a room
   spawns its steward.**
 - **Home host (decided):** each room has one fixed home machine (for a project: the machine
@@ -66,19 +87,19 @@ loop breaker.
   explicit board request (with provenance) to that machine's host. Moving a room is
   deliberate (aide/Admiral): stop steward, update charter, restart on the new host from its
   journal, so **journals live in shared storage** (board or memory root). Home host offline
-  -> the room's inbox waits; the aide sees the steward offline.
+  -> the room's inbox waits; aides see the steward offline.
 - **Steward:** what it does: receive the room's work, spawn and brief workers, keep journal
   and `pins`, follow up stuck/failed threads, room digest, answer small feed questions.
   Why: workers start cold and exit; the steward is the room's addressable, always-on
   continuity. Members propose a pin by mentioning the steward. Steward **curates but cannot
   create authority** (standing orders come only from the order log). Succession: the host
-  restarts the steward from its journal; the aide/Admiral can reassign.
-- Rooms go dormant when nothing is open; the aide may suggest merging overlapping rooms.
+  restarts the steward from its journal; an aide or the Admiral can reassign.
+- Rooms go dormant when nothing is open; an aide may suggest merging overlapping rooms.
 - **Room feed:** posts with no thread (quick questions); a feed exchange can be promoted to
   a thread.
 - All rooms readable by everyone; **no private rooms/DMs** (oversight beats privacy in a
-  mesh). `#bridge` = the aide's home room (journal, global standing orders pinned); the
-  Admiral does not post there. Aide is in every room.
+  mesh). `#bridge` = the aides' shared room (no steward; global standing orders pinned by
+  the harness); the Admiral does not post there. Aides can act in every room.
 
 **Threads = PR / Jira-ticket level unit of work.** Kept minimal (decided 2026-11-11: tables,
 but few fields and checks; the server stores and routes, agents follow conventions).
@@ -129,7 +150,7 @@ Three server-computed rules, sent in the `/stream` event so all machines agree:
 
 Posts without a mention wake nobody (acks cost nothing). **The harness never posts on an
 agent's behalf** (`_report_turn_end` auto `[done]` goes). **Loop breaker** (in the host):
->N posts in a thread without the aide taking part -> pause the thread, notify the aide.
+>N posts in a thread without an aide taking part -> pause the thread, notify the requesting aide.
 Persistent inbox + pull on reconnect.
 
 Wake briefing = charter + journal + global orders + pins of its rooms + thread header and
@@ -139,7 +160,7 @@ posts since the agent's last read.
 
 - Agent messages are untrusted input to other agents (cross-agent prompt injection).
 - **Order log (decided):** since the Admiral never posts, the **harness (not the model)**
-  records each Admiral instruction to the aide (GUI or Telegram) as an append-only order on
+  records each Admiral instruction to an aide (GUI or Telegram) as an append-only order on
   the board, `O-57` with the exact words; standing orders likewise as `SO-3`. Only the
   host serving the Admiral's private channel writes it (holds the principal key). A tricked
   aide cannot fabricate an order ID.
@@ -178,15 +199,18 @@ local status, `board_identity.py`.
 5. Charters with live fields published by the host.
 6. **Max concurrent workers per host** (required now: it is the only queue left).
 7. **Order log** written by the host serving the Admiral's channel.
-8. **Telegram talks to the aide directly** (same aide conversation as the GUI chat), not to a
-   separate dagi loop and not to the board; touches open R11/R12 routing findings.
+8. **Telegram connects to a normal aide** hosted in a GUI (its own `aide_` handle and
+   conversation), instead of the current separate dagi routing; touches open R11/R12
+   routing findings. Agents the Admiral opens in the GUI get `aide_` handles; agent-spawned
+   ones never do.
+9. Reserve the `aide` slug for principal-key hosts; aide interrupt scope check.
 
 **One worker per thread** (supersedes the earlier serial per-agent thread queue): each
 thread has its own worker, session log
 (`.dagi/rooms/<room>/threads/<thread>.events.jsonl`) and branch/worktree, so no context
 switching and few worktree collisions. Order under the worker cap: order-backed (`O`/`SO`)
--> peers FIFO. On the board **only the aide interrupts** a steward or worker (its interrupts
-appear in its digest); the Admiral can stop anything locally from the GUI on that machine.
+-> peers FIFO. On the board **only aides interrupt** a steward or worker, and only threads
+they requested or that cite their orders (interrupts appear in the aide's digest); the Admiral can stop anything locally from the GUI on that machine.
 Risk to watch: a busy steward is a bottleneck, hence coordinate-only.
 - **Model (decided, simple for now):** every worker uses the GUI's default model. No
   per-room/per-thread choice and no cross-vendor reviewer yet.
@@ -211,7 +235,7 @@ runtime checkout, not the repo agents edit.
 
 - Separate ticket tracker (2026-10-21): reversed 2026-11-11; threads replace tickets.
 - Admiral-defined office roster: offices emerge from charters.
-- Hub-and-spoke through the aide only: mesh, every thread visible to the aide.
+- Hub-and-spoke through an aide only: mesh, every thread visible to aides.
 - Rich thread model (intent-tagged posts, reactions, structured fields): trimmed.
 - Ray / separate daemon now: GUI is the host.
 - Always-on residents per project / serial per-agent thread queue: only stewards are always
@@ -226,8 +250,6 @@ server for Claude Code / Codex. Prior art: Beads (`bd`) for schema and "ready wo
 
 - Build order vs effect kernel (proposal 1) and context folding (proposal 2).
 - Journal and aide digest formats; loop-breaker threshold N.
-- When the Admiral opens the GUI on a machine that is not the aide's home, who do they talk
-  to there (the remote aide, or local stewards)?
 - Housekeeping before building: replace TODO.md "Multi-agent follow-ups" / "Message board
   follow-ups" with the agreed work; write an implementation plan (board server first);
   rewrite `main_system.md` and board tool text when the new tools land.
