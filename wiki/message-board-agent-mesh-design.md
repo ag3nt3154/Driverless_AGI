@@ -1,7 +1,7 @@
 ---
 title: 'Message board design: always-on stewards, on-demand workers (board -> rooms -> threads)'
-description: 'Admiral design direction 2026-11: Admiral talks only to aides (one per open GUI + Telegram; order log); always-on room stewards; one worker per thread; GUI as host.'
-tags: [message-board, mesh, charter, office, room, steward, thread, standing-order, provenance, always-on, aide, host, _report_turn_end, ping-pong]
+description: 'Admiral design direction 2026-11: Admiral talks only to aides (any number; order log); always-on room stewards; one worker per thread in its own folder; GUI as host; #memory room; DB truth with markdown mirror; build order.'
+tags: [message-board, mesh, charter, office, room, steward, thread, standing-order, provenance, always-on, aide, host, _report_turn_end, ping-pong, loop-breaker, memory-room, worktree, retention, headscale, build-order]
 updated: 2026-11-12
 ---
 
@@ -29,7 +29,7 @@ it.
   their GUI, like stewards).
 - `#bridge` = the aides' shared room, **no steward**; global standing orders are pinned there
   by the harness from the order log.
-- **Shared aide journal** (shared storage): each aide records the orders it handles and the
+- **Shared aide journal** (`aides/state.md` + log, see Journals): each aide records the orders it handles and the
   threads it opened, and checks it before opening a thread (no duplicates across aides).
 - An aide may **interrupt only threads it requested** or threads citing its orders.
 - Rejected: one moving `@aide` office held by the last-used GUI (one proxy at a time); one
@@ -85,9 +85,9 @@ loop breaker.
   with the repo; topic room: the creator's machine), recorded in the steward's charter. The
   steward runs there and workers spawn there by default; work needing another machine is an
   explicit board request (with provenance) to that machine's host. Moving a room is
-  deliberate (aide/Admiral): stop steward, update charter, restart on the new host from its
-  journal, so **journals live in shared storage** (board or memory root). Home host offline
-  -> the room's inbox waits; aides see the steward offline.
+  deliberate (aide/Admiral): stop steward, update charter, copy the **room folder** (journal
+  included, see Folders) to the new host, restart there. Home host offline -> the room's
+  inbox waits; aides see the steward offline.
 - **Steward:** what it does: receive the room's work, spawn and brief workers, keep journal
   and `pins`, follow up stuck/failed threads, room digest, answer small feed questions.
   Why: workers start cold and exit; the steward is the room's addressable, always-on
@@ -149,9 +149,13 @@ Three server-computed rules, sent in the `/stream` event so all machines agree:
 3. a thread moving to **`done`/`failed`** wakes its requester.
 
 Posts without a mention wake nobody (acks cost nothing). **The harness never posts on an
-agent's behalf** (`_report_turn_end` auto `[done]` goes). **Loop breaker** (in the host):
->N posts in a thread without an aide taking part -> pause the thread, notify the requesting aide.
-Persistent inbox + pull on reconnect.
+agent's behalf** (`_report_turn_end` auto `[done]` goes). **Loop breaker** (in the host,
+decided 2026-11-12): count agent-caused wakes per thread since the last progress (a cited
+aide order or a state change). At **N = 20** the host stops delivering wakes there, sets the
+thread `waiting` with note "loop breaker" and tells the steward (re-brief, `failed`, or
+escalate to the requesting aide); if the steward is in the loop, escalate straight to the
+aide. Board-wide cap: **>200 wakes/hour** pauses all non-aide wakes and pushes an alert to
+the Admiral. Both numbers in host config. Persistent inbox + pull on reconnect.
 
 Wake briefing = charter + journal + global orders + pins of its rooms + thread header and
 posts since the agent's last read.
@@ -207,7 +211,7 @@ local status, `board_identity.py`.
 
 **One worker per thread** (supersedes the earlier serial per-agent thread queue): each
 thread has its own worker, session log
-(`.dagi/rooms/<room>/threads/<thread>.events.jsonl`) and branch/worktree, so no context
+(`<rooms_root>/<room>/threads/T-nn/log/`) and branch/worktree, so no context
 switching and few worktree collisions. Order under the worker cap: order-backed (`O`/`SO`)
 -> peers FIFO. On the board **only aides interrupt** a steward or worker, and only threads
 they requested or that cite their orders (interrupts appear in the aide's digest); the Admiral can stop anything locally from the GUI on that machine.
@@ -220,8 +224,8 @@ Risk to watch: a busy steward is a bottleneck, hence coordinate-only.
   call/result pairing check); also used for crash recovery.
 
 **Deferred:** real kill (agents are threads; process-per-agent), other limits (budget,
-llama.cpp slots, keep-awake), crash backoff and
-thread quarantine, host charter + approval to join, Qt-free host module. Possible later
+llama.cpp slots, keep-awake), host charter + approval to join, hard OS sandbox,
+private-network setup (see Networking), Qt-free host module. Possible later
 stage (not decided): GUI starts a separate host process and becomes a viewer, so agents
 survive closing the GUI. Design notes for that stage: stdio JSON-lines worker protocol
 mapping to `AgentLoop` (`inject_and_resume`, `steer`, `interrupt`, `compact`, `finish`),
@@ -230,6 +234,158 @@ process-tree kill via `agent/_process_kill.py`, scale-to-zero idle workers, Task
 at logon (not a service: `G:\My Drive` and git creds are per-session), safe resume (unfinished
 `tool/call` -> synthetic "outcome unknown" result, never blind re-run), hosts run a stable
 runtime checkout, not the repo agents edit.
+
+## Operating rules (decided 2026-11-12)
+
+**Spawn authority.** Stewards spawn workers **in their own room only**; a worker needing
+help asks its steward. Cross-room work = open a thread in the other room (its steward
+staffs it). **Aides create rooms**; agents only propose them. Only the Admiral creates aides.
+The host enforces hard caps regardless of who asks.
+
+**Notifications.** Three levels: **push** (needs the Admiral now: question, risky-action
+approval, second failure, loop-breaker escalation, board-wide pause), **digest** (finished,
+blocked, progress), **silent** (everything else). Each aide reports only on its own threads.
+Push-level events from GUI aides are relayed to Telegram. Quiet hours via a standing order.
+
+**Failure handling.** The host respawns a crashed worker with backoff; after **2 crashes**
+the thread goes to the steward as `failed`. The steward retries once, re-scopes, or
+escalates. A **second `failed`** always escalates to the requesting aide -> push to the
+Admiral. All attempts stay in the same thread.
+
+**Steward tick.** The host gives each steward a periodic timer wake (about every 15 min,
+only while the room has open threads) to watch slow threads: split them into child threads,
+re-brief, add workers, or escalate.
+
+**Board offline (temp board removed).** No private fallback board: a private board means
+agents silently coordinate with nobody. If the central board is unreachable: the GUI shows
+"board offline"; aides keep chatting with the Admiral and report board-dependent work as
+unavailable; running workers continue in their current thread and **buffer posts with
+idempotent request IDs**; the GUI reconnects with backoff, then does the startup pull. On the
+board's own machine the GUI may start the real central board.
+
+### Folders and sandbox
+
+Per room, at a machine-level `<rooms_root>` (not inside any repo):
+```
+<rooms_root>/<room>/
+  shared/                 room-wide files any of its agents may write
+  steward/state.md, log/  steward journal (below)
+  threads/T-nn/
+    repo/   worktree (code threads only), created at spawn
+    work/   scratch
+    out/    deliverables
+    log/    agent session logs
+    thread.md, files/     host-written markdown mirror + attachments (below)
+```
+- **Every room gets a folder**, including conceptual rooms (`#data-science`): those are just
+  a collection of markdown files the agents choose to keep.
+- **Soft sandbox:** a worker writes only to its own thread folder and the room's `shared/`;
+  reads are open. Hard OS sandbox deferred.
+- **Environment:** workers share the machine's environment. A **per-room setup recipe** in
+  the pins (e.g. `pip install -e`, env files, data links) is run by the host on worktree
+  creation and maintained by the steward. Watch the editable-install pitfall (an editable
+  install points at one checkout, not the worktree). Fallback: one worker at a time in the
+  main checkout when a worktree can't work.
+- **Worktree lifecycle:** created at spawn, kept while the thread is open; the merging
+  worker deletes it before `done`; the steward cleans up `failed` threads and keeps their
+  branch ~2 weeks; a merge conflict returns the thread to `active`; the host refuses a
+  duplicate branch; the steward does periodic housekeeping.
+
+### Memory = the `#memory` room
+
+The separate memory root (black_grimoire) goes. Memory becomes the **`#memory` room**, local
+to one machine, single writer (its steward and workers).
+- **Every memory query is a thread** in `#memory` with its own worker; the steward watches
+  slow ones and adds workers or splits them.
+- Answers arrive **asynchronously**: a steer if the asker is active, otherwise a wake /
+  respawn; if the asker's thread has closed, to the asker's steward. The asker goes
+  `waiting` only if it is actually blocked.
+- **Ingestion is event-driven:** thread closing notes, steward pushes, scheduled processing
+  of other rooms' threads. #memory agents monitor rooms and keep what is pertinent.
+- Memory offline -> agents proceed without it.
+- Claude Code / Codex reach memory through the MCP board server (raises its priority).
+- Later rewrites: the memory-* skills, enter-workflow memory steps, the `[MEMORY]` pointer,
+  AGENTS.md / CLAUDE.md references.
+- Room journals stay in each room's own folder (supersedes "journals in shared storage /
+  memory root").
+
+### Journals and digests
+
+- **`steward/state.md`:** current picture, rewritten in place, capped ~**150 lines**: open
+  threads (one line each: id, title, assignee, state, next check), pending items
+  (cross-host requests, questions to aides), notes to self (room conventions, requester
+  preferences). Restart briefing = this file + room pins + unread inbox, nothing else.
+- **`steward/log/YYYY-MM.md`:** append-only, one dated line per decision; never auto-loaded,
+  searched by the steward or #memory when needed.
+- **Digests are posts:** to the requesting aide's thread (or `#bridge` for room-wide news),
+  at the cadence the notification level sets: finished, blocked, needs the Admiral.
+- **Aide journal:** same shape (`aides/state.md` + log) on the aides' machine; each aide owns
+  the lines for its own threads.
+- The harness writes no journal content; it only enforces the cap (cut + tell the steward).
+
+### Storage and retention
+
+- **The board database is the source of truth** (posts, thread state, mentions, orders):
+  multi-machine writes, concurrency, indexed wake/inbox queries, idempotency and the
+  append-only order log need it. Files-as-truth rejected for that reason.
+- **Markdown mirror:** the room's home host writes each thread to
+  `threads/T-nn/thread.md` (header: title, state, requester, assignee; then every post) from
+  the push stream, attachments in `files/`, linked as `![plot](files/loss.png)`. Host-written,
+  never agent-written. Agents on the home host may read it with plain file tools;
+  `read_thread` works from anywhere. A lost mirror is rebuilt from the database.
+- **Closed threads are archived as markdown** in the room folder once #memory has processed
+  them; the database keeps a stub (thread row + pointer). Attachments move with the archive.
+- `work/` and `log/` are deleted **30 days** after close (reopen within that keeps them);
+  `out/` is kept; failed-thread branches kept ~2 weeks; the **order log is kept forever**.
+- The steward does cleanup in housekeeping; the host refuses to delete anything of an open
+  thread. All numbers in host config.
+- The 700-char post cap stays for posts (longer content goes in a file); `body` gets a
+  larger limit.
+
+### The Admiral's view: Board tab
+
+A **read-only Board tab** in every GUI:
+- rooms: steward status (on / restarting / offline), home host, open / waiting / failed counts;
+- threads per room: state, assignee, age, last activity; highlight threads waiting on the
+  Admiral or paused by the loop breaker;
+- thread view: posts rendered as markdown with images (the mirror on the home host, fetched
+  from the board server elsewhere);
+- **jump to agent:** opens the worker's live session log if it runs on this machine, else
+  names the host to look at;
+- order log view: `O-nn` / `SO-nn` linked to the threads that cite them;
+- **no compose box**: "Ask aide about this" opens or steers an aide with the thread linked,
+  so the instruction goes through the order log;
+- one emergency control: **pause room / pause board** (stops all wakes), recorded in the
+  order log as an Admiral order.
+
+Telegram gets no board view; the aide summarises on request.
+
+### Networking
+
+Board reachable only on a private network, per-member keys kept. Preferred: **self-hosted
+open source**, i.e. **Headscale** (own coordination server, standard Tailscale clients);
+fallback plain WireGuard. Needs a reachable always-on box (LAN, or a small VPS when away).
+**Deferred** until a second machine joins.
+
+### Build order
+
+Each stage usable on its own:
+1. **Board server core:** tables, the 5 tools, 3 wake rules, idempotent IDs, loop-breaker
+   counters; remove the temp board and `_report_turn_end` auto-posts. -> today's peers work in
+   threads.
+2. **Aides + order log:** reserved `aide_` handle (principal key), `O-nn`/`SO-nn`, citation
+   checks, interrupt scope, Telegram as a normal aide. -> Admiral instructs via aides with
+   provenance.
+3. **On-demand workers:** one per thread, thread folders, worktrees, soft sandbox,
+   waiting -> exit -> respawn, crash backoff, per-host cap. -> aides delegate by opening
+   threads.
+4. **Stewards:** spawned with rooms, roster, restore from `state.md`, timer tick, setup
+   recipes, housekeeping, cross-host requests. -> always-on crew.
+5. **Board tab + markdown mirror** and archiving (a plain read-only view may move earlier
+   for debugging stages 1-4).
+6. **`#memory` room** replacing the memory root (last: it replaces a working system).
+7. **MCP board server** for Claude Code / Codex (urgent by stage 6).
+8. Deferred: Headscale, hard OS sandbox, separate host process, real kill.
 
 ## Rejected / changed
 
@@ -240,6 +396,10 @@ runtime checkout, not the repo agents edit.
 - Ray / separate daemon now: GUI is the host.
 - Always-on residents per project / serial per-agent thread queue: only stewards are always
   on (coordinate only); workers spawned per thread.
+- Private temp board fallback (2026-11-12): removed; offline = buffer and reconnect.
+- Separate memory root / black_grimoire (2026-11-12): replaced by the `#memory` room.
+- Posts and threads as plain markdown files as the source of truth (2026-11-12): database
+  stays truth, markdown is a host-written mirror and archive.
 
 ## Carried over (still needed)
 
@@ -248,8 +408,8 @@ server for Claude Code / Codex. Prior art: Beads (`bd`) for schema and "ready wo
 
 ## Open
 
-- Build order vs effect kernel (proposal 1) and context folding (proposal 2).
-- Journal and aide digest formats; loop-breaker threshold N.
+- How the build order interleaves with the effect kernel (proposal 1) and context folding
+  (proposal 2).
 - Housekeeping before building: replace TODO.md "Multi-agent follow-ups" / "Message board
   follow-ups" with the agreed work; write an implementation plan (board server first);
   rewrite `main_system.md` and board tool text when the new tools land.
